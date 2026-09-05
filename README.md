@@ -8,7 +8,7 @@ ChatGPT
 Linear
    ↓  Todo + local-codex
 linear-local-codex-bridge
-   ↓  SSH p620 → Codex app-server
+   ↓  local P620 app-server proxy (SSH remains an explicit remote option)
 Disposable durable Codex thread
    ↕  Linear MCP
 Linear
@@ -40,7 +40,7 @@ The bridge never marks an issue `Done`.
 - macOS or Linux
 - Python 3.11+
 - Git
-- Codex app-server/proxy transport available through the configured SSH alias
+- Codex app-server/proxy transport available through the configured local or SSH boundary
 - Linear MCP already configured in Codex
 - A Linear personal API key for the bridge's narrow control-plane polling
 
