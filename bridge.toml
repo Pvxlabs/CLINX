@@ -21,9 +21,13 @@ sandbox = "workspace-write"
 approval = "never"
 
 [app_server]
-# This is the remote command behind the existing P620 app-server/proxy
-# transport. Replace it only with the operator-verified disposable pilot
-# command; do not point it at Desktop private IPC.
+# The bridge is running on P620, so use the existing local app-server proxy.
+# This starts a stdio proxy process and connects to the already-running
+# app-server control socket; it does not bootstrap or restart the server.
+transport = "local"
+command = ["codex", "app-server", "proxy"]
+
+# Remote deployment remains supported as an explicit alternative.
 ssh_binary = "ssh"
 ssh_args = ["-T"]
 remote_command = ["codex", "app-server"]

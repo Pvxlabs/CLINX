@@ -1,9 +1,9 @@
 """Minimal Codex app-server JSON-RPC client used by Dispatcher V1.
 
-The transport is deliberately small and stdio-oriented: SSH starts the
-configured remote app-server proxy/command and JSON objects are exchanged one
-per line.  No Desktop IPC, credential inspection, or thread discovery is done
-here.  Dispatch callers must provide an exact durable thread id.
+The transport is deliberately small and stdio-oriented: a local proxy or SSH
+command owns the process boundary and JSON-RPC messages are exchanged one per
+line. No Desktop IPC, credential inspection, or thread discovery is done here.
+Dispatch callers must provide an exact durable thread id.
 """
 
 from __future__ import annotations
@@ -48,27 +48,19 @@ class JSONRPCTransport(Protocol):
     def close(self) -> None: ...
 
 
-class SSHStdioTransport:
-    """Run a configured remote app-server command over an SSH stdio channel."""
+class ProcessStdioTransport:
+    """Exchange line-delimited JSON with a child process over stdio."""
 
     def __init__(
         self,
-        ssh_alias: str,
-        remote_command: tuple[str, ...],
+        command: tuple[str, ...],
         *,
-        ssh_binary: str = "ssh",
-        ssh_args: tuple[str, ...] = ("-T",),
         timeout_seconds: float = 30.0,
         popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
     ):
-        if not ssh_alias:
-            raise AppServerTransportError("SSH alias is required")
-        if not remote_command:
-            raise AppServerTransportError("remote app-server command is required")
-        self.ssh_alias = ssh_alias
-        self.remote_command = remote_command
-        self.ssh_binary = ssh_binary
-        self.ssh_args = ssh_args
+        if not command:
+            raise AppServerTransportError("app-server command is required")
+        self.command = command
         self.timeout_seconds = timeout_seconds
         self._popen = popen
         self._process: subprocess.Popen[str] | None = None
@@ -76,15 +68,9 @@ class SSHStdioTransport:
     def connect(self) -> None:
         if self._process is not None:
             return
-        command = [
-            self.ssh_binary,
-            *self.ssh_args,
-            self.ssh_alias,
-            *self.remote_command,
-        ]
         try:
             self._process = self._popen(
-                command,
+                list(self.command),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
@@ -94,11 +80,13 @@ class SSHStdioTransport:
                 bufsize=1,
             )
         except OSError as exc:
-            raise AppServerTransportError(f"failed to start SSH transport: {exc}") from exc
+            raise AppServerTransportError(
+                f"failed to start app-server transport: {exc}"
+            ) from exc
 
     def send(self, message: dict[str, Any]) -> None:
         if self._process is None or self._process.stdin is None:
-            raise AppServerTransportError("SSH transport is not connected")
+            raise AppServerTransportError("app-server transport is not connected")
         try:
             self._process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
             self._process.stdin.flush()
@@ -107,7 +95,7 @@ class SSHStdioTransport:
 
     def receive(self, timeout_seconds: float) -> dict[str, Any]:
         if self._process is None or self._process.stdout is None:
-            raise AppServerTransportError("SSH transport is not connected")
+            raise AppServerTransportError("app-server transport is not connected")
         ready, _, _ = select.select([self._process.stdout], [], [], timeout_seconds)
         if not ready:
             raise AppServerTransportError(
@@ -144,6 +132,38 @@ class SSHStdioTransport:
                 process.kill()
             except OSError:
                 pass
+
+
+class SSHStdioTransport(ProcessStdioTransport):
+    """Run a configured remote app-server command over an SSH stdio channel."""
+
+    def __init__(
+        self,
+        ssh_alias: str,
+        remote_command: tuple[str, ...],
+        *,
+        ssh_binary: str = "ssh",
+        ssh_args: tuple[str, ...] = ("-T",),
+        timeout_seconds: float = 30.0,
+        popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
+    ):
+        if not ssh_alias:
+            raise AppServerTransportError("SSH alias is required")
+        if not remote_command:
+            raise AppServerTransportError("remote app-server command is required")
+        self.ssh_alias = ssh_alias
+        self.remote_command = remote_command
+        self.ssh_binary = ssh_binary
+        self.ssh_args = ssh_args
+        super().__init__(
+            (ssh_binary, *ssh_args, ssh_alias, *remote_command),
+            timeout_seconds=timeout_seconds,
+            popen=popen,
+        )
+
+
+class LocalStdioTransport(ProcessStdioTransport):
+    """Run the local app-server proxy command over a stdio boundary."""
 
 
 @dataclasses.dataclass(frozen=True)

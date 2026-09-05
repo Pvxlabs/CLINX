@@ -426,6 +426,93 @@ class LinearDispatchIntegrationTests(unittest.TestCase):
 
 
 class AppServerClientTests(unittest.TestCase):
+    def test_process_transport_writes_line_delimited_json(self):
+        class FakeStream:
+            def __init__(self):
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                pass
+
+            def close(self):
+                pass
+
+        class FakeProcess:
+            def __init__(self):
+                self.stdin = FakeStream()
+                self.stdout = FakeStream()
+
+            def poll(self):
+                return None
+
+            def terminate(self):
+                pass
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                pass
+
+        process = FakeProcess()
+        transport = app_server.LocalStdioTransport(
+            ("codex", "app-server", "proxy"),
+            popen=lambda *args, **kwargs: process,
+        )
+        transport.connect()
+        transport.send({"id": "request-1", "method": "initialize"})
+        self.assertEqual(
+            process.stdin.writes,
+            ['{"id":"request-1","method":"initialize"}\n'],
+        )
+        transport.close()
+
+    def test_local_transport_builds_proxy_command_without_ssh(self):
+        class FakeStream:
+            def close(self):
+                pass
+
+        class FakeProcess:
+            stdin = FakeStream()
+            stdout = FakeStream()
+
+            def poll(self):
+                return 0
+
+            def terminate(self):
+                pass
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                pass
+
+        calls = []
+
+        def fake_popen(*args, **kwargs):
+            calls.append((args, kwargs))
+            return FakeProcess()
+
+        transport = app_server.LocalStdioTransport(
+            ("codex", "app-server", "proxy"),
+            popen=fake_popen,
+        )
+        transport.connect()
+        self.assertEqual(calls[0][0][0], ["codex", "app-server", "proxy"])
+        self.assertNotIn("ssh", calls[0][0][0])
+        self.assertFalse(calls[0][1]["shell"])
+        transport.close()
+
+    def test_default_client_uses_local_transport_without_ssh(self):
+        cfg, _dispatcher = dispatcher_fixture(client=None)
+        client = bridge._default_app_server_client(cfg, target_fixture())
+        self.assertIsInstance(client.transport, app_server.LocalStdioTransport)
+        self.assertEqual(client.transport.command, ("codex", "app-server", "proxy"))
+
     def test_protocol_payloads_use_exact_thread_and_dispatch_overrides(self):
         class FakeTransport:
             def __init__(self):

@@ -28,6 +28,7 @@ from typing import Any
 from app_server import (
     AppServerError,
     CodexAppServerClient,
+    LocalStdioTransport,
     SSHStdioTransport,
     versions_compatible,
 )
@@ -62,6 +63,8 @@ class ProjectMapping:
 
 @dataclasses.dataclass(frozen=True)
 class AppServerConfig:
+    transport: str = "local"
+    command: tuple[str, ...] = ("codex", "app-server", "proxy")
     ssh_binary: str = "ssh"
     ssh_args: tuple[str, ...] = ("-T",)
     remote_command: tuple[str, ...] = ("codex", "app-server")
@@ -189,10 +192,15 @@ class BridgeConfig:
 
         remote_command = app_server_raw.get("remote_command")
         if not isinstance(remote_command, list) or not remote_command:
-            raise BridgeError(
-                "[app_server].remote_command must be a non-empty TOML string array"
-            )
+            remote_command = ["codex", "app-server"]
         remote_command = tuple(str(part) for part in remote_command)
+        command = app_server_raw.get("command", ["codex", "app-server", "proxy"])
+        if not isinstance(command, list) or not command:
+            raise BridgeError("[app_server].command must be a non-empty TOML string array")
+        command = tuple(str(part) for part in command)
+        transport = str(app_server_raw.get("transport", "local")).strip().lower()
+        if transport not in {"local", "ssh"}:
+            raise BridgeError("[app_server].transport must be 'local' or 'ssh'")
         ssh_args = app_server_raw.get("ssh_args", ["-T"])
         if not isinstance(ssh_args, list):
             raise BridgeError("[app_server].ssh_args must be a TOML string array")
@@ -224,6 +232,8 @@ class BridgeConfig:
             .resolve(),
             projects=tuple(projects),
             app_server=AppServerConfig(
+                transport=transport,
+                command=command,
                 ssh_binary=str(app_server_raw.get("ssh_binary", "ssh")),
                 ssh_args=tuple(str(arg) for arg in ssh_args),
                 remote_command=remote_command,
@@ -622,13 +632,21 @@ def _default_app_server_client(
     cfg: BridgeConfig,
     target: TargetConfig,
 ) -> CodexAppServerClient:
-    transport = SSHStdioTransport(
-        target.ssh_alias,
-        cfg.app_server.remote_command,
-        ssh_binary=cfg.app_server.ssh_binary,
-        ssh_args=cfg.app_server.ssh_args,
-        timeout_seconds=cfg.app_server.request_timeout_seconds,
-    )
+    if cfg.app_server.transport == "local":
+        transport = LocalStdioTransport(
+            cfg.app_server.command,
+            timeout_seconds=cfg.app_server.request_timeout_seconds,
+        )
+    elif cfg.app_server.transport == "ssh":
+        transport = SSHStdioTransport(
+            target.ssh_alias,
+            cfg.app_server.remote_command,
+            ssh_binary=cfg.app_server.ssh_binary,
+            ssh_args=cfg.app_server.ssh_args,
+            timeout_seconds=cfg.app_server.request_timeout_seconds,
+        )
+    else:
+        raise BridgeError(f"Unsupported app-server transport: {cfg.app_server.transport}")
     return CodexAppServerClient(
         transport,
         timeout_seconds=cfg.app_server.request_timeout_seconds,
