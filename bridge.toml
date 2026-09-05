@@ -1,0 +1,63 @@
+# linear-local-codex-bridge v0.1
+#
+# Keep LINEAR_API_KEY in the environment, never in this file.
+
+[linear]
+team_id = "fb8babe1-9db8-4f19-af10-fb5d116f1374"
+trigger_label = "local-codex"
+todo_state = "Todo"
+running_state = "In Progress"
+review_state = "In Review"
+
+# v0.1 uses narrow polling only for the local pilot.
+# Linear recommends webhooks for long-running near-real-time integrations.
+poll_interval_seconds = 15
+max_batch = 1
+
+# Legacy compatibility settings only.  They are not used by Dispatcher V1.
+[codex]
+binary = "codex"
+sandbox = "workspace-write"
+approval = "never"
+
+[app_server]
+# This is the remote command behind the existing P620 app-server/proxy
+# transport. Replace it only with the operator-verified disposable pilot
+# command; do not point it at Desktop private IPC.
+ssh_binary = "ssh"
+ssh_args = ["-T"]
+remote_command = ["codex", "app-server"]
+request_timeout_seconds = 30
+client_name = "linear-local-codex-bridge"
+client_title = "Linear Local Codex Bridge"
+client_version = "1.0.0-m0"
+
+[runtime]
+log_dir = "~/.local/state/linear-local-codex-bridge"
+
+[[project]]
+linear_name = "Linear × Local Codex Pilot"
+repo = "/tmp/linear-codex-pilot"
+target_alias = "pilot"
+
+# Disposable pilot target only. Fill these values from the disposable durable
+# thread/repository qualification; placeholders intentionally fail closed.
+[targets.pilot]
+ssh_alias = "p620"
+thread_id = "REPLACE_WITH_DISPOSABLE_DURABLE_THREAD_UUID"
+session_id = "REPLACE_WITH_EXPECTED_SESSION_ID"
+project_id = "REPLACE_WITH_EXPECTED_PROJECT_ID"
+cwd = "/tmp/linear-codex-pilot"
+repository_origin = "REPLACE_WITH_EXPECTED_DISPOSABLE_ORIGIN"
+branch = "main"
+app_server_version = "codex-cli 0.152.1"
+
+# Add later, only after the pilot passes:
+#
+# [[project]]
+# linear_name = "ORION"
+# repo = "/Users/tinzleung/github/ORION"
+#
+# [[project]]
+# linear_name = "Terminal"
+# repo = "/Users/tinzleung/github/terminal"
