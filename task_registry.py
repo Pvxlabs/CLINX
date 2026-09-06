@@ -345,6 +345,24 @@ class ContextAnchor:
     created_at: str
 
 
+@dataclasses.dataclass(frozen=True)
+class ExecutionResultRecord:
+    execution_ref: str
+    task_id: str
+    turn_id: str
+    status: str
+    summary: str
+    changed_files: str
+    validation: str
+    blockers: str
+    next_state: str
+    raw_result: str
+    received_at: str
+    writeback_state: str
+    writeback_body_hash: str | None
+    written_at: str | None
+
+
 def _now() -> str:
     return _datetime.datetime.now(_datetime.timezone.utc).isoformat()
 
@@ -449,6 +467,25 @@ class TaskRegistry:
                     source TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS execution_results (
+                    execution_ref TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    turn_id TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('PASS','BLOCKED')),
+                    summary TEXT NOT NULL,
+                    changed_files TEXT NOT NULL,
+                    validation TEXT NOT NULL,
+                    blockers TEXT NOT NULL,
+                    next_state TEXT NOT NULL,
+                    raw_result TEXT NOT NULL,
+                    received_at TEXT NOT NULL,
+                    writeback_state TEXT NOT NULL DEFAULT 'PENDING'
+                        CHECK(writeback_state IN ('PENDING','WRITTEN','FAILED')),
+                    writeback_body_hash TEXT,
+                    written_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_execution_results_task
+                    ON execution_results(task_id, received_at DESC);
                 """
             )
             columns = {
@@ -1013,7 +1050,11 @@ class TaskRegistry:
         turn_id: str | None | object = _UNSET,
         retry_required: bool | None | object = _UNSET,
     ) -> TaskRecord:
-        allowed = {"QUEUED", "CLAIMED", "DISPATCHING", "CODEX_RUNNING", "BLOCKED", "IN_REVIEW", "COMPLETED"}
+        allowed = {
+            "QUEUED", "CLAIMED", "DISPATCHING", "CODEX_RUNNING",
+            "RESULT_RECEIVED", "RESULT_PARSE", "LINEAR_WRITEBACK",
+            "BLOCKED", "IN_REVIEW", "COMPLETED",
+        }
         if state not in allowed:
             raise TaskRegistryError(f"Unsupported execution state: {state}")
         task = self.get_task(task_id)
@@ -1046,6 +1087,104 @@ class TaskRegistry:
                  _now() if changed else task.updated_at, task_id),
             )
         return self.get_task(task_id)
+
+    def get_execution_result(self, execution_ref: str) -> ExecutionResultRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM execution_results WHERE execution_ref = ?",
+                (execution_ref,),
+            ).fetchone()
+        return ExecutionResultRecord(**dict(row)) if row is not None else None
+
+    def latest_execution_result(self, task_id: str) -> ExecutionResultRecord | None:
+        self.get_task(task_id)
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT * FROM execution_results
+                   WHERE task_id = ? ORDER BY received_at DESC LIMIT 1""",
+                (task_id,),
+            ).fetchone()
+        return ExecutionResultRecord(**dict(row)) if row is not None else None
+
+    def record_execution_result(
+        self,
+        *,
+        execution_ref: str,
+        task_id: str,
+        turn_id: str,
+        status: str,
+        summary: str,
+        changed_files: str,
+        validation: str,
+        blockers: str,
+        next_state: str,
+        raw_result: str,
+    ) -> ExecutionResultRecord:
+        """Persist one exact turn result without allowing cross-task ownership."""
+        task = self.get_task(task_id)
+        binding = self.get_binding(task_id)
+        if binding is None:
+            raise TaskRegistryError(f"Task {task_id} has no conversation binding")
+        if not execution_ref.strip() or not turn_id.strip():
+            raise TaskRegistryError("execution_ref and turn_id are required")
+        if task.turn_id is not None and task.turn_id != turn_id:
+            raise TaskRegistryError(
+                f"Execution turn {turn_id} does not own task {task_id}; expected {task.turn_id}"
+            )
+        if status not in {"PASS", "BLOCKED"}:
+            raise TaskRegistryError(f"Unsupported execution result status: {status}")
+        fields = {
+            "summary": summary, "changed_files": changed_files,
+            "validation": validation, "blockers": blockers,
+            "next_state": next_state, "raw_result": raw_result,
+        }
+        for name, value in fields.items():
+            if not isinstance(value, str) or len(value) > 16000:
+                raise TaskRegistryError(f"Execution result {name} must be a string <= 16000 characters")
+        existing = self.get_execution_result(execution_ref)
+        if existing is not None:
+            if existing.task_id != task.task_id or existing.turn_id != turn_id:
+                raise TaskRegistryError(
+                    f"Execution ref {execution_ref} is owned by another task or turn"
+                )
+            if existing.raw_result != raw_result:
+                raise TaskRegistryError(
+                    f"Execution ref {execution_ref} already has a different result"
+                )
+            return existing
+        stamp = _now()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO execution_results
+                (execution_ref,task_id,turn_id,status,summary,changed_files,validation,
+                 blockers,next_state,raw_result,received_at,writeback_state,
+                 writeback_body_hash,written_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,'PENDING',NULL,NULL)""",
+                (execution_ref, task_id, turn_id, status, summary, changed_files,
+                 validation, blockers, next_state, raw_result, stamp),
+            )
+        return self.get_execution_result(execution_ref)  # type: ignore[return-value]
+
+    def mark_execution_result_writeback(
+        self,
+        execution_ref: str,
+        *,
+        state: str,
+        body_hash: str | None = None,
+    ) -> ExecutionResultRecord:
+        if state not in {"PENDING", "WRITTEN", "FAILED"}:
+            raise TaskRegistryError(f"Unsupported writeback state: {state}")
+        existing = self.get_execution_result(execution_ref)
+        if existing is None:
+            raise TaskRegistryError(f"Unknown execution ref: {execution_ref}")
+        stamp = _now() if state == "WRITTEN" else existing.written_at
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE execution_results SET writeback_state=?,
+                   writeback_body_hash=?, written_at=? WHERE execution_ref=?""",
+                (state, body_hash, stamp, execution_ref),
+            )
+        return self.get_execution_result(execution_ref)  # type: ignore[return-value]
 
     def reset_execution(self, task_id: str) -> TaskRecord:
         return self.set_execution_state(

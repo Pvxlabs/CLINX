@@ -46,6 +46,7 @@ from task_registry import (
     WorkspaceConfig,
     WorkspaceRegistry,
 )
+from m9_integration import ExecutionResultService
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 BRIDGE_VERSION = "1.0.0-m6"
@@ -1229,21 +1230,30 @@ def codex_prompt(issue: dict[str, Any], repo: Path, review_state: str) -> str:
 AUTHORITATIVE TASK
 - Linear issue: {identifier}
 - Working repository: {repo}
-
-BOOTSTRAP ONLY
-Use the configured Linear MCP integration to read the full issue {identifier} and its latest comments.
-The Linear issue is the authoritative execution contract. Do not ask the operator to paste or restate it.
-Do not treat this bootstrap prompt as a replacement for the Linear issue.
+- The Linear issue is the authoritative execution contract supplied by CLINX.
+- Do not fetch or mutate that contract through Linear MCP.
 
 EXECUTION PROTOCOL
-1. Confirm {identifier} is currently In Progress.
-2. Execute the issue exactly as written, inside the current repository only.
-3. Post all start/progress/final evidence required by the issue back to {identifier} through Linear MCP.
-4. On successful completion, move {identifier} to {review_state}.
-5. Never mark the issue Done.
-6. Do not create unrelated Linear issues/projects and do not expand scope.
-7. If blocked, post the exact blocker to {identifier} and leave it in In Progress.
-8. If the Linear MCP server cannot initialize or cannot read/write {identifier}, stop immediately and return the exact error.
+1. Execute the requested task exactly as supplied in this prompt, inside the current repository only.
+2. Do not use Linear MCP, any other control-plane MCP, or issue state transitions.
+3. Do not create unrelated issues/projects and do not expand scope.
+4. Do not modify ORION, Terminal, SSH, DNS, or public endpoint configuration.
+5. Do not use legacy `codex exec`.
+6. Never mark the issue Done; CLINX owns all Linear state transitions.
+7. At the end, return exactly one structured result with this header and all fields:
+
+CLINX_EXECUTION_RESULT
+STATUS=<PASS|BLOCKED>
+SUMMARY=<one concise paragraph>
+CHANGED_FILES=<comma-separated paths or NONE>
+VALIDATION=<tests/checks and outcomes>
+BLOCKERS=<NONE or exact blocker>
+NEXT_STATE=<IN_REVIEW|BLOCKED|COMPLETED>
+
+Use plain text values on one line each. If blocked, STATUS must be BLOCKED,
+BLOCKERS must contain the exact blocker, NEXT_STATE must be BLOCKED, and do not
+claim validation that was not run. Linear writeback and state transitions are
+owned by CLINX after this result is received.
 
 This run is unattended. Do not wait for an operator prompt or confirmation.
 """
@@ -3477,6 +3487,38 @@ class TaskContextReader:
             provenance=provenance,
         )
 
+    def read_exact_turn_result(self, task_ref: str, turn_id: str) -> str:
+        """Recover only one exact turn's assistant result, without dispatch."""
+        task = self.resolve_task(task_ref=task_ref)
+        if task.turn_id != turn_id:
+            raise ContextReadError(
+                f"Turn {turn_id} is not the current exact turn for task {task.task_id}"
+            )
+        binding = self.registry.get_binding(task.task_id)
+        if binding is None:
+            raise ContextReadError(f"Task {task.task_id} has no conversation binding")
+        target = self._task_target(task, binding)
+        try:
+            client = self.client_factory(target)
+            with client:
+                initialize_info = client.initialize(
+                    client_name=self.cfg.app_server.client_name,
+                    client_title=self.cfg.app_server.client_title,
+                    client_version=self.cfg.app_server.client_version,
+                )
+                selected = self._read_native(
+                    client, task, binding, target, initialize_info,
+                    recent_turns=1,
+                    max_bytes=self.DEFAULT_MAX_BYTES,
+                    anchor_turn_id=turn_id,
+                )
+        except AppServerError as exc:
+            raise BoundedHistoryUnavailable(str(exc)) from exc
+        result = _context_text(selected.get("assistant"), self.DEFAULT_MAX_BYTES)
+        if not result or result == "UNKNOWN":
+            raise ContextReadError(f"Exact turn {turn_id} has no assistant result")
+        return result
+
 
 class Dispatcher:
     """Dispatch prompts using explicit project and thread registries."""
@@ -3861,6 +3903,7 @@ class Bridge:
         self.dispatcher = dispatcher or Dispatcher(cfg)
         self.task_dispatcher: TaskDispatcher | None = None
         self.task_index: LinearTaskIndex | None = None
+        self.execution_results: ExecutionResultService | None = None
 
     def _m5_dispatcher(self) -> TaskDispatcher:
         if self.task_dispatcher is None:
@@ -3875,6 +3918,32 @@ class Bridge:
                 self.cfg.team_id,
             )
         return self.task_index
+
+    def _execution_result_service(self) -> ExecutionResultService:
+        if self.execution_results is None:
+            self.execution_results = ExecutionResultService(
+                self._m5_dispatcher().tasks, self.linear
+            )
+        return self.execution_results
+
+    def receive_execution_result(
+        self,
+        *,
+        execution_ref: str,
+        task_id: str,
+        turn_id: str,
+        raw_result: str,
+        issue_id: str,
+    ) -> Any:
+        """Persist and write back one result; retries never dispatch a turn."""
+        return self._execution_result_service().receive_and_writeback(
+            execution_ref=execution_ref,
+            task_id=task_id,
+            turn_id=turn_id,
+            raw_result=raw_result,
+            issue_id=issue_id,
+            review_state_id=self.states.get(self.cfg.review_state),
+        )
 
     def _m5_repo(self, contract: DispatchContract) -> Path:
         dispatcher = self._m5_dispatcher()
