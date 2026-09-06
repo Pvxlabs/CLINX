@@ -150,6 +150,51 @@ class ContextFixture:
         )
 
 
+class LaterUserItemPageClient(ContextClient):
+    """Put the user message on the second bounded item page."""
+
+    def thread_turns_list(self, thread_id, **kwargs):
+        self.calls.append(("thread/turns/list", thread_id, kwargs))
+        return {
+            "data": [{
+                "id": "turn-2",
+                "status": "completed",
+                "items": [{
+                    "id": "summary-agent-2",
+                    "type": "agentMessage",
+                    "phase": "final_answer",
+                    "text": "Changed files: src/tokens.ts; Validation: 92 tests passed",
+                }],
+            }],
+        }
+
+    def thread_items_list(self, thread_id, **kwargs):
+        self.calls.append(("thread/items/list", thread_id, kwargs))
+        if kwargs.get("cursor") == "page-2":
+            return {
+                "data": [{
+                    "item": {
+                        "id": "item-turn-2-user",
+                        "type": "userMessage",
+                        "content": [{"type": "text", "text": "Continue the UI token task"}],
+                    },
+                    "turnId": kwargs["turn_id"],
+                }],
+            }
+        return {
+            "data": [{
+                "item": {
+                    "id": "item-turn-2-assistant",
+                    "type": "agentMessage",
+                    "phase": "final_answer",
+                    "text": "Changed files: src/tokens.ts; Validation: 92 tests passed",
+                },
+                "turnId": kwargs["turn_id"],
+            }],
+            "nextCursor": "page-2",
+        }
+
+
 class TaskContextReaderTests(unittest.TestCase):
     def test_marker_extraction_ignores_unlabeled_command_metadata(self):
         text = (
@@ -238,6 +283,19 @@ class TaskContextReaderTests(unittest.TestCase):
             fixture = ContextFixture(Path(td))
             context = fixture.reader.read_task_context(fixture.task.task_id, max_bytes=4096)
             self.assertEqual(context.last_user_intent, "Continue the UI token task")
+
+    def test_item_pagination_finds_user_message_on_later_page(self):
+        with tempfile.TemporaryDirectory() as td:
+            client = LaterUserItemPageClient(str(Path(td) / "pilot"))
+            fixture = ContextFixture(Path(td), client=client)
+            context = fixture.reader.read_task_context(fixture.task.task_id, max_bytes=4096)
+            self.assertEqual(context.last_user_intent, "Continue the UI token task")
+            self.assertEqual(context.last_codex_result.split(";")[0], "Changed files: src/tokens.ts")
+            self.assertFalse(context.context_truncated)
+            item_calls = [call for call in client.calls if call[0] == "thread/items/list"]
+            self.assertEqual(len(item_calls), 2)
+            self.assertEqual(item_calls[0][2]["limit"], 20)
+            self.assertEqual(item_calls[1][2]["cursor"], "page-2")
 
     def test_checkpoint_fallback_and_live_native_context_wins(self):
         with tempfile.TemporaryDirectory() as td:
