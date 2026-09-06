@@ -1171,6 +1171,7 @@ class AppServerClientTests(unittest.TestCase):
             cwd="/tmp/pilot",
             model="gpt-5.2",
             reasoning_effort="high",
+            approval_policy="never",
         )
 
         initialize_request = transport.sent[0]
@@ -1191,6 +1192,7 @@ class AppServerClientTests(unittest.TestCase):
         self.assertEqual(turn_request["params"]["cwd"], "/tmp/pilot")
         self.assertEqual(turn_request["params"]["model"], "gpt-5.2")
         self.assertEqual(turn_request["params"]["effort"], "high")
+        self.assertEqual(turn_request["params"]["approvalPolicy"], "never")
         self.assertEqual(
             turn_request["params"]["input"],
             [{"type": "text", "text": "DISPATCHER_M0_PROBE_PASS"}],
