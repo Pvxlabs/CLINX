@@ -1,4 +1,4 @@
-# linear-local-codex-bridge v0.1
+# linear-local-codex-bridge v0.1 / Dispatcher V1 M3
 #
 # Keep LINEAR_API_KEY in the environment, never in this file.
 
@@ -34,26 +34,26 @@ remote_command = ["codex", "app-server", "proxy"]
 request_timeout_seconds = 30
 client_name = "linear-local-codex-bridge"
 client_title = "Linear Local Codex Bridge"
-client_version = "1.0.0-m0"
+client_version = "1.0.0-m3"
 
 [runtime]
 log_dir = "~/.local/state/linear-local-codex-bridge"
 
-[[project]]
+[projects.pilot]
 linear_name = "ChatGPT × Linear × Codex Dispatcher V1"
-repo = "/home/pvxlabs/dev/clinx-pilot"
-target_alias = "pilot"
-
-# Disposable pilot target only. project_id is intentionally omitted because the
-# app-server reports this local pilot as unassigned.
-[targets.pilot]
-ssh_alias = "p620"
-thread_id = "01a07474-014b-7381-a271-db9782ca3e59"
-session_id = "01a07474-014b-7381-a271-db9782ca3e59"
 cwd = "/home/pvxlabs/dev/clinx-pilot"
 repository_origin = "git@github.com:Pvxlabs/clinx-disposable-pilot.git"
 branch = "main"
+read_only = false
+
+[threads.pilot.current]
+ssh_alias = "p620"
+thread_id = "01a07474-014b-7381-a271-db9782ca3e59"
+session_id = "01a07474-014b-7381-a271-db9782ca3e59"
 app_server_version = "codex-cli 0.152.1"
+
+# The thread binding intentionally contains no cwd, origin, or branch.
+# project_id is omitted because the disposable pilot is app-server-unassigned.
 
 # Add later, only after the pilot passes:
 #

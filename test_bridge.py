@@ -146,6 +146,35 @@ class DispatchContractTests(unittest.TestCase):
     def test_empty_description_is_legacy_compatibility_only(self):
         self.assertIsNone(bridge.parse_dispatch_contract(None))
 
+    def test_parses_canonical_existing_contract(self):
+        contract = bridge.parse_dispatch_contract(
+            "PROJECT=pilot\nTHREAD_MODE=existing\nTHREAD_ALIAS=current\n"
+            "MODEL=gpt-5.6-luna\nREASONING=high\n"
+        )
+        self.assertEqual(contract.contract_kind, "canonical")
+        self.assertEqual(contract.project_alias, "pilot")
+        self.assertEqual(contract.thread_mode, "existing")
+        self.assertEqual(contract.thread_alias, "current")
+
+    def test_parses_canonical_new_without_thread_alias(self):
+        contract = bridge.parse_dispatch_contract(
+            "PROJECT=pilot\nTHREAD_MODE=new\nMODEL=gpt-5.6-luna\nREASONING=high\n"
+        )
+        self.assertEqual(contract.thread_mode, "new")
+        self.assertIsNone(contract.thread_alias)
+
+    def test_canonical_contract_rejects_invalid_thread_mode(self):
+        with self.assertRaises(bridge.DispatchContractError):
+            bridge.parse_dispatch_contract(
+                "PROJECT=pilot\nTHREAD_MODE=guess\nMODEL=x\nREASONING=high\n"
+            )
+
+    def test_canonical_existing_requires_thread_alias(self):
+        with self.assertRaises(bridge.DispatchContractError):
+            bridge.parse_dispatch_contract(
+                "PROJECT=pilot\nTHREAD_MODE=existing\nMODEL=x\nREASONING=high\n"
+            )
+
 
 class PromptTests(unittest.TestCase):
     def test_prompt_uses_linear_as_authority(self):
@@ -557,6 +586,180 @@ class DispatcherTests(unittest.TestCase):
             self.assertEqual(evidence.cwd, str(repo))
             with self.assertRaisesRegex(bridge.IdentityGuardError, "cwd"):
                 bridge.identity_guard(target, thread, repository_evidence=evidence)
+
+
+class M3DispatcherTests(unittest.TestCase):
+    def _project(self, root, **overrides):
+        values = {
+            "linear_name": "Pilot",
+            "repo": Path(root),
+            "alias": "pilot",
+            "repository_origin": "https://example.invalid/pilot.git",
+            "branch": "main",
+        }
+        values.update(overrides)
+        return bridge.ProjectMapping(**values)
+
+    def _binding(self, **overrides):
+        values = {
+            "alias": "current",
+            "project_alias": "pilot",
+            "ssh_alias": "p620",
+            "thread_id": "thread-1",
+            "session_id": "session-1",
+            "project_id": None,
+            "app_server_version": "codex-cli 0.152.1",
+        }
+        values.update(overrides)
+        return bridge.ThreadBinding(**values)
+
+    def _cfg(self, project, binding):
+        return bridge.BridgeConfig(
+            team_id="team",
+            trigger_label="local-codex",
+            todo_state="Todo",
+            running_state="In Progress",
+            review_state="In Review",
+            poll_interval_seconds=15,
+            max_batch=1,
+            codex_binary="codex",
+            sandbox="workspace-write",
+            approval="never",
+            log_dir=Path("/tmp/bridge-tests"),
+            projects=(project,),
+            threads=(binding,),
+        )
+
+    def _reader(self, project):
+        return lambda cwd: bridge.RepositoryIdentityEvidence(
+            source="local_git",
+            cwd=str(project.repo),
+            origin=project.repository_origin,
+            branch=project.branch,
+        )
+
+    def test_project_and_thread_aliases_resolve_exactly(self):
+        project = self._project("/tmp/pilot")
+        binding = self._binding()
+        cfg = self._cfg(project, binding)
+        self.assertIs(bridge.ProjectRegistry(cfg.projects).resolve("pilot"), project)
+        self.assertIs(bridge.ThreadRegistry(cfg.threads).resolve("pilot", "current"), binding)
+
+    def test_unknown_project_and_thread_fail_closed(self):
+        project = self._project("/tmp/pilot")
+        binding = self._binding()
+        cfg = self._cfg(project, binding)
+        dispatcher = bridge.Dispatcher(cfg, client_factory=lambda _target: None)
+        with self.assertRaises(bridge.TargetResolutionError):
+            dispatcher.dispatch_project("missing", "existing", "probe", thread_alias="current")
+        with self.assertRaises(bridge.TargetResolutionError):
+            dispatcher.dispatch_project("pilot", "existing", "probe", thread_alias="missing")
+
+    def test_project_guard_failure_prevents_new_thread_start(self):
+        project = self._project("/tmp/pilot", branch="main")
+        binding = self._binding()
+        cfg = self._cfg(project, binding)
+        client = FakeAppServerClient()
+        bad_reader = lambda cwd: bridge.RepositoryIdentityEvidence(
+            source="local_git", cwd="/tmp/pilot", origin="https://example.invalid/other.git", branch="main"
+        )
+        dispatcher = bridge.Dispatcher(cfg, client_factory=lambda _target: client, project_identity_reader=bad_reader)
+        with self.assertRaisesRegex(bridge.IdentityGuardError, "DISPATCH_IDENTITY_GUARD=FAIL"):
+            dispatcher.dispatch_project("pilot", "new", "probe", model="x", reasoning_effort="high")
+        self.assertEqual(client.calls, [])
+
+    def test_existing_mode_uses_project_cwd_and_exact_thread(self):
+        project = self._project("/tmp/pilot")
+        binding = self._binding()
+        cfg = self._cfg(project, binding)
+        client = FakeAppServerClient(
+            thread={
+                "id": "thread-1", "sessionId": "session-1", "projectId": None,
+                "cwd": "/tmp/pilot", "gitInfo": {
+                    "originUrl": "https://example.invalid/pilot.git", "branch": "main"
+                }, "canAcceptDirectInput": True, "status": {"type": "active"},
+            }
+        )
+        dispatcher = bridge.Dispatcher(
+            cfg, client_factory=lambda _target: client, project_identity_reader=self._reader(project)
+        )
+        result = dispatcher.dispatch_project(
+            "pilot", "existing", "probe", model="gpt-5.6-luna", reasoning_effort="high", thread_alias="current"
+        )
+        self.assertEqual(result.thread_id, "thread-1")
+        self.assertEqual(result.target_alias, "pilot.current")
+        turn = next(call for call in client.calls if call[0] == "turn/start")
+        self.assertEqual(turn[1], "thread-1")
+        self.assertEqual(turn[3]["cwd"], "/tmp/pilot")
+        self.assertEqual(turn[3]["model"], "gpt-5.6-luna")
+        self.assertEqual(turn[3]["reasoning_effort"], "high")
+
+    def test_new_mode_starts_with_project_cwd_reads_back_and_dispatches_exact_id(self):
+        project = self._project("/tmp/pilot")
+        binding = self._binding()
+        cfg = self._cfg(project, binding)
+
+        class NewClient(FakeAppServerClient):
+            def thread_start(self, **kwargs):
+                self.calls.append(("thread/start", kwargs))
+                self.thread = {
+                    "id": "thread-new", "sessionId": "session-new", "projectId": None,
+                    "cwd": kwargs["cwd"], "ephemeral": False,
+                    "gitInfo": {
+                        "originUrl": "https://example.invalid/pilot.git", "branch": "main"
+                    }, "canAcceptDirectInput": True, "status": {"type": "active"},
+                }
+                return self.thread
+
+            def turn_start(self, thread_id, prompt, **kwargs):
+                self.calls.append(("turn/start", thread_id, prompt, kwargs))
+                return app_server.TurnStartInfo(
+                    turn_id="turn-new", model=kwargs.get("model"), reasoning_effort=kwargs.get("reasoning_effort")
+                )
+
+        client = NewClient()
+        dispatcher = bridge.Dispatcher(
+            cfg, client_factory=lambda _target: client, project_identity_reader=self._reader(project)
+        )
+        result = dispatcher.dispatch_project(
+            "pilot", "new", "probe", model="gpt-5.6-luna", reasoning_effort="high"
+        )
+        self.assertTrue(result.thread_created)
+        self.assertTrue(result.thread_durable)
+        self.assertEqual(result.thread_id, "thread-new")
+        self.assertEqual(
+            [call[0] for call in client.calls],
+            ["initialize", "thread/start", "thread/read", "turn/start"],
+        )
+        start = next(call for call in client.calls if call[0] == "thread/start")
+        turn = next(call for call in client.calls if call[0] == "turn/start")
+        self.assertEqual(start[1]["cwd"], "/tmp/pilot")
+        self.assertFalse(start[1]["ephemeral"])
+        self.assertEqual(turn[1], "thread-new")
+
+    def test_new_thread_readback_cwd_mismatch_prevents_turn_start(self):
+        project = self._project("/tmp/pilot")
+        binding = self._binding()
+        cfg = self._cfg(project, binding)
+
+        class BadNewClient(FakeAppServerClient):
+            def thread_start(self, **kwargs):
+                self.calls.append(("thread/start", kwargs))
+                self.thread = {
+                    "id": "thread-new", "sessionId": "session-new", "projectId": None,
+                    "cwd": "/tmp/other", "ephemeral": False,
+                    "gitInfo": {"originUrl": "https://example.invalid/pilot.git", "branch": "main"},
+                    "canAcceptDirectInput": True, "status": {"type": "active"},
+                }
+                return {"id": "thread-new", "sessionId": "session-new", "projectId": None, "ephemeral": False}
+
+        client = BadNewClient()
+        dispatcher = bridge.Dispatcher(
+            cfg, client_factory=lambda _target: client, project_identity_reader=self._reader(project)
+        )
+        with self.assertRaisesRegex(bridge.IdentityGuardError, "DISPATCH_IDENTITY_GUARD=FAIL"):
+            dispatcher.dispatch_project("pilot", "new", "probe", model="x", reasoning_effort="high")
+        self.assertFalse(any(call[0] == "turn/start" for call in client.calls))
 
 
 class LinearDispatchIntegrationTests(unittest.TestCase):

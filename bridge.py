@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""linear-local-codex-bridge Dispatcher V1 / M0.
+"""linear-local-codex-bridge Dispatcher V1 / M3.
 
 Linear (Todo + trigger label) -> claim In Progress -> SSH P620 -> Codex
 app-server -> exact durable thread -> turn/start.
@@ -35,7 +35,7 @@ from app_server import (
 )
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
-BRIDGE_VERSION = "1.0.0-m0"
+BRIDGE_VERSION = "1.0.0-m3"
 LEGACY_CODEX_EXEC_DEFAULT = False
 
 
@@ -64,6 +64,17 @@ class ProjectMapping:
     linear_name: str
     repo: Path
     target_alias: str | None = None
+    alias: str | None = None
+    repository_origin: str | None = None
+    branch: str | None = None
+    read_only: bool = False
+
+    @property
+    def project_alias(self) -> str:
+        return self.alias or self.target_alias or self.linear_name.lower().replace(" ", "-")
+
+
+ProjectConfig = ProjectMapping
 
 
 @dataclasses.dataclass(frozen=True)
@@ -71,6 +82,7 @@ class AppServerConfig:
     transport: str = "local"
     command: tuple[str, ...] = ("codex", "app-server", "proxy")
     ssh_binary: str = "ssh"
+    ssh_alias: str | None = None
     ssh_args: tuple[str, ...] = ("-T",)
     remote_command: tuple[str, ...] = ("codex", "app-server", "proxy")
     request_timeout_seconds: float = 30.0
@@ -93,34 +105,146 @@ class TargetConfig:
 
 
 @dataclasses.dataclass(frozen=True)
+class ThreadBinding:
+    """A named durable thread binding; project Git identity lives elsewhere."""
+
+    alias: str
+    project_alias: str
+    ssh_alias: str
+    thread_id: str
+    session_id: str
+    project_id: str | None
+    app_server_version: str
+
+    @property
+    def qualified_alias(self) -> str:
+        return f"{self.project_alias}.{self.alias}"
+
+
+@dataclasses.dataclass(frozen=True)
 class DispatchContract:
-    target_alias: str
-    model: str
-    reasoning_effort: str
+    target_alias: str | None
+    model: str | None
+    reasoning_effort: str | None
     expected_result: str | None = None
+    project_alias: str | None = None
+    thread_mode: str = "existing"
+    thread_alias: str | None = None
+    contract_kind: str = "legacy"
 
 
 def parse_dispatch_contract(description: str | None) -> DispatchContract | None:
-    """Parse the deliberately small, line-oriented M2 issue contract."""
+    """Parse the small M2 legacy or M3 project/thread issue contract."""
     if not description:
         return None
-    values: dict[str, str] = {}
-    for key in ("TARGET_ALIAS", "MODEL", "REASONING"):
+
+    def value_for(key: str) -> str | None:
         match = re.search(rf"(?m)^\s*{key}=([^\s]+)\s*$", description)
-        if not match:
-            raise DispatchContractError(f"Malformed dispatch contract: missing {key}")
-        values[key] = match.group(1)
+        return match.group(1) if match else None
+
+    canonical_keys = ("PROJECT", "THREAD_MODE", "THREAD_ALIAS")
+    has_canonical = any(value_for(key) is not None for key in canonical_keys)
     marker = re.search(
         r"(?m)^\s*Return exactly this final marker:\s*$\n\s*([^\s]+)\s*$",
         description,
     )
     expected_result = marker.group(1) if marker else None
+
+    if has_canonical:
+        project_alias = value_for("PROJECT")
+        thread_mode = value_for("THREAD_MODE")
+        model = value_for("MODEL")
+        reasoning = value_for("REASONING")
+        missing = [
+            key
+            for key, value in (
+                ("PROJECT", project_alias),
+                ("THREAD_MODE", thread_mode),
+                ("MODEL", model),
+                ("REASONING", reasoning),
+            )
+            if value is None
+        ]
+        if missing:
+            raise DispatchContractError(
+                "Malformed dispatch contract: missing " + ", ".join(missing)
+            )
+        if thread_mode not in {"existing", "new"}:
+            raise DispatchContractError(
+                f"Malformed dispatch contract: unsupported THREAD_MODE={thread_mode!r}"
+            )
+        thread_alias = value_for("THREAD_ALIAS")
+        if thread_mode == "existing" and not thread_alias:
+            raise DispatchContractError(
+                "Malformed dispatch contract: existing THREAD_MODE requires THREAD_ALIAS"
+            )
+        return DispatchContract(
+            target_alias=None,
+            model=model,
+            reasoning_effort=reasoning,
+            expected_result=expected_result,
+            project_alias=project_alias,
+            thread_mode=thread_mode,
+            thread_alias=thread_alias,
+            contract_kind="canonical",
+        )
+
+    values: dict[str, str] = {}
+    for key in ("TARGET_ALIAS", "MODEL", "REASONING"):
+        value = value_for(key)
+        if value is None:
+            raise DispatchContractError(f"Malformed dispatch contract: missing {key}")
+        values[key] = value
     return DispatchContract(
         target_alias=values["TARGET_ALIAS"],
         model=values["MODEL"],
         reasoning_effort=values["REASONING"],
         expected_result=expected_result,
+        thread_alias="current",
+        contract_kind="legacy",
     )
+
+
+class ProjectRegistry:
+    def __init__(self, projects: tuple[ProjectMapping, ...]):
+        self._projects: dict[str, ProjectMapping] = {}
+        for project in projects:
+            alias = project.project_alias
+            if alias in self._projects:
+                raise TargetResolutionError(f"Duplicate project alias: {alias}")
+            self._projects[alias] = project
+
+    def resolve(self, alias: str) -> ProjectMapping:
+        project = self._projects.get(alias)
+        if project is None:
+            raise TargetResolutionError(f"Unknown project alias: {alias}")
+        return project
+
+    def __iter__(self):
+        return iter(self._projects.values())
+
+
+class ThreadRegistry:
+    def __init__(self, bindings: tuple[ThreadBinding, ...]):
+        self._bindings: dict[tuple[str, str], ThreadBinding] = {}
+        for binding in bindings:
+            key = (binding.project_alias, binding.alias)
+            if key in self._bindings:
+                raise TargetResolutionError(
+                    f"Duplicate thread alias: {binding.project_alias}.{binding.alias}"
+                )
+            self._bindings[key] = binding
+
+    def resolve(self, project_alias: str, alias: str) -> ThreadBinding:
+        binding = self._bindings.get((project_alias, alias))
+        if binding is None:
+            raise TargetResolutionError(
+                f"Unknown thread alias: {project_alias}.{alias}"
+            )
+        return binding
+
+    def __iter__(self):
+        return iter(self._bindings.values())
 
 
 class TargetRegistry:
@@ -153,6 +277,7 @@ class BridgeConfig:
     projects: tuple[ProjectMapping, ...]
     app_server: AppServerConfig = dataclasses.field(default_factory=AppServerConfig)
     targets: tuple[TargetConfig, ...] = ()
+    threads: tuple[ThreadBinding, ...] = ()
 
     @staticmethod
     def load(path: Path) -> "BridgeConfig":
@@ -164,7 +289,9 @@ class BridgeConfig:
         app_server_raw = raw.get("app_server", {})
         runtime = raw.get("runtime", {})
         project_rows = raw.get("project", [])
+        project_tables = raw.get("projects", {})
         target_rows = raw.get("targets", {})
+        thread_tables = raw.get("threads", {})
 
         required = {
             "linear.team_id": linear.get("team_id"),
@@ -178,21 +305,43 @@ class BridgeConfig:
             raise BridgeError(f"Missing required config: {', '.join(missing)}")
 
         projects: list[ProjectMapping] = []
+        if project_tables:
+            if not isinstance(project_tables, dict):
+                raise BridgeError("[projects.<alias>] entries must be tables")
+            for alias, row in project_tables.items():
+                if not isinstance(row, dict):
+                    raise BridgeError(f"Project {alias!r} must be a table")
+                cwd = str(row.get("cwd", "")).strip()
+                origin = str(row.get("repository_origin", "")).strip()
+                branch = str(row.get("branch", "")).strip()
+                if not cwd or not origin or not branch:
+                    raise BridgeError(
+                        f"Project {alias!r} requires cwd, repository_origin, and branch"
+                    )
+                linear_name = str(row.get("linear_name", alias)).strip()
+                projects.append(
+                    ProjectMapping(
+                        linear_name=linear_name,
+                        repo=Path(cwd).expanduser().resolve(),
+                        alias=str(alias),
+                        repository_origin=origin,
+                        branch=branch,
+                        read_only=bool(row.get("read_only", False)),
+                    )
+                )
         for row in project_rows:
             name = str(row.get("linear_name", "")).strip()
             repo = str(row.get("repo", "")).strip()
             if not name or not repo:
                 raise BridgeError("Every [[project]] requires linear_name and repo")
             target_alias = str(row.get("target_alias", "")).strip() or None
-            projects.append(
-                ProjectMapping(name, Path(repo).expanduser().resolve(), target_alias)
-            )
+            projects.append(ProjectMapping(name, Path(repo).expanduser().resolve(), target_alias))
 
         if not projects:
             raise BridgeError("At least one [[project]] mapping is required")
 
-        if not isinstance(target_rows, dict) or not target_rows:
-            raise BridgeError("At least one [targets.<alias>] entry is required")
+        if not isinstance(target_rows, dict):
+            raise BridgeError("[targets.<alias>] entries must be tables")
         targets: list[TargetConfig] = []
         for alias, row in target_rows.items():
             if not isinstance(row, dict):
@@ -228,7 +377,7 @@ class BridgeConfig:
             for mapping in projects
             if mapping.target_alias and mapping.target_alias not in target_aliases
         }
-        if unmapped_aliases:
+        if unmapped_aliases and not thread_tables:
             raise BridgeError(
                 "Project mappings reference unknown target aliases: "
                 + ", ".join(sorted(unmapped_aliases))
@@ -260,6 +409,65 @@ class BridgeConfig:
         if max_batch < 1 or max_batch > 10:
             raise BridgeError("max_batch must be between 1 and 10")
 
+        threads: list[ThreadBinding] = []
+        if thread_tables:
+            if not isinstance(thread_tables, dict):
+                raise BridgeError("[threads.<project>.<alias>] entries must be tables")
+            for project_alias, aliases in thread_tables.items():
+                if not isinstance(aliases, dict):
+                    raise BridgeError(f"Threads for project {project_alias!r} must be tables")
+                for thread_alias, row in aliases.items():
+                    if not isinstance(row, dict):
+                        raise BridgeError(
+                            f"Thread {project_alias}.{thread_alias!r} must be a table"
+                        )
+                    required_thread = {
+                        "ssh_alias": row.get("ssh_alias"),
+                        "thread_id": row.get("thread_id"),
+                        "session_id": row.get("session_id"),
+                        "app_server_version": row.get("app_server_version"),
+                    }
+                    missing_thread = [
+                        key for key, value in required_thread.items()
+                        if not str(value or "").strip()
+                    ]
+                    if missing_thread:
+                        raise BridgeError(
+                            f"Thread {project_alias}.{thread_alias} missing required fields: "
+                            + ", ".join(missing_thread)
+                        )
+                    project_id = row.get("project_id")
+                    threads.append(
+                        ThreadBinding(
+                            alias=str(thread_alias),
+                            project_alias=str(project_alias),
+                            ssh_alias=str(row["ssh_alias"]),
+                            thread_id=str(row["thread_id"]),
+                            session_id=str(row["session_id"]),
+                            project_id=str(project_id).strip() if project_id else None,
+                            app_server_version=str(row["app_server_version"]),
+                        )
+                    )
+
+        if not threads:
+            for target in targets:
+                matching = next(
+                    (project for project in projects if project.target_alias == target.alias),
+                    None,
+                )
+                project_alias = matching.project_alias if matching else target.alias
+                threads.append(
+                    ThreadBinding(
+                        alias="current",
+                        project_alias=project_alias,
+                        ssh_alias=target.ssh_alias,
+                        thread_id=target.thread_id,
+                        session_id=target.session_id,
+                        project_id=target.project_id,
+                        app_server_version=target.app_server_version,
+                    )
+                )
+
         return BridgeConfig(
             team_id=str(linear["team_id"]),
             trigger_label=str(linear["trigger_label"]),
@@ -279,6 +487,11 @@ class BridgeConfig:
                 transport=transport,
                 command=command,
                 ssh_binary=str(app_server_raw.get("ssh_binary", "ssh")),
+                ssh_alias=(
+                    str(app_server_raw["ssh_alias"]).strip()
+                    if app_server_raw.get("ssh_alias")
+                    else None
+                ),
                 ssh_args=tuple(str(arg) for arg in ssh_args),
                 remote_command=remote_command,
                 request_timeout_seconds=timeout,
@@ -287,6 +500,7 @@ class BridgeConfig:
                 client_version=str(app_server_raw.get("client_version", BRIDGE_VERSION)),
             ),
             targets=tuple(targets),
+            threads=tuple(threads),
         )
 
     def repo_for_project(self, project_name: str | None) -> Path | None:
@@ -306,6 +520,14 @@ class BridgeConfig:
                     return mapping.target_alias
                 if len(self.targets) == 1:
                     return self.targets[0].alias
+        return None
+
+    def project_alias_for_linear(self, project_name: str | None) -> str | None:
+        if not project_name:
+            return None
+        for mapping in self.projects:
+            if mapping.linear_name == project_name:
+                return mapping.project_alias
         return None
 
 
@@ -556,6 +778,12 @@ class DispatchResult:
     reasoning_effort: str | None
     dispatch_status: str
     repository_identity_source: str = "app_server"
+    project_alias: str | None = None
+    thread_alias: str | None = None
+    thread_created: bool = False
+    thread_durable: bool = True
+    session_id: str | None = None
+    cwd: str | None = None
 
 
 def write_dispatch_record(
@@ -577,6 +805,12 @@ def write_dispatch_record(
         "reasoning_effort": result.reasoning_effort,
         "dispatch_status": result.dispatch_status,
         "repository_identity_source": result.repository_identity_source,
+        "project_alias": result.project_alias,
+        "thread_alias": result.thread_alias,
+        "thread_created": result.thread_created,
+        "thread_durable": result.thread_durable,
+        "session_id": result.session_id,
+        "cwd": result.cwd,
     }
     (run_dir / "dispatch.json").write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n",
@@ -814,6 +1048,53 @@ def identity_guard(
         )
 
 
+def project_identity_guard(
+    project: ProjectMapping,
+    evidence: RepositoryIdentityEvidence,
+) -> None:
+    """Validate project authority before any app-server thread creation."""
+    mismatches: list[str] = []
+    expected_cwd = str(project.repo)
+    if evidence.cwd != expected_cwd:
+        mismatches.append(f"cwd expected={expected_cwd!r} actual={evidence.cwd!r}")
+    if project.repository_origin is not None and evidence.origin != project.repository_origin:
+        mismatches.append(
+            "repositoryOrigin "
+            f"expected={project.repository_origin!r} actual={evidence.origin!r}"
+        )
+    if project.branch is not None and evidence.branch != project.branch:
+        mismatches.append(
+            f"branch expected={project.branch!r} actual={evidence.branch!r}"
+        )
+    if mismatches:
+        raise IdentityGuardError(
+            "DISPATCH_IDENTITY_GUARD=FAIL\n"
+            + "\n".join(f"- {item}" for item in mismatches)
+        )
+
+
+def _target_for_binding(
+    project: ProjectMapping,
+    binding: ThreadBinding,
+    *,
+    thread_id: str | None = None,
+    session_id: str | None = None,
+    project_id: str | None = None,
+) -> TargetConfig:
+    """Adapt the M3 registries to the existing exact-field guard."""
+    return TargetConfig(
+        alias=binding.qualified_alias,
+        ssh_alias=binding.ssh_alias,
+        thread_id=thread_id or binding.thread_id,
+        session_id=session_id or binding.session_id,
+        project_id=binding.project_id if project_id is None else project_id,
+        cwd=str(project.repo),
+        repository_origin=project.repository_origin or "",
+        branch=project.branch or "",
+        app_server_version=binding.app_server_version,
+    )
+
+
 def _default_app_server_client(
     cfg: BridgeConfig,
     target: TargetConfig,
@@ -824,8 +1105,11 @@ def _default_app_server_client(
             timeout_seconds=cfg.app_server.request_timeout_seconds,
         )
     elif cfg.app_server.transport == "ssh":
+        ssh_alias = target.ssh_alias or cfg.app_server.ssh_alias
+        if not ssh_alias:
+            raise BridgeError("SSH app-server transport requires ssh_alias")
         transport = SSHStdioTransport(
-            target.ssh_alias,
+            ssh_alias,
             cfg.app_server.remote_command,
             ssh_binary=cfg.app_server.ssh_binary,
             ssh_args=cfg.app_server.ssh_args,
@@ -840,18 +1124,227 @@ def _default_app_server_client(
 
 
 class Dispatcher:
-    """Dispatch prompts to an explicit target's exact durable Codex thread."""
+    """Dispatch prompts using explicit project and thread registries."""
 
     def __init__(
         self,
         cfg: BridgeConfig,
         client_factory=None,
+        project_identity_reader=None,
     ):
         self.cfg = cfg
         self.registry = TargetRegistry(cfg.targets)
+        self.project_registry = ProjectRegistry(cfg.projects)
+        self.thread_registry = ThreadRegistry(cfg.threads)
         self.client_factory = client_factory or (
             lambda target: _default_app_server_client(cfg, target)
         )
+        self.project_identity_reader = project_identity_reader or _local_git_identity
+
+    def _validate_project(self, project: ProjectMapping) -> RepositoryIdentityEvidence:
+        try:
+            evidence = self.project_identity_reader(str(project.repo))
+        except IdentityGuardError:
+            raise
+        except Exception as exc:
+            raise IdentityGuardError(
+                "DISPATCH_IDENTITY_GUARD=FAIL\n"
+                f"- project Git identity lookup failed for {project.project_alias!r}"
+            ) from exc
+        project_identity_guard(project, evidence)
+        return evidence
+
+    def _dispatch_binding(
+        self,
+        project: ProjectMapping,
+        binding: ThreadBinding,
+        prompt: str,
+        model: str | None,
+        reasoning_effort: str | None,
+        *,
+        target: TargetConfig | None = None,
+        repository_identity_source: str = "app_server",
+    ) -> DispatchResult:
+        target = target or _target_for_binding(project, binding)
+        client = self.client_factory(target)
+        try:
+            with client:
+                initialize_info = client.initialize(
+                    client_name=self.cfg.app_server.client_name,
+                    client_title=self.cfg.app_server.client_title,
+                    client_version=self.cfg.app_server.client_version,
+                )
+                thread = client.thread_read(target.thread_id)
+                identity_guard(
+                    target,
+                    thread,
+                    initialize_info=initialize_info,
+                    allow_unloaded=True,
+                )
+                needs_resume = (
+                    thread.get("canAcceptDirectInput") is None
+                    and _status_type(thread) in {"notLoaded", "unloaded"}
+                )
+                if needs_resume:
+                    client.thread_resume(target.thread_id)
+                    thread = client.thread_read(target.thread_id)
+                repository_evidence = _repository_identity_evidence(thread)
+                identity_guard(
+                    target,
+                    thread,
+                    initialize_info=initialize_info,
+                    repository_evidence=repository_evidence,
+                )
+                turn = client.turn_start(
+                    target.thread_id,
+                    prompt,
+                    cwd=str(project.repo),
+                    model=model,
+                    reasoning_effort=reasoning_effort,
+                )
+                return DispatchResult(
+                    target_alias=binding.qualified_alias,
+                    thread_id=target.thread_id,
+                    turn_id=turn.turn_id,
+                    model=turn.model or model,
+                    reasoning_effort=turn.reasoning_effort or reasoning_effort,
+                    dispatch_status="DISPATCHED",
+                    repository_identity_source=repository_identity_source
+                    if repository_identity_source != "app_server"
+                    else repository_evidence.source,
+                    project_alias=project.project_alias,
+                    thread_alias=binding.alias,
+                    session_id=target.session_id,
+                    cwd=str(project.repo),
+                )
+        except (IdentityGuardError, AppServerError):
+            raise
+
+    def dispatch_project(
+        self,
+        project_alias: str,
+        thread_mode: str,
+        prompt: str,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        thread_alias: str | None = None,
+    ) -> DispatchResult:
+        if thread_mode not in {"existing", "new"}:
+            raise DispatchContractError(f"Unsupported thread mode: {thread_mode!r}")
+        project = self.project_registry.resolve(project_alias)
+
+        if thread_mode == "existing":
+            if not thread_alias:
+                raise DispatchContractError(
+                    "THREAD_MODE=existing requires THREAD_ALIAS"
+                )
+            binding = self.thread_registry.resolve(project_alias, thread_alias)
+            self._validate_project(project)
+            return self._dispatch_binding(project, binding, prompt, model, reasoning_effort)
+
+        # New threads have no configured identity.  The exact identity is
+        # captured from thread/start and then guarded by a mandatory readback.
+        self._validate_project(project)
+        transport_binding = next(
+            (item for item in self.cfg.threads if item.project_alias == project_alias),
+            None,
+        )
+        transport_target = (
+            _target_for_binding(project, transport_binding)
+            if transport_binding is not None
+            else TargetConfig(
+                alias=f"{project_alias}.new",
+                ssh_alias=self.cfg.app_server.ssh_alias or "",
+                thread_id="",
+                session_id="",
+                project_id=None,
+                cwd=str(project.repo),
+                repository_origin=project.repository_origin or "",
+                branch=project.branch or "",
+                app_server_version=self.cfg.app_server.client_version,
+            )
+        )
+        client = self.client_factory(
+            transport_target
+        )
+        try:
+            with client:
+                initialize_info = client.initialize(
+                    client_name=self.cfg.app_server.client_name,
+                    client_title=self.cfg.app_server.client_title,
+                    client_version=self.cfg.app_server.client_version,
+                )
+                started = client.thread_start(
+                    cwd=str(project.repo),
+                    model=model,
+                    sandbox=self.cfg.sandbox,
+                    ephemeral=False,
+                )
+                new_thread_id = started.get("id")
+                new_session_id = started.get("sessionId")
+                if not isinstance(new_thread_id, str) or not new_thread_id:
+                    raise IdentityGuardError(
+                        "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/start returned no exact thread id"
+                    )
+                if not isinstance(new_session_id, str) or not new_session_id:
+                    raise IdentityGuardError(
+                        "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/start returned no exact session id"
+                    )
+                if started.get("ephemeral") is True:
+                    raise IdentityGuardError(
+                        "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/start returned ephemeral=true"
+                    )
+                actual_project_id = started.get("projectId")
+                if actual_project_id is not None and not isinstance(actual_project_id, str):
+                    raise IdentityGuardError(
+                        "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/start returned malformed projectId"
+                    )
+                binding = ThreadBinding(
+                    alias="new",
+                    project_alias=project_alias,
+                    ssh_alias=transport_target.ssh_alias,
+                    thread_id=new_thread_id,
+                    session_id=new_session_id,
+                    project_id=actual_project_id,
+                    app_server_version=(
+                        getattr(initialize_info, "server_version", None)
+                        or self.cfg.app_server.client_version
+                    ),
+                )
+                target = _target_for_binding(project, binding)
+                thread = client.thread_read(new_thread_id)
+                identity_guard(target, thread, initialize_info=initialize_info)
+                repository_evidence = _repository_identity_evidence(thread)
+                identity_guard(
+                    target,
+                    thread,
+                    initialize_info=initialize_info,
+                    repository_evidence=repository_evidence,
+                )
+                turn = client.turn_start(
+                    new_thread_id,
+                    prompt,
+                    cwd=str(project.repo),
+                    model=model,
+                    reasoning_effort=reasoning_effort,
+                )
+                return DispatchResult(
+                    target_alias=binding.qualified_alias,
+                    thread_id=new_thread_id,
+                    turn_id=turn.turn_id,
+                    model=turn.model or model,
+                    reasoning_effort=turn.reasoning_effort or reasoning_effort,
+                    dispatch_status="DISPATCHED",
+                    repository_identity_source=repository_evidence.source,
+                    thread_created=True,
+                    thread_durable=True,
+                    project_alias=project_alias,
+                    thread_alias="new",
+                    session_id=new_session_id,
+                    cwd=str(project.repo),
+                )
+        except (IdentityGuardError, AppServerError):
+            raise
 
     def dispatch(
         self,
@@ -860,7 +1353,25 @@ class Dispatcher:
         model: str | None = None,
         reasoning_effort: str | None = None,
     ) -> DispatchResult:
+        """Legacy target entry point; V1 callers should use dispatch_project."""
         target = self.registry.resolve(target_alias)
+        project = next(
+            (item for item in self.cfg.projects if item.target_alias == target_alias),
+            ProjectMapping(
+                linear_name=target_alias,
+                repo=Path(target.cwd),
+                target_alias=target_alias,
+            ),
+        )
+        binding = ThreadBinding(
+            alias="current",
+            project_alias=project.project_alias,
+            ssh_alias=target.ssh_alias,
+            thread_id=target.thread_id,
+            session_id=target.session_id,
+            project_id=target.project_id,
+            app_server_version=target.app_server_version,
+        )
         client = self.client_factory(target)
         try:
             with client:
@@ -1049,16 +1560,34 @@ class Bridge:
             self._record_bridge_failure(issue, repo, str(exc), prefix="DISPATCH_CONTRACT_FAILED")
             return
 
+        mapped_project_alias = self.cfg.project_alias_for_linear(project_name)
         mapped_target_alias = self.cfg.target_alias_for_project(project_name)
-        target_alias = contract.target_alias if contract else mapped_target_alias
-        if contract and mapped_target_alias != contract.target_alias:
-            self._record_bridge_failure(
-                issue,
-                repo,
-                f"Issue target {contract.target_alias!r} does not match project mapping {mapped_target_alias!r}.",
-                prefix="DISPATCH_TARGET_RESOLUTION_FAILED",
+        if contract and contract.contract_kind == "canonical":
+            if mapped_project_alias != contract.project_alias:
+                self._record_bridge_failure(
+                    issue,
+                    repo,
+                    f"Issue project {contract.project_alias!r} does not match project mapping {mapped_project_alias!r}.",
+                    prefix="DISPATCH_PROJECT_RESOLUTION_FAILED",
+                )
+                return
+            project_alias = contract.project_alias
+            target_alias = (
+                f"{project_alias}.{contract.thread_alias}"
+                if contract.thread_mode == "existing"
+                else f"{project_alias}.new"
             )
-            return
+        else:
+            target_alias = contract.target_alias if contract else mapped_target_alias
+            if contract and mapped_target_alias != contract.target_alias:
+                self._record_bridge_failure(
+                    issue,
+                    repo,
+                    f"Issue target {contract.target_alias!r} does not match project mapping {mapped_target_alias!r}.",
+                    prefix="DISPATCH_TARGET_RESOLUTION_FAILED",
+                )
+                return
+            project_alias = mapped_project_alias
         if target_alias is None:
             self._record_bridge_failure(
                 issue,
@@ -1095,12 +1624,22 @@ class Bridge:
 
         print(f"Claimed {identifier}; dispatching target {target_alias} from {repo}")
         try:
-            result = self.dispatcher.dispatch(
-                target_alias,
-                codex_prompt(issue, repo, self.cfg.review_state),
-                model=contract.model if contract else None,
-                reasoning_effort=contract.reasoning_effort if contract else None,
-            )
+            if contract and contract.contract_kind == "canonical":
+                result = self.dispatcher.dispatch_project(
+                    project_alias=project_alias,
+                    thread_mode=contract.thread_mode,
+                    thread_alias=contract.thread_alias,
+                    prompt=codex_prompt(issue, repo, self.cfg.review_state),
+                    model=contract.model,
+                    reasoning_effort=contract.reasoning_effort,
+                )
+            else:
+                result = self.dispatcher.dispatch(
+                    target_alias,
+                    codex_prompt(issue, repo, self.cfg.review_state),
+                    model=contract.model if contract else None,
+                    reasoning_effort=contract.reasoning_effort if contract else None,
+                )
         except Exception as e:
             self._record_bridge_failure(issue, repo, f"Failed to dispatch Codex: {e}")
             return
@@ -1108,13 +1647,18 @@ class Bridge:
         dispatch_body = (
             "BRIDGE_DISPATCHED\n\n"
             f"- Target: `{result.target_alias}`\n"
+            f"- Project: `{result.project_alias or project_alias or 'legacy'}`\n"
+            f"- Thread alias: `{result.thread_alias or 'current'}`\n"
             f"- Durable thread: `{result.thread_id}`\n"
+            f"- Session: `{result.session_id or 'unknown'}`\n"
+            f"- CWD: `{result.cwd or repo}`\n"
             f"- Turn: `{result.turn_id}`\n"
             f"- Model: `{result.model or 'server default'}`\n"
             f"- Reasoning effort: `{result.reasoning_effort or 'server default'}`\n"
             f"- Repository identity source: `{result.repository_identity_source.upper()}`\n"
             f"- Status: `{result.dispatch_status}`\n\n"
-            "M2 execution is now awaiting the exact turn completion marker."
+            f"- Thread created: `{result.thread_created}`\n"
+            "Execution is now awaiting the exact turn completion marker."
         )
         try:
             self.linear.add_comment(issue["id"], dispatch_body)
@@ -1147,13 +1691,19 @@ class Bridge:
                 )
                 return
             evidence = (
-                "CLINX_M2_EXECUTION_COMPLETE\n\n"
+                "CLINX_M3_EXECUTION_COMPLETE\n\n"
                 f"ISSUE={identifier}\n"
                 f"TARGET={result.target_alias}\n"
+                f"PROJECT={result.project_alias or project_alias}\n"
+                f"THREAD_ALIAS={result.thread_alias or 'current'}\n"
                 f"THREAD_ID={result.thread_id}\n"
+                f"SESSION_ID={result.session_id or 'unknown'}\n"
                 f"TURN_ID={result.turn_id}\n"
                 f"MODEL={result.model or contract.model}\n"
                 f"REASONING={result.reasoning_effort or contract.reasoning_effort}\n"
+                f"THREAD_CREATED={'YES' if result.thread_created else 'NO'}\n"
+                f"THREAD_DURABLE={'YES' if result.thread_durable else 'NO'}\n"
+                f"CWD={repo}\n"
                 "IDENTITY_GUARD=PASS\n"
                 "EXACT_THREAD_DISPATCH=PASS\n"
                 "RESULT=CLINX_M2_CHATGPT_ROUNDTRIP_PASS\n"
@@ -1225,9 +1775,18 @@ def doctor(cfg: BridgeConfig, linear: LinearClient) -> int:
             failures.append("App-server local command is empty")
             print("[FAIL] App-server local command is empty")
     elif cfg.app_server.remote_command:
+        transport_alias = cfg.app_server.ssh_alias
+        if not transport_alias and cfg.threads:
+            transport_alias = cfg.threads[0].ssh_alias
+        if not transport_alias and cfg.targets:
+            transport_alias = cfg.targets[0].ssh_alias
+        if not transport_alias:
+            failures.append("SSH app-server transport has no ssh_alias")
+            print("[FAIL] SSH app-server transport has no ssh_alias")
+            transport_alias = "<missing>"
         print(
             "[PASS] App-server transport configured: "
-            f"ssh {cfg.targets[0].ssh_alias} {' '.join(cfg.app_server.remote_command)}"
+            f"ssh {transport_alias} {' '.join(cfg.app_server.remote_command)}"
         )
     else:
         failures.append("App-server remote command is empty")
@@ -1247,17 +1806,29 @@ def doctor(cfg: BridgeConfig, linear: LinearClient) -> int:
             print(f"[FAIL] Not a Git repo: {mapping.repo}")
         else:
             print(f"[PASS] Repo mapping: {mapping.linear_name} -> {mapping.repo}")
-        target_alias = cfg.target_alias_for_project(mapping.linear_name)
-        if target_alias is None:
-            failures.append(f"No target mapping for project: {mapping.linear_name}")
-            print(f"[FAIL] Target mapping: {mapping.linear_name}")
-        else:
-            try:
-                target = TargetRegistry(cfg.targets).resolve(target_alias)
-                print(f"[PASS] Target mapping: {mapping.linear_name} -> {target.alias}")
-            except TargetResolutionError as e:
-                failures.append(str(e))
-                print(f"[FAIL] Target mapping: {mapping.linear_name} -> {target_alias}: {e}")
+        project_alias = mapping.project_alias
+        try:
+            ProjectRegistry(cfg.projects).resolve(project_alias)
+            binding = next(
+                (item for item in cfg.threads if item.project_alias == project_alias),
+                None,
+            )
+            legacy_target_alias = cfg.target_alias_for_project(mapping.linear_name)
+            if binding is None and legacy_target_alias is not None:
+                target = TargetRegistry(cfg.targets).resolve(legacy_target_alias)
+                print(
+                    f"[PASS] Legacy target mapping: {mapping.linear_name} -> {target.alias}"
+                )
+            elif binding is not None:
+                print(
+                    f"[PASS] Project/thread mapping: {mapping.linear_name} -> "
+                    f"{project_alias}.{binding.alias}"
+                )
+            else:
+                print(f"[PASS] Project mapping: {mapping.linear_name} -> {project_alias}")
+        except TargetResolutionError as e:
+            failures.append(str(e))
+            print(f"[FAIL] Project/thread mapping: {mapping.linear_name}: {e}")
 
     try:
         issues = linear.eligible_issues(
