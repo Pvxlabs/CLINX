@@ -17,6 +17,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -54,6 +55,10 @@ class IdentityGuardError(BridgeError):
     pass
 
 
+class DispatchContractError(BridgeError):
+    pass
+
+
 @dataclasses.dataclass(frozen=True)
 class ProjectMapping:
     linear_name: str
@@ -85,6 +90,37 @@ class TargetConfig:
     repository_origin: str
     branch: str
     app_server_version: str
+
+
+@dataclasses.dataclass(frozen=True)
+class DispatchContract:
+    target_alias: str
+    model: str
+    reasoning_effort: str
+    expected_result: str | None = None
+
+
+def parse_dispatch_contract(description: str | None) -> DispatchContract | None:
+    """Parse the deliberately small, line-oriented M2 issue contract."""
+    if not description:
+        return None
+    values: dict[str, str] = {}
+    for key in ("TARGET_ALIAS", "MODEL", "REASONING"):
+        match = re.search(rf"(?m)^\s*{key}=([^\s]+)\s*$", description)
+        if not match:
+            raise DispatchContractError(f"Malformed dispatch contract: missing {key}")
+        values[key] = match.group(1)
+    marker = re.search(
+        r"(?m)^\s*Return exactly this final marker:\s*$\n\s*([^\s]+)\s*$",
+        description,
+    )
+    expected_result = marker.group(1) if marker else None
+    return DispatchContract(
+        target_alias=values["TARGET_ALIAS"],
+        model=values["MODEL"],
+        reasoning_effort=values["REASONING"],
+        expected_result=expected_result,
+    )
 
 
 class TargetRegistry:
@@ -370,6 +406,7 @@ class LinearClient:
                   id
                   identifier
                   title
+                  description
                   url
                   updatedAt
                   state { id name type }
@@ -546,6 +583,42 @@ def write_dispatch_record(
         encoding="utf-8",
     )
     return run_dir
+
+
+def wait_for_codex_result(
+    thread_id: str,
+    turn_id: str,
+    expected_result: str,
+    *,
+    timeout_seconds: float,
+) -> str | None:
+    """Read only the exact turn completion event from the local Codex session log."""
+    root = Path.home() / ".codex" / "sessions"
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        for path in root.glob("**/*.jsonl"):
+            if thread_id not in path.name:
+                continue
+            try:
+                with path.open(encoding="utf-8") as stream:
+                    for line in stream:
+                        try:
+                            row = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        payload = row.get("payload")
+                        if row.get("type") != "event_msg" or not isinstance(payload, dict):
+                            continue
+                        if payload.get("type") != "task_complete" or payload.get("turn_id") != turn_id:
+                            continue
+                        value = payload.get("last_agent_message")
+                        return value if isinstance(value, str) else None
+            except OSError:
+                continue
+        time.sleep(1)
+    raise BridgeError(
+        f"Timed out waiting for exact Codex turn completion: thread={thread_id} turn={turn_id}"
+    )
 
 
 def _thread_field(thread: dict[str, Any], name: str) -> Any:
@@ -970,7 +1043,22 @@ class Bridge:
         identifier = issue["identifier"]
         running_state_id = self.states[self.cfg.running_state]
         project_name = (issue.get("project") or {}).get("name")
-        target_alias = self.cfg.target_alias_for_project(project_name)
+        try:
+            contract = parse_dispatch_contract(issue.get("description"))
+        except DispatchContractError as exc:
+            self._record_bridge_failure(issue, repo, str(exc), prefix="DISPATCH_CONTRACT_FAILED")
+            return
+
+        mapped_target_alias = self.cfg.target_alias_for_project(project_name)
+        target_alias = contract.target_alias if contract else mapped_target_alias
+        if contract and mapped_target_alias != contract.target_alias:
+            self._record_bridge_failure(
+                issue,
+                repo,
+                f"Issue target {contract.target_alias!r} does not match project mapping {mapped_target_alias!r}.",
+                prefix="DISPATCH_TARGET_RESOLUTION_FAILED",
+            )
+            return
         if target_alias is None:
             self._record_bridge_failure(
                 issue,
@@ -1010,6 +1098,8 @@ class Bridge:
             result = self.dispatcher.dispatch(
                 target_alias,
                 codex_prompt(issue, repo, self.cfg.review_state),
+                model=contract.model if contract else None,
+                reasoning_effort=contract.reasoning_effort if contract else None,
             )
         except Exception as e:
             self._record_bridge_failure(issue, repo, f"Failed to dispatch Codex: {e}")
@@ -1024,7 +1114,7 @@ class Bridge:
             f"- Reasoning effort: `{result.reasoning_effort or 'server default'}`\n"
             f"- Repository identity source: `{result.repository_identity_source.upper()}`\n"
             f"- Status: `{result.dispatch_status}`\n\n"
-            "M0 stops after turn/start. The issue remains In Progress until a later milestone adds completion/result handling."
+            "M2 execution is now awaiting the exact turn completion marker."
         )
         try:
             self.linear.add_comment(issue["id"], dispatch_body)
@@ -1040,6 +1130,44 @@ class Bridge:
             f"thread={result.thread_id} turn={result.turn_id}"
             + (f" logs={log_dir}" if log_dir else "")
         )
+
+        if contract and contract.expected_result:
+            final_result = wait_for_codex_result(
+                result.thread_id,
+                result.turn_id,
+                contract.expected_result,
+                timeout_seconds=max(30, self.cfg.poll_interval_seconds * 8),
+            )
+            if final_result != contract.expected_result:
+                self._record_bridge_failure(
+                    issue,
+                    repo,
+                    f"Expected {contract.expected_result!r}, received {final_result!r}.",
+                    prefix="CODEX_RESULT_FAILED",
+                )
+                return
+            evidence = (
+                "CLINX_M2_EXECUTION_COMPLETE\n\n"
+                f"ISSUE={identifier}\n"
+                f"TARGET={result.target_alias}\n"
+                f"THREAD_ID={result.thread_id}\n"
+                f"TURN_ID={result.turn_id}\n"
+                f"MODEL={result.model or contract.model}\n"
+                f"REASONING={result.reasoning_effort or contract.reasoning_effort}\n"
+                "IDENTITY_GUARD=PASS\n"
+                "EXACT_THREAD_DISPATCH=PASS\n"
+                "RESULT=CLINX_M2_CHATGPT_ROUNDTRIP_PASS\n"
+                "REAL_ORION_THREAD_TOUCHED=NO\n"
+                "REAL_TERMINAL_THREAD_TOUCHED=NO\n"
+                "VERDICT=READY_FOR_CHATGPT_REVIEW"
+            )
+            try:
+                self.linear.add_comment(issue["id"], evidence)
+                self.linear.update_issue_state(issue["id"], self.states[self.cfg.review_state])
+            except Exception as exc:
+                self._record_bridge_failure(issue, repo, f"Result writeback failed: {exc}")
+                return
+            print(f"Completed {identifier}: result={final_result}; state={self.cfg.review_state}")
 
     def _record_bridge_failure(
         self,

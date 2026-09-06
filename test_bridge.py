@@ -116,6 +116,37 @@ repo = "/tmp"
                 bridge.BridgeConfig.load(p)
 
 
+class DispatchContractTests(unittest.TestCase):
+    def test_parses_target_model_reasoning_and_result_marker(self):
+        contract = bridge.parse_dispatch_contract(
+            "TARGET_ALIAS=pilot\nMODEL=gpt-5.6-luna\nREASONING=high\n\n"
+            "Return exactly this final marker:\n\nCLINX_M2_CHATGPT_ROUNDTRIP_PASS\n"
+        )
+        self.assertEqual(contract.target_alias, "pilot")
+        self.assertEqual(contract.model, "gpt-5.6-luna")
+        self.assertEqual(contract.reasoning_effort, "high")
+        self.assertEqual(contract.expected_result, "CLINX_M2_CHATGPT_ROUNDTRIP_PASS")
+
+    def test_result_marker_is_parsed_when_followed_by_acceptance_criteria(self):
+        description = (
+            "## Dispatch Contract\n\n"
+            "TARGET_ALIAS=pilot\nMODEL=gpt-5.6-luna\nREASONING=high\n\n"
+            "Return exactly this final marker:\n\n"
+            "CLINX_M2_CHATGPT_ROUNDTRIP_PASS\n\n"
+            "## Acceptance Criteria\n\n"
+            "* The result is written back to this issue.\n"
+        )
+        contract = bridge.parse_dispatch_contract(description)
+        self.assertEqual(contract.expected_result, "CLINX_M2_CHATGPT_ROUNDTRIP_PASS")
+
+    def test_malformed_contract_fails_closed(self):
+        with self.assertRaises(bridge.DispatchContractError):
+            bridge.parse_dispatch_contract("TARGET_ALIAS=pilot\nMODEL=gpt-5.6-luna\n")
+
+    def test_empty_description_is_legacy_compatibility_only(self):
+        self.assertIsNone(bridge.parse_dispatch_contract(None))
+
+
 class PromptTests(unittest.TestCase):
     def test_prompt_uses_linear_as_authority(self):
         issue = {"identifier": "PVX-999"}
@@ -582,6 +613,83 @@ class LinearDispatchIntegrationTests(unittest.TestCase):
             self.assertEqual(dispatcher.calls[0][0], "pilot")
             self.assertIn("PVX-1", dispatcher.calls[0][1])
             self.assertTrue(any("BRIDGE_DISPATCHED" in body for body in linear.comments))
+
+    def test_issue_contract_passes_model_and_reasoning_to_dispatcher(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            cfg = bridge.BridgeConfig(
+                team_id="team",
+                trigger_label="local-codex",
+                todo_state="Todo",
+                running_state="In Progress",
+                review_state="In Review",
+                poll_interval_seconds=15,
+                max_batch=1,
+                codex_binary="codex",
+                sandbox="workspace-write",
+                approval="never",
+                log_dir=Path(td) / "logs",
+                projects=(bridge.ProjectMapping("Pilot", repo, "pilot"),),
+                targets=(target_fixture(),),
+            )
+
+            class RecordingDispatcher:
+                def __init__(self):
+                    self.calls = []
+
+                def dispatch(self, target_alias, prompt, model=None, reasoning_effort=None):
+                    self.calls.append((target_alias, model, reasoning_effort))
+                    return bridge.DispatchResult(
+                        target_alias=target_alias,
+                        thread_id="thread-1",
+                        turn_id="turn-1",
+                        model=model,
+                        reasoning_effort=reasoning_effort,
+                        dispatch_status="DISPATCHED",
+                    )
+
+            linear = FakeLinear()
+            dispatcher = RecordingDispatcher()
+            instance = bridge.Bridge(cfg, linear, dispatcher=dispatcher)
+            instance.initialize()
+            issue = {
+                "id": "issue-1",
+                "identifier": "PVX-1764",
+                "title": "M2",
+                "description": (
+                    "TARGET_ALIAS=pilot\nMODEL=gpt-5.6-luna\nREASONING=high\n"
+                ),
+                "project": {"name": "Pilot"},
+            }
+
+            instance.execute_issue(issue, repo)
+
+            self.assertEqual(dispatcher.calls, [("pilot", "gpt-5.6-luna", "high")])
+
+    def test_contract_target_mismatch_does_not_claim_or_dispatch(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            cfg = bridge.BridgeConfig(
+                team_id="team", trigger_label="local-codex", todo_state="Todo",
+                running_state="In Progress", review_state="In Review",
+                poll_interval_seconds=15, max_batch=1, codex_binary="codex",
+                sandbox="workspace-write", approval="never", log_dir=Path(td) / "logs",
+                projects=(bridge.ProjectMapping("Pilot", repo, "pilot"),),
+                targets=(target_fixture(),),
+            )
+            linear = FakeLinear()
+            dispatcher = type("D", (), {"dispatch": lambda *args, **kwargs: self.fail("dispatch")})()
+            instance = bridge.Bridge(cfg, linear, dispatcher=dispatcher)
+            instance.initialize()
+            issue = {
+                "id": "issue-1", "identifier": "PVX-1764",
+                "description": "TARGET_ALIAS=other\nMODEL=gpt-5.6-luna\nREASONING=high\n",
+                "project": {"name": "Pilot"},
+            }
+            instance.execute_issue(issue, repo)
+            self.assertEqual(linear.state, "Todo")
 
 
 class AppServerClientTests(unittest.TestCase):

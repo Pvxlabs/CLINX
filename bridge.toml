@@ -40,7 +40,7 @@ client_version = "1.0.0-m0"
 log_dir = "~/.local/state/linear-local-codex-bridge"
 
 [[project]]
-linear_name = "Linear × Local Codex Pilot"
+linear_name = "ChatGPT × Linear × Codex Dispatcher V1"
 repo = "/home/pvxlabs/dev/clinx-pilot"
 target_alias = "pilot"
 
