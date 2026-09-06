@@ -1455,6 +1455,16 @@ def identity_guard(
         )
 
 
+def turn_start_guard(thread: dict[str, Any]) -> None:
+    """Require a distinct idle-turn boundary before starting an execution."""
+    status = _status_type(thread)
+    if status != "idle":
+        raise DispatchContractError(
+            "DISPATCH_TURN_START_GUARD=FAIL\n"
+            f"- thread status expected='idle' actual={status!r}"
+        )
+
+
 def project_identity_guard(
     project: ProjectMapping,
     evidence: RepositoryIdentityEvidence,
@@ -2119,7 +2129,8 @@ class TaskDispatcher:
                             app_server_version=version,
                         )
                         target = self._target(workspace, project, binding)
-                        self._read_and_guard(client, target, initialize_info)
+                        thread = self._read_and_guard(client, target, initialize_info)
+                        turn_start_guard(thread)
                         binding = self.tasks.bind_conversation(
                             task_id=leased.task_id,
                             thread_id=new_thread_id,
@@ -2202,7 +2213,8 @@ class TaskDispatcher:
                     client_title=self.cfg.app_server.client_title,
                     client_version=self.cfg.app_server.client_version,
                 )
-                self._read_and_guard(client, target, initialize_info)
+                thread = self._read_and_guard(client, target, initialize_info)
+                turn_start_guard(thread)
                 self.tasks.mark_verified(
                     task.task_id,
                     app_server_version=self._initialize_version(
@@ -2319,6 +2331,7 @@ class Dispatcher:
                     initialize_info=initialize_info,
                     repository_evidence=repository_evidence,
                 )
+                turn_start_guard(thread)
                 turn = client.turn_start(
                     target.thread_id,
                     prompt,
@@ -2449,6 +2462,7 @@ class Dispatcher:
                     initialize_info=initialize_info,
                     repository_evidence=repository_evidence,
                 )
+                turn_start_guard(thread)
                 turn = client.turn_start(
                     new_thread_id,
                     prompt,
@@ -2544,6 +2558,7 @@ class Dispatcher:
                     initialize_info=initialize_info,
                     repository_evidence=repository_evidence,
                 )
+                turn_start_guard(thread)
                 turn = client.turn_start(
                     target.thread_id,
                     prompt,
