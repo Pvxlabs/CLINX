@@ -33,9 +33,19 @@ from app_server import (
     SSHStdioTransport,
     versions_compatible,
 )
+from task_registry import (
+    ConversationBinding as DurableConversationBinding,
+    DynamicProjectResolver,
+    ProjectDescriptor,
+    TaskExecutionBusy,
+    TaskRegistry,
+    TaskRegistryError,
+    WorkspaceConfig,
+    WorkspaceRegistry,
+)
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
-BRIDGE_VERSION = "1.0.0-m3"
+BRIDGE_VERSION = "1.0.0-m5"
 LEGACY_CODEX_EXEC_DEFAULT = False
 
 
@@ -72,6 +82,7 @@ class ProjectMapping:
     repository_origin: str | None = None
     branch: str | None = None
     read_only: bool = False
+    workspace_alias: str | None = None
 
     @property
     def project_alias(self) -> str:
@@ -135,10 +146,16 @@ class DispatchContract:
     thread_mode: str = "existing"
     thread_alias: str | None = None
     contract_kind: str = "legacy"
+    host: str | None = None
+    project_mode: str | None = None
+    task_mode: str | None = None
+    task_id: str | None = None
+    execution_mode: str = "normal"
+    task_action: str | None = None
 
 
 def parse_dispatch_contract(description: str | None) -> DispatchContract | None:
-    """Parse the small M2 legacy or M3 project/thread issue contract."""
+    """Parse legacy M2/M3 contracts and the explicit M5 task contract."""
     if not description:
         return None
 
@@ -146,13 +163,72 @@ def parse_dispatch_contract(description: str | None) -> DispatchContract | None:
         match = re.search(rf"(?m)^\s*{key}=([^\s]+)\s*$", description)
         return match.group(1) if match else None
 
-    canonical_keys = ("PROJECT", "THREAD_MODE", "THREAD_ALIAS")
-    has_canonical = any(value_for(key) is not None for key in canonical_keys)
     marker = re.search(
         r"(?m)^\s*Return exactly this final marker:\s*$\n\s*([^\s]+)\s*$",
         description,
     )
     expected_result = marker.group(1) if marker else None
+
+    m5_keys = ("TASK_MODE", "PROJECT_MODE", "EXECUTION_MODE", "TASK_ACTION")
+    if any(value_for(key) is not None for key in m5_keys):
+        project_alias = value_for("PROJECT")
+        project_mode = value_for("PROJECT_MODE") or "existing"
+        task_mode = value_for("TASK_MODE")
+        task_id = value_for("TASK_ID")
+        host = value_for("HOST")
+        model = value_for("MODEL")
+        reasoning = value_for("REASONING")
+        execution_mode = value_for("EXECUTION_MODE") or "normal"
+        task_action = value_for("TASK_ACTION")
+        missing = [
+            key for key, value in (("PROJECT", project_alias), ("TASK_MODE", task_mode))
+            if value is None
+        ]
+        if missing:
+            raise DispatchContractError(
+                "Malformed M5 dispatch contract: missing " + ", ".join(missing)
+            )
+        if project_mode not in {"existing", "create"}:
+            raise DispatchContractError(
+                f"Malformed M5 dispatch contract: unsupported PROJECT_MODE={project_mode!r}"
+            )
+        if task_mode not in {"new", "continue"}:
+            raise DispatchContractError(
+                f"Malformed M5 dispatch contract: unsupported TASK_MODE={task_mode!r}"
+            )
+        if task_mode == "continue" and project_mode != "existing":
+            raise DispatchContractError(
+                "Malformed M5 dispatch contract: TASK_MODE=continue requires PROJECT_MODE=existing"
+            )
+        if task_mode == "continue" and not task_id:
+            raise DispatchContractError(
+                "Malformed M5 dispatch contract: TASK_MODE=continue requires TASK_ID"
+            )
+        if execution_mode not in {"normal", "fast"}:
+            raise DispatchContractError(
+                f"Malformed M5 dispatch contract: unsupported EXECUTION_MODE={execution_mode!r}"
+            )
+        if task_action not in {None, "complete", "reopen", "archive"}:
+            raise DispatchContractError(
+                f"Malformed M5 dispatch contract: unsupported TASK_ACTION={task_action!r}"
+            )
+        return DispatchContract(
+            target_alias=None,
+            model=model,
+            reasoning_effort=reasoning,
+            expected_result=expected_result,
+            project_alias=project_alias,
+            contract_kind="m5",
+            host=host,
+            project_mode=project_mode,
+            task_mode=task_mode,
+            task_id=task_id,
+            execution_mode=execution_mode,
+            task_action=task_action,
+        )
+
+    canonical_keys = ("PROJECT", "THREAD_MODE", "THREAD_ALIAS")
+    has_canonical = any(value_for(key) is not None for key in canonical_keys)
 
     if has_canonical:
         project_alias = value_for("PROJECT")
@@ -282,6 +358,8 @@ class BridgeConfig:
     app_server: AppServerConfig = dataclasses.field(default_factory=AppServerConfig)
     targets: tuple[TargetConfig, ...] = ()
     threads: tuple[ThreadBinding, ...] = ()
+    workspaces: tuple[WorkspaceConfig, ...] = ()
+    task_db_path: Path | None = None
 
     @staticmethod
     def load(path: Path) -> "BridgeConfig":
@@ -292,6 +370,7 @@ class BridgeConfig:
         codex = raw.get("codex", {})
         app_server_raw = raw.get("app_server", {})
         runtime = raw.get("runtime", {})
+        workspace_tables = raw.get("workspaces", {})
         project_rows = raw.get("project", [])
         project_tables = raw.get("projects", {})
         target_rows = raw.get("targets", {})
@@ -331,6 +410,11 @@ class BridgeConfig:
                         repository_origin=origin,
                         branch=branch,
                         read_only=bool(row.get("read_only", False)),
+                        workspace_alias=(
+                            str(row["workspace"]).strip()
+                            if row.get("workspace")
+                            else None
+                        ),
                     )
                 )
         for row in project_rows:
@@ -472,6 +556,37 @@ class BridgeConfig:
                     )
                 )
 
+        workspaces: list[WorkspaceConfig] = []
+        if workspace_tables:
+            if not isinstance(workspace_tables, dict):
+                raise BridgeError("[workspaces.<alias>] entries must be tables")
+            for alias, row in workspace_tables.items():
+                if not isinstance(row, dict):
+                    raise BridgeError(f"Workspace {alias!r} must be a table")
+                root = str(row.get("root", "")).strip()
+                if not root:
+                    raise BridgeError(f"Workspace {alias!r} requires root")
+                workspaces.append(
+                    WorkspaceConfig(
+                        alias=str(alias),
+                        root=Path(root).expanduser().resolve(),
+                        allow_existing_projects=bool(row.get("allow_existing_projects", True)),
+                        allow_new_projects=bool(row.get("allow_new_projects", False)),
+                        ssh_alias=(
+                            str(row["ssh_alias"]).strip()
+                            if row.get("ssh_alias")
+                            else None
+                        ),
+                    )
+                )
+
+        task_db_value = runtime.get("task_db_path")
+        task_db_path = (
+            Path(str(task_db_value)).expanduser().resolve()
+            if task_db_value
+            else None
+        )
+
         return BridgeConfig(
             team_id=str(linear["team_id"]),
             trigger_label=str(linear["trigger_label"]),
@@ -505,6 +620,8 @@ class BridgeConfig:
             ),
             targets=tuple(targets),
             threads=tuple(threads),
+            workspaces=tuple(workspaces),
+            task_db_path=task_db_path,
         )
 
     def repo_for_project(self, project_name: str | None) -> Path | None:
@@ -788,6 +905,8 @@ class DispatchResult:
     thread_durable: bool = True
     session_id: str | None = None
     cwd: str | None = None
+    task_id: str | None = None
+    execution_mode: str = "normal"
 
 
 def write_dispatch_record(
@@ -815,6 +934,8 @@ def write_dispatch_record(
         "thread_durable": result.thread_durable,
         "session_id": result.session_id,
         "cwd": result.cwd,
+        "task_id": result.task_id,
+        "execution_mode": result.execution_mode,
     }
     (run_dir / "dispatch.json").write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n",
@@ -908,10 +1029,6 @@ def _local_git_identity(cwd: str) -> RepositoryIdentityEvidence:
             "DISPATCH_IDENTITY_GUARD=FAIL\n"
             f"- repository top-level expected={cwd!r} actual={outputs['top_level']!r}"
         )
-    if not outputs["origin"]:
-        raise IdentityGuardError(
-            "DISPATCH_IDENTITY_GUARD=FAIL\n- repository origin is missing"
-        )
     if not outputs["branch"]:
         raise IdentityGuardError(
             "DISPATCH_IDENTITY_GUARD=FAIL\n- repository is detached HEAD"
@@ -940,9 +1057,9 @@ def _repository_identity_evidence(
         raise IdentityGuardError(
             "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/read returned malformed gitInfo"
         )
-    origin = raw_git_info.get("originUrl")
+    origin = raw_git_info.get("originUrl") or ""
     branch = raw_git_info.get("branch")
-    if not isinstance(origin, str) or not origin or not isinstance(branch, str) or not branch:
+    if not isinstance(origin, str) or not isinstance(branch, str) or not branch:
         raise IdentityGuardError(
             "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/read returned incomplete gitInfo"
         )
@@ -1459,6 +1576,333 @@ def _default_app_server_client(
     )
 
 
+class TaskDispatcher:
+    """M5 task dispatcher: durable task identity plus exact thread binding."""
+
+    def __init__(
+        self,
+        cfg: BridgeConfig,
+        *,
+        task_registry: TaskRegistry | None = None,
+        client_factory=None,
+    ):
+        self.cfg = cfg
+        self.workspaces = WorkspaceRegistry(cfg.workspaces)
+        self.tasks = task_registry or TaskRegistry(
+            cfg.task_db_path
+            or (Path.home() / ".local" / "state" / "clinx" / "tasks.sqlite3")
+        )
+        self.client_factory = client_factory or (
+            lambda target: _default_app_server_client(cfg, target)
+        )
+        self.projects = DynamicProjectResolver(self.workspaces, cfg.projects)
+
+    def _workspace(self, host: str | None) -> WorkspaceConfig:
+        if host:
+            return self.workspaces.resolve(host)
+        values = list(self.workspaces)
+        if len(values) == 1:
+            return values[0]
+        raise TargetResolutionError("M5 HOST is required when multiple workspaces exist")
+
+    def resolve_project(
+        self,
+        project_ref: str,
+        *,
+        host: str | None,
+        project_mode: str,
+    ) -> tuple[WorkspaceConfig, ProjectDescriptor, ProjectMapping]:
+        workspace = self._workspace(host)
+        descriptor = self.projects.resolve(
+            project_ref,
+            workspace_alias=workspace.alias,
+            project_mode=project_mode,
+        )
+        mapping = ProjectMapping(
+            linear_name=descriptor.name,
+            repo=descriptor.cwd,
+            alias=descriptor.alias,
+            repository_origin=descriptor.repository_origin,
+            branch=descriptor.branch,
+            workspace_alias=descriptor.workspace_alias,
+        )
+        return workspace, descriptor, mapping
+
+    def _target(
+        self,
+        workspace: WorkspaceConfig,
+        project: ProjectMapping,
+        binding: DurableConversationBinding,
+    ) -> TargetConfig:
+        return TargetConfig(
+            alias=f"{workspace.alias}.{project.project_alias}.{binding.task_id}",
+            ssh_alias=workspace.ssh_alias or workspace.alias,
+            thread_id=binding.thread_id,
+            session_id=binding.session_id,
+            project_id=binding.project_id,
+            cwd=str(project.repo),
+            repository_origin=project.repository_origin or "",
+            branch=project.branch or "",
+            app_server_version=binding.app_server_version or self.cfg.app_server.client_version,
+        )
+
+    def _new_target(
+        self,
+        workspace: WorkspaceConfig,
+        project: ProjectMapping,
+    ) -> TargetConfig:
+        return TargetConfig(
+            alias=f"{workspace.alias}.{project.project_alias}.new",
+            ssh_alias=workspace.ssh_alias or workspace.alias,
+            thread_id="",
+            session_id="",
+            project_id=None,
+            cwd=str(project.repo),
+            repository_origin=project.repository_origin or "",
+            branch=project.branch or "",
+            app_server_version=self.cfg.app_server.client_version,
+        )
+
+    @staticmethod
+    def _initialize_version(info: Any, fallback: str) -> str:
+        return (
+            getattr(info, "server_version", None)
+            or getattr(info, "user_agent", None)
+            or fallback
+        )
+
+    def _read_and_guard(
+        self,
+        client: Any,
+        target: TargetConfig,
+        initialize_info: Any,
+    ) -> dict[str, Any]:
+        thread = client.thread_read(target.thread_id)
+        identity_guard(
+            target,
+            thread,
+            initialize_info=initialize_info,
+            allow_unloaded=True,
+        )
+        needs_resume = (
+            thread.get("canAcceptDirectInput") is None
+            and _status_type(thread) in {"notLoaded", "unloaded"}
+        )
+        if needs_resume:
+            client.thread_resume(target.thread_id)
+            thread = client.thread_read(target.thread_id)
+        evidence = _repository_identity_evidence(thread)
+        identity_guard(
+            target,
+            thread,
+            initialize_info=initialize_info,
+            repository_evidence=evidence,
+        )
+        return thread
+
+    def dispatch(
+        self,
+        *,
+        project_ref: str,
+        host: str | None,
+        project_mode: str,
+        task_mode: str,
+        task_id: str | None,
+        prompt: str,
+        title: str,
+        summary: str | None,
+        model: str | None,
+        reasoning_effort: str | None,
+        execution_mode: str = "normal",
+        issue_id: str | None = None,
+    ) -> DispatchResult:
+        if task_mode not in {"new", "continue"}:
+            raise DispatchContractError(f"Unsupported task mode: {task_mode!r}")
+        if execution_mode not in {"normal", "fast"}:
+            raise DispatchContractError(f"Unsupported execution mode: {execution_mode!r}")
+
+        if task_mode == "new":
+            workspace, _descriptor, project = self.resolve_project(
+                project_ref, host=host, project_mode=project_mode
+            )
+            task = self.tasks.create_task(
+                host=host or workspace.alias,
+                workspace_alias=workspace.alias,
+                project_alias=project.project_alias,
+                project_name=project.linear_name,
+                cwd=str(project.repo),
+                repository_origin=project.repository_origin,
+                branch=project.branch,
+                title=title,
+                summary=summary,
+            )
+            with self.tasks.execution(task.task_id, issue_id) as leased:
+                target = self._new_target(workspace, project)
+                client = self.client_factory(target)
+                try:
+                    with client:
+                        initialize_info = client.initialize(
+                            client_name=self.cfg.app_server.client_name,
+                            client_title=self.cfg.app_server.client_title,
+                            client_version=self.cfg.app_server.client_version,
+                        )
+                        started = client.thread_start(
+                            cwd=str(project.repo),
+                            model=model,
+                            sandbox=self.cfg.sandbox,
+                            ephemeral=False,
+                        )
+                        new_thread_id = started.get("id")
+                        new_session_id = started.get("sessionId")
+                        if not isinstance(new_thread_id, str) or not new_thread_id:
+                            raise IdentityGuardError(
+                                "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/start returned no exact thread id"
+                            )
+                        if not isinstance(new_session_id, str) or not new_session_id:
+                            raise IdentityGuardError(
+                                "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/start returned no exact session id"
+                            )
+                        if started.get("ephemeral") is True:
+                            raise IdentityGuardError(
+                                "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/start returned ephemeral=true"
+                            )
+                        actual_project_id = started.get("projectId")
+                        if actual_project_id is not None and not isinstance(actual_project_id, str):
+                            raise IdentityGuardError(
+                                "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/start returned malformed projectId"
+                            )
+                        version = self._initialize_version(
+                            initialize_info, self.cfg.app_server.client_version
+                        )
+                        binding = DurableConversationBinding(
+                            task_id=leased.task_id,
+                            thread_id=new_thread_id,
+                            session_id=new_session_id,
+                            project_id=actual_project_id,
+                            bound_at="",
+                            last_verified_at="",
+                            app_server_version=version,
+                        )
+                        target = self._target(workspace, project, binding)
+                        self._read_and_guard(client, target, initialize_info)
+                        binding = self.tasks.bind_conversation(
+                            task_id=leased.task_id,
+                            thread_id=new_thread_id,
+                            session_id=new_session_id,
+                            project_id=actual_project_id,
+                            app_server_version=version,
+                        )
+                        turn = client.turn_start(
+                            new_thread_id,
+                            prompt,
+                            cwd=str(project.repo),
+                            model=model,
+                            reasoning_effort=reasoning_effort,
+                            approval_policy=self.cfg.approval,
+                        )
+                except (IdentityGuardError, AppServerError):
+                    raise
+            self.tasks.record_linear_execution(issue_id, leased.task_id) if issue_id else None
+            return DispatchResult(
+                target_alias=f"{workspace.alias}.{project.project_alias}",
+                thread_id=binding.thread_id,
+                turn_id=turn.turn_id,
+                model=turn.model or model,
+                reasoning_effort=turn.reasoning_effort or reasoning_effort,
+                dispatch_status="DISPATCHED",
+                repository_identity_source="app_server",
+                project_alias=project.project_alias,
+                thread_alias=None,
+                thread_created=True,
+                thread_durable=True,
+                session_id=binding.session_id,
+                cwd=str(project.repo),
+                task_id=leased.task_id,
+                execution_mode=execution_mode,
+            )
+
+        if not task_id:
+            raise DispatchContractError("TASK_MODE=continue requires TASK_ID")
+        task = self.tasks.get_task(task_id)
+        if task.status != "ACTIVE":
+            raise TargetResolutionError(
+                f"Task {task.task_id} is {task.status}; explicit reopen is required"
+            )
+        if host and host.strip().lower() != task.workspace_alias.lower():
+            raise TargetResolutionError(
+                f"Task workspace mismatch: expected {task.workspace_alias!r}, got {host!r}"
+            )
+        binding = self.tasks.get_binding(task.task_id)
+        if binding is None:
+            raise TargetResolutionError(f"Task {task.task_id} has no conversation binding")
+        workspace = self.workspaces.resolve(task.workspace_alias)
+        if project_ref.strip().lower() not in {task.project_alias.lower(), task.project_name.lower()}:
+            raise TargetResolutionError(
+                f"Task project mismatch: expected {task.project_alias!r}, got {project_ref!r}"
+            )
+        project_path = self.workspaces.validate_path(workspace, Path(task.cwd))
+        project = ProjectMapping(
+            linear_name=task.project_name,
+            repo=project_path,
+            alias=task.project_alias,
+            repository_origin=task.repository_origin,
+            branch=task.branch,
+            workspace_alias=task.workspace_alias,
+        )
+        with self.tasks.execution(task.task_id, issue_id) as leased:
+            target = self._target(workspace, project, binding)
+            client = self.client_factory(target)
+            with client:
+                initialize_info = client.initialize(
+                    client_name=self.cfg.app_server.client_name,
+                    client_title=self.cfg.app_server.client_title,
+                    client_version=self.cfg.app_server.client_version,
+                )
+                self._read_and_guard(client, target, initialize_info)
+                self.tasks.mark_verified(
+                    task.task_id,
+                    app_server_version=self._initialize_version(
+                        initialize_info, target.app_server_version
+                    ),
+                )
+                turn = client.turn_start(
+                    binding.thread_id,
+                    prompt,
+                    cwd=str(project.repo),
+                    model=model,
+                    reasoning_effort=reasoning_effort,
+                    approval_policy=self.cfg.approval,
+                )
+        if issue_id:
+            self.tasks.record_linear_execution(issue_id, leased.task_id)
+        return DispatchResult(
+            target_alias=f"{workspace.alias}.{project.project_alias}",
+            thread_id=binding.thread_id,
+            turn_id=turn.turn_id,
+            model=turn.model or model,
+            reasoning_effort=turn.reasoning_effort or reasoning_effort,
+            dispatch_status="DISPATCHED",
+            repository_identity_source="app_server",
+            project_alias=project.project_alias,
+            session_id=binding.session_id,
+            cwd=str(project.repo),
+            task_id=leased.task_id,
+            execution_mode=execution_mode,
+        )
+
+    def task_action(self, task_id: str, action: str) -> str:
+        if action == "complete":
+            return self.tasks.set_status(task_id, "COMPLETED").status
+        if action == "archive":
+            return self.tasks.set_status(task_id, "ARCHIVED").status
+        if action == "reopen":
+            task = self.tasks.get_task(task_id)
+            if task.status not in {"COMPLETED", "ARCHIVED"}:
+                raise TaskRegistryError(f"Task is already active: {task_id}")
+            return self.tasks.set_status(task_id, "ACTIVE").status
+        raise DispatchContractError(f"Unsupported TASK_ACTION={action!r}")
+
+
 class Dispatcher:
     """Dispatch prompts using explicit project and thread registries."""
 
@@ -1834,6 +2278,27 @@ class Bridge:
         self.linear = linear
         self.states: dict[str, str] = {}
         self.dispatcher = dispatcher or Dispatcher(cfg)
+        self.task_dispatcher: TaskDispatcher | None = None
+
+    def _m5_dispatcher(self) -> TaskDispatcher:
+        if self.task_dispatcher is None:
+            self.task_dispatcher = TaskDispatcher(self.cfg)
+        return self.task_dispatcher
+
+    def _m5_repo(self, contract: DispatchContract) -> Path:
+        dispatcher = self._m5_dispatcher()
+        if contract.task_mode == "continue":
+            if not contract.task_id:
+                raise DispatchContractError("TASK_MODE=continue requires TASK_ID")
+            task = dispatcher.tasks.get_task(contract.task_id)
+            workspace = dispatcher.workspaces.resolve(task.workspace_alias)
+            return dispatcher.workspaces.validate_path(workspace, Path(task.cwd))
+        _workspace, _descriptor, project = dispatcher.resolve_project(
+            contract.project_alias or "",
+            host=contract.host,
+            project_mode=contract.project_mode or "existing",
+        )
+        return project.repo
 
     def initialize(self) -> None:
         self.cfg.log_dir.mkdir(parents=True, exist_ok=True)
@@ -1863,7 +2328,39 @@ class Bridge:
         handled = 0
         for issue in issues:
             project_name = (issue.get("project") or {}).get("name")
-            repo = self.cfg.repo_for_project(project_name)
+            contract = None
+            try:
+                contract = parse_dispatch_contract(issue.get("description"))
+            except DispatchContractError:
+                # Let execute_issue produce the authoritative contract failure
+                # comment.  A M5-shaped malformed contract must not be hidden
+                # by the legacy static repo preflight.
+                contract = None
+            is_m5_shape = any(
+                re.search(rf"(?m)^\s*{key}=", issue.get("description") or "")
+                for key in ("TASK_MODE", "PROJECT_MODE", "EXECUTION_MODE", "TASK_ACTION")
+            )
+            if contract and contract.contract_kind == "m5":
+                try:
+                    repo = self._m5_repo(contract)
+                except Exception as exc:
+                    self._record_bridge_failure(
+                        issue,
+                        Path("."),
+                        str(exc),
+                        prefix="DISPATCH_PROJECT_RESOLUTION_FAILED",
+                    )
+                    continue
+            elif is_m5_shape:
+                self._record_bridge_failure(
+                    issue,
+                    Path("."),
+                    "Malformed M5 dispatch contract",
+                    prefix="DISPATCH_CONTRACT_FAILED",
+                )
+                continue
+            else:
+                repo = self.cfg.repo_for_project(project_name)
             if repo is None:
                 print(
                     f"Skip {issue['identifier']}: no repo mapping for Linear project "
@@ -1871,7 +2368,16 @@ class Bridge:
                 )
                 continue
 
-            if not repo.is_dir() or not is_git_repo(repo):
+            if not contract or contract.contract_kind != "m5":
+                repo_valid = repo.is_dir() and is_git_repo(repo)
+            else:
+                # Explicit PROJECT_MODE=create is allowed to create the
+                # workspace-relative project during execute_issue.
+                repo_valid = (
+                    contract.project_mode == "create"
+                    or (repo.is_dir() and is_git_repo(repo))
+                )
+            if not repo_valid:
                 body = (
                     "BRIDGE_CLAIM_FAILED\n\n"
                     f"Reason: configured repository is missing or not a Git repository.\n"
@@ -1890,6 +2396,103 @@ class Bridge:
             handled += 1
         return handled
 
+    def _execute_m5_issue(
+        self,
+        issue: dict[str, Any],
+        repo: Path,
+        contract: DispatchContract,
+    ) -> None:
+        """Claim and dispatch one explicit M5 task contract."""
+        identifier = issue["identifier"]
+        running_state_id = self.states[self.cfg.running_state]
+        if contract.task_action and not contract.task_id:
+            self._record_bridge_failure(
+                issue,
+                repo,
+                "TASK_ACTION requires TASK_ID",
+                prefix="TASK_ACTION_FAILED",
+            )
+            return
+
+        claimed = self.linear.update_issue_state(issue["id"], running_state_id)
+        if claimed["state"]["name"] != self.cfg.running_state:
+            raise BridgeError(
+                f"Failed to claim {identifier}: state is {claimed['state']['name']}"
+            )
+        try:
+            self.linear.add_comment(
+                issue["id"],
+                "M5_TASK_CLAIMED\n\n"
+                f"- Issue: `{identifier}`\n"
+                f"- Project: `{contract.project_alias}`\n"
+                f"- Task mode: `{contract.task_mode}`\n"
+                f"- Execution mode: `{contract.execution_mode}`\n"
+                "- Legacy codex exec: `NO`",
+            )
+        except Exception as exc:
+            print(f"Warning: failed to write M5 claim for {identifier}: {exc}")
+
+        dispatcher = self._m5_dispatcher()
+        try:
+            if contract.task_action:
+                status = dispatcher.task_action(contract.task_id or "", contract.task_action)
+                body = (
+                    "M5_TASK_ACTION_APPLIED\n\n"
+                    f"TASK_ID={contract.task_id}\n"
+                    f"TASK_ACTION={contract.task_action}\n"
+                    f"TASK_STATUS={status}\n"
+                    "CONVERSATION_BINDING_PRESERVED=YES"
+                )
+                self.linear.add_comment(issue["id"], body)
+                return
+
+            result = dispatcher.dispatch(
+                project_ref=contract.project_alias or "",
+                host=contract.host,
+                project_mode=contract.project_mode or "existing",
+                task_mode=contract.task_mode or "new",
+                task_id=contract.task_id,
+                prompt=codex_prompt(issue, repo, self.cfg.review_state),
+                title=str(issue.get("title") or identifier),
+                summary=None,
+                model=contract.model,
+                reasoning_effort=contract.reasoning_effort,
+                execution_mode=contract.execution_mode,
+                issue_id=issue.get("id"),
+            )
+        except Exception as exc:
+            self._record_bridge_failure(issue, repo, f"Failed to dispatch M5 task: {exc}")
+            return
+
+        body = (
+            "M5_TASK_DISPATCHED\n\n"
+            f"TASK_ID={result.task_id}\n"
+            f"THREAD_ID={result.thread_id}\n"
+            f"SESSION_ID={result.session_id}\n"
+            f"TURN_ID={result.turn_id}\n"
+            f"PROJECT={result.project_alias}\n"
+            f"MODEL={result.model or 'server default'}\n"
+            f"REASONING={result.reasoning_effort or 'server default'}\n"
+            f"EXECUTION_MODE={result.execution_mode}\n"
+            "TASK_EXECUTION_SERIALIZATION=PASS\n"
+            "EXACT_THREAD_DISPATCH=PASS\n"
+            "LEGACY_CODEX_EXEC_DEFAULT=NO"
+        )
+        try:
+            self.linear.add_comment(issue["id"], body)
+        except Exception as exc:
+            print(f"Warning: failed to write M5 dispatch for {identifier}: {exc}")
+        try:
+            log_dir = write_dispatch_record(self.cfg, issue, result)
+        except Exception as exc:
+            log_dir = None
+            print(f"Warning: failed to write M5 dispatch log for {identifier}: {exc}")
+        print(
+            f"M5 dispatched {identifier}: task={result.task_id} "
+            f"thread={result.thread_id} turn={result.turn_id}"
+            + (f" logs={log_dir}" if log_dir else "")
+        )
+
     def execute_issue(self, issue: dict[str, Any], repo: Path) -> None:
         identifier = issue["identifier"]
         running_state_id = self.states[self.cfg.running_state]
@@ -1898,6 +2501,10 @@ class Bridge:
             contract = parse_dispatch_contract(issue.get("description"))
         except DispatchContractError as exc:
             self._record_bridge_failure(issue, repo, str(exc), prefix="DISPATCH_CONTRACT_FAILED")
+            return
+
+        if contract and contract.contract_kind == "m5":
+            self._execute_m5_issue(issue, repo, contract)
             return
 
         mapped_project_alias = self.cfg.project_alias_for_linear(project_name)
