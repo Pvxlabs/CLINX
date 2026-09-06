@@ -2880,6 +2880,7 @@ class TaskContextReader:
     DEFAULT_MAX_BYTES = 32_000
     MAX_RECENT_TURNS = 20
     MAX_CONTEXT_BYTES = 128_000
+    MAX_ITEM_PAGES = 8
 
     def __init__(
         self,
@@ -3117,18 +3118,56 @@ class TaskContextReader:
                 # final agent messages even when the bounded item page is
                 # occupied by newer command/reasoning items.
                 add_messages(turn_row["items"])
-            try:
-                item_page = client.thread_items_list(
-                    binding.thread_id,
-                    turn_id=turn_id,
-                    limit=min(20, max(1, recent_turns * 2)),
-                    sort_direction="desc",
-                )
-            except AppServerError as exc:
-                raise BoundedHistoryUnavailable(str(exc)) from exc
-            item_page_truncated = item_page_truncated or bool(item_page.get("nextCursor"))
-            for item in item_page.get("data", ()):
-                add_messages(item)
+            item_cursor: str | None = None
+            seen_item_cursors: set[str] = set()
+            item_pages = 0
+            while item_pages < self.MAX_ITEM_PAGES:
+                item_kwargs: dict[str, Any] = {
+                    "turn_id": turn_id,
+                    "limit": 20,
+                    "sort_direction": "desc",
+                }
+                if item_cursor is not None:
+                    item_kwargs["cursor"] = item_cursor
+                try:
+                    item_page = client.thread_items_list(
+                        binding.thread_id,
+                        **item_kwargs,
+                    )
+                except AppServerError as exc:
+                    raise BoundedHistoryUnavailable(str(exc)) from exc
+                item_pages += 1
+                for item in item_page.get("data", ()):
+                    add_messages(item)
+
+                next_cursor = item_page.get("nextCursor")
+                raw_size = len("\n".join(all_text).encode("utf-8"))
+                enough_messages = bool(users and assistants)
+                byte_budget_exhausted = raw_size > max_bytes
+                if enough_messages or byte_budget_exhausted:
+                    # We deliberately stop with a bounded, useful slice.  A
+                    # remaining cursor means older items were intentionally
+                    # omitted and must be visible to callers as truncated.
+                    if isinstance(next_cursor, str) and next_cursor:
+                        item_page_truncated = True
+                    break
+                if not isinstance(next_cursor, str) or not next_cursor:
+                    break
+                if next_cursor in seen_item_cursors:
+                    # A malformed server cursor must not create an unbounded
+                    # loop or make the read appear complete.
+                    item_page_truncated = True
+                    break
+                seen_item_cursors.add(next_cursor)
+                item_cursor = next_cursor
+            else:
+                # The page cap, rather than the server, ended the read.
+                item_page_truncated = True
+
+            if users and assistants:
+                break
+            if len("\n".join(all_text).encode("utf-8")) > max_bytes:
+                break
         users, assistants, bounded_text, byte_truncated = self._bounded_messages(
             all_text, roles, max_bytes
         )
