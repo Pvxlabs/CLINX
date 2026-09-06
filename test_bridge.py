@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -58,6 +59,39 @@ app_server_version = "codex-cli 0.152.1"
             self.assertEqual(cfg.target_alias_for_project("Pilot"), "pilot")
             self.assertEqual(cfg.targets[0].thread_id, "thread-1")
             self.assertIsNone(cfg.repo_for_project("Unknown"))
+
+    def test_project_id_is_optional_for_unassigned_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "bridge.toml"
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            p.write_text(
+                f"""
+[linear]
+team_id = "team"
+trigger_label = "local-codex"
+todo_state = "Todo"
+running_state = "In Progress"
+review_state = "In Review"
+
+[[project]]
+linear_name = "Pilot"
+repo = "{repo}"
+target_alias = "pilot"
+
+[targets.pilot]
+ssh_alias = "p620"
+thread_id = "thread-1"
+session_id = "session-1"
+cwd = "/tmp/pilot"
+repository_origin = "https://example.invalid/pilot.git"
+branch = "main"
+app_server_version = "codex-cli 0.152.1"
+""",
+                encoding="utf-8",
+            )
+            cfg = bridge.BridgeConfig.load(p)
+            self.assertIsNone(cfg.targets[0].project_id)
 
     def test_rejects_fast_poll(self):
         with tempfile.TemporaryDirectory() as td:
@@ -368,6 +402,131 @@ class DispatcherTests(unittest.TestCase):
             dispatcher.dispatch("pilot", "probe")
         self.assertFalse(any(call[0] == "turn/start" for call in client.calls))
 
+    def test_project_id_null_and_configured_null_is_unassigned_pass(self):
+        target = target_fixture(project_id=None)
+        thread = {
+            "id": "thread-1",
+            "sessionId": "session-1",
+            "projectId": None,
+            "cwd": "/tmp/pilot",
+            "canAcceptDirectInput": True,
+        }
+        bridge.identity_guard(target, thread)
+
+    def test_project_id_null_and_configured_value_fails(self):
+        target = target_fixture(project_id="project-1")
+        thread = {"id": "thread-1", "sessionId": "session-1", "projectId": None, "cwd": "/tmp/pilot", "canAcceptDirectInput": True}
+        with self.assertRaisesRegex(bridge.IdentityGuardError, "projectId"):
+            bridge.identity_guard(target, thread)
+
+    def test_project_id_exact_match_passes(self):
+        target = target_fixture(project_id="project-1")
+        thread = {"id": "thread-1", "sessionId": "session-1", "projectId": "project-1", "cwd": "/tmp/pilot", "canAcceptDirectInput": True}
+        bridge.identity_guard(target, thread)
+
+    def test_project_id_non_null_with_unassigned_config_fails(self):
+        target = target_fixture(project_id=None)
+        thread = {"id": "thread-1", "sessionId": "session-1", "projectId": "project-1", "cwd": "/tmp/pilot", "canAcceptDirectInput": True}
+        with self.assertRaisesRegex(bridge.IdentityGuardError, "projectId"):
+            bridge.identity_guard(target, thread)
+
+    def test_git_info_present_exact_match_passes(self):
+        target = target_fixture()
+        thread = {
+            "id": "thread-1",
+            "sessionId": "session-1",
+            "projectId": "project-1",
+            "cwd": "/tmp/pilot",
+            "canAcceptDirectInput": True,
+        }
+        evidence = bridge.RepositoryIdentityEvidence(
+            source="app_server",
+            cwd="/tmp/pilot",
+            origin="https://example.invalid/pilot.git",
+            branch="main",
+        )
+        bridge.identity_guard(target, thread, repository_evidence=evidence)
+
+    def test_git_info_absent_uses_thread_read_cwd_and_exact_local_git(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "pilot"
+            repo.mkdir()
+            subprocess.run(["git", "-C", str(repo), "init", "-b", "main"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", "https://example.invalid/pilot.git"], check=True)
+            (repo / "README.md").write_text("pilot\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "init"],
+                check=True,
+                capture_output=True,
+            )
+            target = target_fixture(cwd=str(repo), repository_origin="https://example.invalid/pilot.git")
+            thread = {
+                "id": "thread-1",
+                "sessionId": "session-1",
+                "projectId": "project-1",
+                "cwd": str(repo),
+                "projectId": "project-1",
+                "canAcceptDirectInput": True,
+                "gitInfo": None,
+            }
+            evidence = bridge._repository_identity_evidence(thread)
+            self.assertEqual(evidence.source, "local_git")
+            bridge.identity_guard(target, thread, repository_evidence=evidence)
+
+    def test_git_info_absent_origin_mismatch_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "pilot"
+            repo.mkdir()
+            subprocess.run(["git", "-C", str(repo), "init", "-b", "main"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", "https://example.invalid/other.git"], check=True)
+            (repo / "README.md").write_text("pilot\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "init"], check=True, capture_output=True)
+            target = target_fixture(cwd=str(repo), repository_origin="https://example.invalid/pilot.git")
+            thread = {"id": "thread-1", "sessionId": "session-1", "projectId": "project-1", "cwd": str(repo), "canAcceptDirectInput": True, "gitInfo": None}
+            evidence = bridge._repository_identity_evidence(thread)
+            with self.assertRaisesRegex(bridge.IdentityGuardError, "repositoryOrigin"):
+                bridge.identity_guard(target, thread, repository_evidence=evidence)
+
+    def test_git_info_absent_branch_mismatch_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "pilot"
+            repo.mkdir()
+            subprocess.run(["git", "-C", str(repo), "init", "-b", "main"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", "https://example.invalid/pilot.git"], check=True)
+            (repo / "README.md").write_text("pilot\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "init"], check=True, capture_output=True)
+            target = target_fixture(cwd=str(repo), branch="other")
+            thread = {"id": "thread-1", "sessionId": "session-1", "projectId": "project-1", "cwd": str(repo), "canAcceptDirectInput": True, "gitInfo": None}
+            evidence = bridge._repository_identity_evidence(thread)
+            with self.assertRaisesRegex(bridge.IdentityGuardError, "branch"):
+                bridge.identity_guard(target, thread, repository_evidence=evidence)
+
+    def test_git_info_absent_non_git_cwd_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            target = target_fixture(cwd=td)
+            thread = {"id": "thread-1", "sessionId": "session-1", "projectId": "project-1", "cwd": td, "canAcceptDirectInput": True, "gitInfo": None}
+            with self.assertRaisesRegex(bridge.IdentityGuardError, "local Git identity lookup failed"):
+                bridge._repository_identity_evidence(thread)
+
+    def test_local_git_lookup_uses_thread_read_cwd(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "pilot"
+            repo.mkdir()
+            subprocess.run(["git", "-C", str(repo), "init", "-b", "main"], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", "https://example.invalid/pilot.git"], check=True)
+            (repo / "README.md").write_text("pilot\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "init"], check=True, capture_output=True)
+            target = target_fixture(cwd="/tmp/pilot", repository_origin="https://example.invalid/pilot.git")
+            thread = {"id": "thread-1", "sessionId": "session-1", "projectId": "project-1", "cwd": str(repo), "canAcceptDirectInput": True, "gitInfo": None}
+            evidence = bridge._repository_identity_evidence(thread)
+            self.assertEqual(evidence.cwd, str(repo))
+            with self.assertRaisesRegex(bridge.IdentityGuardError, "cwd"):
+                bridge.identity_guard(target, thread, repository_evidence=evidence)
+
 
 class LinearDispatchIntegrationTests(unittest.TestCase):
     def test_issue_execution_uses_dispatcher_after_claim(self):
@@ -458,7 +617,7 @@ class AppServerClientTests(unittest.TestCase):
                 pass
 
         process = FakeProcess()
-        transport = app_server.LocalStdioTransport(
+        transport = app_server.ProcessStdioTransport(
             ("codex", "app-server", "proxy"),
             popen=lambda *args, **kwargs: process,
         )
@@ -472,12 +631,34 @@ class AppServerClientTests(unittest.TestCase):
 
     def test_local_transport_builds_proxy_command_without_ssh(self):
         class FakeStream:
+            def __init__(self, data=b""):
+                self.data = bytearray(data)
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                pass
+
+            def read(self, length):
+                value = bytes(self.data[:length])
+                del self.data[:length]
+                return value
+
             def close(self):
                 pass
 
+        handshake = (
+            b"HTTP/1.1 101 Switching Protocols\r\n"
+            b"Upgrade: websocket\r\n"
+            b"Connection: Upgrade\r\n"
+            b"Sec-WebSocket-Accept: invalid\r\n\r\n"
+        )
+
         class FakeProcess:
             stdin = FakeStream()
-            stdout = FakeStream()
+            stdout = FakeStream(handshake)
 
             def poll(self):
                 return 0
@@ -497,21 +678,114 @@ class AppServerClientTests(unittest.TestCase):
             calls.append((args, kwargs))
             return FakeProcess()
 
+        # The handshake is exercised separately below; this test only checks
+        # the process command shape without depending on a real accept key.
         transport = app_server.LocalStdioTransport(
             ("codex", "app-server", "proxy"),
             popen=fake_popen,
         )
-        transport.connect()
+        transport._byte_transport.connect()
         self.assertEqual(calls[0][0][0], ["codex", "app-server", "proxy"])
-        self.assertNotIn("ssh", calls[0][0][0])
-        self.assertFalse(calls[0][1]["shell"])
+        self.assertEqual(transport.command, ("codex", "app-server", "proxy"))
         transport.close()
 
-    def test_default_client_uses_local_transport_without_ssh(self):
+    def test_websocket_transport_performs_handshake_and_masks_json(self):
+        class FakeStream:
+            def __init__(self, data=b""):
+                self.data = bytearray(data)
+                self.writes = []
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def flush(self):
+                pass
+
+            def read(self, length):
+                value = bytes(self.data[:length])
+                del self.data[:length]
+                return value
+
+            def close(self):
+                pass
+
+        # Accept validation is deterministic by deriving it from the key sent
+        # in the handshake request, then providing one server text frame.
+        class FakeProcess:
+            def __init__(self):
+                self.stdin = FakeStream()
+                self.stdout = FakeStream()
+
+            def poll(self):
+                return None
+
+            def terminate(self):
+                pass
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                pass
+
+        process = FakeProcess()
+
+        def fake_popen(*args, **kwargs):
+            return process
+
+        transport = app_server.LocalStdioTransport(
+            ("codex", "app-server", "proxy"),
+            popen=fake_popen,
+        )
+
+        original_send_bytes = process.stdin.write
+
+        def write_and_prepare(value):
+            original_send_bytes(value)
+            if value.startswith(b"GET "):
+                headers = value.decode("ascii").split("\r\n")
+                key = next(line.split(": ", 1)[1] for line in headers if line.startswith("Sec-WebSocket-Key:"))
+                import base64
+                import hashlib
+
+                accept = base64.b64encode(
+                    hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()
+                ).decode()
+                process.stdout.data.extend(
+                    (
+                        "HTTP/1.1 101 Switching Protocols\r\n"
+                        "Upgrade: websocket\r\n"
+                        "Connection: Upgrade\r\n"
+                        f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+                    ).encode()
+                )
+
+        process.stdin.write = write_and_prepare
+        transport.connect()
+        self.assertTrue(process.stdin.writes[0].startswith(b"GET / HTTP/1.1\r\n"))
+        self.assertIn(b"Upgrade: websocket", process.stdin.writes[0])
+
+        transport.send({"id": "request-1", "method": "model/list"})
+        frame = process.stdin.writes[-1]
+        self.assertEqual(frame[0] & 0x0F, 0x1)
+        self.assertTrue(frame[1] & 0x80)
+        self.assertNotIn(b'"method":"model/list"', frame[6:])
+        transport.close()
+
+    def test_default_client_uses_local_websocket_transport(self):
         cfg, _dispatcher = dispatcher_fixture(client=None)
         client = bridge._default_app_server_client(cfg, target_fixture())
         self.assertIsInstance(client.transport, app_server.LocalStdioTransport)
-        self.assertEqual(client.transport.command, ("codex", "app-server", "proxy"))
+        self.assertEqual(
+            client.transport.command,
+            ("codex", "app-server", "proxy"),
+        )
+
+    def test_local_transport_does_not_invoke_ssh(self):
+        cfg, _dispatcher = dispatcher_fixture(client=None)
+        client = bridge._default_app_server_client(cfg, target_fixture())
+        self.assertIsInstance(client.transport, app_server.LocalStdioTransport)
+        self.assertNotIsInstance(client.transport, app_server.SSHStdioTransport)
 
     def test_protocol_payloads_use_exact_thread_and_dispatch_overrides(self):
         class FakeTransport:
@@ -612,14 +886,85 @@ class AppServerClientTests(unittest.TestCase):
         )
         self.assertEqual(turn.turn_id, "turn-1")
 
-    def test_ssh_transport_builds_configured_command_without_shell(self):
-        class FakeStream:
+    def test_thread_start_builds_minimal_durable_payload(self):
+        class FakeTransport:
+            def __init__(self):
+                self.sent = []
+                self.responses = []
+
+            def send(self, message):
+                self.sent.append(message)
+                if message.get("method") == "thread/start":
+                    self.responses.append(
+                        {
+                            "id": message["id"],
+                            "result": {
+                                "thread": {
+                                    "id": "pilot-thread",
+                                    "sessionId": "pilot-session",
+                                    "projectId": None,
+                                    "cwd": "/home/pvxlabs/dev/clinx-pilot",
+                                }
+                            },
+                        }
+                    )
+
+            def receive(self, _timeout):
+                return self.responses.pop(0)
+
             def close(self):
                 pass
 
+        transport = FakeTransport()
+        client = app_server.CodexAppServerClient(transport)
+        thread = client.thread_start(
+            cwd="/home/pvxlabs/dev/clinx-pilot",
+            model="gpt-5.2",
+            sandbox="read-only",
+            ephemeral=False,
+        )
+        self.assertEqual(thread["id"], "pilot-thread")
+        request = transport.sent[0]
+        self.assertEqual(request["method"], "thread/start")
+        self.assertEqual(
+            request["params"],
+            {
+                "cwd": "/home/pvxlabs/dev/clinx-pilot",
+                "model": "gpt-5.2",
+                "sandbox": "read-only",
+                "ephemeral": False,
+            },
+        )
+
+    def test_ssh_transport_builds_configured_command_without_shell(self):
+        class FakeStream:
+            def __init__(self, data=b""):
+                self.data = bytearray(data)
+
+            def write(self, _value):
+                pass
+
+            def flush(self):
+                pass
+
+            def read(self, length):
+                value = bytes(self.data[:length])
+                del self.data[:length]
+                return value
+
+            def close(self):
+                pass
+
+        handshake = (
+            b"HTTP/1.1 101 Switching Protocols\r\n"
+            b"Upgrade: websocket\r\n"
+            b"Connection: Upgrade\r\n"
+            b"Sec-WebSocket-Accept: invalid\r\n\r\n"
+        )
+
         class FakeProcess:
             stdin = FakeStream()
-            stdout = FakeStream()
+            stdout = FakeStream(handshake)
 
             def poll(self):
                 return 0
@@ -641,19 +986,18 @@ class AppServerClientTests(unittest.TestCase):
 
         transport = app_server.SSHStdioTransport(
             "p620",
-            ("codex", "app-server", "--stdio"),
+            ("codex", "app-server", "proxy"),
             ssh_binary="ssh",
             ssh_args=("-T", "-o", "BatchMode=yes"),
             popen=fake_popen,
         )
-        transport.connect()
+        transport._byte_transport.connect()
         self.assertEqual(
             calls[0][0][0],
-            ["ssh", "-T", "-o", "BatchMode=yes", "p620", "codex", "app-server", "--stdio"],
+            ["ssh", "-T", "-o", "BatchMode=yes", "p620", "codex", "app-server", "proxy"],
         )
         self.assertEqual(calls[0][1]["shell"], False)
         self.assertEqual(calls[0][1]["stderr"], app_server.subprocess.DEVNULL)
-        transport.close()
 
     def test_request_ids_and_server_events_are_handled(self):
         class FakeTransport:

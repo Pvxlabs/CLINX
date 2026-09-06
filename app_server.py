@@ -1,17 +1,22 @@
 """Minimal Codex app-server JSON-RPC client used by Dispatcher V1.
 
-The transport is deliberately small and stdio-oriented: a local proxy or SSH
-command owns the process boundary and JSON-RPC messages are exchanged one per
-line. No Desktop IPC, credential inspection, or thread discovery is done here.
-Dispatch callers must provide an exact durable thread id.
+Codex's ``app-server proxy`` forwards raw bytes to the existing control
+socket.  The control socket is a Unix-domain WebSocket endpoint, so the bridge
+owns the small WebSocket handshake/framing layer and keeps JSON-RPC handling
+above it.  No Desktop IPC, credential inspection, or thread discovery is done
+here. Dispatch callers must provide an exact durable thread id.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import base64
+import hashlib
 import json
+import os
 import re
 import select
+import struct
 import subprocess
 import time
 import uuid
@@ -38,6 +43,45 @@ class AppServerRemoteError(AppServerError):
         super().__init__(f"{method} failed{suffix}: {message}")
         self.method = method
         self.error = error
+
+
+def _process_group_id(process: Any) -> int | None:
+    pid = getattr(process, "pid", None)
+    if not isinstance(pid, int) or pid <= 0:
+        return None
+    try:
+        return os.getpgid(pid)
+    except (OSError, ProcessLookupError):
+        return None
+
+
+def _terminate_process_group(process: Any) -> int | None:
+    """Terminate a proxy wrapper and return its group id for final cleanup."""
+    pgid = _process_group_id(process)
+    if pgid is not None:
+        try:
+            os.killpg(pgid, 15)
+            return pgid
+        except (OSError, ProcessLookupError):
+            pass
+    pid = getattr(process, "pid", None)
+    terminate = getattr(process, "terminate", None)
+    if terminate:
+        terminate()
+    return pgid
+
+
+def _kill_process_group(process: Any, pgid: int | None = None) -> None:
+    pgid = pgid if pgid is not None else _process_group_id(process)
+    if pgid is not None:
+        try:
+            os.killpg(pgid, 9)
+            return
+        except (OSError, ProcessLookupError):
+            pass
+    kill = getattr(process, "kill", None)
+    if kill:
+        kill()
 
 
 class JSONRPCTransport(Protocol):
@@ -78,6 +122,7 @@ class ProcessStdioTransport:
                 text=True,
                 encoding="utf-8",
                 bufsize=1,
+                start_new_session=True,
             )
         except OSError as exc:
             raise AppServerTransportError(
@@ -124,17 +169,272 @@ class ProcessStdioTransport:
                 process.stdin.close()
         except OSError:
             pass
+        pgid = _terminate_process_group(process)
         try:
-            process.terminate()
             process.wait(timeout=2)
         except (OSError, subprocess.TimeoutExpired):
+            pass
+        # The node wrapper can exit while its native proxy child remains in
+        # the original group, so finish the group explicitly after waiting.
+        _kill_process_group(process, pgid)
+
+
+class ProcessByteTransport:
+    """Exchange raw bytes with a child process over stdio."""
+
+    def __init__(
+        self,
+        command: tuple[str, ...],
+        *,
+        timeout_seconds: float = 30.0,
+        popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
+    ):
+        if not command:
+            raise AppServerTransportError("app-server command is required")
+        self.command = command
+        self.timeout_seconds = timeout_seconds
+        self._popen = popen
+        self._process: subprocess.Popen[bytes] | None = None
+
+    def connect(self) -> None:
+        if self._process is not None:
+            return
+        try:
+            self._process = self._popen(
+                list(self.command),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                shell=False,
+                text=False,
+                bufsize=0,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            raise AppServerTransportError(
+                f"failed to start app-server transport: {exc}"
+            ) from exc
+
+    def _stdout(self):
+        if self._process is None or self._process.stdout is None:
+            raise AppServerTransportError("app-server transport is not connected")
+        return self._process.stdout
+
+    def send_bytes(self, payload: bytes) -> None:
+        if self._process is None or self._process.stdin is None:
+            raise AppServerTransportError("app-server transport is not connected")
+        try:
+            self._process.stdin.write(payload)
+            self._process.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            raise AppServerTransportError(f"failed to write app-server bytes: {exc}") from exc
+
+    def receive_bytes(self, length: int, timeout_seconds: float) -> bytes:
+        if length < 0:
+            raise AppServerTransportError("byte read length must not be negative")
+        if length == 0:
+            return b""
+        stream = self._stdout()
+        deadline = time.monotonic() + timeout_seconds
+        result = bytearray()
+        while len(result) < length:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise AppServerTransportError(
+                    f"timed out waiting for {length} app-server bytes"
+                )
             try:
-                process.kill()
-            except OSError:
-                pass
+                fd = stream.fileno()
+            except (AttributeError, OSError):
+                fd = None
+            if fd is not None:
+                ready, _, _ = select.select([fd], [], [], remaining)
+                if not ready:
+                    raise AppServerTransportError(
+                        f"timed out waiting for {length} app-server bytes"
+                    )
+                chunk = os.read(fd, length - len(result))
+            else:
+                chunk = stream.read(length - len(result))
+            if not chunk:
+                code = self._process.poll() if self._process is not None else None
+                raise AppServerTransportError(
+                    "app-server byte transport closed"
+                    + (f" (exit {code})" if code is not None else "")
+                )
+            result.extend(chunk)
+        return bytes(result)
+
+    def close(self) -> None:
+        process, self._process = self._process, None
+        if process is None:
+            return
+        try:
+            if process.stdin is not None:
+                process.stdin.close()
+        except OSError:
+            pass
+        pgid = _terminate_process_group(process)
+        try:
+            process.wait(timeout=2)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        _kill_process_group(process, pgid)
 
 
-class SSHStdioTransport(ProcessStdioTransport):
+class WebSocketStdioTransport:
+    """Speak WebSocket frames over a raw stdio byte tunnel."""
+
+    _MAX_FRAME_BYTES = 16 * 1024 * 1024
+
+    def __init__(
+        self,
+        command: tuple[str, ...],
+        *,
+        timeout_seconds: float = 30.0,
+        popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
+        websocket_path: str = "/",
+    ):
+        if not websocket_path.startswith("/"):
+            raise AppServerTransportError("websocket path must start with '/'")
+        self.command = command
+        self.timeout_seconds = timeout_seconds
+        self.websocket_path = websocket_path
+        self._byte_transport = ProcessByteTransport(
+            command,
+            timeout_seconds=timeout_seconds,
+            popen=popen,
+        )
+        self._connected = False
+
+    def connect(self) -> None:
+        if self._connected:
+            return
+        self._byte_transport.connect()
+        key = base64.b64encode(os.urandom(16)).decode("ascii")
+        request = (
+            f"GET {self.websocket_path} HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            "\r\n"
+        ).encode("ascii")
+        self._byte_transport.send_bytes(request)
+        header = self._read_http_header()
+        lines = header.decode("latin1").split("\r\n")
+        if not lines or not lines[0].startswith("HTTP/1.1 101"):
+            status = lines[0] if lines else "empty response"
+            raise AppServerProtocolError(f"app-server websocket handshake failed: {status}")
+        headers: dict[str, str] = {}
+        for line in lines[1:]:
+            if ":" in line:
+                name, value = line.split(":", 1)
+                headers[name.lower()] = value.strip()
+        expected_accept = base64.b64encode(
+            hashlib.sha1(
+                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+            ).digest()
+        ).decode("ascii")
+        if headers.get("sec-websocket-accept") != expected_accept:
+            raise AppServerProtocolError("app-server websocket accept mismatch")
+        self._connected = True
+
+    def _read_http_header(self) -> bytes:
+        result = bytearray()
+        deadline = time.monotonic() + self.timeout_seconds
+        while b"\r\n\r\n" not in result:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise AppServerTransportError("timed out during app-server websocket handshake")
+            result.extend(self._byte_transport.receive_bytes(1, remaining))
+            if len(result) > 64 * 1024:
+                raise AppServerProtocolError("app-server websocket handshake is too large")
+        return bytes(result).split(b"\r\n\r\n", 1)[0]
+
+    def send(self, message: dict[str, Any]) -> None:
+        if not self._connected:
+            raise AppServerTransportError("app-server websocket is not connected")
+        payload = json.dumps(message, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        self._send_frame(payload, opcode=0x1)
+
+    def _send_frame(self, payload: bytes, *, opcode: int) -> None:
+        mask = os.urandom(4)
+        length = len(payload)
+        if length < 126:
+            header = bytes([0x80 | opcode, 0x80 | length])
+        elif length <= 0xFFFF:
+            header = bytes([0x80 | opcode, 0x80 | 126]) + struct.pack("!H", length)
+        else:
+            header = bytes([0x80 | opcode, 0x80 | 127]) + struct.pack("!Q", length)
+        masked = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+        self._byte_transport.send_bytes(header + mask + masked)
+
+    def _receive_frame(self, timeout_seconds: float) -> tuple[int, bytes, bool]:
+        first, second = self._byte_transport.receive_bytes(2, timeout_seconds)
+        fin = bool(first & 0x80)
+        opcode = first & 0x0F
+        masked = bool(second & 0x80)
+        length = second & 0x7F
+        if length == 126:
+            length = struct.unpack("!H", self._byte_transport.receive_bytes(2, timeout_seconds))[0]
+        elif length == 127:
+            length = struct.unpack("!Q", self._byte_transport.receive_bytes(8, timeout_seconds))[0]
+        if length > self._MAX_FRAME_BYTES:
+            raise AppServerProtocolError("app-server websocket frame is too large")
+        mask = self._byte_transport.receive_bytes(4, timeout_seconds) if masked else b""
+        payload = bytearray(self._byte_transport.receive_bytes(length, timeout_seconds))
+        if masked:
+            for index in range(length):
+                payload[index] ^= mask[index % 4]
+        return opcode, bytes(payload), fin
+
+    def receive(self, timeout_seconds: float) -> dict[str, Any]:
+        fragments = bytearray()
+        fragmented_opcode: int | None = None
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise AppServerTransportError("timed out waiting for app-server websocket message")
+            opcode, payload, fin = self._receive_frame(remaining)
+            if opcode == 0x9:  # ping
+                self._send_frame(payload, opcode=0xA)
+                continue
+            if opcode == 0xA:  # pong
+                continue
+            if opcode == 0x8:
+                raise AppServerTransportError("app-server websocket closed")
+            if opcode in {0x1, 0x2}:
+                if fragmented_opcode is not None:
+                    raise AppServerProtocolError("nested app-server websocket fragment")
+                fragmented_opcode = opcode
+                fragments.extend(payload)
+            elif opcode == 0x0:
+                if fragmented_opcode is None:
+                    raise AppServerProtocolError("unexpected app-server websocket continuation")
+                fragments.extend(payload)
+            else:
+                raise AppServerProtocolError(f"unsupported app-server websocket opcode: {opcode}")
+            if not fin:
+                continue
+            if fragmented_opcode != 0x1:
+                raise AppServerProtocolError("app-server websocket message is not text")
+            try:
+                message = json.loads(bytes(fragments).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise AppServerProtocolError("app-server returned malformed websocket JSON") from exc
+            if not isinstance(message, dict):
+                raise AppServerProtocolError("app-server message must be a JSON object")
+            return message
+
+    def close(self) -> None:
+        self._connected = False
+        self._byte_transport.close()
+
+
+class SSHStdioTransport(WebSocketStdioTransport):
     """Run a configured remote app-server command over an SSH stdio channel."""
 
     def __init__(
@@ -162,8 +462,8 @@ class SSHStdioTransport(ProcessStdioTransport):
         )
 
 
-class LocalStdioTransport(ProcessStdioTransport):
-    """Run the local app-server proxy command over a stdio boundary."""
+class LocalStdioTransport(WebSocketStdioTransport):
+    """Run the local app-server proxy command over a stdio byte tunnel."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -284,6 +584,29 @@ class CodexAppServerClient:
     def thread_read(self, thread_id: str) -> dict[str, Any]:
         result = self._request("thread/read", {"threadId": thread_id})
         return _thread_result(result, "thread/read")
+
+    def thread_start(
+        self,
+        *,
+        cwd: str,
+        model: str | None = None,
+        project_id: str | None = None,
+        sandbox: str | None = None,
+        ephemeral: bool = False,
+        thread_source: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a durable thread for controlled pilot qualification."""
+        params: dict[str, Any] = {"cwd": cwd, "ephemeral": ephemeral}
+        if model is not None:
+            params["model"] = model
+        if project_id is not None:
+            params["projectId"] = project_id
+        if sandbox is not None:
+            params["sandbox"] = sandbox
+        if thread_source is not None:
+            params["threadSource"] = thread_source
+        result = self._request("thread/start", params)
+        return _thread_result(result, "thread/start")
 
     def thread_resume(self, thread_id: str) -> dict[str, Any]:
         result = self._request("thread/resume", {"threadId": thread_id})

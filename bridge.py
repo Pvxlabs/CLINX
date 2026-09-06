@@ -67,7 +67,7 @@ class AppServerConfig:
     command: tuple[str, ...] = ("codex", "app-server", "proxy")
     ssh_binary: str = "ssh"
     ssh_args: tuple[str, ...] = ("-T",)
-    remote_command: tuple[str, ...] = ("codex", "app-server")
+    remote_command: tuple[str, ...] = ("codex", "app-server", "proxy")
     request_timeout_seconds: float = 30.0
     client_name: str = "linear-local-codex-bridge"
     client_title: str = "Linear Local Codex Bridge"
@@ -80,7 +80,7 @@ class TargetConfig:
     ssh_alias: str
     thread_id: str
     session_id: str
-    project_id: str
+    project_id: str | None
     cwd: str
     repository_origin: str
     branch: str
@@ -165,7 +165,6 @@ class BridgeConfig:
                 "ssh_alias": row.get("ssh_alias"),
                 "thread_id": row.get("thread_id"),
                 "session_id": row.get("session_id"),
-                "project_id": row.get("project_id"),
                 "cwd": row.get("cwd"),
                 "repository_origin": row.get("repository_origin"),
                 "branch": row.get("branch"),
@@ -176,7 +175,16 @@ class BridgeConfig:
                 raise BridgeError(
                     f"Target {alias!r} missing required fields: {', '.join(missing_target)}"
                 )
-            targets.append(TargetConfig(alias=str(alias), **{k: str(v) for k, v in values.items()}))
+            project_id = row.get("project_id")
+            if project_id is not None:
+                project_id = str(project_id).strip() or None
+            targets.append(
+                TargetConfig(
+                    alias=str(alias),
+                    project_id=project_id,
+                    **{k: str(v) for k, v in values.items()},
+                )
+            )
 
         target_aliases = {target.alias for target in targets}
         unmapped_aliases = {
@@ -192,7 +200,7 @@ class BridgeConfig:
 
         remote_command = app_server_raw.get("remote_command")
         if not isinstance(remote_command, list) or not remote_command:
-            remote_command = ["codex", "app-server"]
+            remote_command = ["codex", "app-server", "proxy"]
         remote_command = tuple(str(part) for part in remote_command)
         command = app_server_raw.get("command", ["codex", "app-server", "proxy"])
         if not isinstance(command, list) or not command:
@@ -510,6 +518,7 @@ class DispatchResult:
     model: str | None
     reasoning_effort: str | None
     dispatch_status: str
+    repository_identity_source: str = "app_server"
 
 
 def write_dispatch_record(
@@ -530,6 +539,7 @@ def write_dispatch_record(
         "model": result.model,
         "reasoning_effort": result.reasoning_effort,
         "dispatch_status": result.dispatch_status,
+        "repository_identity_source": result.repository_identity_source,
     }
     (run_dir / "dispatch.json").write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n",
@@ -549,6 +559,92 @@ def _git_info(thread: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+@dataclasses.dataclass(frozen=True)
+class RepositoryIdentityEvidence:
+    source: str
+    cwd: str
+    origin: str
+    branch: str
+    head: str | None = None
+
+
+def _local_git_identity(cwd: str) -> RepositoryIdentityEvidence:
+    """Read repository identity only from the cwd returned by thread/read."""
+    commands = {
+        "top_level": ("git", "-C", cwd, "rev-parse", "--show-toplevel"),
+        "origin": ("git", "-C", cwd, "remote", "get-url", "origin"),
+        "branch": ("git", "-C", cwd, "branch", "--show-current"),
+        "head": ("git", "-C", cwd, "rev-parse", "HEAD"),
+    }
+    outputs: dict[str, str] = {}
+    for name, command in commands.items():
+        try:
+            result = subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise IdentityGuardError(
+                "DISPATCH_IDENTITY_GUARD=FAIL\n"
+                f"- local Git identity lookup failed for {name} at {cwd!r}"
+            ) from exc
+        outputs[name] = result.stdout.strip()
+
+    if outputs["top_level"] != cwd:
+        raise IdentityGuardError(
+            "DISPATCH_IDENTITY_GUARD=FAIL\n"
+            f"- repository top-level expected={cwd!r} actual={outputs['top_level']!r}"
+        )
+    if not outputs["origin"]:
+        raise IdentityGuardError(
+            "DISPATCH_IDENTITY_GUARD=FAIL\n- repository origin is missing"
+        )
+    if not outputs["branch"]:
+        raise IdentityGuardError(
+            "DISPATCH_IDENTITY_GUARD=FAIL\n- repository is detached HEAD"
+        )
+    return RepositoryIdentityEvidence(
+        source="local_git",
+        cwd=cwd,
+        origin=outputs["origin"],
+        branch=outputs["branch"],
+        head=outputs["head"] or None,
+    )
+
+
+def _repository_identity_evidence(
+    thread: dict[str, Any],
+) -> RepositoryIdentityEvidence:
+    cwd = thread.get("cwd")
+    if not isinstance(cwd, str) or not cwd:
+        raise IdentityGuardError(
+            "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/read returned no usable cwd"
+        )
+    raw_git_info = thread.get("gitInfo")
+    if raw_git_info is None:
+        return _local_git_identity(cwd)
+    if not isinstance(raw_git_info, dict):
+        raise IdentityGuardError(
+            "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/read returned malformed gitInfo"
+        )
+    origin = raw_git_info.get("originUrl")
+    branch = raw_git_info.get("branch")
+    if not isinstance(origin, str) or not origin or not isinstance(branch, str) or not branch:
+        raise IdentityGuardError(
+            "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/read returned incomplete gitInfo"
+        )
+    head = raw_git_info.get("head")
+    return RepositoryIdentityEvidence(
+        source="app_server",
+        cwd=cwd,
+        origin=origin,
+        branch=branch,
+        head=head if isinstance(head, str) else None,
+    )
+
+
 def _status_type(thread: dict[str, Any]) -> str | None:
     status = thread.get("status")
     if isinstance(status, dict):
@@ -561,30 +657,45 @@ def _identity_mismatches(
     target: TargetConfig,
     thread: dict[str, Any],
     *,
+    repository_evidence: RepositoryIdentityEvidence | None = None,
     require_direct_input: bool = True,
 ) -> list[str]:
-    git_info = _git_info(thread)
     actual = {
         "threadId": _thread_field(thread, "id"),
         "sessionId": _thread_field(thread, "sessionId"),
         "projectId": _thread_field(thread, "projectId"),
         "cwd": _thread_field(thread, "cwd"),
-        "repositoryOrigin": git_info.get("originUrl"),
-        "branch": git_info.get("branch"),
     }
     expected = {
         "threadId": target.thread_id,
         "sessionId": target.session_id,
-        "projectId": target.project_id,
         "cwd": target.cwd,
-        "repositoryOrigin": target.repository_origin,
-        "branch": target.branch,
     }
     mismatches = [
         f"{key} expected={expected[key]!r} actual={actual[key]!r}"
         for key in expected
         if actual[key] != expected[key]
     ]
+    actual_project = actual["projectId"]
+    if target.project_id is not None:
+        if actual_project != target.project_id:
+            mismatches.append(
+                f"projectId expected={target.project_id!r} actual={actual_project!r}"
+            )
+    elif actual_project is not None:
+        mismatches.append(
+            f"projectId expected-unassigned=None actual={actual_project!r}"
+        )
+    if repository_evidence is not None:
+        if repository_evidence.origin != target.repository_origin:
+            mismatches.append(
+                "repositoryOrigin "
+                f"expected={target.repository_origin!r} actual={repository_evidence.origin!r}"
+            )
+        if repository_evidence.branch != target.branch:
+            mismatches.append(
+                f"branch expected={target.branch!r} actual={repository_evidence.branch!r}"
+            )
     can_accept = thread.get("canAcceptDirectInput")
     if require_direct_input and can_accept is not True:
         mismatches.append(f"canAcceptDirectInput expected=True actual={can_accept!r}")
@@ -597,11 +708,13 @@ def identity_guard(
     *,
     initialize_info: Any = None,
     allow_unloaded: bool = False,
+    repository_evidence: RepositoryIdentityEvidence | None = None,
 ) -> None:
     """Fail closed unless every dispatch identity field matches exactly."""
     mismatches = _identity_mismatches(
         target,
         thread,
+        repository_evidence=repository_evidence,
         require_direct_input=not allow_unloaded,
     )
     if allow_unloaded:
@@ -685,6 +798,14 @@ class Dispatcher:
                 )
                 thread = client.thread_read(target.thread_id)
 
+                # Thread identity is checked before any repository command.
+                identity_guard(
+                    target,
+                    thread,
+                    initialize_info=initialize_info,
+                    allow_unloaded=True,
+                )
+
                 # A durable thread may be known but not loaded.  Validate all
                 # static identity fields before loading it, then read again so
                 # canAcceptDirectInput is checked on the live thread.
@@ -702,10 +823,12 @@ class Dispatcher:
                     client.thread_resume(target.thread_id)
                     thread = client.thread_read(target.thread_id)
 
+                repository_evidence = _repository_identity_evidence(thread)
                 identity_guard(
                     target,
                     thread,
                     initialize_info=initialize_info,
+                    repository_evidence=repository_evidence,
                 )
                 turn = client.turn_start(
                     target.thread_id,
@@ -721,6 +844,7 @@ class Dispatcher:
                     model=turn.model or model,
                     reasoning_effort=turn.reasoning_effort or reasoning_effort,
                     dispatch_status="DISPATCHED",
+                    repository_identity_source=repository_evidence.source,
                 )
         except IdentityGuardError:
             raise
@@ -898,6 +1022,7 @@ class Bridge:
             f"- Turn: `{result.turn_id}`\n"
             f"- Model: `{result.model or 'server default'}`\n"
             f"- Reasoning effort: `{result.reasoning_effort or 'server default'}`\n"
+            f"- Repository identity source: `{result.repository_identity_source.upper()}`\n"
             f"- Status: `{result.dispatch_status}`\n\n"
             "M0 stops after turn/start. The issue remains In Progress until a later milestone adds completion/result handling."
         )
@@ -962,7 +1087,16 @@ def doctor(cfg: BridgeConfig, linear: LinearClient) -> int:
         failures.append(f"Linear team/status check failed: {e}")
         print(f"[FAIL] Linear team/status check: {e}")
 
-    if cfg.app_server.remote_command:
+    if cfg.app_server.transport == "local":
+        if cfg.app_server.command:
+            print(
+                "[PASS] App-server transport configured: "
+                f"local {' '.join(cfg.app_server.command)}"
+            )
+        else:
+            failures.append("App-server local command is empty")
+            print("[FAIL] App-server local command is empty")
+    elif cfg.app_server.remote_command:
         print(
             "[PASS] App-server transport configured: "
             f"ssh {cfg.targets[0].ssh_alias} {' '.join(cfg.app_server.remote_command)}"
