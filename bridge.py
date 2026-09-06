@@ -2246,6 +2246,98 @@ class TaskDispatcher:
             execution_mode=execution_mode,
         )
 
+    def adopt_existing_conversation(
+        self,
+        *,
+        project_ref: str,
+        host: str | None,
+        thread_id: str,
+        title: str,
+        summary: str,
+        task_key: str | None = None,
+        execution_mode: str = "normal",
+        task_index: "LinearTaskIndex | None" = None,
+        task_index_project_id: str | None = None,
+    ) -> tuple[Any, DurableConversationBinding, TaskIndexRecord | None]:
+        """Adopt one existing exact conversation without sending a turn."""
+        if not thread_id.strip():
+            raise DispatchContractError("Existing conversation adoption requires THREAD_ID")
+        workspace, _descriptor, project = self.resolve_project(
+            project_ref, host=host, project_mode="existing"
+        )
+        project_evidence = _local_git_identity(str(project.repo))
+        project_identity_guard(project, project_evidence)
+        target = _read_only_transport_target(self.cfg, project)
+        client = self.client_factory(target)
+        with client:
+            initialize_info = client.initialize(
+                client_name=self.cfg.app_server.client_name,
+                client_title=self.cfg.app_server.client_title,
+                client_version=self.cfg.app_server.client_version,
+            )
+            thread = client.thread_read(thread_id)
+            if _status_type(thread) in {"notLoaded", "unloaded"}:
+                client.thread_resume(thread_id)
+                thread = client.thread_read(thread_id)
+            if thread.get("ephemeral") is not False:
+                raise IdentityGuardError(
+                    "DISPATCH_IDENTITY_GUARD=FAIL\n"
+                    f"- ephemeral expected=False actual={thread.get('ephemeral')!r}"
+                )
+            session_id = thread.get("sessionId")
+            if not isinstance(session_id, str) or not session_id:
+                raise IdentityGuardError(
+                    "DISPATCH_IDENTITY_GUARD=FAIL\n- sessionId is missing"
+                )
+            evidence = _repository_identity_evidence(thread)
+            target_for_guard = TargetConfig(
+                alias=f"{project.project_alias}.adopt",
+                ssh_alias=target.ssh_alias,
+                thread_id=thread_id,
+                session_id=session_id,
+                project_id=thread.get("projectId"),
+                cwd=str(project.repo),
+                repository_origin=project.repository_origin or "",
+                branch=project.branch or "",
+                app_server_version=target.app_server_version,
+                target_host=target.target_host,
+            )
+            identity_guard(
+                target_for_guard,
+                thread,
+                initialize_info=initialize_info,
+                repository_evidence=evidence,
+            )
+            version = self._initialize_version(
+                initialize_info, target.app_server_version
+            )
+            existing = self.tasks.get_binding_by_thread(thread_id)
+            if existing is not None:
+                raise TaskRegistryError(
+                    f"ADOPTION=FAIL: thread {thread_id} is already bound to task {existing.task_id}"
+                )
+            task, binding = self.tasks.adopt_task(
+                host=host or workspace.alias,
+                workspace_alias=workspace.alias,
+                project_alias=project.project_alias,
+                project_name=project.linear_name,
+                cwd=str(project.repo),
+                repository_origin=project.repository_origin,
+                branch=project.branch,
+                title=title,
+                summary=summary,
+                task_key=task_key or _task_key(project.project_alias, title),
+                execution_mode=execution_mode,
+                thread_id=thread_id,
+                session_id=session_id,
+                project_id=thread.get("projectId"),
+                app_server_version=version,
+            )
+        index = None
+        if task_index is not None:
+            index = task_index.sync(task.task_id, project_id=task_index_project_id)
+        return task, binding, index
+
     def task_action(self, task_id: str, action: str) -> str:
         if action == "complete":
             return self.tasks.set_status(task_id, "COMPLETED").status
@@ -3289,6 +3381,19 @@ def build_parser() -> argparse.ArgumentParser:
     register.add_argument("--alias", required=True)
     register.add_argument("--thread-id", required=True)
     register.add_argument("--read-only", action="store_true", required=True)
+    adopt = sub.add_parser(
+        "adopt-thread",
+        help="Adopt one existing durable thread into the task registry",
+    )
+    adopt.add_argument("--project", required=True)
+    adopt.add_argument("--thread-id", required=True)
+    adopt.add_argument("--title", required=True)
+    adopt.add_argument("--summary", required=True)
+    adopt.add_argument("--host")
+    adopt.add_argument("--execution-mode", choices=("normal", "fast"), default="normal")
+    adopt.add_argument("--task-key")
+    adopt.add_argument("--sync-index", action="store_true")
+    adopt.add_argument("--read-only", action="store_true", required=True)
     tasks = sub.add_parser(
         "tasks",
         help="Read-only persistent task discovery",
@@ -3351,6 +3456,41 @@ def main() -> int:
             return 0
         except Exception as e:
             print(f"M4_A2_REGISTRATION=BLOCKED: {e}", file=sys.stderr)
+            return 1
+
+    if args.command == "adopt-thread":
+        try:
+            dispatcher = TaskDispatcher(cfg)
+            index = None
+            if args.sync_index:
+                api_key = os.environ.get("LINEAR_API_KEY", "").strip()
+                if not api_key:
+                    raise LinearAPIError("LINEAR_API_KEY is required for --sync-index")
+                index = LinearTaskIndex(
+                    LinearClient(api_key), dispatcher.tasks, cfg.team_id
+                )
+            task, binding, index_record = dispatcher.adopt_existing_conversation(
+                project_ref=args.project,
+                host=args.host,
+                thread_id=args.thread_id,
+                title=args.title,
+                summary=args.summary,
+                task_key=args.task_key,
+                execution_mode=args.execution_mode,
+                task_index=index,
+            )
+            print(json.dumps({
+                "adoption": "PASS",
+                "task": _task_public_record(dispatcher.tasks, task),
+                "thread_id": binding.thread_id,
+                "session_id": binding.session_id,
+                "task_index_issue": index_record.identifier if index_record else None,
+                "thread_start_sent": False,
+                "turn_start_sent": False,
+            }, sort_keys=True))
+            return 0
+        except Exception as e:
+            print(f"ADOPTION=FAIL: {e}", file=sys.stderr)
             return 1
 
     if args.command == "tasks":

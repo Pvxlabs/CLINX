@@ -195,6 +195,30 @@ status, execution mode, binding presence, latest execution reference, and
 timestamps. It never mirrors conversation IDs, full transcripts, or
 credentials.
 
+## Existing conversation adoption
+
+An already verified durable conversation can be migrated into the task registry
+without starting a thread or sending a turn. This is an operator/debug command;
+the exact thread ID is intentionally not part of the human-facing Linear task
+contract:
+
+```bash
+python3 bridge.py --config bridge.toml adopt-thread \
+  --read-only \
+  --project pilot \
+  --thread-id <verified-thread-id> \
+  --title "Existing Conversation Adoption Qualification" \
+  --summary "Identity-only migration into the CLINX Task Registry."
+```
+
+The command performs `initialize` and exact `thread/read`, validates durable
+status, direct-input capability, project cwd, repository origin, branch, and
+app-server compatibility, then atomically creates an ACTIVE task and its one
+conversation binding. If the exact thread is unloaded, it may call
+`thread/resume` only to establish direct-input readiness; it never calls
+`thread/start` or `turn/start`. `--sync-index` additionally mirrors the task
+into Linear using `LINEAR_API_KEY` from the process environment.
+
 ## Compatibility contract
 
 The M5 handoff remains supported:
