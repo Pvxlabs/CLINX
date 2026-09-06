@@ -167,6 +167,7 @@ class ProjectMapping:
     target_alias: str | None = None
     alias: str | None = None
     repository_origin: str | None = None
+    unexpected_origin_policy: str = "FAIL"
     branch: str | None = None
     read_only: bool = False
     workspace_alias: str | None = None
@@ -203,7 +204,7 @@ class TargetConfig:
     session_id: str
     project_id: str | None
     cwd: str
-    repository_origin: str
+    repository_origin: str | None
     branch: str
     app_server_version: str
     target_host: str = ""
@@ -567,11 +568,19 @@ class BridgeConfig:
                 if not isinstance(row, dict):
                     raise BridgeError(f"Project {alias!r} must be a table")
                 cwd = str(row.get("cwd", "")).strip()
-                origin = str(row.get("repository_origin", "")).strip()
+                raw_origin = row.get("repository_origin")
+                origin = str(raw_origin).strip() if raw_origin is not None else None
                 branch = str(row.get("branch", "")).strip()
-                if not cwd or not origin or not branch:
+                if not cwd or not branch:
                     raise BridgeError(
-                        f"Project {alias!r} requires cwd, repository_origin, and branch"
+                        f"Project {alias!r} requires cwd and branch; repository_origin is optional"
+                    )
+                if origin == "":
+                    origin = None
+                origin_policy = str(row.get("unexpected_origin_policy", "FAIL")).strip().upper()
+                if origin_policy != "FAIL":
+                    raise BridgeError(
+                        f"Project {alias!r} has unsupported unexpected_origin_policy={origin_policy!r}"
                     )
                 linear_name = str(row.get("linear_name", alias)).strip()
                 projects.append(
@@ -580,6 +589,7 @@ class BridgeConfig:
                         repo=Path(cwd).expanduser().resolve(),
                         alias=str(alias),
                         repository_origin=origin,
+                        unexpected_origin_policy=origin_policy,
                         branch=branch,
                         read_only=bool(row.get("read_only", False)),
                         workspace_alias=(
@@ -1093,6 +1103,13 @@ def _task_public_record(registry: TaskRegistry, task: Any) -> dict[str, Any]:
         "summary": task.summary,
         "status": task.status,
         "execution_mode": task.execution_mode,
+        "execution_state": task.execution_state,
+        "current_stage": task.current_stage,
+        "current_blocker": task.current_blocker,
+        "last_progress_at": task.last_progress_at,
+        "codex_running": task.codex_running,
+        "turn_id": task.turn_id,
+        "retry_required": task.retry_required,
         "bound_thread_exists": registry.get_binding(task.task_id) is not None,
         "last_execution": registry.last_linear_execution(task.task_id),
         "task_index_issue": index.identifier if index is not None else None,
@@ -1337,7 +1354,7 @@ def _git_info(thread: dict[str, Any]) -> dict[str, Any]:
 class RepositoryIdentityEvidence:
     source: str
     cwd: str
-    origin: str
+    origin: str | None
     branch: str
     head: str | None = None
 
@@ -1346,7 +1363,6 @@ def _local_git_identity(cwd: str) -> RepositoryIdentityEvidence:
     """Read repository identity only from the cwd returned by thread/read."""
     commands = {
         "top_level": ("git", "-C", cwd, "rev-parse", "--show-toplevel"),
-        "origin": ("git", "-C", cwd, "remote", "get-url", "origin"),
         "branch": ("git", "-C", cwd, "branch", "--show-current"),
         "head": ("git", "-C", cwd, "rev-parse", "HEAD"),
     }
@@ -1375,10 +1391,26 @@ def _local_git_identity(cwd: str) -> RepositoryIdentityEvidence:
         raise IdentityGuardError(
             "DISPATCH_IDENTITY_GUARD=FAIL\n- repository is detached HEAD"
         )
+    origin_result = subprocess.run(
+        ("git", "-C", cwd, "remote", "get-url", "origin"),
+        capture_output=True,
+        text=True,
+    )
+    if origin_result.returncode == 0:
+        origin = origin_result.stdout.strip() or None
+    else:
+        stderr = origin_result.stderr.casefold()
+        if "no such remote" in stderr or ("remote 'origin'" in stderr and "does not exist" in stderr):
+            origin = None
+        else:
+            raise IdentityGuardError(
+                "DISPATCH_IDENTITY_GUARD=FAIL\n"
+                f"- local Git origin lookup failed at {cwd!r}: {origin_result.stderr.strip() or 'unknown error'}"
+            )
     return RepositoryIdentityEvidence(
         source="local_git",
         cwd=cwd,
-        origin=outputs["origin"],
+        origin=origin,
         branch=outputs["branch"],
         head=outputs["head"] or None,
     )
@@ -1399,9 +1431,10 @@ def _repository_identity_evidence(
         raise IdentityGuardError(
             "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/read returned malformed gitInfo"
         )
-    origin = raw_git_info.get("originUrl") or ""
+    raw_origin = raw_git_info.get("originUrl")
+    origin = raw_origin.strip() if isinstance(raw_origin, str) and raw_origin.strip() else None
     branch = raw_git_info.get("branch")
-    if not isinstance(origin, str) or not isinstance(branch, str) or not branch:
+    if not isinstance(branch, str) or not branch:
         raise IdentityGuardError(
             "DISPATCH_IDENTITY_GUARD=FAIL\n- thread/read returned incomplete gitInfo"
         )
@@ -1535,6 +1568,11 @@ def project_identity_guard(
             "repositoryOrigin "
             f"expected={project.repository_origin!r} actual={evidence.origin!r}"
         )
+    elif project.repository_origin is None and evidence.origin is not None:
+        mismatches.append(
+            "repositoryOrigin expected-absent=None "
+            f"actual={evidence.origin!r} policy={project.unexpected_origin_policy}"
+        )
     if project.branch is not None and evidence.branch != project.branch:
         mismatches.append(
             f"branch expected={project.branch!r} actual={evidence.branch!r}"
@@ -1560,7 +1598,7 @@ def _read_only_transport_target(cfg: BridgeConfig, project: ProjectMapping) -> T
         session_id="read-only",
         project_id=None,
         cwd=str(project.repo),
-        repository_origin=project.repository_origin or "",
+        repository_origin=project.repository_origin,
         branch=project.branch or "",
         app_server_version=(
             binding.app_server_version
@@ -1902,7 +1940,7 @@ def _target_for_binding(
         session_id=session_id or binding.session_id,
         project_id=binding.project_id if project_id is None else project_id,
         cwd=str(project.repo),
-        repository_origin=project.repository_origin or "",
+        repository_origin=project.repository_origin,
         branch=project.branch or "",
         app_server_version=binding.app_server_version,
         target_host=binding.target_host,
@@ -1980,6 +2018,12 @@ class TaskDispatcher:
             lambda target: _default_app_server_client(cfg, target)
         )
         self.projects = DynamicProjectResolver(self.workspaces, cfg.projects)
+        self.last_task_id: str | None = None
+        self.last_execution_ref: str | None = None
+
+    def _execution_state(self, task_id: str, state: str, **kwargs: Any) -> None:
+        """Persist machine execution state without changing Linear's coarse state."""
+        self.tasks.set_execution_state(task_id, state, **kwargs)
 
     def _workspace(self, host: str | None) -> WorkspaceConfig:
         if host:
@@ -2035,7 +2079,7 @@ class TaskDispatcher:
             session_id=binding.session_id,
             project_id=binding.project_id,
             cwd=str(project.repo),
-            repository_origin=project.repository_origin or "",
+            repository_origin=project.repository_origin,
             branch=project.branch or "",
             app_server_version=binding.app_server_version or self.cfg.app_server.client_version,
             target_host=canonical_host(workspace.host or workspace.alias),
@@ -2053,7 +2097,7 @@ class TaskDispatcher:
             session_id="",
             project_id=None,
             cwd=str(project.repo),
-            repository_origin=project.repository_origin or "",
+            repository_origin=project.repository_origin,
             branch=project.branch or "",
             app_server_version=self.cfg.app_server.client_version,
             target_host=canonical_host(workspace.host or workspace.alias),
@@ -2121,6 +2165,7 @@ class TaskDispatcher:
             raise DispatchContractError(f"Unsupported execution mode: {execution_mode!r}")
 
         if task_mode == "new":
+            self.last_execution_ref = execution_ref or issue_id
             workspace, _descriptor, project = self.resolve_project(
                 project_ref, host=host, project_mode=project_mode
             )
@@ -2137,10 +2182,13 @@ class TaskDispatcher:
                 task_key=task_key or _task_key(project.project_alias, title),
                 execution_mode=execution_mode,
             )
+            self.last_task_id = task.task_id
             with self.tasks.execution(task.task_id, issue_id) as leased:
+                self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
                 target = self._new_target(workspace, project)
                 client = self.client_factory(target)
                 try:
+                    self._execution_state(leased.task_id, "DISPATCHING", current_stage="identity guard")
                     with client:
                         initialize_info = client.initialize(
                             client_name=self.cfg.app_server.client_name,
@@ -2202,7 +2250,34 @@ class TaskDispatcher:
                             reasoning_effort=reasoning_effort,
                             approval_policy=self.cfg.approval,
                         )
+                        self._execution_state(
+                            leased.task_id,
+                            "CODEX_RUNNING",
+                            current_stage="Codex turn",
+                            current_blocker=None,
+                            codex_running=True,
+                            turn_id=turn.turn_id,
+                            retry_required=False,
+                        )
                 except (IdentityGuardError, AppServerError):
+                    self._execution_state(
+                        leased.task_id,
+                        "BLOCKED",
+                        current_stage="project identity guard",
+                        current_blocker="pre-dispatch handoff failed",
+                        codex_running=False,
+                        retry_required=True,
+                    )
+                    raise
+                except Exception as exc:
+                    self._execution_state(
+                        leased.task_id,
+                        "BLOCKED",
+                        current_stage="dispatch",
+                        current_blocker=str(exc)[:2000],
+                        codex_running=False,
+                        retry_required=True,
+                    )
                     raise
             if issue_id:
                 self.tasks.record_linear_execution(
@@ -2229,6 +2304,7 @@ class TaskDispatcher:
         if not task_id:
             raise DispatchContractError("TASK_MODE=continue requires TASK_ID")
         task = self.tasks.get_task(task_id)
+        self.last_execution_ref = execution_ref or issue_id
         if task.status != "ACTIVE":
             raise TargetResolutionError(
                 f"Task {task.task_id} is {task.status}; explicit reopen is required"
@@ -2261,30 +2337,57 @@ class TaskDispatcher:
             execution_mode=execution_mode,
         )
         with self.tasks.execution(task.task_id, issue_id) as leased:
+            self.last_task_id = leased.task_id
+            self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
             target = self._target(workspace, project, binding)
             client = self.client_factory(target)
-            with client:
-                initialize_info = client.initialize(
-                    client_name=self.cfg.app_server.client_name,
-                    client_title=self.cfg.app_server.client_title,
-                    client_version=self.cfg.app_server.client_version,
+            try:
+                self._execution_state(leased.task_id, "DISPATCHING", current_stage="identity guard")
+                with client:
+                    initialize_info = client.initialize(
+                        client_name=self.cfg.app_server.client_name,
+                        client_title=self.cfg.app_server.client_title,
+                        client_version=self.cfg.app_server.client_version,
+                    )
+                    thread = self._read_and_guard(client, target, initialize_info)
+                    turn_start_guard(thread)
+                    self.tasks.mark_verified(
+                        task.task_id,
+                        app_server_version=self._initialize_version(
+                            initialize_info, target.app_server_version
+                        ),
+                    )
+                    turn = client.turn_start(
+                        binding.thread_id,
+                        prompt,
+                        cwd=str(project.repo),
+                        model=model,
+                        reasoning_effort=reasoning_effort,
+                        approval_policy=self.cfg.approval,
+                    )
+                    self._execution_state(
+                        leased.task_id,
+                        "CODEX_RUNNING",
+                        current_stage="Codex turn",
+                        current_blocker=None,
+                        codex_running=True,
+                        turn_id=turn.turn_id,
+                        retry_required=False,
+                    )
+            except (IdentityGuardError, AppServerError):
+                self._execution_state(
+                    leased.task_id, "BLOCKED", current_stage="project identity guard",
+                    current_blocker="pre-dispatch handoff failed", codex_running=False,
+                    retry_required=True,
                 )
-                thread = self._read_and_guard(client, target, initialize_info)
-                turn_start_guard(thread)
-                self.tasks.mark_verified(
-                    task.task_id,
-                    app_server_version=self._initialize_version(
-                        initialize_info, target.app_server_version
-                    ),
+                raise
+            except Exception as exc:
+                self._execution_state(
+                    leased.task_id, "BLOCKED", current_stage="dispatch",
+                    current_blocker=str(exc)[:2000], codex_running=False,
+                    retry_required=True,
                 )
-                turn = client.turn_start(
-                    binding.thread_id,
-                    prompt,
-                    cwd=str(project.repo),
-                    model=model,
-                    reasoning_effort=reasoning_effort,
-                    approval_policy=self.cfg.approval,
-                )
+                raise
         if issue_id:
             self.tasks.record_linear_execution(execution_ref or issue_id, leased.task_id)
         return DispatchResult(
@@ -2354,7 +2457,7 @@ class TaskDispatcher:
                 session_id=session_id,
                 project_id=thread.get("projectId"),
                 cwd=str(project.repo),
-                repository_origin=project.repository_origin or "",
+                repository_origin=project.repository_origin,
                 branch=project.branch or "",
                 app_server_version=target.app_server_version,
                 target_host=target.target_host,
@@ -2459,6 +2562,7 @@ class TaskDispatcher:
             task = self.tasks.get_task(task_id)
             if task.status not in {"COMPLETED", "ARCHIVED"}:
                 raise TaskRegistryError(f"Task is already active: {task_id}")
+            self.tasks.reset_execution(task_id)
             return self.tasks.set_status(task_id, "ACTIVE").status
         raise DispatchContractError(f"Unsupported TASK_ACTION={action!r}")
 
@@ -2950,7 +3054,7 @@ class TaskContextReader:
             session_id=binding.session_id,
             project_id=binding.project_id,
             cwd=task.cwd,
-            repository_origin=task.repository_origin or "",
+            repository_origin=task.repository_origin,
             branch=task.branch or "",
             app_server_version=binding.app_server_version or self.cfg.app_server.client_version,
             target_host=canonical_host(task.host),
@@ -3512,7 +3616,7 @@ class Dispatcher:
                 session_id="",
                 project_id=None,
                 cwd=str(project.repo),
-                repository_origin=project.repository_origin or "",
+                repository_origin=project.repository_origin,
                 branch=project.branch or "",
                 app_server_version=self.cfg.app_server.client_version,
                 target_host=_project_target_host(self.cfg, project),
@@ -3908,6 +4012,18 @@ class Bridge:
             raise BridgeError(
                 f"Failed to claim {identifier}: state is {claimed['state']['name']}"
             )
+
+        try:
+            self.linear.add_comment(
+                issue["id"],
+                "CLINX_EXECUTION_STATUS\n\n"
+                "EXECUTION_STATE=DISPATCHING\n"
+                "CODEX_RUNNING=NO\n"
+                "CURRENT_STAGE=project identity guard\n"
+                f"LAST_PROGRESS_AT={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
+            )
+        except Exception as exc:
+            print(f"Warning: failed to write execution status for {identifier}: {exc}")
         try:
             self.linear.add_comment(
                 issue["id"],
@@ -4034,6 +4150,7 @@ class Bridge:
                 repo,
                 f"Failed to execute M6 task handoff: {exc}",
                 prefix="M6_TASK_HANDOFF_FAILED",
+                pre_turn_failure=True,
             )
             return
 
@@ -4051,7 +4168,10 @@ class Bridge:
             "EXACT_BOUND_CONVERSATION=PASS\n"
             "HUMAN_THREAD_ID_REQUIRED=NO\n"
             "HUMAN_SESSION_ID_REQUIRED=NO\n"
-            "LEGACY_CODEX_EXEC_DEFAULT=NO"
+            "LEGACY_CODEX_EXEC_DEFAULT=NO\n"
+            "EXECUTION_STATE=CODEX_RUNNING\n"
+            "CODEX_RUNNING=YES\n"
+            f"TURN_ID={result.turn_id}"
         )
         try:
             self.linear.add_comment(issue["id"], body)
@@ -4166,7 +4286,9 @@ class Bridge:
                     reasoning_effort=contract.reasoning_effort if contract else None,
                 )
         except Exception as e:
-            self._record_bridge_failure(issue, repo, f"Failed to dispatch Codex: {e}")
+            self._record_bridge_failure(
+                issue, repo, f"Failed to dispatch Codex: {e}", pre_turn_failure=True
+            )
             return
 
         dispatch_body = (
@@ -4250,21 +4372,66 @@ class Bridge:
         repo: Path,
         reason: str,
         prefix: str = "BRIDGE_EXECUTION_FAILED",
+        pre_turn_failure: bool = False,
     ) -> None:
+        task_id = getattr(self.task_dispatcher, "last_task_id", None)
+        execution_ref = getattr(self.task_dispatcher, "last_execution_ref", None)
+        issue_refs = {issue.get("id"), issue.get("identifier")}
+        if (
+            task_id
+            and self.task_dispatcher is not None
+            and execution_ref in issue_refs
+        ):
+            try:
+                self.task_dispatcher.tasks.set_execution_state(
+                    task_id,
+                    "BLOCKED",
+                    current_stage="project identity guard" if "IDENTITY" in reason else "dispatch",
+                    current_blocker=reason[:2000],
+                    codex_running=False,
+                    retry_required=True,
+                )
+            except Exception as exc:
+                print(f"Warning: failed to persist blocked execution state: {exc}")
         body = (
             f"{prefix}\n\n"
             f"- Bridge: `linear-local-codex-bridge/{BRIDGE_VERSION}`\n"
             f"- Repository: `{repo}`\n"
             f"- Reason:\n\n{reason}\n\n"
+            "CLINX_EXECUTION_STATUS\n"
+            "EXECUTION_STATE=BLOCKED\n"
+            "CODEX_RUNNING=NO\n"
+            f"CURRENT_BLOCKER={reason[:2000]}\n"
+            "RETRY_REQUIRED=YES\n\n"
             f"The issue is intentionally left in `{self.cfg.running_state}` to prevent "
             "an infinite automatic retry loop. After correcting the root cause, move "
             f"the issue back to `{self.cfg.todo_state}` to retry."
         )
+        if pre_turn_failure and self._is_self_project(repo):
+            body += (
+                "\n\nBOOTSTRAP_SELF_REPAIR_REQUIRED=YES\n"
+                "AUTOMATIC_RETRY=NO\n"
+                "SELF_PROJECT_PRE_TURN_DEADLOCK=DETECTED\n"
+                "The CLINX self-project handoff stopped before turn/start; manual "
+                "repair qualification is required before resuming this issue."
+            )
         try:
             self.linear.add_comment(issue["id"], body)
         except Exception as e:
             print(f"Warning: failed to write bridge failure to Linear: {e}")
         print(f"{prefix} {issue['identifier']}: {reason}", file=sys.stderr)
+
+    def _is_self_project(self, repo: Path) -> bool:
+        """Identify only the registered CLINX checkout, never by issue text."""
+        try:
+            resolved = repo.expanduser().resolve()
+        except OSError:
+            return False
+        return any(
+            project.project_alias.casefold() == "clinx"
+            and project.repo.expanduser().resolve() == resolved
+            for project in self.cfg.projects
+        )
 
 
 def doctor(cfg: BridgeConfig, linear: LinearClient) -> int:
@@ -4378,6 +4545,43 @@ def doctor(cfg: BridgeConfig, linear: LinearClient) -> int:
     return 0
 
 
+def self_project_check(cfg: BridgeConfig) -> int:
+    """Read-only RCA/qualification for the registered CLINX checkout."""
+    project = next(
+        (item for item in cfg.projects if item.project_alias.casefold() == "clinx"),
+        None,
+    )
+    if project is None:
+        print("PROJECT_RESOLUTION=FAIL")
+        print("ROOT_CAUSE=CLINX project mapping is absent")
+        return 1
+
+    try:
+        evidence = _local_git_identity(str(project.repo))
+        project_identity_guard(project, evidence)
+        identity = "PASS"
+        root_cause = (
+            "Local-only Git repository has no origin; missing origin is intentional "
+            "and an unexpected origin is rejected."
+        )
+    except Exception as exc:
+        evidence = None
+        identity = "FAIL"
+        root_cause = str(exc)
+
+    print(f"CLINX_SELF_PROJECT_ROOT={project.repo}")
+    print(f"CLINX_SELF_PROJECT_BRANCH={project.branch or ''}")
+    print(f"CLINX_SELF_PROJECT_EXPECTED_ORIGIN={project.repository_origin or ''}")
+    print(
+        "CLINX_SELF_PROJECT_ACTUAL_ORIGIN="
+        f"{evidence.origin if evidence and evidence.origin else ''}"
+    )
+    print(f"PROJECT_RESOLUTION=PASS")
+    print(f"PROJECT_IDENTITY_GUARD={identity}")
+    print(f"ROOT_CAUSE={root_cause}")
+    return 0 if identity == "PASS" else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="linear-local-codex-bridge",
@@ -4390,6 +4594,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor", help="Validate Linear, Codex, MCP, and repo mappings")
+    sub.add_parser(
+        "self-project-check",
+        help="Read-only CLINX local-project identity and RCA check",
+    )
     onboard = sub.add_parser(
         "onboard-thread",
         help="Read-only existing durable thread discovery",
@@ -4458,6 +4666,9 @@ def main() -> int:
     except Exception as e:
         print(f"CONFIG_ERROR: {e}", file=sys.stderr)
         return 2
+
+    if args.command == "self-project-check":
+        return self_project_check(cfg)
 
     if args.command == "onboard-thread":
         if not args.read_only:
