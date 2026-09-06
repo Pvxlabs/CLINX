@@ -572,6 +572,80 @@ class TaskRegistry:
             ).fetchone()
         return ConversationBinding(**dict(row)) if row is not None else None
 
+    def get_binding_by_thread(self, thread_id: str) -> ConversationBinding | None:
+        """Return the canonical task binding for an exact thread, if any."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM conversation_bindings WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchone()
+        return ConversationBinding(**dict(row)) if row is not None else None
+
+    def adopt_task(
+        self,
+        *,
+        host: str,
+        workspace_alias: str,
+        project_alias: str,
+        project_name: str,
+        cwd: str,
+        repository_origin: str | None,
+        branch: str | None,
+        title: str,
+        summary: str | None,
+        task_key: str | None,
+        execution_mode: str,
+        thread_id: str,
+        session_id: str,
+        project_id: str | None,
+        app_server_version: str | None,
+    ) -> tuple[TaskRecord, ConversationBinding]:
+        """Atomically create an ACTIVE task and bind one verified conversation."""
+        if execution_mode not in {"normal", "fast"}:
+            raise TaskRegistryError(f"Unsupported execution mode: {execution_mode}")
+        title = self._validate_metadata_value(
+            "title", title or project_name, MAX_TASK_TITLE_LENGTH
+        )
+        summary = self._validate_metadata_value(
+            "summary", summary, MAX_TASK_SUMMARY_LENGTH
+        )
+        if not thread_id or not session_id:
+            raise TaskRegistryError("Adopted conversation requires thread and session IDs")
+        task_id = "task_" + uuid.uuid4().hex
+        stamp = _now()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT task_id FROM conversation_bindings WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchone()
+            if existing is not None:
+                raise TaskRegistryError(
+                    f"Thread {thread_id} is already bound to task {existing['task_id']}"
+                )
+            conn.execute(
+                """INSERT INTO tasks
+                (task_id,host,workspace_alias,project_alias,project_name,cwd,
+                 repository_origin,branch,title,summary,task_key,execution_mode,
+                 status,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    task_id, host, workspace_alias, project_alias, project_name, cwd,
+                    repository_origin, branch, title, summary, task_key,
+                    execution_mode, "ACTIVE", stamp, stamp,
+                ),
+            )
+            conn.execute(
+                """INSERT INTO conversation_bindings
+                (task_id,thread_id,session_id,project_id,bound_at,last_verified_at,app_server_version)
+                VALUES (?,?,?,?,?,?,?)""",
+                (task_id, thread_id, session_id, project_id, stamp, stamp, app_server_version),
+            )
+        task = self.get_task(task_id)
+        binding = self.get_binding(task_id)
+        assert binding is not None
+        return task, binding
+
     def bind_conversation(
         self,
         *,
