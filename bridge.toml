@@ -30,7 +30,7 @@ command = ["codex", "app-server", "proxy"]
 # Remote deployment remains supported as an explicit alternative.
 ssh_binary = "ssh"
 ssh_args = ["-T"]
-remote_command = ["codex", "app-server"]
+remote_command = ["codex", "app-server", "proxy"]
 request_timeout_seconds = 30
 client_name = "linear-local-codex-bridge"
 client_title = "Linear Local Codex Bridge"
@@ -41,18 +41,17 @@ log_dir = "~/.local/state/linear-local-codex-bridge"
 
 [[project]]
 linear_name = "Linear × Local Codex Pilot"
-repo = "/tmp/linear-codex-pilot"
+repo = "/home/pvxlabs/dev/clinx-pilot"
 target_alias = "pilot"
 
-# Disposable pilot target only. Fill these values from the disposable durable
-# thread/repository qualification; placeholders intentionally fail closed.
+# Disposable pilot target only. project_id is intentionally omitted because the
+# app-server reports this local pilot as unassigned.
 [targets.pilot]
 ssh_alias = "p620"
-thread_id = "REPLACE_WITH_DISPOSABLE_DURABLE_THREAD_UUID"
-session_id = "REPLACE_WITH_EXPECTED_SESSION_ID"
-project_id = "REPLACE_WITH_EXPECTED_PROJECT_ID"
-cwd = "/tmp/linear-codex-pilot"
-repository_origin = "REPLACE_WITH_EXPECTED_DISPOSABLE_ORIGIN"
+thread_id = "01a07474-014b-7381-a271-db9782ca3e59"
+session_id = "01a07474-014b-7381-a271-db9782ca3e59"
+cwd = "/home/pvxlabs/dev/clinx-pilot"
+repository_origin = "git@github.com:Pvxlabs/clinx-disposable-pilot.git"
 branch = "main"
 app_server_version = "codex-cli 0.152.1"
 
