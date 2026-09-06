@@ -205,65 +205,201 @@ class ClinxIntegration:
     def _resolve(self, task_ref: str | None = None, query: str | None = None, project: str | None = None) -> Any:
         return self.context_reader.resolve_task(task_ref=task_ref, query=query, project=project)
 
-    def find_task(self, query: str, *, project: str | None = None, host: str | None = None) -> dict[str, Any]:
-        found = self.registry.find_tasks(query=query, project=project, host=host, include_archived=False)
+    def find_task(
+        self,
+        query: str,
+        *,
+        project: str | None = None,
+        host: str | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        found = self.registry.find_tasks(
+            query=query,
+            project=project,
+            host=host,
+            status=status,
+            include_archived=False,
+        )
         return {
             "classification": found.classification,
             "tasks": [self._public(task) for task in found.tasks],
             "read_only": True,
         }
 
-    def get_context(self, *, task_ref: str | None = None, query: str | None = None, project: str | None = None) -> dict[str, Any]:
-        task = self._resolve(task_ref, query, project)
-        return self.context_reader.read_task_context(task.task_id).as_dict()
+    def get_context(
+        self,
+        *,
+        task_ref: str | None = None,
+        query: str | None = None,
+        project: str | None = None,
+        host: str | None = None,
+        recent_turns: int | None = None,
+        max_bytes: int | None = None,
+    ) -> dict[str, Any]:
+        task = self.context_reader.resolve_task(
+            task_ref=task_ref,
+            query=query,
+            project=project,
+            host=host,
+        )
+        options: dict[str, Any] = {}
+        if recent_turns is not None:
+            options["recent_turns"] = recent_turns
+        if max_bytes is not None:
+            options["max_bytes"] = max_bytes
+        return self.context_reader.read_task_context(task.task_id, **options).as_dict()
 
-    def list_projects(self) -> dict[str, Any]:
-        return {
-            "projects": [
+    def list_projects(
+        self,
+        *,
+        host: str | None = None,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        """List bounded registered/workspace projects without exposing paths."""
+        candidates: list[tuple[str, str]] = []
+        for mapping in self.cfg.projects:
+            candidates.append((mapping.workspace_alias or "", mapping.project_alias))
+        for workspace in self.dispatcher.workspaces:
+            if host and (workspace.host or workspace.alias).casefold() != host.casefold():
+                continue
+            if not workspace.allow_existing_projects or not workspace.root.is_dir():
+                continue
+            try:
+                entries = sorted(workspace.root.iterdir(), key=lambda item: item.name.casefold())
+            except OSError:
+                continue
+            candidates.extend(
+                (workspace.alias, entry.name)
+                for entry in entries
+                if entry.is_dir() and not entry.name.startswith(".")
+            )
+
+        seen: set[tuple[str, str]] = set()
+        projects: list[dict[str, Any]] = []
+        for workspace_alias, project_ref in candidates:
+            key = (workspace_alias.casefold(), project_ref.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            if query and query.casefold() not in project_ref.casefold():
+                continue
+            try:
+                workspace, descriptor, _mapping = self.dispatcher.resolve_project(
+                    project_ref,
+                    host=host or workspace_alias or None,
+                    project_mode="existing",
+                )
+            except Exception:
+                continue
+            projects.append(
                 {
-                    "project": item.project_alias,
-                    "name": item.linear_name,
-                    "workspace": item.workspace_alias,
-                    "read_only": item.read_only,
+                    "project": descriptor.alias,
+                    "name": descriptor.name,
+                    "workspace": workspace.alias,
+                    "registered": descriptor.registered,
+                    "read_only": bool(getattr(_mapping, "read_only", False)),
                 }
-                for item in self.cfg.projects
-            ],
+            )
+        return {
+            "projects": projects,
             "read_only": True,
         }
 
-    def get_status(self, *, task_ref: str | None = None, query: str | None = None, project: str | None = None) -> dict[str, Any]:
-        task = self._resolve(task_ref, query, project)
+    def get_status(
+        self,
+        *,
+        task_ref: str | None = None,
+        query: str | None = None,
+        project: str | None = None,
+        host: str | None = None,
+    ) -> dict[str, Any]:
+        task = self.context_reader.resolve_task(
+            task_ref=task_ref,
+            query=query,
+            project=project,
+            host=host,
+        )
         result = self.registry.latest_execution_result(task.task_id)
+        execution_result = None
+        if result is not None:
+            execution_result = {
+                "status": result.status,
+                "summary": result.summary,
+                "changed_files": result.changed_files,
+                "validation": result.validation,
+                "blockers": result.blockers,
+                "next_state": result.next_state,
+                "received_at": result.received_at,
+                "writeback_state": result.writeback_state,
+            }
         return {
             **self._public(task),
-            "execution_result": dataclasses.asdict(result) if result else None,
+            "execution_result": execution_result,
             "read_only": True,
         }
 
-    def execute(self, *, prompt: str, execution_ref: str, task_ref: str | None = None, query: str | None = None, project: str | None = None, model: str | None = None, reasoning_effort: str | None = None) -> dict[str, Any]:
+    def execute(
+        self,
+        *,
+        prompt: str,
+        execution_ref: str,
+        approved: bool = False,
+        task_mode: str = "continue",
+        task_ref: str | None = None,
+        query: str | None = None,
+        host: str | None = None,
+        project: str | None = None,
+        title: str | None = None,
+        summary: str | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        execution_mode: str = "normal",
+    ) -> dict[str, Any]:
+        if approved is not True:
+            raise M9IntegrationError("explicit approved=true is required for execution")
         if not prompt.strip() or not execution_ref.strip():
             raise M9IntegrationError("explicit prompt and execution_ref are required")
-        task = self._resolve(task_ref, query, project)
+        if task_mode not in {"new", "continue"}:
+            raise M9IntegrationError("task_mode must be new or continue")
+        if task_mode == "continue":
+            task = self.context_reader.resolve_task(
+                task_ref=task_ref,
+                query=query,
+                project=project,
+                host=host,
+            )
+            project_ref = task.project_alias
+            dispatch_task_id = task.task_id
+            dispatch_title = task.title
+            dispatch_summary = summary if summary is not None else task.summary
+        else:
+            if not project or not title:
+                raise M9IntegrationError("new task execution requires project and title")
+            project_ref = project
+            dispatch_task_id = None
+            dispatch_title = title
+            dispatch_summary = summary
         result = self.dispatcher.dispatch(
-            project_ref=task.project_alias,
-            host=task.host,
+            project_ref=project_ref,
+            host=host if task_mode == "new" else task.host,
             project_mode="existing",
-            task_mode="continue",
-            task_id=task.task_id,
+            task_mode=task_mode,
+            task_id=dispatch_task_id,
             prompt=prompt,
-            title=task.title,
-            summary=task.summary,
+            title=dispatch_title,
+            summary=dispatch_summary,
             model=model,
             reasoning_effort=reasoning_effort,
-            issue_id=self.registry.last_linear_execution(task.task_id),
+            execution_mode=execution_mode,
+            issue_id=execution_ref,
             execution_ref=execution_ref,
         )
         return {
             "execution_ref": execution_ref,
             "task_ref": result.task_id,
-            "turn_id": result.turn_id,
             "dispatch_status": result.dispatch_status,
-            "conversation_binding_preserved": True,
+            "conversation_binding_preserved": task_mode == "continue",
+            "task_created": bool(getattr(result, "thread_created", False)),
         }
 
     def _public(self, task: Any) -> dict[str, Any]:
@@ -279,7 +415,6 @@ class ClinxIntegration:
             "current_blocker": task.current_blocker,
             "last_progress_at": task.last_progress_at,
             "codex_running": bool(task.codex_running),
-            "turn_id": task.turn_id,
             "retry_required": bool(task.retry_required),
         }
 
@@ -292,8 +427,8 @@ def clinx_get_context(integration: ClinxIntegration, **kwargs: Any) -> dict[str,
     return integration.get_context(**kwargs)
 
 
-def clinx_list_projects(integration: ClinxIntegration) -> dict[str, Any]:
-    return integration.list_projects()
+def clinx_list_projects(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
+    return integration.list_projects(**kwargs)
 
 
 def clinx_get_status(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:

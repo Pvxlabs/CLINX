@@ -41,6 +41,31 @@ verified.
 
 The bridge never marks an issue `Done`.
 
+## M9 ChatGPT integration surface
+
+CLINX exposes the M9 surface through the dependency-free stdio adapter in
+`mcp_server.py`:
+
+```bash
+python3 mcp_server.py --config bridge.toml --stdio
+```
+
+The adapter provides bounded task discovery, context, project listing, status,
+and an explicit execution tool.  Discovery and context are read-only.  The
+execution tool returns `READ_ONLY_FALLBACK` unless the local process is started
+with `--allow-execute` and the call includes `approved=true`.
+
+This repository does not open an HTTP listener or publish an unauthenticated
+endpoint.  ChatGPT discovery requires an authenticated, TLS-terminated,
+officially supported remote MCP boundary supplied by the deployment
+environment.  The local stdio adapter alone cannot make the service remotely
+discoverable; remote registration and transport remain operator/deployment
+actions.
+
+The public surface intentionally accepts task and project references rather
+than Codex thread, session, turn, cwd, repository-origin, or credential fields.
+Those identities remain inside the CLINX registry and dispatcher.
+
 ## Requirements
 
 - macOS or Linux
