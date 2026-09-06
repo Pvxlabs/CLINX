@@ -1,4 +1,4 @@
-# linear-local-codex-bridge Dispatcher V1 / M0
+# linear-local-codex-bridge Dispatcher V1 / M3
 
 A deliberately thin local actuator for this workflow:
 
@@ -16,22 +16,25 @@ Linear
 ChatGPT review
 ```
 
-## M0 design
+## M3 design
 
 The bridge is **not an agent** and does not interpret issue content.
 
 It only:
 
 1. Polls Linear for `Todo` issues carrying `local-codex`.
-2. Maps the Linear Project to a configured local Git repository.
+2. Resolves a configured project identity: cwd, repository origin, and branch.
 3. Moves the issue to `In Progress` as the visible single-worker lease.
-4. Resolves the explicit target alias and reads its exact durable thread.
-5. Verifies thread/session/project/repository identity and direct-input capability.
+4. Resolves an explicit thread binding for `THREAD_MODE=existing`, or creates a
+   new durable thread under the project cwd for `THREAD_MODE=new`.
+5. Reads back the exact thread and verifies thread/session/project/repository
+   identity and direct-input capability.
 6. Sends `turn/start` to that exact thread through the P620 app-server transport.
 
-M0 stops after `turn/start`. It does not wait for completion or write final
-results back to Linear. The old `codex exec` helper is retained only as a
-marked legacy compatibility path and is not the V1 default.
+M3 keeps the small M2 completion-marker path for disposable qualification. The
+dispatcher itself remains asynchronous after `turn/start`. The old `codex exec`
+helper is retained only as a marked legacy compatibility path and is not the
+V1 default.
 
 The bridge never marks an issue `Done`.
 
@@ -113,9 +116,24 @@ The doctor should also report `PVX-1508` as currently eligible.
 
 ## First automatic test
 
+The preferred contract is:
+
+```text
+PROJECT=pilot
+THREAD_MODE=existing
+THREAD_ALIAS=current
+MODEL=gpt-5.6-luna
+REASONING=high
+```
+
+For a disposable new durable thread, use `THREAD_MODE=new` and omit
+`THREAD_ALIAS`. The legacy `TARGET_ALIAS=pilot` contract remains supported for
+compatibility. Project configuration, never issue text, supplies cwd, origin,
+and branch.
+
 Do **not** open Codex interactively and do **not** type an issue prompt.
 
-After filling every placeholder in the disposable `[targets.pilot]` entry and
+After filling every placeholder in the disposable `[threads.pilot.current]` entry and
 verifying the remote app-server command, run exactly:
 
 ```bash
@@ -131,9 +149,7 @@ bridge claims
     ↓
 PVX-1508 In Progress
     ↓
-SSH p620
-    ↓
-thread/read + identity guard
+project guard + thread/read + identity guard
     ↓
 turn/start on exact disposable thread
 ```
