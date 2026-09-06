@@ -1,3 +1,4 @@
+import dataclasses
 import os
 from pathlib import Path
 import subprocess
@@ -92,6 +93,55 @@ app_server_version = "codex-cli 0.152.1"
             )
             cfg = bridge.BridgeConfig.load(p)
             self.assertIsNone(cfg.targets[0].project_id)
+
+    def test_loads_runtime_workspace_and_thread_host_identities(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "bridge.toml"
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            p.write_text(
+                f"""
+[linear]
+team_id = "team"
+trigger_label = "local-codex"
+todo_state = "Todo"
+running_state = "In Progress"
+review_state = "In Review"
+
+[runtime]
+runtime_host = "p620"
+
+[app_server]
+transport = "ssh"
+
+[workspaces.p620]
+host = "p620"
+root = "{td}"
+
+[projects.pilot]
+linear_name = "Pilot"
+workspace = "p620"
+cwd = "{repo}"
+repository_origin = "https://example.invalid/pilot.git"
+branch = "main"
+
+[threads.pilot.current]
+host = "p620"
+ssh_alias = "p620"
+thread_id = "thread-1"
+session_id = "session-1"
+project_id = "project-1"
+app_server_version = "codex-cli 0.152.1"
+""",
+                encoding="utf-8",
+            )
+            cfg = bridge.BridgeConfig.load(p)
+            binding = bridge.ThreadRegistry(cfg.threads).resolve("pilot", "current")
+
+            self.assertEqual(cfg.runtime_host, "p620")
+            self.assertEqual(cfg.workspaces[0].host, "p620")
+            self.assertEqual(binding.target_host, "p620")
+            self.assertEqual(bridge._project_target_host(cfg, cfg.projects[0]), "p620")
 
     def test_rejects_fast_poll(self):
         with tempfile.TemporaryDirectory() as td:
@@ -306,6 +356,7 @@ def target_fixture(**overrides):
         "repository_origin": "https://example.invalid/pilot.git",
         "branch": "main",
         "app_server_version": "codex-cli 0.152.1",
+        "target_host": "p620",
     }
     values.update(overrides)
     return bridge.TargetConfig(**values)
@@ -327,6 +378,7 @@ def dispatcher_fixture(target=None, client=None):
         log_dir=Path("/tmp/bridge-tests"),
         projects=(bridge.ProjectMapping("Pilot", Path("/tmp/pilot"), "pilot"),),
         targets=(target,),
+        runtime_host="p620",
     )
     return cfg, bridge.Dispatcher(cfg, client_factory=lambda _target: client)
 
@@ -1321,6 +1373,7 @@ class AppServerClientTests(unittest.TestCase):
         cfg, _dispatcher = dispatcher_fixture(client=None)
         client = bridge._default_app_server_client(cfg, target_fixture())
         self.assertIsInstance(client.transport, app_server.LocalStdioTransport)
+        self.assertIsInstance(client.transport, app_server.WebSocketStdioTransport)
         self.assertEqual(
             client.transport.command,
             ("codex", "app-server", "proxy"),
@@ -1331,6 +1384,24 @@ class AppServerClientTests(unittest.TestCase):
         client = bridge._default_app_server_client(cfg, target_fixture())
         self.assertIsInstance(client.transport, app_server.LocalStdioTransport)
         self.assertNotIsInstance(client.transport, app_server.SSHStdioTransport)
+        self.assertNotEqual(client.transport.command[0], "ssh")
+
+    def test_transport_resolution_separates_runtime_and_target_host(self):
+        self.assertEqual(bridge.canonical_host("workstation-p620"), "p620")
+        self.assertEqual(bridge.detect_runtime_host(None, hostname="workstation-p620"), "p620")
+        self.assertEqual(bridge.resolve_transport("p620", "p620", "ssh"), "local")
+        self.assertEqual(bridge.resolve_transport("mac", "mac", "ssh"), "local")
+        self.assertEqual(bridge.resolve_transport("mac", "p620", "ssh"), "ssh")
+        self.assertEqual(bridge.resolve_transport("p620", "mac", "ssh"), "ssh")
+
+    def test_remote_transport_preserves_ssh_support(self):
+        cfg, _dispatcher = dispatcher_fixture(client=None)
+        cfg = dataclasses.replace(cfg, runtime_host="mac", app_server=bridge.AppServerConfig(
+            transport="ssh", ssh_alias="fallback-p620", client_version="0.152.1",
+        ))
+        client = bridge._default_app_server_client(cfg, target_fixture(target_host="p620"))
+        self.assertIsInstance(client.transport, app_server.SSHStdioTransport)
+        self.assertEqual(client.transport.ssh_alias, "p620")
 
     def test_protocol_payloads_use_exact_thread_and_dispatch_overrides(self):
         class FakeTransport:

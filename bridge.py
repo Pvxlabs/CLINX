@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """linear-local-codex-bridge Dispatcher V1 / M3.
 
-Linear (Todo + trigger label) -> claim In Progress -> SSH P620 -> Codex
-app-server -> exact durable thread -> turn/start.
+Linear (Todo + trigger label) -> claim In Progress -> selected app-server
+transport -> exact durable thread -> turn/start.
 
 The legacy local ``codex exec`` helper remains available for compatibility and
 tests, but it is intentionally not part of the default dispatch path.
@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -47,6 +48,38 @@ from task_registry import (
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 BRIDGE_VERSION = "1.0.0-m5"
 LEGACY_CODEX_EXEC_DEFAULT = False
+
+
+def canonical_host(value: str) -> str:
+    """Return the small, stable host identity used for transport selection."""
+    host = value.strip().lower()
+    if not host:
+        raise BridgeError("host identity is required")
+    if host.startswith("workstation-"):
+        host = host.removeprefix("workstation-")
+    if not host:
+        raise BridgeError("host identity is required")
+    return host
+
+
+def detect_runtime_host(configured_host: str | None, *, hostname: str | None = None) -> str:
+    """Prefer trusted config; hostname is only a deterministic local fallback."""
+    return canonical_host(configured_host or hostname or socket.gethostname())
+
+
+def resolve_transport(
+    runtime_host: str,
+    target_host: str,
+    remote_transport: str,
+) -> str:
+    """Select local only for the same canonical host, otherwise fail closed."""
+    if canonical_host(runtime_host) == canonical_host(target_host):
+        return "local"
+    if remote_transport != "ssh":
+        raise BridgeError(
+            "cross-host app-server dispatch requires configured remote transport 'ssh'"
+        )
+    return "ssh"
 
 
 class BridgeError(RuntimeError):
@@ -94,6 +127,8 @@ ProjectConfig = ProjectMapping
 
 @dataclasses.dataclass(frozen=True)
 class AppServerConfig:
+    # This is the configured *remote* transport. Same-host dispatches always
+    # use the local app-server proxy regardless of this value.
     transport: str = "local"
     command: tuple[str, ...] = ("codex", "app-server", "proxy")
     ssh_binary: str = "ssh"
@@ -117,6 +152,7 @@ class TargetConfig:
     repository_origin: str
     branch: str
     app_server_version: str
+    target_host: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -130,6 +166,7 @@ class ThreadBinding:
     session_id: str
     project_id: str | None
     app_server_version: str
+    target_host: str = ""
 
     @property
     def qualified_alias(self) -> str:
@@ -360,6 +397,7 @@ class BridgeConfig:
     threads: tuple[ThreadBinding, ...] = ()
     workspaces: tuple[WorkspaceConfig, ...] = ()
     task_db_path: Path | None = None
+    runtime_host: str = ""
 
     @staticmethod
     def load(path: Path) -> "BridgeConfig":
@@ -455,6 +493,9 @@ class BridgeConfig:
                 TargetConfig(
                     alias=str(alias),
                     project_id=project_id,
+                    target_host=(
+                        str(row["host"]).strip() if row.get("host") else ""
+                    ),
                     **{k: str(v) for k, v in values.items()},
                 )
             )
@@ -534,6 +575,9 @@ class BridgeConfig:
                             session_id=str(row["session_id"]),
                             project_id=str(project_id).strip() if project_id else None,
                             app_server_version=str(row["app_server_version"]),
+                            target_host=(
+                                str(row["host"]).strip() if row.get("host") else ""
+                            ),
                         )
                     )
 
@@ -553,6 +597,7 @@ class BridgeConfig:
                         session_id=target.session_id,
                         project_id=target.project_id,
                         app_server_version=target.app_server_version,
+                        target_host=target.target_host,
                     )
                 )
 
@@ -572,6 +617,7 @@ class BridgeConfig:
                         root=Path(root).expanduser().resolve(),
                         allow_existing_projects=bool(row.get("allow_existing_projects", True)),
                         allow_new_projects=bool(row.get("allow_new_projects", False)),
+                        host=(str(row["host"]).strip() if row.get("host") else None),
                         ssh_alias=(
                             str(row["ssh_alias"]).strip()
                             if row.get("ssh_alias")
@@ -585,6 +631,9 @@ class BridgeConfig:
             Path(str(task_db_value)).expanduser().resolve()
             if task_db_value
             else None
+        )
+        runtime_host = detect_runtime_host(
+            str(runtime["runtime_host"]).strip() if runtime.get("runtime_host") else None
         )
 
         return BridgeConfig(
@@ -622,6 +671,7 @@ class BridgeConfig:
             threads=tuple(threads),
             workspaces=tuple(workspaces),
             task_db_path=task_db_path,
+            runtime_host=runtime_host,
         )
 
     def repo_for_project(self, project_name: str | None) -> Path | None:
@@ -1215,6 +1265,7 @@ def _read_only_transport_target(cfg: BridgeConfig, project: ProjectMapping) -> T
             if binding is not None
             else (cfg.threads[0].app_server_version if cfg.threads else cfg.app_server.client_version)
         ),
+        target_host=binding.target_host if binding is not None else "",
     )
 
 
@@ -1267,6 +1318,8 @@ def _onboarding_candidate(
         "cli_version": thread.get("cliVersion"),
         "repository_origin": evidence.origin,
         "branch": evidence.branch,
+        "target_host": target.target_host,
+        "ssh_alias": target.ssh_alias,
     }
     mismatches: list[str] = []
     if candidate["thread_id"] != target.thread_id:
@@ -1325,15 +1378,17 @@ def _persist_thread_binding(
     if not isinstance(session_id, str) or not session_id:
         raise ReadOnlyOnboardingError("cannot register thread without exact session_id")
     ssh_alias = candidate.get("ssh_alias", "p620")
+    target_host = candidate.get("target_host")
     app_server_version = candidate.get("app_server_version") or candidate.get("cli_version")
     if not isinstance(app_server_version, str) or not app_server_version:
         raise ReadOnlyOnboardingError("cannot register thread without app-server version")
     block = (
         f"\n{table_header}\n"
         f"# Identity only; cwd, origin, and branch remain authoritative in projects.{project_alias}.\n"
-        f"ssh_alias = {json.dumps(str(ssh_alias))}\n"
-        f"thread_id = {json.dumps(thread_id)}\n"
-        f"session_id = {json.dumps(session_id)}\n"
+        + (f"host = {json.dumps(str(target_host))}\n" if target_host else "")
+        + f"ssh_alias = {json.dumps(str(ssh_alias))}\n"
+        + f"thread_id = {json.dumps(thread_id)}\n"
+        + f"session_id = {json.dumps(session_id)}\n"
         + (
             f"project_id = {json.dumps(candidate['project_id'])}\n"
             if candidate.get("project_id") is not None
@@ -1410,6 +1465,7 @@ def register_existing_thread(
             repository_origin=target.repository_origin,
             branch=target.branch,
             app_server_version=target.app_server_version,
+            target_host=target.target_host,
         )
         identity_guard(
             target_for_guard,
@@ -1428,6 +1484,7 @@ def register_existing_thread(
             "session_id": session_id,
             "project_id": thread.get("projectId"),
             "ssh_alias": target.ssh_alias,
+            "target_host": target.target_host,
             "app_server_version": actual_version,
         }
 
@@ -1498,6 +1555,7 @@ def onboard_existing_thread(
                 repository_origin=target.repository_origin,
                 branch=target.branch,
                 app_server_version=target.app_server_version,
+                target_host=target.target_host,
             ), thread))
 
     eligible = [item for item in candidates if item["eligible"]]
@@ -1545,19 +1603,43 @@ def _target_for_binding(
         repository_origin=project.repository_origin or "",
         branch=project.branch or "",
         app_server_version=binding.app_server_version,
+        target_host=binding.target_host,
     )
+
+
+def _project_target_host(cfg: BridgeConfig, project: ProjectMapping) -> str:
+    if not project.workspace_alias:
+        return ""
+    workspace = next(
+        (item for item in cfg.workspaces if item.alias.lower() == project.workspace_alias.lower()),
+        None,
+    )
+    if workspace is None:
+        raise TargetResolutionError(
+            f"Project {project.project_alias!r} references unknown workspace {project.workspace_alias!r}"
+        )
+    return canonical_host(workspace.host or workspace.alias)
 
 
 def _default_app_server_client(
     cfg: BridgeConfig,
     target: TargetConfig,
 ) -> CodexAppServerClient:
-    if cfg.app_server.transport == "local":
+    if not target.target_host:
+        raise BridgeError(
+            f"Target {target.alias!r} has no target_host for transport selection"
+        )
+    selected_transport = resolve_transport(
+        cfg.runtime_host,
+        target.target_host,
+        cfg.app_server.transport,
+    )
+    if selected_transport == "local":
         transport = LocalStdioTransport(
             cfg.app_server.command,
             timeout_seconds=cfg.app_server.request_timeout_seconds,
         )
-    elif cfg.app_server.transport == "ssh":
+    elif selected_transport == "ssh":
         ssh_alias = target.ssh_alias or cfg.app_server.ssh_alias
         if not ssh_alias:
             raise BridgeError("SSH app-server transport requires ssh_alias")
@@ -1569,7 +1651,7 @@ def _default_app_server_client(
             timeout_seconds=cfg.app_server.request_timeout_seconds,
         )
     else:
-        raise BridgeError(f"Unsupported app-server transport: {cfg.app_server.transport}")
+        raise BridgeError(f"Unsupported app-server transport: {selected_transport}")
     return CodexAppServerClient(
         transport,
         timeout_seconds=cfg.app_server.request_timeout_seconds,
@@ -1644,6 +1726,7 @@ class TaskDispatcher:
             repository_origin=project.repository_origin or "",
             branch=project.branch or "",
             app_server_version=binding.app_server_version or self.cfg.app_server.client_version,
+            target_host=canonical_host(workspace.host or workspace.alias),
         )
 
     def _new_target(
@@ -1661,6 +1744,7 @@ class TaskDispatcher:
             repository_origin=project.repository_origin or "",
             branch=project.branch or "",
             app_server_version=self.cfg.app_server.client_version,
+            target_host=canonical_host(workspace.host or workspace.alias),
         )
 
     @staticmethod
@@ -2043,6 +2127,7 @@ class Dispatcher:
                 repository_origin=project.repository_origin or "",
                 branch=project.branch or "",
                 app_server_version=self.cfg.app_server.client_version,
+                target_host=_project_target_host(self.cfg, project),
             )
         )
         client = self.client_factory(
@@ -2092,6 +2177,7 @@ class Dispatcher:
                         or getattr(initialize_info, "user_agent", None)
                         or transport_target.app_server_version
                     ),
+                    target_host=transport_target.target_host,
                 )
                 target = _target_for_binding(project, binding)
                 thread = client.thread_read(new_thread_id)
@@ -2154,6 +2240,7 @@ class Dispatcher:
             session_id=target.session_id,
             project_id=target.project_id,
             app_server_version=target.app_server_version,
+            target_host=target.target_host,
         )
         client = self.client_factory(target)
         try:

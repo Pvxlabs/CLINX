@@ -46,6 +46,8 @@ class WorkspaceConfig:
     root: Path
     allow_existing_projects: bool = True
     allow_new_projects: bool = False
+    # Execution-host identity is separate from the optional remote SSH alias.
+    host: str | None = None
     ssh_alias: str | None = None
 
 

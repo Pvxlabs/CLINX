@@ -198,13 +198,48 @@ def task_dispatcher_fixture(root: Path, db: Path, client: FakeM5Client, repo: Pa
             "Pilot", repo, alias="pilot", repository_origin="https://example.invalid/pilot.git",
             branch="main", workspace_alias="p620",
         ),), app_server=bridge.AppServerConfig(client_version="0.152.1"),
-        workspaces=(WorkspaceConfig("p620", root, allow_new_projects=True),),
+        workspaces=(WorkspaceConfig("p620", root, allow_new_projects=True, host="p620"),),
         task_db_path=db,
+        runtime_host="p620",
     )
     return bridge.TaskDispatcher(cfg, task_registry=TaskRegistry(db), client_factory=lambda _target: client)
 
 
 class TaskDispatcherTests(unittest.TestCase):
+    def test_p620_workspace_new_and_continue_resolve_local_transport(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "dev"
+            root.mkdir()
+            db = Path(td) / "tasks.sqlite3"
+            first = FakeM5Client()
+            dispatcher = task_dispatcher_fixture(root, db, first)
+            targets = []
+            clients = [first]
+
+            def client_factory(target):
+                targets.append(target)
+                return clients.pop(0)
+
+            dispatcher.client_factory = client_factory
+            created = dispatcher.dispatch(
+                project_ref="pilot", host="P620", project_mode="existing", task_mode="new",
+                task_id=None, prompt="first", title="Task", summary=None,
+                model=None, reasoning_effort=None,
+            )
+            second = FakeM5Client(thread_id=created.thread_id, session_id=created.session_id)
+            second.thread = dict(first.thread)
+            clients.append(second)
+            dispatcher.dispatch(
+                project_ref="pilot", host="p620", project_mode="existing", task_mode="continue",
+                task_id=created.task_id, prompt="second", title="ignored", summary=None,
+                model=None, reasoning_effort=None,
+            )
+            self.assertEqual([target.target_host for target in targets], ["p620", "p620"])
+            self.assertEqual(
+                [bridge.resolve_transport(dispatcher.cfg.runtime_host, target.target_host, dispatcher.cfg.app_server.transport) for target in targets],
+                ["local", "local"],
+            )
+
     def test_new_then_continue_reuses_exact_thread_and_overrides(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "dev"
