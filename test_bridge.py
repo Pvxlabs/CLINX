@@ -1504,7 +1504,10 @@ class AppServerClientTests(unittest.TestCase):
 
         thread_reads = [item for item in transport.sent if item.get("method") == "thread/read"]
         self.assertEqual(len(thread_reads), 1)
-        self.assertEqual(thread_reads[0]["params"], {"threadId": "durable-thread"})
+        self.assertEqual(
+            thread_reads[0]["params"],
+            {"threadId": "durable-thread", "includeTurns": False},
+        )
 
         resumes = [item for item in transport.sent if item.get("method") == "thread/resume"]
         self.assertEqual(len(resumes), 1)
