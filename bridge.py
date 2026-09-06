@@ -2798,6 +2798,12 @@ def _context_text(value: Any, maximum: int) -> str:
     else:
         text = ""
     text = re.sub(r"\blin_api_[A-Za-z0-9]+\b", "[REDACTED]", text)
+    text = re.sub(
+        r"<in-app-browser-context\b[^>]*>.*?</in-app-browser-context>",
+        "",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
     text = " ".join(text.replace("\x00", "").split())
     return text[:maximum]
 
@@ -2809,8 +2815,8 @@ def _context_extract_fields(texts: list[str]) -> tuple[str, str, str, str]:
         return "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN"
 
     boundary = (
-        r"(?=\s+(?:changed files?|files changed|validation|tests?|blockers?|"
-        r"blocker|current state|next state|next step)\s*[:=]"
+        r"(?=\s+(?:changed[_ ]files?|files[_ ]changed|validation|tests?|blockers?|"
+        r"blocker|current[_ ]state|next[_ ]state|next[_ ]step)\s*[:=]"
         r"|\s+[A-Z][A-Z0-9_]{2,}=|$)"
     )
 
@@ -2819,10 +2825,10 @@ def _context_extract_fields(texts: list[str]) -> tuple[str, str, str, str]:
         match = re.search(pattern, combined, flags=re.IGNORECASE | re.MULTILINE)
         return _context_text(match.group(1).rstrip(" ;"), 4000) if match else default
 
-    changed = marker(r"changed files?|files changed")
+    changed = marker(r"changed[_ ]files?|files[_ ]changed")
     validation = marker(r"validation|tests?")
     blockers = marker(r"blockers?|blocker")
-    state = marker(r"current state|next state|next step")
+    state = marker(r"current[_ ]state|next[_ ]state|next[_ ]step")
     return changed, validation, blockers, state
 
 
@@ -2999,6 +3005,11 @@ class TaskContextReader:
                     "aggregatedOutput",
                 ):
                     if key in node:
+                        if key == "aggregatedOutput" and local_hint != "assistant":
+                            # Command stdout is large, noisy, and may contain
+                            # credentials.  It must not displace actual user
+                            # and final-agent messages from the context budget.
+                            continue
                         text = _context_text(node[key], 8000)
                         if text:
                             key_hint = (
