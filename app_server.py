@@ -591,6 +591,65 @@ class CodexAppServerClient:
         )
         return _thread_result(result, "thread/read")
 
+    @staticmethod
+    def _bounded_limit(limit: int) -> int:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise AppServerProtocolError("bounded history limit must be an integer from 1 to 100")
+        return limit
+
+    @staticmethod
+    def _paged_result(result: Any, method: str) -> dict[str, Any]:
+        if not isinstance(result, dict) or not isinstance(result.get("data"), list):
+            raise AppServerProtocolError(f"{method} result is missing data")
+        return result
+
+    def thread_turns_list(
+        self,
+        thread_id: str,
+        *,
+        limit: int,
+        cursor: str | None = None,
+        sort_direction: str = "desc",
+        items_view: str = "summary",
+    ) -> dict[str, Any]:
+        """Read a bounded page of turns without requesting the full thread."""
+        if sort_direction not in {"asc", "desc"}:
+            raise AppServerProtocolError("thread/turns/list sort_direction must be asc or desc")
+        if items_view not in {"summary", "full", "notLoaded"}:
+            raise AppServerProtocolError("thread/turns/list items_view is invalid")
+        params: dict[str, Any] = {
+            "threadId": thread_id,
+            "limit": self._bounded_limit(limit),
+            "sortDirection": sort_direction,
+            "itemsView": items_view,
+        }
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._paged_result(self._request("thread/turns/list", params), "thread/turns/list")
+
+    def thread_items_list(
+        self,
+        thread_id: str,
+        *,
+        turn_id: str | None = None,
+        limit: int,
+        cursor: str | None = None,
+        sort_direction: str = "desc",
+    ) -> dict[str, Any]:
+        """Read a bounded page of items, optionally for one exact turn."""
+        if sort_direction not in {"asc", "desc"}:
+            raise AppServerProtocolError("thread/items/list sort_direction must be asc or desc")
+        params: dict[str, Any] = {
+            "threadId": thread_id,
+            "limit": self._bounded_limit(limit),
+            "sortDirection": sort_direction,
+        }
+        if turn_id is not None:
+            params["turnId"] = turn_id
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._paged_result(self._request("thread/items/list", params), "thread/items/list")
+
     def thread_list(self, *, cursor: str | None = None, limit: int = 100) -> dict[str, Any]:
         params: dict[str, Any] = {"limit": limit}
         if cursor is not None:
