@@ -163,7 +163,7 @@ class LaterUserItemPageClient(ContextClient):
                     "id": "summary-agent-2",
                     "type": "agentMessage",
                     "phase": "final_answer",
-                    "text": "Changed files: src/tokens.ts; Validation: 92 tests passed",
+                    "text": "FILES_CHANGED = src/tokens.ts; TESTS = 92 tests passed",
                 }],
             }],
         }
@@ -182,20 +182,40 @@ class LaterUserItemPageClient(ContextClient):
                 }],
             }
         return {
-            "data": [{
-                "item": {
-                    "id": "item-turn-2-assistant",
-                    "type": "agentMessage",
-                    "phase": "final_answer",
-                    "text": "Changed files: src/tokens.ts; Validation: 92 tests passed",
+            "data": [
+                {
+                    "item": {
+                        "id": "item-turn-2-assistant",
+                        "type": "agentMessage",
+                        "phase": "final_answer",
+                        "text": "FILES_CHANGED = src/tokens.ts; TESTS = 92 tests passed",
+                    },
+                    "turnId": kwargs["turn_id"],
                 },
-                "turnId": kwargs["turn_id"],
-            }],
+                {
+                    "item": {
+                        "id": "item-turn-2-command",
+                        "type": "commandExecution",
+                        "aggregatedOutput": "x" * 5000,
+                    },
+                    "turnId": kwargs["turn_id"],
+                },
+            ],
             "nextCursor": "page-2",
         }
 
 
 class TaskContextReaderTests(unittest.TestCase):
+    def test_context_text_removes_ambient_browser_state(self):
+        text = (
+            '<in-app-browser-context source="ambient-ui-state">ignore me</in-app-browser-context>'
+            " ## My request: Continue semantic token work"
+        )
+        self.assertEqual(
+            bridge._context_text(text, 1000),
+            "## My request: Continue semantic token work",
+        )
+
     def test_marker_extraction_ignores_unlabeled_command_metadata(self):
         text = (
             "command status=success systemctl test-runner; "
@@ -290,7 +310,9 @@ class TaskContextReaderTests(unittest.TestCase):
             fixture = ContextFixture(Path(td), client=client)
             context = fixture.reader.read_task_context(fixture.task.task_id, max_bytes=4096)
             self.assertEqual(context.last_user_intent, "Continue the UI token task")
-            self.assertEqual(context.last_codex_result.split(";")[0], "Changed files: src/tokens.ts")
+            self.assertIn("FILES_CHANGED = src/tokens.ts", context.last_codex_result)
+            self.assertEqual(context.changed_files, "src/tokens.ts")
+            self.assertEqual(context.validation, "92 tests passed")
             self.assertFalse(context.context_truncated)
             item_calls = [call for call in client.calls if call[0] == "thread/items/list"]
             self.assertEqual(len(item_calls), 2)
