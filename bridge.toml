@@ -1,4 +1,4 @@
-# linear-local-codex-bridge v0.1 / Dispatcher V1 M3
+# linear-local-codex-bridge v0.1 / Dispatcher V1 M5
 #
 # Keep LINEAR_API_KEY in the environment, never in this file.
 
@@ -21,23 +21,31 @@ sandbox = "workspace-write"
 approval = "never"
 
 [app_server]
-# The bridge is running on P620, so use the existing local app-server proxy.
-# This starts a stdio proxy process and connects to the already-running
-# app-server control socket; it does not bootstrap or restart the server.
-transport = "local"
-command = ["codex", "app-server", "proxy"]
-
-# Remote deployment remains supported as an explicit alternative.
+# M5 crosses the existing SSH boundary to the P620 app-server proxy.
+# This starts a stdio proxy process on P620 and does not bootstrap or restart
+# the server or inspect Desktop state.
+transport = "ssh"
+ssh_alias = "p620"
 ssh_binary = "ssh"
 ssh_args = ["-T"]
 remote_command = ["codex", "app-server", "proxy"]
 request_timeout_seconds = 30
 client_name = "linear-local-codex-bridge"
 client_title = "Linear Local Codex Bridge"
-client_version = "1.0.0-m3"
+client_version = "1.0.0-m5"
 
 [runtime]
 log_dir = "~/.local/state/linear-local-codex-bridge"
+task_db_path = "~/.local/state/clinx/tasks.sqlite3"
+
+# M5 dynamic project resolution is bounded to this workspace.  The initial
+# qualification target must be a disposable pilot project; real development
+# projects are not selected by M5 automatically.
+[workspaces.p620]
+root = "/home/pvxlabs/dev"
+allow_existing_projects = true
+allow_new_projects = false
+ssh_alias = "p620"
 
 [projects.pilot]
 linear_name = "ChatGPT × Linear × Codex Dispatcher V1"

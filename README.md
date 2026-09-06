@@ -1,4 +1,4 @@
-# linear-local-codex-bridge Dispatcher V1 / M3
+# linear-local-codex-bridge Dispatcher V1 / M5
 
 A deliberately thin local actuator for this workflow:
 
@@ -16,7 +16,7 @@ Linear
 ChatGPT review
 ```
 
-## M3 design
+## M5 design
 
 The bridge is **not an agent** and does not interpret issue content.
 
@@ -24,17 +24,20 @@ It only:
 
 1. Polls Linear for `Todo` issues carrying `local-codex`.
 2. Resolves a configured project identity: cwd, repository origin, and branch.
-3. Moves the issue to `In Progress` as the visible single-worker lease.
-4. Resolves an explicit thread binding for `THREAD_MODE=existing`, or creates a
-   new durable thread under the project cwd for `THREAD_MODE=new`.
-5. Reads back the exact thread and verifies thread/session/project/repository
-   identity and direct-input capability.
-6. Sends `turn/start` to that exact thread through the P620 app-server transport.
+3. Moves the issue to `In Progress` as the visible Linear claim.
+4. Resolves a project through a bounded workspace registry.
+5. Creates a durable task record and one canonical conversation binding for a
+   new task, or loads the exact binding for a continuation.
+6. Reads back the exact thread and verifies thread/session/project/repository
+   identity, direct-input capability, and compatible app-server version.
+7. Sends `turn/start` to that exact thread through the P620 app-server transport.
 
-M3 keeps the small M2 completion-marker path for disposable qualification. The
+M5 keeps the small M2 completion-marker path for disposable qualification. The
 dispatcher itself remains asynchronous after `turn/start`. The old `codex exec`
 helper is retained only as a marked legacy compatibility path and is not the
-V1 default.
+V1 default. `EXECUTION_MODE=fast` is accepted and persisted as a task choice;
+M5 does not claim an app-server-native fast capability that has not been
+verified.
 
 The bridge never marks an issue `Done`.
 
@@ -116,7 +119,23 @@ The doctor should also report `PVX-1508` as currently eligible.
 
 ## First automatic test
 
-The preferred contract is:
+The M5 contract is:
+
+```text
+HOST=p620
+PROJECT=pilot
+PROJECT_MODE=existing
+TASK_MODE=new
+MODEL=gpt-5.6-luna
+REASONING=high
+EXECUTION_MODE=normal
+```
+
+Use `TASK_MODE=continue` with the exact persisted `TASK_ID` to reuse the same
+conversation binding. `TASK_ACTION=complete`, `TASK_ACTION=reopen`, and
+`TASK_ACTION=archive` change task state without selecting another thread.
+
+The earlier M3 contract remains supported:
 
 ```text
 PROJECT=pilot
@@ -133,8 +152,14 @@ and branch.
 
 Do **not** open Codex interactively and do **not** type an issue prompt.
 
-After filling every placeholder in the disposable `[threads.pilot.current]` entry and
-verifying the remote app-server command, run exactly:
+For M5, the durable task registry is SQLite at
+`~/.local/state/clinx/tasks.sqlite3` by default (or `[runtime].task_db_path`).
+It stores task records, the canonical task-to-thread binding, active execution
+leases, and Linear execution references. A continuation never falls back to a
+latest thread, cwd match, Desktop selection, or database ordering.
+
+After verifying that the selected project is disposable and the remote
+app-server command is available, run exactly:
 
 ```bash
 python3 bridge.py --config bridge.toml once
@@ -149,7 +174,9 @@ bridge claims
     ↓
 PVX-1508 In Progress
     ↓
-project guard + thread/read + identity guard
+workspace/project resolver + durable task registry
+    ↓
+thread/start or exact binding + thread/read + identity guard
     ↓
 turn/start on exact disposable thread
 ```
