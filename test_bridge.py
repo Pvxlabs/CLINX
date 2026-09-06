@@ -848,6 +848,37 @@ class M4AOnboardingTests(unittest.TestCase):
 
         return Client(threads)
 
+    def _config_file(self, path, repo, *, existing=False):
+        binding = (
+            '\n[threads.orion.current]\n'
+            'ssh_alias = "p620"\n'
+            'thread_id = "old-thread"\n'
+            'session_id = "old-session"\n'
+            'app_server_version = "codex-cli 0.152.1"\n'
+            if existing else ""
+        )
+        path.write_text(
+            f'''[linear]
+team_id = "team"
+trigger_label = "local-codex"
+todo_state = "Todo"
+running_state = "In Progress"
+review_state = "In Review"
+
+[app_server]
+transport = "local"
+command = ["codex", "app-server", "proxy"]
+
+[projects.orion]
+linear_name = "ORION"
+cwd = "{repo}"
+repository_origin = "git@github.com:Pvxlabs/ORION.git"
+branch = "master"
+read_only = true
+{binding}''',
+            encoding="utf-8",
+        )
+
     def test_multiple_eligible_candidates_is_ambiguous_and_does_not_register(self):
         with tempfile.TemporaryDirectory() as td:
             repo = self._repo(td)
@@ -890,6 +921,79 @@ class M4AOnboardingTests(unittest.TestCase):
             self.assertFalse(result["registered"])
             self.assertNotIn("thread/start", client.calls)
             self.assertNotIn("turn/start", client.calls)
+
+    def test_selected_thread_registers_exact_identity_and_readback(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            cfg = self._cfg(repo)
+            path = Path(td) / "bridge.toml"
+            self._config_file(path, repo)
+            selected = "selected-thread"
+            client = self._client([self._thread(selected, cwd=str(repo))])
+            result = bridge.register_existing_thread(
+                cfg, "orion", "current", selected,
+                client_factory=lambda _target: client, config_path=path,
+            )
+            loaded = bridge.BridgeConfig.load(path)
+            binding = bridge.ThreadRegistry(loaded.threads).resolve("orion", "current")
+            self.assertTrue(result["registered"])
+            self.assertEqual(binding.thread_id, selected)
+            self.assertEqual(binding.session_id, f"session-{selected}")
+            self.assertIsNone(binding.project_id)
+            self.assertEqual(
+                [call for call in client.calls if isinstance(call, tuple) and call[0] == "thread/read"],
+                [("thread/read", selected), ("thread/read", selected)],
+            )
+            self.assertNotIn("turn/start", client.calls)
+            self.assertNotIn("thread/start", client.calls)
+            self.assertNotIn("thread/resume", client.calls)
+
+    def test_registration_rejects_identity_mismatches_and_never_persists(self):
+        cases = {
+            "cwd": {"cwd": "/tmp/other"},
+            "origin": {"origin": "git@github.com:Pvxlabs/other.git"},
+            "branch": {"branch": "feature"},
+            "ephemeral": {"ephemeral": True},
+            "direct-input": {"can_accept": False},
+        }
+        for name, overrides in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as td:
+                repo = self._repo(td)
+                cfg = self._cfg(repo)
+                path = Path(td) / "bridge.toml"
+                self._config_file(path, repo)
+                thread_values = {"cwd": str(repo)}
+                thread_values.update(overrides)
+                client = self._client([self._thread("selected", **thread_values)])
+                with self.assertRaisesRegex(bridge.IdentityGuardError, "DISPATCH_IDENTITY_GUARD=FAIL"):
+                    bridge.register_existing_thread(
+                        cfg, "orion", "current", "selected",
+                        client_factory=lambda _target: client, config_path=path,
+                    )
+                self.assertNotIn("[threads.orion.current]", path.read_text(encoding="utf-8"))
+                self.assertFalse(any(
+                    isinstance(call, tuple) and call[0] in {"turn/start", "thread/start", "thread/resume"}
+                    for call in client.calls
+                ))
+
+    def test_registration_rejects_unknown_project_and_existing_alias(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            cfg = self._cfg(repo)
+            path = Path(td) / "bridge.toml"
+            self._config_file(path, repo, existing=True)
+            client = self._client([self._thread("selected", cwd=str(repo))])
+            with self.assertRaises(bridge.TargetResolutionError):
+                bridge.register_existing_thread(
+                    cfg, "missing", "current", "selected",
+                    client_factory=lambda _target: client, config_path=path,
+                )
+            with self.assertRaisesRegex(bridge.ReadOnlyOnboardingError, "already registered"):
+                bridge.register_existing_thread(
+                    cfg, "orion", "current", "selected",
+                    client_factory=lambda _target: client, config_path=path,
+                )
+            self.assertEqual(client.calls, [])
 
 
 class LinearDispatchIntegrationTests(unittest.TestCase):
