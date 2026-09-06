@@ -36,6 +36,7 @@ from app_server import (
 )
 from task_registry import (
     ConversationBinding as DurableConversationBinding,
+    ContextCheckpoint,
     DynamicProjectResolver,
     ProjectDescriptor,
     TaskExecutionBusy,
@@ -105,6 +106,58 @@ class DispatchContractError(BridgeError):
 
 class ReadOnlyOnboardingError(BridgeError):
     pass
+
+
+class ContextReadError(BridgeError):
+    pass
+
+
+class BoundedHistoryUnavailable(ContextReadError):
+    """The connected app-server does not expose usable bounded history."""
+
+
+@dataclasses.dataclass(frozen=True)
+class TaskContext:
+    task_ref: str
+    task_title: str
+    task_status: str
+    host: str
+    project: str
+    context_source: str
+    context_range: str
+    context_truncated: bool
+    checkpoint_stale: bool
+    last_user_intent: str
+    last_codex_result: str
+    changed_files: str
+    validation: str
+    blockers: str
+    current_state: str
+    ready_for_continuation: bool
+    provenance: dict[str, tuple[str, ...]]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "task_context_read": "PASS",
+            "task_ref": self.task_ref,
+            "task_title": self.task_title,
+            "task_status": self.task_status,
+            "host": self.host,
+            "project": self.project,
+            "context_source": self.context_source,
+            "context_range": self.context_range,
+            "context_truncated": self.context_truncated,
+            "checkpoint_stale": self.checkpoint_stale,
+            "last_user_intent": self.last_user_intent,
+            "last_codex_result": self.last_codex_result,
+            "changed_files": self.changed_files,
+            "validation": self.validation,
+            "blockers": self.blockers,
+            "current_state": self.current_state,
+            "ready_for_continuation": self.ready_for_continuation,
+            "provenance": self.provenance,
+            "read_only": True,
+        }
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1059,6 +1112,7 @@ class LinearTaskIndex:
     def _description(self, task: Any) -> str:
         public = _task_public_record(self.registry, task)
         summary = task.summary or ""
+        checkpoint = self.registry.latest_context_checkpoint(task.task_id)
         return (
             "CLINX_TASK_INDEX_V1\n\n"
             f"TASK_REF={task.task_id}\n"
@@ -1070,7 +1124,9 @@ class LinearTaskIndex:
             f"SUMMARY={summary}\n"
             f"EXECUTION_MODE={task.execution_mode}\n"
             f"BOUND_THREAD_EXISTS={'YES' if public['bound_thread_exists'] else 'NO'}\n"
+            f"CONTEXT_AVAILABLE={'YES' if public['bound_thread_exists'] else 'NO'}\n"
             f"LAST_EXECUTION={public['last_execution'] or ''}\n"
+            f"LAST_CONTEXT_SYNC_AT={checkpoint.timestamp if checkpoint else ''}\n"
             f"UPDATED_AT={task.updated_at}\n\n"
             "This issue is the durable CLINX task discovery record. "
             "Execution issues remain separate. Conversation IDs are intentionally omitted."
@@ -2351,6 +2407,523 @@ class TaskDispatcher:
         raise DispatchContractError(f"Unsupported TASK_ACTION={action!r}")
 
 
+def _context_text(value: Any, maximum: int) -> str:
+    """Convert one protocol value into bounded, non-secret display text."""
+    if isinstance(value, str):
+        text = value
+    elif isinstance(value, (int, float, bool)):
+        text = str(value)
+    elif isinstance(value, list):
+        text = "\n".join(_context_text(item, maximum) for item in value)
+    elif isinstance(value, dict):
+        for key in ("text", "value", "message", "content", "summary"):
+            if key in value:
+                text = _context_text(value[key], maximum)
+                break
+        else:
+            text = ""
+    else:
+        text = ""
+    text = re.sub(r"\blin_api_[A-Za-z0-9]+\b", "[REDACTED]", text)
+    text = " ".join(text.replace("\x00", "").split())
+    return text[:maximum]
+
+
+def _context_extract_fields(texts: list[str]) -> tuple[str, str, str, str]:
+    """Deterministically extract useful recovery markers from bounded text."""
+    combined = "\n".join(item for item in texts if item)
+    if not combined:
+        return "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN"
+
+    boundary = (
+        r"(?=\s+(?:changed files?|files changed|validation|tests?|blockers?|"
+        r"blocker|current state|next state|next step)\s*[:=]"
+        r"|\s+[A-Z][A-Z0-9_]{2,}=|$)"
+    )
+
+    def marker(labels: str, default: str = "UNKNOWN") -> str:
+        pattern = rf"(?:^|\s)(?:{labels})\s*[:=]\s*(.*?){boundary}"
+        match = re.search(pattern, combined, flags=re.IGNORECASE | re.MULTILINE)
+        return _context_text(match.group(1).rstrip(" ;"), 4000) if match else default
+
+    changed = marker(r"changed files?|files changed")
+    validation = marker(r"validation|tests?")
+    blockers = marker(r"blockers?|blocker")
+    state = marker(r"current state|next state|next step")
+    return changed, validation, blockers, state
+
+
+def _bounded_context_text(texts: list[str], maximum_bytes: int) -> list[str]:
+    """Keep the newest bounded text without exceeding a UTF-8 byte budget."""
+    if maximum_bytes <= 0:
+        return []
+    result: list[str] = []
+    used = 0
+    for text in texts:
+        encoded = text.encode("utf-8")
+        separator = 1 if result else 0
+        remaining = maximum_bytes - used - separator
+        if remaining <= 0:
+            break
+        if len(encoded) > remaining:
+            clipped = encoded[:remaining].decode("utf-8", errors="ignore")
+            if clipped:
+                result.append(clipped)
+            break
+        result.append(text)
+        used += separator + len(encoded)
+    return result
+
+
+def _latest_bounded_text(texts: list[str], maximum_bytes: int) -> str:
+    """Return the latest useful message, bounded by UTF-8 bytes."""
+    if not texts:
+        return "UNKNOWN"
+    return texts[0].encode("utf-8")[:maximum_bytes].decode("utf-8", errors="ignore") or "UNKNOWN"
+
+
+def _context_provenance_json(value: Any) -> dict[str, tuple[str, ...]]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, tuple[str, ...]] = {}
+    for key in ("turn_ids", "item_ids", "message_ids", "execution_ids"):
+        raw = value.get(key, ())
+        if isinstance(raw, (list, tuple)):
+            result[key] = tuple(
+                item for item in raw if isinstance(item, str) and item
+            )
+    return result
+
+
+class TaskContextReader:
+    """Read authoritative, bounded context for one registry task.
+
+    The normal entry point is a task reference.  Human discovery may resolve a
+    unique task first, but no path in this class chooses a latest thread or
+    accepts an arbitrary thread id as the task identity.
+    """
+
+    DEFAULT_RECENT_TURNS = 8
+    DEFAULT_MAX_BYTES = 32_000
+    MAX_RECENT_TURNS = 20
+    MAX_CONTEXT_BYTES = 128_000
+
+    def __init__(
+        self,
+        cfg: BridgeConfig,
+        registry: TaskRegistry,
+        *,
+        client_factory=None,
+        local_history_root: Path | None = None,
+    ):
+        self.cfg = cfg
+        self.registry = registry
+        self.workspaces = WorkspaceRegistry(cfg.workspaces)
+        self.client_factory = client_factory or (
+            lambda target: _default_app_server_client(cfg, target)
+        )
+        self.local_history_root = local_history_root or (Path.home() / ".codex" / "sessions")
+
+    def resolve_task(
+        self,
+        *,
+        task_ref: str | None = None,
+        host: str | None = None,
+        project: str | None = None,
+        query: str | None = None,
+    ) -> Any:
+        if task_ref:
+            task = self.registry.get_task(task_ref)
+            if host and canonical_host(task.host) != canonical_host(host):
+                raise TargetResolutionError(
+                    f"Task host mismatch: expected {task.host!r}, got {host!r}"
+                )
+            if project and project.casefold() not in {
+                task.project_alias.casefold(), task.project_name.casefold()
+            }:
+                raise TargetResolutionError(
+                    f"Task project mismatch: expected {task.project_alias!r}, got {project!r}"
+                )
+            return task
+        if not query:
+            raise ContextReadError("task reference or discovery query is required")
+        if not project:
+            raise ContextReadError("project is required for task discovery")
+        found = self.registry.find_tasks(
+            query=query,
+            host=host,
+            project=project,
+            include_archived=True,
+        )
+        if found.classification == "NONE":
+            raise TargetResolutionError("No task matched the discovery query")
+        if found.classification == "AMBIGUOUS":
+            refs = ", ".join(item.task_id for item in found.tasks)
+            raise TargetResolutionError(f"Task discovery is ambiguous: {refs}")
+        return found.tasks[0]
+
+    def _task_target(self, task: Any, binding: DurableConversationBinding) -> TargetConfig:
+        return TargetConfig(
+            alias=f"{task.project_alias}.context",
+            ssh_alias=self._workspace_ssh_alias(task.workspace_alias, binding),
+            thread_id=binding.thread_id,
+            session_id=binding.session_id,
+            project_id=binding.project_id,
+            cwd=task.cwd,
+            repository_origin=task.repository_origin or "",
+            branch=task.branch or "",
+            app_server_version=binding.app_server_version or self.cfg.app_server.client_version,
+            target_host=canonical_host(task.host),
+        )
+
+    def _workspace_ssh_alias(
+        self, workspace_alias: str, binding: DurableConversationBinding
+    ) -> str:
+        for workspace in self.workspaces:
+            if workspace.alias.casefold() == workspace_alias.casefold():
+                return workspace.ssh_alias or self.cfg.app_server.ssh_alias or ""
+        return ""
+
+    @staticmethod
+    def _turn_id(row: dict[str, Any]) -> str | None:
+        for key in ("id", "turnId"):
+            value = row.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return None
+
+    def _collect_item_text(
+        self, value: Any, *, role: str | None = None
+    ) -> tuple[list[str], list[str], list[str], list[str], list[str | None]]:
+        users: list[str] = []
+        assistants: list[str] = []
+        all_text: list[str] = []
+        message_ids: list[str] = []
+        roles: list[str | None] = []
+
+        def append_text(text: str, hint: str | None) -> None:
+            all_text.append(text)
+            roles.append(hint)
+            if hint == "user":
+                users.append(text)
+            elif hint == "assistant":
+                assistants.append(text)
+
+        def visit(node: Any, hint: str | None = None) -> None:
+            if isinstance(node, dict):
+                item_id = node.get("id") or node.get("itemId") or node.get("messageId")
+                if isinstance(item_id, str) and item_id:
+                    message_ids.append(item_id)
+                kind = str(node.get("type") or node.get("role") or "").casefold()
+                local_hint = hint
+                if any(token in kind for token in ("user", "human", "input")):
+                    local_hint = "user"
+                elif any(token in kind for token in ("assistant", "agent", "codex", "developer")):
+                    local_hint = "assistant"
+                for key in (
+                    "text", "message", "summary", "lastAgentMessage", "last_agent_message",
+                    "aggregatedOutput",
+                ):
+                    if key in node:
+                        text = _context_text(node[key], 8000)
+                        if text:
+                            key_hint = (
+                                "assistant"
+                                if key.casefold() in {
+                                    "lastagentmessage", "last_agent_message", "aggregatedoutput",
+                                }
+                                else local_hint
+                            )
+                            append_text(text, key_hint)
+                # thread/items/list wraps each item as {item: {...}, turnId}.
+                # Do not recurse through arbitrary metadata: fields such as
+                # phase=final_answer are protocol metadata, not message text.
+                if "item" in node:
+                    visit(node["item"], local_hint)
+                if "content" in node:
+                    visit(node["content"], local_hint)
+            elif isinstance(node, list):
+                for child in node:
+                    visit(child, hint)
+            elif isinstance(node, str) and hint:
+                text = _context_text(node, 8000)
+                if text:
+                    append_text(text, hint)
+
+        visit(value, role)
+        return users, assistants, all_text, message_ids, roles
+
+    @staticmethod
+    def _bounded_messages(
+        texts: list[str], roles: list[str | None], maximum_bytes: int
+    ) -> tuple[list[str], list[str], list[str], bool]:
+        """Apply one shared byte budget to newest-first protocol messages."""
+        bounded = _bounded_context_text(texts, maximum_bytes)
+        bounded_roles = roles[:len(bounded)]
+        users = [text for text, role in zip(bounded, bounded_roles) if role == "user"]
+        assistants = [
+            text for text, role in zip(bounded, bounded_roles) if role == "assistant"
+        ]
+        raw_size = len("\n".join(texts).encode("utf-8"))
+        return users, assistants, bounded, raw_size > maximum_bytes
+
+    def _read_native(
+        self,
+        client: Any,
+        task: Any,
+        binding: DurableConversationBinding,
+        target: TargetConfig,
+        initialize_info: Any,
+        *,
+        recent_turns: int,
+        max_bytes: int,
+    ) -> dict[str, Any]:
+        thread = client.thread_read(binding.thread_id)
+        evidence = _repository_identity_evidence(thread)
+        identity_guard(
+            target,
+            thread,
+            initialize_info=initialize_info,
+            allow_unloaded=True,
+            repository_evidence=evidence,
+        )
+        if not hasattr(client, "thread_turns_list") or not hasattr(client, "thread_items_list"):
+            raise BoundedHistoryUnavailable("app-server bounded history methods are unavailable")
+        try:
+            page = client.thread_turns_list(
+                binding.thread_id,
+                limit=recent_turns,
+                sort_direction="desc",
+                items_view="summary",
+            )
+        except AppServerError as exc:
+            raise BoundedHistoryUnavailable(str(exc)) from exc
+        turn_rows = [row for row in page.get("data", ()) if isinstance(row, dict)]
+        turn_ids = [item for item in (self._turn_id(row) for row in turn_rows) if item]
+        users: list[str] = []
+        assistants: list[str] = []
+        all_text: list[str] = []
+        item_ids: list[str] = []
+        roles: list[str | None] = []
+        item_page_truncated = False
+
+        def add_messages(value: Any) -> None:
+            nonlocal users, assistants, all_text, item_ids, roles
+            u, a, text, ids, item_roles = self._collect_item_text(value)
+            known_ids = set(item_ids)
+            if ids and all(item_id in known_ids for item_id in ids):
+                return
+            users.extend(u)
+            assistants.extend(a)
+            all_text.extend(text)
+            item_ids.extend(item_id for item_id in ids if item_id not in known_ids)
+            roles.extend(item_roles)
+
+        for turn_id in turn_ids:
+            turn_row = next((row for row in turn_rows if self._turn_id(row) == turn_id), None)
+            if turn_row is not None and isinstance(turn_row.get("items"), list):
+                # With itemsView=summary the protocol includes the user and
+                # final agent messages even when the bounded item page is
+                # occupied by newer command/reasoning items.
+                add_messages(turn_row["items"])
+            try:
+                item_page = client.thread_items_list(
+                    binding.thread_id,
+                    turn_id=turn_id,
+                    limit=min(20, max(1, recent_turns * 2)),
+                    sort_direction="desc",
+                )
+            except AppServerError as exc:
+                raise BoundedHistoryUnavailable(str(exc)) from exc
+            item_page_truncated = item_page_truncated or bool(item_page.get("nextCursor"))
+            for item in item_page.get("data", ()):
+                add_messages(item)
+        users, assistants, bounded_text, byte_truncated = self._bounded_messages(
+            all_text, roles, max_bytes
+        )
+        changed, validation, blockers, state = _context_extract_fields(bounded_text)
+        status = _status_type(thread) or "UNKNOWN"
+        if state == "UNKNOWN" and turn_rows:
+            state = _context_text(turn_rows[0].get("status"), 4000) or status
+        # backwardsCursor is a reverse-pagination anchor and is present on a
+        # non-empty page; only nextCursor means older context was omitted.
+        truncated = bool(page.get("nextCursor") or item_page_truncated or byte_truncated)
+        return {
+            "source": "APP_SERVER_NATIVE",
+            "turn_ids": tuple(turn_ids),
+            "item_ids": tuple(dict.fromkeys(item_ids)),
+            "message_ids": tuple(dict.fromkeys(item_ids)),
+            "user": _latest_bounded_text(users, max_bytes) if users else "UNKNOWN",
+            "assistant": _latest_bounded_text(assistants, max_bytes) if assistants else "UNKNOWN",
+            "changed": changed,
+            "validation": validation,
+            "blockers": blockers,
+            "state": state,
+            "status": status,
+            "truncated": truncated,
+        }
+
+    def _session_path(self, thread_id: str) -> Path | None:
+        if not self.local_history_root.is_dir():
+            return None
+        matches = sorted(
+            path for path in self.local_history_root.rglob("*.jsonl")
+            if thread_id in path.name
+        )
+        return matches[0] if matches else None
+
+    def _read_local(self, thread_id: str, *, max_bytes: int) -> dict[str, Any] | None:
+        path = self._session_path(thread_id)
+        if path is None:
+            return None
+        try:
+            size = path.stat().st_size
+            offset = max(0, size - max_bytes)
+            with path.open("rb") as stream:
+                stream.seek(offset)
+                data = stream.read(max_bytes)
+        except OSError:
+            return None
+        if offset:
+            data = data.split(b"\n", 1)[1] if b"\n" in data else b""
+        users: list[str] = []
+        assistants: list[str] = []
+        all_text: list[str] = []
+        provenance: list[str] = []
+        for line in data.splitlines():
+            try:
+                row = json.loads(line)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if not isinstance(row, dict):
+                continue
+            payload = row.get("payload", row)
+            u, a, text, ids, _roles = self._collect_item_text(payload)
+            users.extend(u)
+            assistants.extend(a)
+            all_text.extend(text)
+            provenance.extend(ids)
+            if isinstance(row.get("id"), str):
+                provenance.append(row["id"])
+        if not all_text:
+            return None
+        changed, validation, blockers, state = _context_extract_fields(all_text)
+        return {
+            "source": "CODEX_LOCAL_SESSION",
+            "turn_ids": (),
+            "item_ids": tuple(dict.fromkeys(provenance)),
+            "message_ids": tuple(dict.fromkeys(provenance)),
+            "user": users[-1] if users else "UNKNOWN",
+            "assistant": assistants[-1] if assistants else "UNKNOWN",
+            "changed": changed,
+            "validation": validation,
+            "blockers": blockers,
+            "state": state,
+            "status": "UNKNOWN",
+            "truncated": offset > 0,
+            "path": str(path),
+        }
+
+    @staticmethod
+    def _from_checkpoint(checkpoint: ContextCheckpoint) -> dict[str, Any]:
+        return {
+            "source": "CLINX_CHECKPOINT",
+            "turn_ids": (checkpoint.turn_id,) if checkpoint.turn_id else (),
+            "item_ids": (),
+            "message_ids": (),
+            "execution_ids": (checkpoint.execution_id,) if checkpoint.execution_id else (),
+            "user": checkpoint.prompt_summary or "UNKNOWN",
+            "assistant": checkpoint.result_summary or "UNKNOWN",
+            "changed": checkpoint.changed_files or "UNKNOWN",
+            "validation": checkpoint.validation_summary or "UNKNOWN",
+            "blockers": checkpoint.blockers or "UNKNOWN",
+            "state": checkpoint.next_state or "UNKNOWN",
+            "status": "UNKNOWN",
+            "truncated": False,
+        }
+
+    def read_task_context(
+        self,
+        task_ref: str,
+        *,
+        recent_turns: int = DEFAULT_RECENT_TURNS,
+        max_bytes: int = DEFAULT_MAX_BYTES,
+    ) -> TaskContext:
+        if not isinstance(recent_turns, int) or isinstance(recent_turns, bool) or not 1 <= recent_turns <= self.MAX_RECENT_TURNS:
+            raise ContextReadError("recent_turns must be an integer from 1 to 20")
+        if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or not 1024 <= max_bytes <= self.MAX_CONTEXT_BYTES:
+            raise ContextReadError("max_bytes must be an integer from 1024 to 128000")
+        task = self.resolve_task(task_ref=task_ref)
+        binding = self.registry.get_binding(task.task_id)
+        if binding is None:
+            raise ContextReadError(f"Task {task.task_id} has no conversation binding")
+        target = self._task_target(task, binding)
+        checkpoint = self.registry.latest_context_checkpoint(task.task_id)
+        native: dict[str, Any] | None = None
+        try:
+            client = self.client_factory(target)
+            with client:
+                initialize_info = client.initialize(
+                    client_name=self.cfg.app_server.client_name,
+                    client_title=self.cfg.app_server.client_title,
+                    client_version=self.cfg.app_server.client_version,
+                )
+                native = self._read_native(
+                    client, task, binding, target, initialize_info,
+                    recent_turns=recent_turns,
+                    max_bytes=max_bytes,
+                )
+        except BoundedHistoryUnavailable:
+            native = None
+        except AppServerError:
+            native = None
+
+        selected = native
+        if selected is None:
+            selected = self._read_local(binding.thread_id, max_bytes=max_bytes)
+        if selected is None and checkpoint is not None:
+            selected = self._from_checkpoint(checkpoint)
+        if selected is None:
+            raise ContextReadError(
+                f"No bounded context source available for task {task.task_id}"
+            )
+
+        turn_ids = tuple(item for item in selected.get("turn_ids", ()) if item)
+        checkpoint_stale = bool(
+            native is not None and checkpoint is not None and
+            checkpoint.turn_id not in {None, *turn_ids}
+        )
+        source = str(selected.get("source", "UNKNOWN"))
+        context_range = (
+            f"{turn_ids[-1]}..{turn_ids[0]}" if turn_ids else "bounded-tail"
+        )
+        provenance = {
+            "turn_ids": turn_ids,
+            "item_ids": tuple(selected.get("item_ids", ())),
+            "message_ids": tuple(selected.get("message_ids", ())),
+            "execution_ids": tuple(selected.get("execution_ids", ())),
+        }
+        return TaskContext(
+            task_ref=task.task_id,
+            task_title=task.title,
+            task_status=task.status,
+            host=task.host,
+            project=task.project_alias,
+            context_source=source,
+            context_range=context_range,
+            context_truncated=bool(selected.get("truncated", False)),
+            checkpoint_stale=checkpoint_stale,
+            last_user_intent=_context_text(selected.get("user"), 4000) or "UNKNOWN",
+            last_codex_result=_context_text(selected.get("assistant"), 4000) or "UNKNOWN",
+            changed_files=_context_text(selected.get("changed"), 4000) or "UNKNOWN",
+            validation=_context_text(selected.get("validation"), 4000) or "UNKNOWN",
+            blockers=_context_text(selected.get("blockers"), 4000) or "UNKNOWN",
+            current_state=_context_text(selected.get("state"), 4000) or _context_text(selected.get("status"), 4000) or "UNKNOWN",
+            ready_for_continuation=task.status == "ACTIVE",
+            provenance=provenance,
+        )
+
+
 class Dispatcher:
     """Dispatch prompts using explicit project and thread registries."""
 
@@ -3412,6 +3985,15 @@ def build_parser() -> argparse.ArgumentParser:
     tasks_find.add_argument("--include-archived", action="store_true")
     tasks_show = task_sub.add_parser("show", help="Show one task by hidden task reference")
     tasks_show.add_argument("task_ref")
+    tasks_context = task_sub.add_parser(
+        "context", help="Read bounded authoritative context for one task"
+    )
+    tasks_context.add_argument("task_ref", nargs="?")
+    tasks_context.add_argument("--host")
+    tasks_context.add_argument("--project")
+    tasks_context.add_argument("--query")
+    tasks_context.add_argument("--recent-turns", type=int, default=TaskContextReader.DEFAULT_RECENT_TURNS)
+    tasks_context.add_argument("--max-bytes", type=int, default=TaskContextReader.DEFAULT_MAX_BYTES)
     sub.add_parser("once", help="Poll once and execute at most max_batch issues")
     sub.add_parser("run", help="Run foreground polling loop")
     return parser
@@ -3526,6 +4108,19 @@ def main() -> int:
                         _task_public_record(registry, task) for task in result.tasks
                     ],
                 }
+            elif args.tasks_command == "context":
+                reader = TaskContextReader(cfg, registry)
+                task = reader.resolve_task(
+                    task_ref=args.task_ref,
+                    host=args.host,
+                    project=args.project,
+                    query=args.query,
+                )
+                payload = reader.read_task_context(
+                    task.task_id,
+                    recent_turns=args.recent_turns,
+                    max_bytes=args.max_bytes,
+                ).as_dict()
             else:
                 task = registry.get_task(args.task_ref)
                 payload = {

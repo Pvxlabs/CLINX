@@ -285,6 +285,24 @@ class TaskSearchResult:
     tasks: tuple[TaskRecord, ...]
 
 
+@dataclasses.dataclass(frozen=True)
+class ContextCheckpoint:
+    checkpoint_id: str
+    task_id: str
+    execution_id: str | None
+    thread_id: str
+    turn_id: str | None
+    timestamp: str
+    prompt_summary: str
+    result_summary: str
+    changed_files: str
+    validation_summary: str
+    blockers: str
+    next_state: str
+    source: str
+    provenance: str
+
+
 def _now() -> str:
     return _datetime.datetime.now(_datetime.timezone.utc).isoformat()
 
@@ -357,6 +375,24 @@ class TaskRegistry:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS context_checkpoints (
+                    checkpoint_id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    execution_id TEXT,
+                    thread_id TEXT NOT NULL,
+                    turn_id TEXT,
+                    timestamp TEXT NOT NULL,
+                    prompt_summary TEXT NOT NULL,
+                    result_summary TEXT NOT NULL,
+                    changed_files TEXT NOT NULL,
+                    validation_summary TEXT NOT NULL,
+                    blockers TEXT NOT NULL,
+                    next_state TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    provenance TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_context_checkpoints_task_timestamp
+                    ON context_checkpoints(task_id, timestamp DESC);
                 """
             )
             columns = {
@@ -765,6 +801,72 @@ class TaskRegistry:
         result = self.get_task_index(task_id)
         assert result is not None
         return result
+
+    def save_context_checkpoint(
+        self,
+        *,
+        task_id: str,
+        execution_id: str | None,
+        thread_id: str,
+        turn_id: str | None,
+        prompt_summary: str,
+        result_summary: str,
+        changed_files: str,
+        validation_summary: str,
+        blockers: str,
+        next_state: str,
+        source: str,
+        provenance: str,
+        checkpoint_id: str | None = None,
+        timestamp: str | None = None,
+    ) -> ContextCheckpoint:
+        """Persist bounded recovery metadata, never a transcript or stdout dump."""
+        self.get_task(task_id)
+        binding = self.get_binding(task_id)
+        if binding is None or binding.thread_id != thread_id:
+            raise TaskRegistryError("Checkpoint thread does not match task conversation binding")
+        values = {
+            "prompt_summary": prompt_summary,
+            "result_summary": result_summary,
+            "changed_files": changed_files,
+            "validation_summary": validation_summary,
+            "blockers": blockers,
+            "next_state": next_state,
+            "source": source,
+            "provenance": provenance,
+        }
+        for name, value in values.items():
+            if not isinstance(value, str) or len(value) > 4000:
+                raise TaskRegistryError(f"Checkpoint {name} must be a string <= 4000 characters")
+        record = ContextCheckpoint(
+            checkpoint_id=checkpoint_id or "checkpoint_" + uuid.uuid4().hex,
+            task_id=task_id,
+            execution_id=execution_id,
+            thread_id=thread_id,
+            turn_id=turn_id,
+            timestamp=timestamp or _now(),
+            **values,
+        )
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO context_checkpoints
+                (checkpoint_id,task_id,execution_id,thread_id,turn_id,timestamp,
+                 prompt_summary,result_summary,changed_files,validation_summary,
+                 blockers,next_state,source,provenance)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                dataclasses.astuple(record),
+            )
+        return record
+
+    def latest_context_checkpoint(self, task_id: str) -> ContextCheckpoint | None:
+        self.get_task(task_id)
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT * FROM context_checkpoints
+                WHERE task_id = ? ORDER BY timestamp DESC, checkpoint_id DESC LIMIT 1""",
+                (task_id,),
+            ).fetchone()
+        return ContextCheckpoint(**dict(row)) if row is not None else None
 
     def set_status(self, task_id: str, status: str) -> TaskRecord:
         if status not in {"ACTIVE", "COMPLETED", "ARCHIVED"}:
