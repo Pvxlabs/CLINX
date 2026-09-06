@@ -76,6 +76,60 @@ class WorkspaceAndProjectTests(unittest.TestCase):
 
 
 class TaskRegistryTests(unittest.TestCase):
+    def test_execution_state_requires_turn_and_survives_restart(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "tasks.sqlite3"
+            store = TaskRegistry(path)
+            task = store.create_task(
+                host="p620", workspace_alias="p620", project_alias="pilot",
+                project_name="Pilot", cwd="/tmp/pilot", repository_origin=None,
+                branch="main", title="State task",
+            )
+            with self.assertRaisesRegex(TaskRegistryError, "exact turn_id"):
+                store.set_execution_state(task.task_id, "CODEX_RUNNING")
+            claimed = store.set_execution_state(task.task_id, "CLAIMED", current_stage="claim")
+            self.assertFalse(claimed.codex_running)
+            running = store.set_execution_state(
+                task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
+                current_blocker=None, codex_running=True, turn_id="turn-real",
+            )
+            self.assertTrue(running.codex_running)
+            self.assertEqual(running.turn_id, "turn-real")
+            self.assertIsNone(running.current_blocker)
+            restarted = TaskRegistry(path).get_task(task.task_id)
+            self.assertEqual(restarted.execution_state, "CODEX_RUNNING")
+            self.assertTrue(restarted.codex_running)
+            self.assertEqual(restarted.turn_id, "turn-real")
+
+    def test_blocked_never_reports_running_and_reopen_clears_old_execution(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "tasks.sqlite3"
+            store = TaskRegistry(path)
+            task = store.create_task(
+                host="p620", workspace_alias="p620", project_alias="pilot",
+                project_name="Pilot", cwd="/tmp/pilot", repository_origin=None,
+                branch="main", title="Retry task",
+            )
+            store.set_execution_state(
+                task.task_id, "CODEX_RUNNING", current_stage="Codex turn", turn_id="turn-old"
+            )
+            blocked = store.set_execution_state(
+                task.task_id, "BLOCKED", current_stage="identity guard",
+                current_blocker="origin mismatch", codex_running=False, retry_required=True,
+            )
+            self.assertEqual(blocked.execution_state, "BLOCKED")
+            self.assertFalse(blocked.codex_running)
+            self.assertEqual(blocked.current_blocker, "origin mismatch")
+            self.assertTrue(blocked.retry_required)
+            store.set_status(task.task_id, "COMPLETED")
+            store.reset_execution(task.task_id)
+            reopened = store.get_task(task.task_id)
+            self.assertEqual(reopened.execution_state, "QUEUED")
+            self.assertFalse(reopened.codex_running)
+            self.assertIsNone(reopened.current_blocker)
+            self.assertIsNone(reopened.turn_id)
+            self.assertFalse(reopened.retry_required)
+
     def test_task_and_binding_survive_restart(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "state" / "tasks.sqlite3"

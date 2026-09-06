@@ -43,6 +43,7 @@ class ProjectResolutionError(TaskRegistryError):
 
 MAX_TASK_TITLE_LENGTH = 240
 MAX_TASK_SUMMARY_LENGTH = 2000
+_UNSET = object()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -130,11 +131,11 @@ def _git_identity(path: Path) -> tuple[str, str]:
     if top_level != path.resolve():
         raise ProjectResolutionError(
             f"project cwd is not Git top-level: expected={path} actual={top_level}")
-    origin = run("remote", "get-url", "origin") if _has_origin(path) else ""
+    origin = _git_origin(path)
     branch = run("branch", "--show-current")
     if not branch:
         raise ProjectResolutionError(f"project is detached HEAD: {path}")
-    return origin, branch
+    return origin or "", branch
 
 
 def _has_origin(path: Path) -> bool:
@@ -145,6 +146,25 @@ def _has_origin(path: Path) -> bool:
         text=True,
     )
     return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def _git_origin(path: Path) -> str | None:
+    """Return origin, treating only Git's missing-origin result as absent."""
+    result = subprocess.run(
+        ["git", "-C", str(path), "remote", "get-url", "origin"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if result.returncode == 0:
+        value = result.stdout.strip()
+        return value or None
+    stderr = result.stderr.casefold()
+    if "no such remote" in stderr or "remote 'origin'" in stderr and "does not exist" in stderr:
+        return None
+    raise ProjectResolutionError(
+        f"Git origin lookup failed at {path}: {result.stderr.strip() or 'unknown error'}"
+    )
 
 
 class DynamicProjectResolver:
@@ -267,6 +287,13 @@ class TaskRecord:
     status: str
     created_at: str
     updated_at: str
+    execution_state: str
+    current_stage: str
+    current_blocker: str | None
+    last_progress_at: str
+    codex_running: bool
+    turn_id: str | None
+    retry_required: bool
 
 
 @dataclasses.dataclass(frozen=True)
@@ -358,7 +385,14 @@ class TaskRegistry:
                         CHECK(execution_mode IN ('normal','fast')),
                     status TEXT NOT NULL CHECK(status IN ('ACTIVE','COMPLETED','ARCHIVED')),
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    execution_state TEXT NOT NULL DEFAULT 'QUEUED',
+                    current_stage TEXT NOT NULL DEFAULT 'queued',
+                    current_blocker TEXT,
+                    last_progress_at TEXT NOT NULL DEFAULT '',
+                    codex_running INTEGER NOT NULL DEFAULT 0,
+                    turn_id TEXT,
+                    retry_required INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS conversation_bindings (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
@@ -426,6 +460,21 @@ class TaskRegistry:
                 conn.execute(
                     "ALTER TABLE tasks ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'normal'"
                 )
+            migrations = {
+                "execution_state": "ALTER TABLE tasks ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'QUEUED'",
+                "current_stage": "ALTER TABLE tasks ADD COLUMN current_stage TEXT NOT NULL DEFAULT 'queued'",
+                "current_blocker": "ALTER TABLE tasks ADD COLUMN current_blocker TEXT",
+                "last_progress_at": "ALTER TABLE tasks ADD COLUMN last_progress_at TEXT NOT NULL DEFAULT ''",
+                "codex_running": "ALTER TABLE tasks ADD COLUMN codex_running INTEGER NOT NULL DEFAULT 0",
+                "turn_id": "ALTER TABLE tasks ADD COLUMN turn_id TEXT",
+                "retry_required": "ALTER TABLE tasks ADD COLUMN retry_required INTEGER NOT NULL DEFAULT 0",
+            }
+            for column, statement in migrations.items():
+                if column not in columns:
+                    conn.execute(statement)
+            conn.execute(
+                "UPDATE tasks SET last_progress_at = COALESCE(NULLIF(last_progress_at, ''), updated_at)"
+            )
 
     def create_task(
         self,
@@ -455,15 +504,17 @@ class TaskRegistry:
         row = (
             task_id, host, workspace_alias, project_alias, project_name, cwd,
             repository_origin, branch, title, summary, task_key,
-            execution_mode, "ACTIVE", stamp, stamp,
+            execution_mode, "ACTIVE", stamp, stamp, "QUEUED", "queued", None,
+            stamp, 0, None, 0,
         )
         with self._connect() as conn:
             conn.execute(
                 """INSERT INTO tasks
                 (task_id,host,workspace_alias,project_alias,project_name,cwd,
                  repository_origin,branch,title,summary,task_key,execution_mode,
-                 status,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 status,created_at,updated_at,execution_state,current_stage,current_blocker,
+                 last_progress_at,codex_running,turn_id,retry_required)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 row,
             )
         return self.get_task(task_id)
@@ -685,12 +736,14 @@ class TaskRegistry:
                 """INSERT INTO tasks
                 (task_id,host,workspace_alias,project_alias,project_name,cwd,
                  repository_origin,branch,title,summary,task_key,execution_mode,
-                 status,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 status,created_at,updated_at,execution_state,current_stage,current_blocker,
+                 last_progress_at,codex_running,turn_id,retry_required)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     task_id, host, workspace_alias, project_alias, project_name, cwd,
                     repository_origin, branch, title, summary, task_key,
-                    execution_mode, "ACTIVE", stamp, stamp,
+                    execution_mode, "ACTIVE", stamp, stamp, "QUEUED", "queued", None,
+                    stamp, 0, None, 0,
                 ),
             )
             conn.execute(
@@ -948,6 +1001,57 @@ class TaskRegistry:
                 (status, _now(), task_id),
             )
         return self.get_task(task_id)
+
+    def set_execution_state(
+        self,
+        task_id: str,
+        state: str,
+        *,
+        current_stage: str | None | object = _UNSET,
+        current_blocker: str | None | object = _UNSET,
+        codex_running: bool | None | object = _UNSET,
+        turn_id: str | None | object = _UNSET,
+        retry_required: bool | None | object = _UNSET,
+    ) -> TaskRecord:
+        allowed = {"QUEUED", "CLAIMED", "DISPATCHING", "CODEX_RUNNING", "BLOCKED", "IN_REVIEW", "COMPLETED"}
+        if state not in allowed:
+            raise TaskRegistryError(f"Unsupported execution state: {state}")
+        task = self.get_task(task_id)
+        running = task.codex_running if codex_running is _UNSET else bool(codex_running)
+        if state == "CODEX_RUNNING":
+            running = True
+            candidate_turn = task.turn_id if turn_id is _UNSET else turn_id
+            if not isinstance(candidate_turn, str) or not candidate_turn.strip():
+                raise TaskRegistryError("CODEX_RUNNING requires an exact turn_id")
+        if state == "BLOCKED":
+            running = False
+        effective_turn = task.turn_id if turn_id is _UNSET else turn_id
+        if running and not effective_turn:
+            raise TaskRegistryError("CODEX_RUNNING requires an exact turn_id")
+        stage = task.current_stage if current_stage is _UNSET else current_stage
+        blocker = task.current_blocker if current_blocker is _UNSET else current_blocker
+        retry = task.retry_required if retry_required is _UNSET else bool(retry_required)
+        changed = (
+            task.execution_state != state or task.current_stage != stage
+            or task.current_blocker != blocker or task.codex_running != running
+            or task.turn_id != effective_turn or task.retry_required != retry
+        )
+        stamp = _now() if changed else task.last_progress_at
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE tasks SET execution_state=?, current_stage=?, current_blocker=?,
+                   last_progress_at=?, codex_running=?, turn_id=?, retry_required=?, updated_at=?
+                   WHERE task_id=?""",
+                (state, stage, blocker, stamp, int(running), effective_turn, int(retry),
+                 _now() if changed else task.updated_at, task_id),
+            )
+        return self.get_task(task_id)
+
+    def reset_execution(self, task_id: str) -> TaskRecord:
+        return self.set_execution_state(
+            task_id, "QUEUED", current_stage="queued", current_blocker=None,
+            codex_running=False, turn_id=None, retry_required=False,
+        )
 
     @contextlib.contextmanager
     def execution(self, task_id: str, issue_id: str | None = None) -> Iterator[TaskRecord]:

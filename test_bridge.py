@@ -94,6 +94,37 @@ app_server_version = "codex-cli 0.152.1"
             cfg = bridge.BridgeConfig.load(p)
             self.assertIsNone(cfg.targets[0].project_id)
 
+    def test_registered_local_only_project_allows_missing_origin(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "bridge.toml"
+            repo = Path(td) / "clinx"
+            repo.mkdir()
+            p.write_text(
+                f"""
+[linear]
+team_id = "team"
+trigger_label = "local-codex"
+todo_state = "Todo"
+running_state = "In Progress"
+review_state = "In Review"
+
+[workspaces.p620]
+root = "{Path(td)}"
+
+[projects.clinx]
+linear_name = "CLINX"
+workspace = "p620"
+cwd = "{repo}"
+branch = "main"
+unexpected_origin_policy = "FAIL"
+""",
+                encoding="utf-8",
+            )
+            cfg = bridge.BridgeConfig.load(p)
+            project = next(item for item in cfg.projects if item.project_alias == "clinx")
+            self.assertIsNone(project.repository_origin)
+            self.assertEqual(project.unexpected_origin_policy, "FAIL")
+
     def test_loads_runtime_workspace_and_thread_host_identities(self):
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "bridge.toml"
@@ -619,6 +650,37 @@ class DispatcherTests(unittest.TestCase):
             with self.assertRaisesRegex(bridge.IdentityGuardError, "repositoryOrigin"):
                 bridge.identity_guard(target, thread, repository_evidence=evidence)
 
+    def test_git_info_absent_origin_is_valid_for_local_only_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "clinx"
+            repo.mkdir()
+            subprocess.run(["git", "-C", str(repo), "init", "-b", "main"], check=True, capture_output=True)
+            (repo / "README.md").write_text("clinx\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "init"],
+                check=True,
+                capture_output=True,
+            )
+            target = target_fixture(cwd=str(repo), repository_origin=None)
+            thread = {
+                "id": "thread-1", "sessionId": "session-1", "projectId": "project-1",
+                "cwd": str(repo), "canAcceptDirectInput": True, "gitInfo": None,
+            }
+            evidence = bridge._repository_identity_evidence(thread)
+            self.assertIsNone(evidence.origin)
+            bridge.identity_guard(target, thread, repository_evidence=evidence)
+
+    def test_local_only_project_rejects_unexpected_origin(self):
+        project = bridge.ProjectMapping(
+            "CLINX", Path("/tmp/clinx"), alias="clinx", repository_origin=None, branch="main"
+        )
+        evidence = bridge.RepositoryIdentityEvidence(
+            source="local_git", cwd="/tmp/clinx", origin="https://example.invalid/clinx.git", branch="main"
+        )
+        with self.assertRaisesRegex(bridge.IdentityGuardError, "expected-absent"):
+            bridge.project_identity_guard(project, evidence)
+
     def test_git_info_absent_branch_mismatch_fails(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "pilot"
@@ -1067,6 +1129,127 @@ read_only = true
 
 
 class LinearDispatchIntegrationTests(unittest.TestCase):
+    def test_bridge_failure_does_not_mutate_task_from_another_issue(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "clinx"
+            repo.mkdir()
+            db = Path(td) / "tasks.sqlite3"
+            registry = bridge.TaskRegistry(db)
+            task = registry.create_task(
+                host="p620",
+                workspace_alias="p620",
+                project_alias="clinx",
+                project_name="CLINX",
+                cwd=str(repo),
+                repository_origin=None,
+                branch="main",
+                title="M9",
+            )
+            registry.set_execution_state(
+                task.task_id,
+                "CODEX_RUNNING",
+                current_stage="Codex turn",
+                turn_id="turn-real",
+                codex_running=True,
+            )
+            cfg = bridge.BridgeConfig(
+                team_id="team",
+                trigger_label="local-codex",
+                todo_state="Todo",
+                running_state="In Progress",
+                review_state="In Review",
+                poll_interval_seconds=15,
+                max_batch=1,
+                codex_binary="codex",
+                sandbox="workspace-write",
+                approval="never",
+                log_dir=Path(td) / "logs",
+                projects=(bridge.ProjectMapping("CLINX", repo, alias="clinx", branch="main"),),
+            )
+            dispatcher = type(
+                "TaskDispatcherStub",
+                (),
+                {
+                    "last_task_id": task.task_id,
+                    "last_execution_ref": "PVX-1783",
+                    "tasks": registry,
+                },
+            )()
+            linear = FakeLinear()
+            bridge.Bridge(cfg, linear, dispatcher=dispatcher)._record_bridge_failure(
+                {"id": "issue-other", "identifier": "PVX-1767"},
+                repo,
+                "Issue project mismatch",
+                pre_turn_failure=True,
+            )
+            unchanged = registry.get_task(task.task_id)
+            self.assertEqual(unchanged.execution_state, "CODEX_RUNNING")
+            self.assertTrue(unchanged.codex_running)
+            self.assertEqual(unchanged.turn_id, "turn-real")
+
+    def test_self_project_pre_turn_failure_requires_manual_bootstrap_repair(self):
+        with tempfile.TemporaryDirectory() as td:
+            clinx_repo = Path(td) / "clinx"
+            other_repo = Path(td) / "other"
+            clinx_repo.mkdir()
+            other_repo.mkdir()
+            cfg = bridge.BridgeConfig(
+                team_id="team",
+                trigger_label="local-codex",
+                todo_state="Todo",
+                running_state="In Progress",
+                review_state="In Review",
+                poll_interval_seconds=15,
+                max_batch=1,
+                codex_binary="codex",
+                sandbox="workspace-write",
+                approval="never",
+                log_dir=Path(td) / "logs",
+                projects=(
+                    bridge.ProjectMapping(
+                        "CLINX", clinx_repo, alias="clinx", branch="main"
+                    ),
+                    bridge.ProjectMapping(
+                        "Other", other_repo, alias="other", branch="main"
+                    ),
+                ),
+            )
+            issue = {"id": "issue-1", "identifier": "PVX-1783"}
+
+            clinx_linear = FakeLinear()
+            bridge.Bridge(cfg, clinx_linear)._record_bridge_failure(
+                issue,
+                clinx_repo,
+                "DISPATCH_IDENTITY_GUARD=FAIL\n- origin mismatch",
+                pre_turn_failure=True,
+            )
+            clinx_body = clinx_linear.comments[-1]
+            self.assertIn("BOOTSTRAP_SELF_REPAIR_REQUIRED=YES", clinx_body)
+            self.assertIn("AUTOMATIC_RETRY=NO", clinx_body)
+            self.assertIn("SELF_PROJECT_PRE_TURN_DEADLOCK=DETECTED", clinx_body)
+
+            post_turn_linear = FakeLinear()
+            bridge.Bridge(cfg, post_turn_linear)._record_bridge_failure(
+                issue,
+                clinx_repo,
+                "Codex returned an unexpected result",
+                pre_turn_failure=False,
+            )
+            post_turn_body = post_turn_linear.comments[-1]
+            self.assertNotIn("BOOTSTRAP_SELF_REPAIR_REQUIRED=YES", post_turn_body)
+            self.assertNotIn("AUTOMATIC_RETRY=NO", post_turn_body)
+
+            other_linear = FakeLinear()
+            bridge.Bridge(cfg, other_linear)._record_bridge_failure(
+                issue,
+                other_repo,
+                "DISPATCH_IDENTITY_GUARD=FAIL\n- origin mismatch",
+                pre_turn_failure=True,
+            )
+            other_body = other_linear.comments[-1]
+            self.assertNotIn("BOOTSTRAP_SELF_REPAIR_REQUIRED=YES", other_body)
+            self.assertNotIn("AUTOMATIC_RETRY=NO", other_body)
+
     def test_issue_execution_uses_dispatcher_after_claim(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
