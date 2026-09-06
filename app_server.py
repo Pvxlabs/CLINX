@@ -585,6 +585,21 @@ class CodexAppServerClient:
         result = self._request("thread/read", {"threadId": thread_id})
         return _thread_result(result, "thread/read")
 
+    def thread_list(self, *, cursor: str | None = None, limit: int = 100) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        result = self._request("thread/list", params)
+        if not isinstance(result, dict) or not isinstance(result.get("data"), list):
+            raise AppServerProtocolError("thread/list result is missing data")
+        return result
+
+    def thread_loaded_list(self) -> dict[str, Any]:
+        result = self._request("thread/loaded/list", {})
+        if not isinstance(result, dict) or not isinstance(result.get("data"), list):
+            raise AppServerProtocolError("thread/loaded/list result is missing data")
+        return result
+
     def thread_start(
         self,
         *,
