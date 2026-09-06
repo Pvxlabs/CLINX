@@ -2314,6 +2314,7 @@ class TaskDispatcher:
         execution_mode: str = "normal",
         task_index: "LinearTaskIndex | None" = None,
         task_index_project_id: str | None = None,
+        require_direct_input: bool = True,
     ) -> tuple[Any, DurableConversationBinding, TaskIndexRecord | None]:
         """Adopt one existing exact conversation without sending a turn."""
         if not thread_id.strip():
@@ -2332,7 +2333,7 @@ class TaskDispatcher:
                 client_version=self.cfg.app_server.client_version,
             )
             thread = client.thread_read(thread_id)
-            if _status_type(thread) in {"notLoaded", "unloaded"}:
+            if require_direct_input and _status_type(thread) in {"notLoaded", "unloaded"}:
                 client.thread_resume(thread_id)
                 thread = client.thread_read(thread_id)
             if thread.get("ephemeral") is not False:
@@ -2358,12 +2359,20 @@ class TaskDispatcher:
                 app_server_version=target.app_server_version,
                 target_host=target.target_host,
             )
-            identity_guard(
-                target_for_guard,
-                thread,
-                initialize_info=initialize_info,
-                repository_evidence=evidence,
-            )
+            if require_direct_input:
+                identity_guard(
+                    target_for_guard,
+                    thread,
+                    initialize_info=initialize_info,
+                    repository_evidence=evidence,
+                )
+            else:
+                HistoricalConversationDiscovery._historical_guard(
+                    target_for_guard,
+                    thread,
+                    initialize_info=initialize_info,
+                    repository_evidence=evidence,
+                )
             version = self._initialize_version(
                 initialize_info, target.app_server_version
             )
@@ -2394,6 +2403,53 @@ class TaskDispatcher:
             index = task_index.sync(task.task_id, project_id=task_index_project_id)
         return task, binding, index
 
+    def adopt_or_reuse_existing_conversation(
+        self,
+        *,
+        project_ref: str,
+        host: str | None,
+        thread_id: str,
+        title: str,
+        summary: str,
+        task_key: str | None = None,
+        execution_mode: str = "normal",
+        task_index: "LinearTaskIndex | None" = None,
+        task_index_project_id: str | None = None,
+        require_direct_input: bool = True,
+    ) -> tuple[Any, DurableConversationBinding, TaskIndexRecord | None]:
+        """Adopt a thread once, or reuse its canonical existing task binding."""
+        existing = self.tasks.get_binding_by_thread(thread_id)
+        if existing is not None:
+            task = self.tasks.get_task(existing.task_id)
+            if task.project_alias.casefold() != project_ref.casefold() and \
+                    task.project_name.casefold() != project_ref.casefold():
+                raise TargetResolutionError(
+                    f"Existing binding project mismatch: {task.project_alias!r}"
+                )
+            if host and canonical_host(task.host) != canonical_host(host):
+                raise TargetResolutionError(
+                    f"Existing binding host mismatch: {task.host!r}"
+                )
+            if task.status != "ACTIVE":
+                task = self.tasks.set_status(task.task_id, "ACTIVE")
+            index = (
+                task_index.sync(task.task_id, project_id=task_index_project_id)
+                if task_index is not None else None
+            )
+            return task, existing, index
+        return self.adopt_existing_conversation(
+            project_ref=project_ref,
+            host=host,
+            thread_id=thread_id,
+            title=title,
+            summary=summary,
+            task_key=task_key,
+            execution_mode=execution_mode,
+            task_index=task_index,
+            task_index_project_id=task_index_project_id,
+            require_direct_input=require_direct_input,
+        )
+
     def task_action(self, task_id: str, action: str) -> str:
         if action == "complete":
             return self.tasks.set_status(task_id, "COMPLETED").status
@@ -2405,6 +2461,323 @@ class TaskDispatcher:
                 raise TaskRegistryError(f"Task is already active: {task_id}")
             return self.tasks.set_status(task_id, "ACTIVE").status
         raise DispatchContractError(f"Unsupported TASK_ACTION={action!r}")
+
+
+@dataclasses.dataclass(frozen=True)
+class HistoricalConversationCandidate:
+    thread_id: str
+    session_id: str
+    project_id: str | None
+    matched_terms: tuple[str, ...]
+    relevance: str
+    context_range: str
+    anchor_turn_id: str | None
+    context_text: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "thread_id": self.thread_id,
+            "session_id": self.session_id,
+            "project_id": self.project_id,
+            "matched_terms": self.matched_terms,
+            "relevance": self.relevance,
+            "context_range": self.context_range,
+            "anchor_turn_id": self.anchor_turn_id,
+        }
+
+
+class HistoricalConversationDiscovery:
+    """Find and adopt one historical task using bounded native history only."""
+
+    INITIAL_TURNS = 4
+    EXPANSION_TURNS = 8
+    MAX_EXPANSION_PAGES = 8
+    SEARCH_TERMS = (
+        "product-active", "--product-active", "USER_PRODUCT_ACTIVE_SEMANTIC",
+        "CustomerProduct", "TenantAccounts", "Subscription active", "OKX VERIFIED",
+        "Strategy Launch RUNNING", "brand accent", "financial positive",
+        "trading direction", "chart accent",
+    )
+    HIGH_TERMS = (
+        "--product-active", "USER_PRODUCT_ACTIVE_SEMANTIC", "product-active",
+    )
+
+    def __init__(
+        self,
+        cfg: BridgeConfig,
+        registry: TaskRegistry,
+        *,
+        client_factory=None,
+    ):
+        self.cfg = cfg
+        self.registry = registry
+        self.client_factory = client_factory or (
+            lambda target: _default_app_server_client(cfg, target)
+        )
+        self.dispatcher = TaskDispatcher(
+            cfg, task_registry=registry, client_factory=self.client_factory
+        )
+        self.reader = TaskContextReader(
+            cfg, registry, client_factory=self.client_factory
+        )
+
+    @staticmethod
+    def _historical_guard(
+        target: TargetConfig,
+        thread: dict[str, Any],
+        *,
+        initialize_info: Any,
+        repository_evidence: RepositoryIdentityEvidence,
+    ) -> None:
+        """Validate project/thread identity without requiring direct-input readiness."""
+        mismatches = _identity_mismatches(
+            target, thread, repository_evidence=repository_evidence,
+            require_direct_input=False,
+        )
+        if thread.get("ephemeral") is not False:
+            mismatches.append(f"ephemeral expected=False actual={thread.get('ephemeral')!r}")
+        actual_version = (
+            getattr(initialize_info, "server_version", None)
+            or getattr(initialize_info, "user_agent", None)
+            or thread.get("cliVersion")
+        )
+        if not versions_compatible(target.app_server_version, actual_version):
+            mismatches.append(
+                f"appServerVersion expected-compatible={target.app_server_version!r} "
+                f"actual={actual_version!r}"
+            )
+        if mismatches:
+            raise IdentityGuardError(
+                "DISPATCH_IDENTITY_GUARD=FAIL\n"
+                + "\n".join(f"- {item}" for item in mismatches)
+            )
+
+    @staticmethod
+    def _row_id(row: dict[str, Any]) -> str | None:
+        value = row.get("id") or row.get("turnId")
+        return value if isinstance(value, str) and value else None
+
+    @classmethod
+    def _terms(cls, texts: list[str]) -> tuple[str, ...]:
+        combined = "\n".join(texts).casefold()
+        return tuple(term for term in cls.SEARCH_TERMS if term.casefold() in combined)
+
+    @classmethod
+    def _candidate_from_text(
+        cls,
+        thread: dict[str, Any],
+        turn_texts: dict[str, str],
+    ) -> HistoricalConversationCandidate:
+        ordered = list(turn_texts.items())
+        all_text = [text for _turn_id, text in ordered]
+        terms = cls._terms(all_text)
+        high = any(term.casefold() in {item.casefold() for item in terms} for term in cls.HIGH_TERMS)
+        relevance = "HIGH" if high else "MEDIUM" if terms else "NONE"
+        anchor = None
+        if high:
+            ranked = sorted(
+                ordered,
+                key=lambda item: (
+                    not any(term.casefold() in item[1].casefold() for term in cls.HIGH_TERMS),
+                    -sum(term.casefold() in item[1].casefold() for term in cls.SEARCH_TERMS),
+                ),
+            )
+            anchor = ranked[0][0]
+        turn_ids = [turn_id for turn_id, _text in ordered]
+        return HistoricalConversationCandidate(
+            thread_id=str(thread.get("id")),
+            session_id=str(thread.get("sessionId")),
+            project_id=thread.get("projectId"),
+            matched_terms=terms,
+            relevance=relevance,
+            context_range=(
+                f"{turn_ids[-1]}..{turn_ids[0]}" if turn_ids else "bounded-tail"
+            ),
+            anchor_turn_id=anchor,
+            context_text="\n".join(all_text),
+        )
+
+    def _turn_summary_texts(
+        self, rows: list[dict[str, Any]]
+    ) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for row in rows:
+            turn_id = self._row_id(row)
+            if turn_id is None:
+                continue
+            _users, _assistants, texts, _ids, _roles = self.reader._collect_item_text(
+                row.get("items", row)
+            )
+            if texts:
+                result[turn_id] = "\n".join(texts)
+        return result
+
+    def _expand_candidate(
+        self,
+        client: Any,
+        thread_id: str,
+        first_page: dict[str, Any],
+    ) -> dict[str, str]:
+        turn_texts = self._turn_summary_texts(
+            [row for row in first_page.get("data", ()) if isinstance(row, dict)]
+        )
+        cursor = first_page.get("nextCursor")
+        pages = 0
+        while isinstance(cursor, str) and cursor and pages < self.MAX_EXPANSION_PAGES:
+            pages += 1
+            page = client.thread_turns_list(
+                thread_id,
+                limit=self.EXPANSION_TURNS,
+                cursor=cursor,
+                sort_direction="desc",
+                items_view="summary",
+            )
+            rows = [row for row in page.get("data", ()) if isinstance(row, dict)]
+            for row in rows:
+                turn_id = self._row_id(row)
+                if turn_id is None:
+                    continue
+                texts = self._turn_summary_texts([row]).get(turn_id, "")
+                if texts:
+                    turn_texts.setdefault(turn_id, texts)
+                item_page = client.thread_items_list(
+                    thread_id,
+                    turn_id=turn_id,
+                    limit=20,
+                    sort_direction="desc",
+                )
+                _users, _assistants, texts, _ids, _roles = self.reader._collect_item_text(
+                    item_page.get("data", ())
+                )
+                if texts:
+                    turn_texts[turn_id] = "\n".join(texts)
+            if self._terms(list(turn_texts.values())) and any(
+                term.casefold() in "\n".join(turn_texts.values()).casefold()
+                for term in self.HIGH_TERMS
+            ):
+                break
+            cursor = page.get("nextCursor")
+        return turn_texts
+
+    def discover(
+        self,
+        *,
+        project_ref: str,
+        host: str | None = None,
+    ) -> dict[str, Any]:
+        """Return bounded candidates; no Task or Linear mutation occurs."""
+        workspace, _descriptor, project = self.dispatcher.resolve_project(
+            project_ref, host=host, project_mode="existing"
+        )
+        project_evidence = _local_git_identity(str(project.repo))
+        project_identity_guard(project, project_evidence)
+        target = _read_only_transport_target(self.cfg, project)
+        client = self.client_factory(target)
+        candidates: list[HistoricalConversationCandidate] = []
+        eligible = 0
+        discovered = 0
+        with client:
+            initialize_info = client.initialize(
+                client_name=self.cfg.app_server.client_name,
+                client_title=self.cfg.app_server.client_title,
+                client_version=self.cfg.app_server.client_version,
+            )
+            metadata = _enumerate_threads(client)
+            discovered = len(metadata)
+            for row in metadata:
+                thread_id = row.get("id")
+                if not isinstance(thread_id, str) or not thread_id:
+                    continue
+                thread = client.thread_read(thread_id)
+                if thread.get("cwd") != str(project.repo):
+                    continue
+                session_id = thread.get("sessionId")
+                if not isinstance(session_id, str) or not session_id:
+                    continue
+                try:
+                    evidence = _repository_identity_evidence(thread)
+                    exact_target = dataclasses.replace(
+                        target,
+                        thread_id=thread_id,
+                        session_id=session_id,
+                        project_id=thread.get("projectId"),
+                    )
+                    self._historical_guard(
+                        exact_target, thread, initialize_info=initialize_info,
+                        repository_evidence=evidence,
+                    )
+                except (IdentityGuardError, AppServerError):
+                    continue
+                eligible += 1
+                page = client.thread_turns_list(
+                    thread_id,
+                    limit=self.INITIAL_TURNS,
+                    sort_direction="desc",
+                    items_view="summary",
+                )
+                turn_texts = self._turn_summary_texts(
+                    [item for item in page.get("data", ()) if isinstance(item, dict)]
+                )
+                preliminary = self._candidate_from_text(thread, turn_texts)
+                if preliminary.relevance == "MEDIUM":
+                    turn_texts = self._expand_candidate(client, thread_id, page)
+                candidates.append(self._candidate_from_text(thread, turn_texts))
+        return {
+            "project": project.project_alias,
+            "host": workspace.alias,
+            "threads_discovered": discovered,
+            "eligible_threads": eligible,
+            "candidates": tuple(candidates),
+        }
+
+    def adopt_unique(
+        self,
+        *,
+        project_ref: str,
+        host: str | None = None,
+        title: str = "ORION UI/UX Semantic Token Consolidation",
+        task_index: "LinearTaskIndex | None" = None,
+        task_index_project_id: str | None = None,
+    ) -> dict[str, Any]:
+        result = self.discover(project_ref=project_ref, host=host)
+        candidates = list(result["candidates"])
+        strong = [item for item in candidates if item.relevance == "HIGH"]
+        if len(strong) != 1:
+            raise TargetResolutionError(
+                f"UI_TOKEN_HISTORICAL_CONVERSATION_MATCH=FAIL; "
+                f"HIGH_CONFIDENCE_MATCHES={len(strong)}"
+            )
+        candidate = strong[0]
+        summary = (
+            "Historical Codex context confirms product-active semantic token work "
+            f"with evidence: {', '.join(candidate.matched_terms)}."
+        )
+        task, binding, index = self.dispatcher.adopt_or_reuse_existing_conversation(
+            project_ref=project_ref,
+            host=host,
+            thread_id=candidate.thread_id,
+            title=title,
+            summary=summary,
+            task_key=_task_key(project_ref, title),
+            task_index=task_index,
+            task_index_project_id=task_index_project_id,
+            require_direct_input=False,
+        )
+        if candidate.anchor_turn_id is None:
+            raise ContextReadError("Historical match has no exact anchor turn")
+        self.registry.set_context_anchor(
+            task_id=task.task_id,
+            thread_id=binding.thread_id,
+            turn_id=candidate.anchor_turn_id,
+            source="APP_SERVER_NATIVE",
+        )
+        return {
+            "task": task,
+            "binding": binding,
+            "task_index": index,
+            "candidate": candidate,
+            "discovery": result,
+        }
 
 
 def _context_text(value: Any, maximum: int) -> str:
@@ -2677,28 +3050,46 @@ class TaskContextReader:
         *,
         recent_turns: int,
         max_bytes: int,
+        anchor_turn_id: str | None = None,
     ) -> dict[str, Any]:
         thread = client.thread_read(binding.thread_id)
         evidence = _repository_identity_evidence(thread)
-        identity_guard(
-            target,
-            thread,
-            initialize_info=initialize_info,
-            allow_unloaded=True,
-            repository_evidence=evidence,
-        )
+        if anchor_turn_id is not None:
+            # Historical adoption is read-only and may point at a completed
+            # thread that is not currently ready to accept direct input.
+            HistoricalConversationDiscovery._historical_guard(
+                target,
+                thread,
+                initialize_info=initialize_info,
+                repository_evidence=evidence,
+            )
+        else:
+            identity_guard(
+                target,
+                thread,
+                initialize_info=initialize_info,
+                allow_unloaded=True,
+                repository_evidence=evidence,
+            )
         if not hasattr(client, "thread_turns_list") or not hasattr(client, "thread_items_list"):
             raise BoundedHistoryUnavailable("app-server bounded history methods are unavailable")
-        try:
-            page = client.thread_turns_list(
-                binding.thread_id,
-                limit=recent_turns,
-                sort_direction="desc",
-                items_view="summary",
-            )
-        except AppServerError as exc:
-            raise BoundedHistoryUnavailable(str(exc)) from exc
-        turn_rows = [row for row in page.get("data", ()) if isinstance(row, dict)]
+        if anchor_turn_id is not None:
+            # Historical adoption stores an exact relevant turn because a
+            # thread can contain later, unrelated work.  Read only that
+            # bounded segment; never fall back to the newest turn.
+            turn_rows = [{"id": anchor_turn_id, "status": "completed", "items": []}]
+            page: dict[str, Any] = {"data": turn_rows}
+        else:
+            try:
+                page = client.thread_turns_list(
+                    binding.thread_id,
+                    limit=recent_turns,
+                    sort_direction="desc",
+                    items_view="summary",
+                )
+            except AppServerError as exc:
+                raise BoundedHistoryUnavailable(str(exc)) from exc
+            turn_rows = [row for row in page.get("data", ()) if isinstance(row, dict)]
         turn_ids = [item for item in (self._turn_id(row) for row in turn_rows) if item]
         users: list[str] = []
         assistants: list[str] = []
@@ -2747,7 +3138,11 @@ class TaskContextReader:
             state = _context_text(turn_rows[0].get("status"), 4000) or status
         # backwardsCursor is a reverse-pagination anchor and is present on a
         # non-empty page; only nextCursor means older context was omitted.
-        truncated = bool(page.get("nextCursor") or item_page_truncated or byte_truncated)
+        truncated = bool(
+            (not anchor_turn_id and page.get("nextCursor"))
+            or item_page_truncated
+            or byte_truncated
+        )
         return {
             "source": "APP_SERVER_NATIVE",
             "turn_ids": tuple(turn_ids),
@@ -2761,6 +3156,7 @@ class TaskContextReader:
             "state": state,
             "status": status,
             "truncated": truncated,
+            "anchor_turn_id": anchor_turn_id,
         }
 
     def _session_path(self, thread_id: str) -> Path | None:
@@ -2859,6 +3255,9 @@ class TaskContextReader:
             raise ContextReadError(f"Task {task.task_id} has no conversation binding")
         target = self._task_target(task, binding)
         checkpoint = self.registry.latest_context_checkpoint(task.task_id)
+        anchor = self.registry.get_context_anchor(task.task_id)
+        if anchor is not None and anchor.thread_id != binding.thread_id:
+            raise ContextReadError("Stored context anchor does not match task binding")
         native: dict[str, Any] | None = None
         try:
             client = self.client_factory(target)
@@ -2872,6 +3271,7 @@ class TaskContextReader:
                     client, task, binding, target, initialize_info,
                     recent_turns=recent_turns,
                     max_bytes=max_bytes,
+                    anchor_turn_id=anchor.turn_id if anchor is not None else None,
                 )
         except BoundedHistoryUnavailable:
             native = None

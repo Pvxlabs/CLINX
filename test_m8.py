@@ -339,5 +339,227 @@ class BoundedAppServerClientTests(unittest.TestCase):
         })
 
 
+class HistoricalDiscoveryClient:
+    def __init__(self, cwd: str, *, high_threads=("thread-hit",), medium_threads=("thread-medium",)):
+        self.cwd = cwd
+        self.high_threads = set(high_threads)
+        self.medium_threads = set(medium_threads)
+        self.calls = []
+        self.initialize_info = app_server.InitializeInfo("codex", "0.152.1", "codex-cli 0.152.1")
+        self.threads = {}
+        for thread_id in (self.high_threads | self.medium_threads | {"thread-other"}):
+            self.threads[thread_id] = {
+                "id": thread_id,
+                "sessionId": f"session-{thread_id}",
+                "projectId": None,
+                "cwd": cwd if thread_id != "thread-other" else "/tmp/other",
+                "ephemeral": False,
+                "gitInfo": {
+                    "originUrl": "https://example.invalid/pilot.git",
+                    "branch": "main",
+                },
+                "canAcceptDirectInput": False,
+                "status": {"type": "completed"},
+                "cliVersion": "codex-cli 0.152.1",
+            }
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def initialize(self, **kwargs):
+        self.calls.append(("initialize", kwargs))
+        return self.initialize_info
+
+    def thread_list(self, **kwargs):
+        self.calls.append(("thread/list", kwargs))
+        return {"data": [{"id": thread_id} for thread_id in self.threads]}
+
+    def thread_loaded_list(self):
+        self.calls.append(("thread/loaded/list",))
+        return {"data": []}
+
+    def thread_read(self, thread_id):
+        self.calls.append(("thread/read", thread_id))
+        return self.threads[thread_id]
+
+    def thread_turns_list(self, thread_id, **kwargs):
+        self.calls.append(("thread/turns/list", thread_id, kwargs))
+        if kwargs.get("cursor"):
+            if thread_id in self.medium_threads:
+                return {
+                    "data": [{
+                        "id": f"turn-{thread_id}-hit",
+                        "status": "completed",
+                        "items": [],
+                    }],
+                }
+            return {"data": []}
+        if thread_id in self.high_threads:
+            return {
+                "data": [{
+                    "id": f"turn-{thread_id}-hit",
+                    "status": "completed",
+                    "items": [{
+                        "id": "summary-user",
+                        "type": "userMessage",
+                        "content": [{"type": "text", "text": "Continue semantic token work"}],
+                    }, {
+                        "id": "summary-agent",
+                        "type": "agentMessage",
+                        "text": "USER_PRODUCT_ACTIVE_SEMANTIC = PASS; PRODUCT_ACTIVE_TOKEN = --product-active; Validation: 105 tests passed; Current state: ready",
+                    }],
+                }],
+            }
+        if thread_id in self.medium_threads:
+            return {
+                "data": [{
+                    "id": f"turn-{thread_id}-recent",
+                    "status": "completed",
+                    "items": [{
+                        "id": "summary-medium",
+                        "type": "assistantMessage",
+                        "text": "CustomerProduct and TenantAccounts naming discussion",
+                    }],
+                }],
+                "nextCursor": "older",
+            }
+        return {"data": [{"id": "turn-other", "status": "completed", "items": []}]}
+
+    def thread_items_list(self, thread_id, **kwargs):
+        self.calls.append(("thread/items/list", thread_id, kwargs))
+        turn_id = kwargs.get("turn_id")
+        if turn_id and turn_id.endswith("hit"):
+            return {"data": [{
+                "item": {
+                    "id": f"item-{turn_id}-user",
+                    "type": "userMessage",
+                    "content": [{"type": "text", "text": "Continue semantic token work"}],
+                },
+            }, {
+                "item": {
+                    "id": f"item-{turn_id}-agent",
+                    "type": "agentMessage",
+                    "text": "USER_PRODUCT_ACTIVE_SEMANTIC = PASS; PRODUCT_ACTIVE_TOKEN = --product-active; Changed files: src/tokens.css; Validation: 105 tests passed; Blocker: none; Current state: ready",
+                },
+            }]}
+        return {"data": []}
+
+
+def historical_fixture(root: Path, client: HistoricalDiscoveryClient):
+    repo = make_repo(root)
+    db = root / "tasks.sqlite3"
+    registry = TaskRegistry(db)
+    cfg = bridge.BridgeConfig(
+        team_id="team", trigger_label="local-codex", todo_state="Todo",
+        running_state="In Progress", review_state="In Review", poll_interval_seconds=15,
+        max_batch=1, codex_binary="codex", sandbox="workspace-write", approval="never",
+        log_dir=root / "logs", projects=(bridge.ProjectMapping(
+            "Pilot", repo, alias="pilot", repository_origin="https://example.invalid/pilot.git",
+            branch="main", workspace_alias="p620",
+        ),), threads=(bridge.ThreadBinding(
+            alias="current", project_alias="pilot", ssh_alias="p620",
+            thread_id="configured-thread", session_id="configured-session", project_id=None,
+            app_server_version="0.152.1", target_host="p620",
+        ),), app_server=bridge.AppServerConfig(client_version="0.152.1"),
+        workspaces=(WorkspaceConfig("p620", root, host="p620", ssh_alias="p620"),),
+        task_db_path=db, runtime_host="p620",
+    )
+    discovery = bridge.HistoricalConversationDiscovery(
+        cfg, registry, client_factory=lambda _target: client,
+    )
+    return discovery, registry, client
+
+
+class HistoricalConversationDiscoveryTests(unittest.TestCase):
+    def test_scopes_to_exact_project_and_expands_only_medium_candidates(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            client = HistoricalDiscoveryClient(str(root / "pilot"))
+            discovery, _registry, _client = historical_fixture(root, client)
+            result = discovery.discover(project_ref="pilot", host="p620")
+            self.assertEqual(result["threads_discovered"], 3)
+            self.assertEqual(result["eligible_threads"], 2)
+            candidates = {item.thread_id: item for item in result["candidates"]}
+            self.assertEqual(candidates["thread-hit"].relevance, "HIGH")
+            self.assertEqual(candidates["thread-medium"].relevance, "HIGH")
+            self.assertTrue(any(
+                call[0] == "thread/turns/list" and call[1] == "thread-medium"
+                and call[2].get("cursor") == "older"
+                for call in client.calls
+            ))
+            self.assertFalse(any(
+                call[0] == "thread/turns/list" and call[1] == "thread-hit"
+                and call[2].get("cursor")
+                for call in client.calls
+            ))
+            self.assertFalse(any(call[0] in {"turn/start", "thread/start"} for call in client.calls))
+
+    def test_zero_and_multiple_high_matches_fail_closed_without_adoption(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            no_hit = HistoricalDiscoveryClient(str(root / "pilot"), high_threads=(), medium_threads=())
+            discovery, registry, _client = historical_fixture(root, no_hit)
+            with self.assertRaises(bridge.TargetResolutionError):
+                discovery.adopt_unique(project_ref="pilot", host="p620")
+            self.assertEqual(registry.list_tasks(), [])
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            multiple = HistoricalDiscoveryClient(
+                str(root / "pilot"), high_threads=("thread-a", "thread-b"), medium_threads=()
+            )
+            discovery, registry, _client = historical_fixture(root, multiple)
+            with self.assertRaises(bridge.TargetResolutionError):
+                discovery.adopt_unique(project_ref="pilot", host="p620")
+            self.assertEqual(registry.list_tasks(), [])
+
+    def test_unique_match_adopts_once_and_reader_uses_exact_historical_anchor(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            client = HistoricalDiscoveryClient(
+                str(root / "pilot"), high_threads=("thread-hit",), medium_threads=()
+            )
+            discovery, registry, _client = historical_fixture(root, client)
+            adopted = discovery.adopt_unique(project_ref="pilot", host="p620")
+            task = adopted["task"]
+            self.assertEqual(task.status, "ACTIVE")
+            anchor = registry.get_context_anchor(task.task_id)
+            self.assertEqual(anchor.turn_id, "turn-thread-hit-hit")
+            self.assertEqual(len(registry.list_tasks()), 1)
+            context = discovery.reader.read_task_context(task.task_id, max_bytes=4096)
+            self.assertEqual(context.context_source, "APP_SERVER_NATIVE")
+            self.assertEqual(context.last_user_intent, "Continue semantic token work")
+            self.assertIn("--product-active", context.last_codex_result)
+            self.assertEqual(context.provenance["turn_ids"], ("turn-thread-hit-hit",))
+            self.assertTrue(any(
+                call[0] == "thread/items/list" and call[2].get("turn_id") == "turn-thread-hit-hit"
+                for call in client.calls
+            ))
+            self.assertFalse(any(call[0] in {"turn/start", "thread/start", "thread/resume"} for call in client.calls))
+
+    def test_already_bound_historical_thread_is_reused(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            client = HistoricalDiscoveryClient(
+                str(root / "pilot"), high_threads=("thread-hit",), medium_threads=()
+            )
+            discovery, registry, _client = historical_fixture(root, client)
+            existing = registry.create_task(
+                host="p620", workspace_alias="p620", project_alias="pilot", project_name="Pilot",
+                cwd=str(root / "pilot"), repository_origin="https://example.invalid/pilot.git",
+                branch="main", title="Existing historical task", summary="old",
+            )
+            registry.bind_conversation(
+                task_id=existing.task_id, thread_id="thread-hit", session_id="session-thread-hit",
+                project_id=None, app_server_version="0.152.1",
+            )
+            adopted = discovery.adopt_unique(project_ref="pilot", host="p620")
+            self.assertEqual(adopted["task"].task_id, existing.task_id)
+            self.assertEqual(len(registry.list_tasks()), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

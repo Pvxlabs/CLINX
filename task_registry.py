@@ -303,6 +303,21 @@ class ContextCheckpoint:
     provenance: str
 
 
+@dataclasses.dataclass(frozen=True)
+class ContextAnchor:
+    """A bounded, task-specific live-history anchor.
+
+    The anchor is only a selector for a native history segment.  It is not a
+    transcript or a replacement for the live Codex conversation.
+    """
+
+    task_id: str
+    thread_id: str
+    turn_id: str
+    source: str
+    created_at: str
+
+
 def _now() -> str:
     return _datetime.datetime.now(_datetime.timezone.utc).isoformat()
 
@@ -393,6 +408,13 @@ class TaskRegistry:
                 );
                 CREATE INDEX IF NOT EXISTS idx_context_checkpoints_task_timestamp
                     ON context_checkpoints(task_id, timestamp DESC);
+                CREATE TABLE IF NOT EXISTS context_anchors (
+                    task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+                    thread_id TEXT NOT NULL,
+                    turn_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
             columns = {
@@ -867,6 +889,50 @@ class TaskRegistry:
                 (task_id,),
             ).fetchone()
         return ContextCheckpoint(**dict(row)) if row is not None else None
+
+    def set_context_anchor(
+        self,
+        *,
+        task_id: str,
+        thread_id: str,
+        turn_id: str,
+        source: str = "APP_SERVER_NATIVE",
+    ) -> ContextAnchor:
+        """Persist one exact turn selector for task-specific live context."""
+        self.get_task(task_id)
+        binding = self.get_binding(task_id)
+        if binding is None or binding.thread_id != thread_id:
+            raise TaskRegistryError("Context anchor thread does not match task binding")
+        for name, value in (("thread_id", thread_id), ("turn_id", turn_id), ("source", source)):
+            if not isinstance(value, str) or not value.strip() or len(value) > 512:
+                raise TaskRegistryError(f"Context anchor {name} is invalid")
+        record = ContextAnchor(
+            task_id=task_id,
+            thread_id=thread_id,
+            turn_id=turn_id,
+            source=source,
+            created_at=_now(),
+        )
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO context_anchors(task_id,thread_id,turn_id,source,created_at)
+                VALUES (?,?,?,?,?)
+                ON CONFLICT(task_id) DO UPDATE SET
+                    thread_id=excluded.thread_id,
+                    turn_id=excluded.turn_id,
+                    source=excluded.source,
+                    created_at=excluded.created_at""",
+                dataclasses.astuple(record),
+            )
+        return self.get_context_anchor(task_id)  # type: ignore[return-value]
+
+    def get_context_anchor(self, task_id: str) -> ContextAnchor | None:
+        self.get_task(task_id)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM context_anchors WHERE task_id = ?", (task_id,)
+            ).fetchone()
+        return ContextAnchor(**dict(row)) if row is not None else None
 
     def set_status(self, task_id: str, status: str) -> TaskRecord:
         if status not in {"ACTIVE", "COMPLETED", "ARCHIVED"}:
