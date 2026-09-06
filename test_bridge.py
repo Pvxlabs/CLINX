@@ -762,6 +762,136 @@ class M3DispatcherTests(unittest.TestCase):
         self.assertFalse(any(call[0] == "turn/start" for call in client.calls))
 
 
+class M4AOnboardingTests(unittest.TestCase):
+    def _repo(self, root):
+        repo = Path(root) / "orion"
+        repo.mkdir()
+        subprocess.run(["git", "-C", str(repo), "init", "-b", "master"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+        (repo / "README").write_text("pilot\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "README"], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-m", "init"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", "git@github.com:Pvxlabs/ORION.git"], check=True)
+        return repo
+
+    def _cfg(self, repo):
+        return bridge.BridgeConfig(
+            team_id="team",
+            trigger_label="local-codex",
+            todo_state="Todo",
+            running_state="In Progress",
+            review_state="In Review",
+            poll_interval_seconds=15,
+            max_batch=1,
+            codex_binary="codex",
+            sandbox="workspace-write",
+            approval="never",
+            log_dir=Path("/tmp/bridge-tests"),
+            projects=(bridge.ProjectMapping(
+                "ORION", repo, alias="orion",
+                repository_origin="git@github.com:Pvxlabs/ORION.git",
+                branch="master", read_only=True,
+            ),),
+            threads=(bridge.ThreadBinding(
+                alias="current", project_alias="orion", ssh_alias="p620",
+                thread_id="pilot-thread", session_id="pilot-session",
+                project_id=None, app_server_version="codex-cli 0.152.1",
+            ),),
+        )
+
+    def _thread(self, thread_id, *, status="idle", can_accept=True, ephemeral=False,
+                cwd=None, origin="git@github.com:Pvxlabs/ORION.git", branch="master"):
+        return {
+            "id": thread_id,
+            "sessionId": f"session-{thread_id}",
+            "projectId": None,
+            "cwd": cwd,
+            "source": "vscode",
+            "status": {"type": status},
+            "ephemeral": ephemeral,
+            "canAcceptDirectInput": can_accept,
+            "model": "gpt-5.6-luna",
+            "reasoningEffort": "high",
+            "cliVersion": "0.152.1",
+            "gitInfo": {"originUrl": origin, "branch": branch},
+        }
+
+    def _client(self, threads):
+        class Client:
+            def __init__(self, rows):
+                self.rows = rows
+                self.calls = []
+                self.initialize_info = app_server.InitializeInfo("codex", "0.152.1", "codex-cli 0.152.1")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def initialize(self, **_kwargs):
+                self.calls.append("initialize")
+                return self.initialize_info
+
+            def thread_list(self, **_kwargs):
+                self.calls.append("thread/list")
+                return {"data": [{"id": row["id"], "cwd": row["cwd"]} for row in self.rows], "nextCursor": None}
+
+            def thread_loaded_list(self):
+                self.calls.append("thread/loaded/list")
+                return {"data": [], "nextCursor": None}
+
+            def thread_read(self, thread_id):
+                self.calls.append(("thread/read", thread_id))
+                return next(row for row in self.rows if row["id"] == thread_id)
+
+        return Client(threads)
+
+    def test_multiple_eligible_candidates_is_ambiguous_and_does_not_register(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            cfg = self._cfg(repo)
+            rows = [self._thread("one", cwd=str(repo)), self._thread("two", cwd=str(repo))]
+            client = self._client(rows)
+            result = bridge.onboard_existing_thread(cfg, "orion", client_factory=lambda _target: client)
+            self.assertEqual(result["selection"], "AMBIGUOUS")
+            self.assertTrue(result["needs_user_selection"])
+            self.assertFalse(result["registered"])
+            self.assertNotIn("thread/start", client.calls)
+            self.assertNotIn("turn/start", client.calls)
+
+    def test_single_eligible_candidate_registers_identity_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            cfg = self._cfg(repo)
+            rows = [self._thread("one", cwd=str(repo))]
+            client = self._client(rows)
+            config_path = Path(td) / "bridge.toml"
+            config_path.write_text("[projects.orion]\n", encoding="utf-8")
+            result = bridge.onboard_existing_thread(
+                cfg, "orion", client_factory=lambda _target: client, config_path=config_path
+            )
+            self.assertEqual(result["selection"], "UNAMBIGUOUS")
+            self.assertTrue(result["registered"])
+            persisted = config_path.read_text(encoding="utf-8")
+            self.assertIn("[threads.orion.current]", persisted)
+            self.assertIn('thread_id = "one"', persisted)
+            self.assertNotIn("conversation", persisted)
+
+    def test_no_eligible_candidate_is_none_and_never_mutates(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo(td)
+            cfg = self._cfg(repo)
+            rows = [self._thread("one", cwd=str(repo), can_accept=False)]
+            client = self._client(rows)
+            result = bridge.onboard_existing_thread(cfg, "orion", client_factory=lambda _target: client)
+            self.assertEqual(result["selection"], "NONE")
+            self.assertFalse(result["registered"])
+            self.assertNotIn("thread/start", client.calls)
+            self.assertNotIn("turn/start", client.calls)
+
+
 class LinearDispatchIntegrationTests(unittest.TestCase):
     def test_issue_execution_uses_dispatcher_after_claim(self):
         with tempfile.TemporaryDirectory() as td:

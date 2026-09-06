@@ -46,6 +46,13 @@ repository_origin = "git@github.com:Pvxlabs/clinx-disposable-pilot.git"
 branch = "main"
 read_only = false
 
+[projects.orion]
+linear_name = "ORION"
+cwd = "/home/pvxlabs/dev/ORION"
+repository_origin = "git@github.com:Pvxlabs/ORION.git"
+branch = "master"
+read_only = true
+
 [threads.pilot.current]
 ssh_alias = "p620"
 thread_id = "01a07474-014b-7381-a271-db9782ca3e59"

@@ -59,6 +59,10 @@ class DispatchContractError(BridgeError):
     pass
 
 
+class ReadOnlyOnboardingError(BridgeError):
+    pass
+
+
 @dataclasses.dataclass(frozen=True)
 class ProjectMapping:
     linear_name: str
@@ -1073,6 +1077,196 @@ def project_identity_guard(
         )
 
 
+def _read_only_transport_target(cfg: BridgeConfig, project: ProjectMapping) -> TargetConfig:
+    binding = next((item for item in cfg.threads if item.project_alias == project.project_alias), None)
+    ssh_alias = (
+        binding.ssh_alias
+        if binding is not None
+        else (cfg.app_server.ssh_alias or (cfg.threads[0].ssh_alias if cfg.threads else ""))
+    )
+    return TargetConfig(
+        alias=f"{project.project_alias}.read-only",
+        ssh_alias=ssh_alias,
+        thread_id="read-only",
+        session_id="read-only",
+        project_id=None,
+        cwd=str(project.repo),
+        repository_origin=project.repository_origin or "",
+        branch=project.branch or "",
+        app_server_version=(
+            binding.app_server_version
+            if binding is not None
+            else (cfg.threads[0].app_server_version if cfg.threads else cfg.app_server.client_version)
+        ),
+    )
+
+
+def _enumerate_threads(client: CodexAppServerClient) -> list[dict[str, Any]]:
+    """Enumerate metadata without reading conversation content."""
+    result = client.thread_list(limit=100)
+    rows = [row for row in result["data"] if isinstance(row, dict)]
+    cursor = result.get("nextCursor")
+    seen_cursors: set[str] = set()
+    while isinstance(cursor, str) and cursor and cursor not in seen_cursors:
+        seen_cursors.add(cursor)
+        page = client.thread_list(cursor=cursor, limit=100)
+        rows.extend(row for row in page["data"] if isinstance(row, dict))
+        cursor = page.get("nextCursor")
+
+    loaded = client.thread_loaded_list()
+    known_ids = {row.get("id") for row in rows if isinstance(row.get("id"), str)}
+    for thread_id in loaded["data"]:
+        if isinstance(thread_id, str) and thread_id not in known_ids:
+            # loaded/list is an ID index; thread/read remains the authority.
+            rows.append({"id": thread_id})
+            known_ids.add(thread_id)
+
+    unique: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        thread_id = row.get("id")
+        if isinstance(thread_id, str) and thread_id:
+            unique.setdefault(thread_id, row)
+    return list(unique.values())
+
+
+def _onboarding_candidate(
+    target: TargetConfig,
+    thread: dict[str, Any],
+) -> dict[str, Any]:
+    evidence = _repository_identity_evidence(thread)
+    status = thread.get("status")
+    status_value = status.get("type") if isinstance(status, dict) else status
+    candidate = {
+        "thread_id": thread.get("id"),
+        "session_id": thread.get("sessionId"),
+        "project_id": thread.get("projectId"),
+        "cwd": thread.get("cwd"),
+        "source": thread.get("source"),
+        "status": status_value,
+        "ephemeral": thread.get("ephemeral"),
+        "can_accept_direct_input": thread.get("canAcceptDirectInput"),
+        "model": thread.get("model"),
+        "reasoning_effort": thread.get("reasoningEffort"),
+        "cli_version": thread.get("cliVersion"),
+        "repository_origin": evidence.origin,
+        "branch": evidence.branch,
+    }
+    mismatches: list[str] = []
+    if candidate["thread_id"] != target.thread_id:
+        mismatches.append("threadId")
+    if not isinstance(candidate["session_id"], str) or not candidate["session_id"]:
+        mismatches.append("sessionId")
+    if candidate["cwd"] != target.cwd:
+        mismatches.append("cwd")
+    if candidate["repository_origin"] != target.repository_origin:
+        mismatches.append("repositoryOrigin")
+    if candidate["branch"] != target.branch:
+        mismatches.append("branch")
+    if candidate["ephemeral"] is not False:
+        mismatches.append("ephemeral")
+    if candidate["can_accept_direct_input"] is not True:
+        mismatches.append("canAcceptDirectInput")
+    candidate["eligible"] = not mismatches
+    candidate["classification"] = (
+        "ELIGIBLE_BUSY"
+        if candidate["eligible"] and status_value in {"active", "running"}
+        else "ELIGIBLE_IDLE"
+        if candidate["eligible"]
+        else "INELIGIBLE"
+    )
+    candidate["mismatches"] = mismatches
+    return candidate
+
+
+def _persist_orion_current(config_path: Path, candidate: dict[str, Any]) -> None:
+    text = config_path.read_text(encoding="utf-8")
+    if "[threads.orion.current]" in text:
+        raise ReadOnlyOnboardingError("orion.current is already registered")
+    block = (
+        "\n[threads.orion.current]\n"
+        "# Identity only; cwd, origin, and branch remain authoritative in projects.orion.\n"
+        f"ssh_alias = \"p620\"\n"
+        f"thread_id = \"{candidate['thread_id']}\"\n"
+        f"session_id = \"{candidate['session_id']}\"\n"
+        + (
+            f"project_id = \"{candidate['project_id']}\"\n"
+            if candidate["project_id"] is not None
+            else ""
+        )
+        + f"app_server_version = \"{candidate['cli_version']}\"\n"
+    )
+    temporary = config_path.with_suffix(config_path.suffix + ".tmp")
+    temporary.write_text(text.rstrip() + block + "\n", encoding="utf-8")
+    temporary.replace(config_path)
+
+
+def onboard_existing_thread(
+    cfg: BridgeConfig,
+    project_alias: str,
+    *,
+    client_factory=None,
+    config_path: Path | None = None,
+) -> dict[str, Any]:
+    """Read-only existing-thread discovery; no turn or thread mutation calls."""
+    project = ProjectRegistry(cfg.projects).resolve(project_alias)
+    project_evidence = _local_git_identity(str(project.repo))
+    project_identity_guard(project, project_evidence)
+    target = _read_only_transport_target(cfg, project)
+    client_factory = client_factory or (lambda value: _default_app_server_client(cfg, value))
+    client = client_factory(target)
+    with client:
+        initialize_info = client.initialize(
+            client_name=cfg.app_server.client_name,
+            client_title=cfg.app_server.client_title,
+            client_version=cfg.app_server.client_version,
+        )
+        metadata = _enumerate_threads(client)
+        candidates: list[dict[str, Any]] = []
+        for row in metadata:
+            if row.get("cwd") != str(project.repo):
+                continue
+            thread_id = row.get("id")
+            if not isinstance(thread_id, str) or not thread_id:
+                continue
+            thread = client.thread_read(thread_id)
+            candidates.append(_onboarding_candidate(TargetConfig(
+                alias=target.alias,
+                ssh_alias=target.ssh_alias,
+                thread_id=thread_id,
+                session_id="",
+                project_id=None,
+                cwd=target.cwd,
+                repository_origin=target.repository_origin,
+                branch=target.branch,
+                app_server_version=target.app_server_version,
+            ), thread))
+
+    eligible = [item for item in candidates if item["eligible"]]
+    if len(eligible) == 1:
+        selection = "UNAMBIGUOUS"
+        if config_path is not None:
+            _persist_orion_current(config_path, eligible[0])
+        registered = True
+    elif len(eligible) > 1:
+        selection = "AMBIGUOUS"
+        registered = False
+    else:
+        selection = "NONE"
+        registered = False
+    return {
+        "initialize_server_version": initialize_info.server_version,
+        "initialize_user_agent": initialize_info.user_agent,
+        "threads_enumerated": len(metadata),
+        "orion_candidates": len(candidates),
+        "eligible_orion_threads": len(eligible),
+        "selection": selection,
+        "needs_user_selection": len(eligible) > 1,
+        "registered": registered,
+        "candidates": candidates,
+        "selected": eligible[0] if len(eligible) == 1 else None,
+    }
+
+
 def _target_for_binding(
     project: ProjectMapping,
     binding: ThreadBinding,
@@ -1869,6 +2063,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor", help="Validate Linear, Codex, MCP, and repo mappings")
+    onboard = sub.add_parser(
+        "onboard-thread",
+        help="Read-only existing durable thread discovery",
+    )
+    onboard.add_argument("--project", required=True)
+    onboard.add_argument("--read-only", action="store_true", required=True)
     sub.add_parser("once", help="Poll once and execute at most max_batch issues")
     sub.add_parser("run", help="Run foreground polling loop")
     return parser
@@ -1883,6 +2083,22 @@ def main() -> int:
     except Exception as e:
         print(f"CONFIG_ERROR: {e}", file=sys.stderr)
         return 2
+
+    if args.command == "onboard-thread":
+        if not args.read_only:
+            print("READ_ONLY is required for onboard-thread", file=sys.stderr)
+            return 2
+        try:
+            result = onboard_existing_thread(
+                cfg,
+                args.project,
+                config_path=config_path,
+            )
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        except Exception as e:
+            print(f"M4_A=BLOCKED: {e}", file=sys.stderr)
+            return 1
 
     api_key = os.environ.get("LINEAR_API_KEY", "").strip()
     if not api_key:
