@@ -1201,6 +1201,7 @@ class Dispatcher:
                     cwd=str(project.repo),
                     model=model,
                     reasoning_effort=reasoning_effort,
+                    approval_policy=self.cfg.approval,
                 )
                 return DispatchResult(
                     target_alias=binding.qualified_alias,
@@ -1308,7 +1309,8 @@ class Dispatcher:
                     project_id=actual_project_id,
                     app_server_version=(
                         getattr(initialize_info, "server_version", None)
-                        or self.cfg.app_server.client_version
+                        or getattr(initialize_info, "user_agent", None)
+                        or transport_target.app_server_version
                     ),
                 )
                 target = _target_for_binding(project, binding)
@@ -1327,6 +1329,7 @@ class Dispatcher:
                     cwd=str(project.repo),
                     model=model,
                     reasoning_effort=reasoning_effort,
+                    approval_policy=self.cfg.approval,
                 )
                 return DispatchResult(
                     target_alias=binding.qualified_alias,
@@ -1420,6 +1423,7 @@ class Dispatcher:
                     cwd=target.cwd,
                     model=model,
                     reasoning_effort=reasoning_effort,
+                    approval_policy=self.cfg.approval,
                 )
                 return DispatchResult(
                     target_alias=target.alias,

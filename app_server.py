@@ -626,6 +626,7 @@ class CodexAppServerClient:
         cwd: str,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        approval_policy: str | None = None,
     ) -> TurnStartInfo:
         params: dict[str, Any] = {
             "threadId": thread_id,
@@ -636,6 +637,8 @@ class CodexAppServerClient:
             params["model"] = model
         if reasoning_effort is not None:
             params["effort"] = reasoning_effort
+        if approval_policy is not None:
+            params["approvalPolicy"] = approval_policy
         result = self._request("turn/start", params)
         if not isinstance(result, dict):
             raise AppServerProtocolError("turn/start result must be an object")
