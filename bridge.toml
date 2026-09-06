@@ -21,9 +21,8 @@ sandbox = "workspace-write"
 approval = "never"
 
 [app_server]
-# M5 crosses the existing SSH boundary to the P620 app-server proxy.
-# This starts a stdio proxy process on P620 and does not bootstrap or restart
-# the server or inspect Desktop state.
+# This is the configured remote transport only. Runtime/target host equality
+# selects the local proxy command and never constructs an SSH command.
 transport = "ssh"
 ssh_alias = "p620"
 ssh_binary = "ssh"
@@ -35,6 +34,7 @@ client_title = "Linear Local Codex Bridge"
 client_version = "1.0.0-m5"
 
 [runtime]
+runtime_host = "p620"
 log_dir = "~/.local/state/linear-local-codex-bridge"
 task_db_path = "~/.local/state/clinx/tasks.sqlite3"
 
@@ -42,6 +42,7 @@ task_db_path = "~/.local/state/clinx/tasks.sqlite3"
 # qualification target must be a disposable pilot project; real development
 # projects are not selected by M5 automatically.
 [workspaces.p620]
+host = "p620"
 root = "/home/pvxlabs/dev"
 allow_existing_projects = true
 allow_new_projects = false
@@ -49,6 +50,7 @@ ssh_alias = "p620"
 
 [projects.pilot]
 linear_name = "ChatGPT × Linear × Codex Dispatcher V1"
+workspace = "p620"
 cwd = "/home/pvxlabs/dev/clinx-pilot"
 repository_origin = "git@github.com:Pvxlabs/clinx-disposable-pilot.git"
 branch = "main"
@@ -56,12 +58,14 @@ read_only = false
 
 [projects.orion]
 linear_name = "ORION"
+workspace = "p620"
 cwd = "/home/pvxlabs/dev/ORION"
 repository_origin = "git@github.com:Pvxlabs/ORION.git"
 branch = "master"
 read_only = true
 
 [threads.pilot.current]
+host = "p620"
 ssh_alias = "p620"
 thread_id = "01a07474-014b-7381-a271-db9782ca3e59"
 session_id = "01a07474-014b-7381-a271-db9782ca3e59"
@@ -81,6 +85,7 @@ app_server_version = "codex-cli 0.152.1"
 # repo = "/Users/tinzleung/github/terminal"
 [threads.orion.current]
 # Identity only; cwd, origin, and branch remain authoritative in projects.orion.
+host = "p620"
 ssh_alias = "p620"
 thread_id = "01a06f30-0ea0-7ea1-bec7-a8292ad8343b"
 session_id = "01a06f30-0ea0-7ea1-bec7-a8292ad8343b"
