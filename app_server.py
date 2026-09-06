@@ -582,7 +582,13 @@ class CodexAppServerClient:
         return self.initialize_info
 
     def thread_read(self, thread_id: str) -> dict[str, Any]:
-        result = self._request("thread/read", {"threadId": thread_id})
+        # The default read may include the complete turn history.  Adoption
+        # only needs thread identity metadata, so explicitly suppress turns
+        # to keep large durable conversations out of the bridge process.
+        result = self._request(
+            "thread/read",
+            {"threadId": thread_id, "includeTurns": False},
+        )
         return _thread_result(result, "thread/read")
 
     def thread_list(self, *, cursor: str | None = None, limit: int = 100) -> dict[str, Any]:
