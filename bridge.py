@@ -1179,25 +1179,167 @@ def _onboarding_candidate(
 
 
 def _persist_orion_current(config_path: Path, candidate: dict[str, Any]) -> None:
+    _persist_thread_binding(
+        config_path,
+        project_alias="orion",
+        thread_alias="current",
+        candidate=candidate,
+    )
+
+
+def _persist_thread_binding(
+    config_path: Path,
+    *,
+    project_alias: str,
+    thread_alias: str,
+    candidate: dict[str, Any],
+) -> None:
+    """Append one identity-only binding without replacing an existing alias."""
     text = config_path.read_text(encoding="utf-8")
-    if "[threads.orion.current]" in text:
-        raise ReadOnlyOnboardingError("orion.current is already registered")
+    table_header = f"[threads.{project_alias}.{thread_alias}]"
+    if re.search(rf"(?m)^\s*{re.escape(table_header)}\s*$", text):
+        raise ReadOnlyOnboardingError(
+            f"{project_alias}.{thread_alias} is already registered"
+        )
+    thread_id = candidate.get("thread_id")
+    session_id = candidate.get("session_id")
+    if not isinstance(thread_id, str) or not thread_id:
+        raise ReadOnlyOnboardingError("cannot register thread without exact thread_id")
+    if not isinstance(session_id, str) or not session_id:
+        raise ReadOnlyOnboardingError("cannot register thread without exact session_id")
+    ssh_alias = candidate.get("ssh_alias", "p620")
+    app_server_version = candidate.get("app_server_version") or candidate.get("cli_version")
+    if not isinstance(app_server_version, str) or not app_server_version:
+        raise ReadOnlyOnboardingError("cannot register thread without app-server version")
     block = (
-        "\n[threads.orion.current]\n"
-        "# Identity only; cwd, origin, and branch remain authoritative in projects.orion.\n"
-        f"ssh_alias = \"p620\"\n"
-        f"thread_id = \"{candidate['thread_id']}\"\n"
-        f"session_id = \"{candidate['session_id']}\"\n"
+        f"\n{table_header}\n"
+        f"# Identity only; cwd, origin, and branch remain authoritative in projects.{project_alias}.\n"
+        f"ssh_alias = {json.dumps(str(ssh_alias))}\n"
+        f"thread_id = {json.dumps(thread_id)}\n"
+        f"session_id = {json.dumps(session_id)}\n"
         + (
-            f"project_id = \"{candidate['project_id']}\"\n"
-            if candidate["project_id"] is not None
+            f"project_id = {json.dumps(candidate['project_id'])}\n"
+            if candidate.get("project_id") is not None
             else ""
         )
-        + f"app_server_version = \"{candidate['cli_version']}\"\n"
+        + f"app_server_version = {json.dumps(app_server_version)}\n"
     )
     temporary = config_path.with_suffix(config_path.suffix + ".tmp")
     temporary.write_text(text.rstrip() + block + "\n", encoding="utf-8")
     temporary.replace(config_path)
+
+
+def register_existing_thread(
+    cfg: BridgeConfig,
+    project_alias: str,
+    thread_alias: str,
+    thread_id: str,
+    *,
+    client_factory=None,
+    config_path: Path,
+) -> dict[str, Any]:
+    """Register a selected existing thread after a fresh identity-only read."""
+    project = ProjectRegistry(cfg.projects).resolve(project_alias)
+    project_evidence = _local_git_identity(str(project.repo))
+    project_identity_guard(project, project_evidence)
+    if not thread_id.strip():
+        raise ReadOnlyOnboardingError("thread_id is required")
+    if not thread_alias.strip():
+        raise ReadOnlyOnboardingError("thread alias is required")
+    # Parse the file before contacting the server so an alias can never be
+    # silently replaced, even if the selected thread is otherwise valid.
+    existing = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    existing_threads = existing.get("threads", {})
+    if isinstance(existing_threads, dict):
+        project_threads = existing_threads.get(project_alias, {})
+        if isinstance(project_threads, dict) and thread_alias in project_threads:
+            raise ReadOnlyOnboardingError(
+                f"{project_alias}.{thread_alias} is already registered"
+            )
+
+    target = _read_only_transport_target(cfg, project)
+    client_factory = client_factory or (lambda value: _default_app_server_client(cfg, value))
+    client = client_factory(target)
+    with client:
+        initialize_info = client.initialize(
+            client_name=cfg.app_server.client_name,
+            client_title=cfg.app_server.client_title,
+            client_version=cfg.app_server.client_version,
+        )
+        thread = client.thread_read(thread_id)
+        if thread.get("id") != thread_id:
+            raise IdentityGuardError(
+                "DISPATCH_IDENTITY_GUARD=FAIL\n"
+                f"- threadId expected={thread_id!r} actual={thread.get('id')!r}"
+            )
+        if thread.get("ephemeral") is not False:
+            raise IdentityGuardError(
+                "DISPATCH_IDENTITY_GUARD=FAIL\n"
+                f"- ephemeral expected=False actual={thread.get('ephemeral')!r}"
+            )
+        session_id = thread.get("sessionId")
+        if not isinstance(session_id, str) or not session_id:
+            raise IdentityGuardError(
+                "DISPATCH_IDENTITY_GUARD=FAIL\n- sessionId is missing"
+            )
+        evidence = _repository_identity_evidence(thread)
+        target_for_guard = TargetConfig(
+            alias=f"{project_alias}.{thread_alias}",
+            ssh_alias=target.ssh_alias,
+            thread_id=thread_id,
+            session_id=session_id,
+            project_id=thread.get("projectId"),
+            cwd=target.cwd,
+            repository_origin=target.repository_origin,
+            branch=target.branch,
+            app_server_version=target.app_server_version,
+        )
+        identity_guard(
+            target_for_guard,
+            thread,
+            initialize_info=initialize_info,
+            repository_evidence=evidence,
+        )
+        actual_version = (
+            thread.get("cliVersion")
+            or initialize_info.user_agent
+            or initialize_info.server_version
+            or target.app_server_version
+        )
+        candidate = {
+            "thread_id": thread_id,
+            "session_id": session_id,
+            "project_id": thread.get("projectId"),
+            "ssh_alias": target.ssh_alias,
+            "app_server_version": actual_version,
+        }
+
+        _persist_thread_binding(
+            config_path,
+            project_alias=project_alias,
+            thread_alias=thread_alias,
+            candidate=candidate,
+        )
+        loaded = BridgeConfig.load(config_path)
+        binding = ThreadRegistry(loaded.threads).resolve(project_alias, thread_alias)
+        readback = client.thread_read(binding.thread_id)
+        readback_evidence = _repository_identity_evidence(readback)
+        readback_target = _target_for_binding(project, binding)
+        identity_guard(
+            readback_target,
+            readback,
+            initialize_info=initialize_info,
+            repository_evidence=readback_evidence,
+        )
+    return {
+        "project_alias": project_alias,
+        "thread_alias": thread_alias,
+        "thread_id": binding.thread_id,
+        "session_id": binding.session_id,
+        "project_id": binding.project_id,
+        "app_server_version": binding.app_server_version,
+        "registered": True,
+    }
 
 
 def onboard_existing_thread(
@@ -2069,6 +2211,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     onboard.add_argument("--project", required=True)
     onboard.add_argument("--read-only", action="store_true", required=True)
+    register = sub.add_parser(
+        "register-thread",
+        help="Register one selected existing durable thread (read-only)",
+    )
+    register.add_argument("--project", required=True)
+    register.add_argument("--alias", required=True)
+    register.add_argument("--thread-id", required=True)
+    register.add_argument("--read-only", action="store_true", required=True)
     sub.add_parser("once", help="Poll once and execute at most max_batch issues")
     sub.add_parser("run", help="Run foreground polling loop")
     return parser
@@ -2098,6 +2248,21 @@ def main() -> int:
             return 0
         except Exception as e:
             print(f"M4_A=BLOCKED: {e}", file=sys.stderr)
+            return 1
+
+    if args.command == "register-thread":
+        try:
+            result = register_existing_thread(
+                cfg,
+                args.project,
+                args.alias,
+                args.thread_id,
+                config_path=config_path,
+            )
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        except Exception as e:
+            print(f"M4_A2_REGISTRATION=BLOCKED: {e}", file=sys.stderr)
             return 1
 
     api_key = os.environ.get("LINEAR_API_KEY", "").strip()

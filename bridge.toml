@@ -71,3 +71,9 @@ app_server_version = "codex-cli 0.152.1"
 # [[project]]
 # linear_name = "Terminal"
 # repo = "/Users/tinzleung/github/terminal"
+[threads.orion.current]
+# Identity only; cwd, origin, and branch remain authoritative in projects.orion.
+ssh_alias = "p620"
+thread_id = "01a06f30-0ea0-7ea1-bec7-a8292ad8343b"
+session_id = "01a06f30-0ea0-7ea1-bec7-a8292ad8343b"
+app_server_version = "0.152.1"
