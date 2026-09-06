@@ -67,7 +67,7 @@ class FakeClient:
                 "branch": self.branch,
             },
             "canAcceptDirectInput": True,
-            "status": {"type": "active"},
+            "status": {"type": "idle"},
         }
         return self.thread
 
@@ -395,6 +395,33 @@ class TaskIndexTests(unittest.TestCase):
 
 
 class PersistentConversationTests(unittest.TestCase):
+    def test_active_remote_turn_fails_closed_without_starting_another_execution(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "dev"
+            root.mkdir()
+            first = FakeClient()
+            dispatcher, _repo = dispatcher_fixture(root, Path(td) / "tasks.sqlite3", [first])
+            created = dispatcher.dispatch(
+                project_ref="pilot", host="p620", project_mode="existing",
+                task_mode="new", task_id=None, prompt="first", title="Task",
+                summary=None, model="x", reasoning_effort="high",
+            )
+            active = FakeClient(existing={
+                **first.thread,
+                "status": {"type": "active"},
+                "canAcceptDirectInput": True,
+            })
+            dispatcher.client_factory = lambda _target: active
+            with self.assertRaisesRegex(
+                bridge.DispatchContractError, "DISPATCH_TURN_START_GUARD=FAIL"
+            ):
+                dispatcher.dispatch(
+                    project_ref="pilot", host="p620", project_mode="existing",
+                    task_mode="continue", task_id=created.task_id, prompt="second",
+                    title="ignored", summary=None, model="x", reasoning_effort="high",
+                )
+            self.assertFalse(any(call[0] == "turn/start" for call in active.calls))
+
     def test_thirty_continuations_reuse_one_task_and_thread(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "dev"

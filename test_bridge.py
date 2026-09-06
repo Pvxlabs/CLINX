@@ -395,7 +395,7 @@ class FakeAppServerClient:
                 "branch": "main",
             },
             "canAcceptDirectInput": True,
-            "status": {"type": "active"},
+            "status": {"type": "idle"},
         }
         self.initialize_info = initialize_info or app_server.InitializeInfo(
             server_name="codex",
@@ -483,6 +483,16 @@ class DispatcherTests(unittest.TestCase):
                     dispatcher.dispatch("pilot", "probe")
                 self.assertFalse(any(call[0] == "turn/start" for call in client.calls))
 
+    def test_active_turn_never_calls_turn_start(self):
+        client = FakeAppServerClient()
+        client.thread = {**client.thread, "status": {"type": "active"}}
+        _cfg, dispatcher = dispatcher_fixture(client=client)
+        with self.assertRaisesRegex(
+            bridge.DispatchContractError, "DISPATCH_TURN_START_GUARD=FAIL"
+        ):
+            dispatcher.dispatch("pilot", "probe")
+        self.assertFalse(any(call[0] == "turn/start" for call in client.calls))
+
     def test_unloaded_thread_is_resumed_then_reread(self):
         client = FakeAppServerClient(
             thread={
@@ -497,6 +507,14 @@ class DispatcherTests(unittest.TestCase):
                 "status": {"type": "notLoaded"},
             }
         )
+        original_resume = client.thread_resume
+
+        def resume_to_idle(thread_id):
+            thread = original_resume(thread_id)
+            client.thread = {**thread, "status": {"type": "idle"}}
+            return client.thread
+
+        client.thread_resume = resume_to_idle
         _cfg, dispatcher = dispatcher_fixture(client=client)
         dispatcher.dispatch("pilot", "probe")
         self.assertEqual(
@@ -729,7 +747,7 @@ class M3DispatcherTests(unittest.TestCase):
                 "id": "thread-1", "sessionId": "session-1", "projectId": None,
                 "cwd": "/tmp/pilot", "gitInfo": {
                     "originUrl": "https://example.invalid/pilot.git", "branch": "main"
-                }, "canAcceptDirectInput": True, "status": {"type": "active"},
+                }, "canAcceptDirectInput": True, "status": {"type": "idle"},
             }
         )
         dispatcher = bridge.Dispatcher(
@@ -759,7 +777,7 @@ class M3DispatcherTests(unittest.TestCase):
                     "cwd": kwargs["cwd"], "ephemeral": False,
                     "gitInfo": {
                         "originUrl": "https://example.invalid/pilot.git", "branch": "main"
-                    }, "canAcceptDirectInput": True, "status": {"type": "active"},
+                    }, "canAcceptDirectInput": True, "status": {"type": "idle"},
                 }
                 return self.thread
 

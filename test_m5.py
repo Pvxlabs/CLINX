@@ -167,7 +167,7 @@ class FakeM5Client:
             "ephemeral": False,
             "gitInfo": {"originUrl": "https://example.invalid/pilot.git", "branch": "main"},
             "canAcceptDirectInput": True,
-            "status": {"type": "active"},
+            "status": {"type": "idle"},
         }
         return self.thread
 
