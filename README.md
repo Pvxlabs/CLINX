@@ -1,4 +1,4 @@
-# linear-local-codex-bridge Dispatcher V1 / M5
+# linear-local-codex-bridge Dispatcher V1 / M6
 
 A deliberately thin local actuator for this workflow:
 
@@ -16,7 +16,7 @@ Linear
 ChatGPT review
 ```
 
-## M5 design
+## M6 design
 
 The bridge is **not an agent** and does not interpret issue content.
 
@@ -26,17 +26,17 @@ It only:
 2. Resolves a configured project identity: cwd, repository origin, and branch.
 3. Moves the issue to `In Progress` as the visible Linear claim.
 4. Resolves a project through a bounded workspace registry.
-5. Creates a durable task record and one canonical conversation binding for a
-   new task, or loads the exact binding for a continuation.
+5. Resolves a ChatGPT-selected task action into a durable task record and one
+   canonical conversation binding.
 6. Reads back the exact thread and verifies thread/session/project/repository
    identity, direct-input capability, and compatible app-server version.
 7. Sends `turn/start` to that exact thread through the P620 app-server transport.
 
-M5 keeps the small M2 completion-marker path for disposable qualification. The
+M6 keeps the M5 and small M2 completion-marker paths for compatibility. The
 dispatcher itself remains asynchronous after `turn/start`. The old `codex exec`
 helper is retained only as a marked legacy compatibility path and is not the
 V1 default. `EXECUTION_MODE=fast` is accepted and persisted as a task choice;
-M5 does not claim an app-server-native fast capability that has not been
+M6 does not claim an app-server-native fast capability that has not been
 verified.
 
 The bridge never marks an issue `Done`.
@@ -117,9 +117,87 @@ DOCTOR = PASS
 
 The doctor should also report `PVX-1508` as currently eligible.
 
-## First automatic test
+## Human task handoff
 
-The M5 contract is:
+The human-facing request contains only host, project, task intent, and optional
+urgency. ChatGPT decides whether the request creates, continues, or reopens a
+task, selects the model and reasoning effort, drafts the execution prompt, and
+waits for the user's execution confirmation.
+
+After confirmation, ChatGPT creates a separate Linear execution issue with the
+canonical M6 machine handoff:
+
+```text
+HOST=P620
+PROJECT=pilot
+TASK_ACTION=create
+MODEL=gpt-5.6-luna
+REASONING=high
+EXECUTION_MODE=normal
+TASK_TITLE=Long-running disposable pilot task
+TASK_SUMMARY_UPDATE=Current short task summary
+```
+
+For continuation or explicit historical recovery, CLINX receives the hidden
+task reference resolved by ChatGPT from the task index:
+
+```text
+HOST=P620
+PROJECT=pilot
+TASK_ACTION=continue
+TASK_REF=task_<opaque>
+MODEL=gpt-5.6-luna
+REASONING=high
+EXECUTION_MODE=normal
+```
+
+Use `TASK_ACTION=reopen` with the hidden `TASK_REF` to reactivate a completed or
+archived task and dispatch on its existing exact conversation binding. A
+continuation never searches Codex threads and never falls back to a project
+`current` thread, cwd match, latest thread, or new thread.
+
+`TASK_REF` is machine identity, not a value the user supplies or remembers.
+Thread IDs, session IDs, cwd, and repository identity remain internal audit
+data and are omitted from the normal task discovery surface and M6 execution
+comment.
+
+## Task discovery
+
+The read-only task query surface does not connect to Codex or dispatch work:
+
+```bash
+python3 bridge.py --config bridge.toml tasks list --host P620 --project pilot
+python3 bridge.py --config bridge.toml tasks find --host P620 --project pilot \
+  --query "disposable pilot"
+python3 bridge.py --config bridge.toml tasks show task_<opaque>
+```
+
+The JSON response includes human metadata, status, hidden `task_ref`, whether a
+binding exists, the latest readable Linear execution reference, and the stable
+Linear task-index issue. It excludes thread ID, session ID, cwd, origin, and
+branch. Archived tasks are excluded from normal list/find operations unless
+`--include-archived` or `--status ARCHIVED` is explicit.
+
+Each task has at most one task-specific Linear index issue. That durable index
+record is separate from the per-run execution issues:
+
+```text
+Task index issue != execution issue
+
+Task
+  -> execution issue 1
+  -> execution issue 2
+  -> execution issue 3
+```
+
+The index mirrors only `TASK_REF`, task key, host, project, title, summary,
+status, execution mode, binding presence, latest execution reference, and
+timestamps. It never mirrors conversation IDs, full transcripts, or
+credentials.
+
+## Compatibility contract
+
+The M5 handoff remains supported:
 
 ```text
 HOST=p620
@@ -152,11 +230,12 @@ and branch.
 
 Do **not** open Codex interactively and do **not** type an issue prompt.
 
-For M5, the durable task registry is SQLite at
+The durable task registry is SQLite at
 `~/.local/state/clinx/tasks.sqlite3` by default (or `[runtime].task_db_path`).
 It stores task records, the canonical task-to-thread binding, active execution
-leases, and Linear execution references. A continuation never falls back to a
-latest thread, cwd match, Desktop selection, or database ordering.
+leases, Linear execution references, and task-index mappings. Existing M5
+registries are migrated incrementally without clearing task, binding, or
+execution history.
 
 After verifying that the selected project is disposable and the remote
 app-server command is available, run exactly:
@@ -174,7 +253,7 @@ bridge claims
     ↓
 PVX-1508 In Progress
     ↓
-workspace/project resolver + durable task registry
+workspace/project resolver + durable task registry + task index
     ↓
 thread/start or exact binding + thread/read + identity guard
     ↓

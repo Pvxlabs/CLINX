@@ -39,6 +39,7 @@ from task_registry import (
     DynamicProjectResolver,
     ProjectDescriptor,
     TaskExecutionBusy,
+    TaskIndexRecord,
     TaskRegistry,
     TaskRegistryError,
     WorkspaceConfig,
@@ -46,7 +47,7 @@ from task_registry import (
 )
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
-BRIDGE_VERSION = "1.0.0-m5"
+BRIDGE_VERSION = "1.0.0-m6"
 LEGACY_CODEX_EXEC_DEFAULT = False
 
 
@@ -189,10 +190,14 @@ class DispatchContract:
     task_id: str | None = None
     execution_mode: str = "normal"
     task_action: str | None = None
+    task_ref: str | None = None
+    task_title: str | None = None
+    task_summary_update: str | None = None
+    task_key: str | None = None
 
 
 def parse_dispatch_contract(description: str | None) -> DispatchContract | None:
-    """Parse legacy M2/M3 contracts and the explicit M5 task contract."""
+    """Parse legacy M2/M3, M5, and canonical M6 task contracts."""
     if not description:
         return None
 
@@ -200,11 +205,87 @@ def parse_dispatch_contract(description: str | None) -> DispatchContract | None:
         match = re.search(rf"(?m)^\s*{key}=([^\s]+)\s*$", description)
         return match.group(1) if match else None
 
+    def line_value_for(key: str) -> str | None:
+        match = re.search(rf"(?m)^\s*{key}=(.*?)\s*$", description)
+        if not match:
+            return None
+        value = match.group(1).strip()
+        return value or None
+
     marker = re.search(
         r"(?m)^\s*Return exactly this final marker:\s*$\n\s*([^\s]+)\s*$",
         description,
     )
     expected_result = marker.group(1) if marker else None
+
+    task_action_value = value_for("TASK_ACTION")
+    task_ref_value = value_for("TASK_REF")
+    has_m5_task_mode = value_for("TASK_MODE") is not None
+    has_m6_task_ref = re.search(r"(?m)^\s*TASK_REF=", description) is not None
+    is_m6 = (
+        task_action_value in {"create", "continue"}
+        or has_m6_task_ref
+        or (task_action_value == "reopen" and not has_m5_task_mode)
+    )
+    if is_m6:
+        host = value_for("HOST")
+        project_alias = value_for("PROJECT")
+        project_mode = value_for("PROJECT_MODE") or "existing"
+        model = value_for("MODEL")
+        reasoning = value_for("REASONING")
+        execution_mode = value_for("EXECUTION_MODE") or "normal"
+        missing = [
+            key for key, value in (
+                ("HOST", host),
+                ("PROJECT", project_alias),
+                ("TASK_ACTION", task_action_value),
+                ("MODEL", model),
+                ("REASONING", reasoning),
+            ) if value is None
+        ]
+        if missing:
+            raise DispatchContractError(
+                "Malformed M6 task handoff: missing " + ", ".join(missing)
+            )
+        if execution_mode not in {"normal", "fast"}:
+            raise DispatchContractError(
+                f"Malformed M6 task handoff: unsupported EXECUTION_MODE={execution_mode!r}"
+            )
+        if project_mode not in {"existing", "create"}:
+            raise DispatchContractError(
+                f"Malformed M6 task handoff: unsupported PROJECT_MODE={project_mode!r}"
+            )
+        if task_action_value in {"continue", "reopen"} and project_mode != "existing":
+            raise DispatchContractError(
+                f"Malformed M6 task handoff: TASK_ACTION={task_action_value} "
+                "requires PROJECT_MODE=existing"
+            )
+        if task_action_value == "create" and task_ref_value is not None:
+            raise DispatchContractError(
+                "Malformed M6 task handoff: TASK_ACTION=create must not include TASK_REF"
+            )
+        if task_action_value in {"continue", "reopen"} and task_ref_value is None:
+            raise DispatchContractError(
+                f"Malformed M6 task handoff: TASK_ACTION={task_action_value} requires TASK_REF"
+            )
+        return DispatchContract(
+            target_alias=None,
+            model=model,
+            reasoning_effort=reasoning,
+            expected_result=expected_result,
+            project_alias=project_alias,
+            contract_kind="m6",
+            host=host,
+            project_mode=project_mode,
+            task_mode="new" if task_action_value == "create" else "continue",
+            task_id=task_ref_value,
+            task_ref=task_ref_value,
+            execution_mode=execution_mode,
+            task_action=task_action_value,
+            task_title=line_value_for("TASK_TITLE"),
+            task_summary_update=line_value_for("TASK_SUMMARY_UPDATE"),
+            task_key=value_for("TASK_KEY"),
+        )
 
     m5_keys = ("TASK_MODE", "PROJECT_MODE", "EXECUTION_MODE", "TASK_ACTION")
     if any(value_for(key) is not None for key in m5_keys):
@@ -873,6 +954,161 @@ class LinearClient:
         )
         if not data["commentCreate"].get("success"):
             raise LinearAPIError(f"commentCreate returned success=false for {issue_id}")
+
+    def create_task_index_issue(
+        self,
+        *,
+        team_id: str,
+        project_id: str | None,
+        title: str,
+        description: str,
+    ) -> dict[str, Any]:
+        data = self.request(
+            """
+            mutation CreateTaskIndex(
+              $teamId: String!,
+              $projectId: String,
+              $title: String!,
+              $description: String!
+            ) {
+              issueCreate(input: {
+                teamId: $teamId,
+                projectId: $projectId,
+                title: $title,
+                description: $description
+              }) {
+                success
+                issue { id identifier title url project { id name } }
+              }
+            }
+            """,
+            {
+                "teamId": team_id,
+                "projectId": project_id,
+                "title": title,
+                "description": description,
+            },
+        )
+        payload = data["issueCreate"]
+        if not payload.get("success"):
+            raise LinearAPIError("issueCreate returned success=false for task index")
+        return payload["issue"]
+
+    def update_task_index_issue(
+        self,
+        issue_id: str,
+        *,
+        title: str,
+        description: str,
+    ) -> dict[str, Any]:
+        data = self.request(
+            """
+            mutation UpdateTaskIndex(
+              $id: String!,
+              $title: String!,
+              $description: String!
+            ) {
+              issueUpdate(id: $id, input: { title: $title, description: $description }) {
+                success
+                issue { id identifier title url project { id name } }
+              }
+            }
+            """,
+            {"id": issue_id, "title": title, "description": description},
+        )
+        payload = data["issueUpdate"]
+        if not payload.get("success"):
+            raise LinearAPIError(f"issueUpdate returned success=false for {issue_id}")
+        return payload["issue"]
+
+
+def _task_key(project_alias: str, title: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "-", title.casefold()).strip("-")
+    return f"{project_alias.casefold()}/{normalized or 'task'}"
+
+
+def _task_public_record(registry: TaskRegistry, task: Any) -> dict[str, Any]:
+    index = registry.get_task_index(task.task_id)
+    return {
+        "task_ref": task.task_id,
+        "task_key": task.task_key,
+        "host": task.host,
+        "workspace": task.workspace_alias,
+        "project": task.project_alias,
+        "project_name": task.project_name,
+        "title": task.title,
+        "summary": task.summary,
+        "status": task.status,
+        "execution_mode": task.execution_mode,
+        "bound_thread_exists": registry.get_binding(task.task_id) is not None,
+        "last_execution": registry.last_linear_execution(task.task_id),
+        "task_index_issue": index.identifier if index is not None else None,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
+    }
+
+
+class LinearTaskIndex:
+    """Idempotently mirror human-readable task metadata into one Linear issue."""
+
+    def __init__(self, linear: LinearClient, registry: TaskRegistry, team_id: str):
+        self.linear = linear
+        self.registry = registry
+        self.team_id = team_id
+
+    def _description(self, task: Any) -> str:
+        public = _task_public_record(self.registry, task)
+        summary = task.summary or ""
+        return (
+            "CLINX_TASK_INDEX_V1\n\n"
+            f"TASK_REF={task.task_id}\n"
+            f"TASK_KEY={task.task_key or ''}\n"
+            f"HOST={task.host}\n"
+            f"PROJECT={task.project_alias}\n"
+            f"TASK_STATUS={task.status}\n"
+            f"TITLE={task.title}\n"
+            f"SUMMARY={summary}\n"
+            f"EXECUTION_MODE={task.execution_mode}\n"
+            f"BOUND_THREAD_EXISTS={'YES' if public['bound_thread_exists'] else 'NO'}\n"
+            f"LAST_EXECUTION={public['last_execution'] or ''}\n"
+            f"UPDATED_AT={task.updated_at}\n\n"
+            "This issue is the durable CLINX task discovery record. "
+            "Execution issues remain separate. Conversation IDs are intentionally omitted."
+        )
+
+    @staticmethod
+    def _title(task: Any) -> str:
+        return f"[CLINX Task] {task.title}"
+
+    def sync(self, task_id: str, *, project_id: str | None = None) -> TaskIndexRecord:
+        task = self.registry.get_task(task_id)
+        existing = self.registry.get_task_index(task_id)
+        title = self._title(task)
+        description = self._description(task)
+        if existing is None:
+            issue = self.linear.create_task_index_issue(
+                team_id=self.team_id,
+                project_id=project_id,
+                title=title,
+                description=description,
+            )
+            return self.registry.record_task_index(
+                task_id=task_id,
+                issue_id=str(issue["id"]),
+                identifier=str(issue["identifier"]),
+                project_id=(issue.get("project") or {}).get("id") or project_id,
+            )
+        self.linear.update_task_index_issue(
+            existing.issue_id,
+            title=title,
+            description=description,
+        )
+        return self.registry.record_task_index(
+            task_id=task_id,
+            issue_id=existing.issue_id,
+            identifier=existing.identifier,
+            project_id=existing.project_id,
+        )
 
 
 class SingleInstanceLock:
@@ -1681,7 +1917,17 @@ class TaskDispatcher:
 
     def _workspace(self, host: str | None) -> WorkspaceConfig:
         if host:
-            return self.workspaces.resolve(host)
+            try:
+                return self.workspaces.resolve(host)
+            except TaskRegistryError:
+                requested = canonical_host(host)
+                matches = [
+                    workspace for workspace in self.workspaces
+                    if canonical_host(workspace.host or workspace.alias) == requested
+                ]
+                if len(matches) == 1:
+                    return matches[0]
+                raise TargetResolutionError(f"Unknown execution host: {host}")
         values = list(self.workspaces)
         if len(values) == 1:
             return values[0]
@@ -1795,10 +2041,13 @@ class TaskDispatcher:
         prompt: str,
         title: str,
         summary: str | None,
+        task_key: str | None = None,
+        update_title: bool = False,
         model: str | None,
         reasoning_effort: str | None,
         execution_mode: str = "normal",
         issue_id: str | None = None,
+        execution_ref: str | None = None,
     ) -> DispatchResult:
         if task_mode not in {"new", "continue"}:
             raise DispatchContractError(f"Unsupported task mode: {task_mode!r}")
@@ -1819,6 +2068,8 @@ class TaskDispatcher:
                 branch=project.branch,
                 title=title,
                 summary=summary,
+                task_key=task_key or _task_key(project.project_alias, title),
+                execution_mode=execution_mode,
             )
             with self.tasks.execution(task.task_id, issue_id) as leased:
                 target = self._new_target(workspace, project)
@@ -1886,7 +2137,10 @@ class TaskDispatcher:
                         )
                 except (IdentityGuardError, AppServerError):
                     raise
-            self.tasks.record_linear_execution(issue_id, leased.task_id) if issue_id else None
+            if issue_id:
+                self.tasks.record_linear_execution(
+                    execution_ref or issue_id, leased.task_id
+                )
             return DispatchResult(
                 target_alias=f"{workspace.alias}.{project.project_alias}",
                 thread_id=binding.thread_id,
@@ -1912,9 +2166,9 @@ class TaskDispatcher:
             raise TargetResolutionError(
                 f"Task {task.task_id} is {task.status}; explicit reopen is required"
             )
-        if host and host.strip().lower() != task.workspace_alias.lower():
+        if host and canonical_host(host) != canonical_host(task.host):
             raise TargetResolutionError(
-                f"Task workspace mismatch: expected {task.workspace_alias!r}, got {host!r}"
+                f"Task host mismatch: expected {task.host!r}, got {host!r}"
             )
         binding = self.tasks.get_binding(task.task_id)
         if binding is None:
@@ -1932,6 +2186,12 @@ class TaskDispatcher:
             repository_origin=task.repository_origin,
             branch=task.branch,
             workspace_alias=task.workspace_alias,
+        )
+        task = self.tasks.update_metadata(
+            task.task_id,
+            title=title if update_title else None,
+            summary=summary,
+            execution_mode=execution_mode,
         )
         with self.tasks.execution(task.task_id, issue_id) as leased:
             target = self._target(workspace, project, binding)
@@ -1958,7 +2218,7 @@ class TaskDispatcher:
                     approval_policy=self.cfg.approval,
                 )
         if issue_id:
-            self.tasks.record_linear_execution(issue_id, leased.task_id)
+            self.tasks.record_linear_execution(execution_ref or issue_id, leased.task_id)
         return DispatchResult(
             target_alias=f"{workspace.alias}.{project.project_alias}",
             thread_id=binding.thread_id,
@@ -2366,11 +2626,21 @@ class Bridge:
         self.states: dict[str, str] = {}
         self.dispatcher = dispatcher or Dispatcher(cfg)
         self.task_dispatcher: TaskDispatcher | None = None
+        self.task_index: LinearTaskIndex | None = None
 
     def _m5_dispatcher(self) -> TaskDispatcher:
         if self.task_dispatcher is None:
             self.task_dispatcher = TaskDispatcher(self.cfg)
         return self.task_dispatcher
+
+    def _task_index(self) -> LinearTaskIndex:
+        if self.task_index is None:
+            self.task_index = LinearTaskIndex(
+                self.linear,
+                self._m5_dispatcher().tasks,
+                self.cfg.team_id,
+            )
+        return self.task_index
 
     def _m5_repo(self, contract: DispatchContract) -> Path:
         dispatcher = self._m5_dispatcher()
@@ -2423,11 +2693,13 @@ class Bridge:
                 # comment.  A M5-shaped malformed contract must not be hidden
                 # by the legacy static repo preflight.
                 contract = None
-            is_m5_shape = any(
+            is_task_shape = any(
                 re.search(rf"(?m)^\s*{key}=", issue.get("description") or "")
-                for key in ("TASK_MODE", "PROJECT_MODE", "EXECUTION_MODE", "TASK_ACTION")
+                for key in (
+                    "TASK_MODE", "PROJECT_MODE", "EXECUTION_MODE", "TASK_ACTION", "TASK_REF"
+                )
             )
-            if contract and contract.contract_kind == "m5":
+            if contract and contract.contract_kind in {"m5", "m6"}:
                 try:
                     repo = self._m5_repo(contract)
                 except Exception as exc:
@@ -2438,11 +2710,11 @@ class Bridge:
                         prefix="DISPATCH_PROJECT_RESOLUTION_FAILED",
                     )
                     continue
-            elif is_m5_shape:
+            elif is_task_shape:
                 self._record_bridge_failure(
                     issue,
                     Path("."),
-                    "Malformed M5 dispatch contract",
+                    "Malformed task dispatch contract",
                     prefix="DISPATCH_CONTRACT_FAILED",
                 )
                 continue
@@ -2455,7 +2727,7 @@ class Bridge:
                 )
                 continue
 
-            if not contract or contract.contract_kind != "m5":
+            if not contract or contract.contract_kind not in {"m5", "m6"}:
                 repo_valid = repo.is_dir() and is_git_repo(repo)
             else:
                 # Explicit PROJECT_MODE=create is allowed to create the
@@ -2523,6 +2795,8 @@ class Bridge:
         try:
             if contract.task_action:
                 status = dispatcher.task_action(contract.task_id or "", contract.task_action)
+                if dispatcher.tasks.get_task_index(contract.task_id or "") is not None:
+                    self._task_index().sync(contract.task_id or "")
                 body = (
                     "M5_TASK_ACTION_APPLIED\n\n"
                     f"TASK_ID={contract.task_id}\n"
@@ -2542,10 +2816,12 @@ class Bridge:
                 prompt=codex_prompt(issue, repo, self.cfg.review_state),
                 title=str(issue.get("title") or identifier),
                 summary=None,
+                task_key=None,
                 model=contract.model,
                 reasoning_effort=contract.reasoning_effort,
                 execution_mode=contract.execution_mode,
                 issue_id=issue.get("id"),
+                execution_ref=identifier,
             )
         except Exception as exc:
             self._record_bridge_failure(issue, repo, f"Failed to dispatch M5 task: {exc}")
@@ -2580,6 +2856,87 @@ class Bridge:
             + (f" logs={log_dir}" if log_dir else "")
         )
 
+    def _execute_m6_issue(
+        self,
+        issue: dict[str, Any],
+        repo: Path,
+        contract: DispatchContract,
+    ) -> None:
+        """Execute one ChatGPT-resolved M6 task handoff."""
+        identifier = issue["identifier"]
+        running_state_id = self.states[self.cfg.running_state]
+        claimed = self.linear.update_issue_state(issue["id"], running_state_id)
+        if claimed["state"]["name"] != self.cfg.running_state:
+            raise BridgeError(
+                f"Failed to claim {identifier}: state is {claimed['state']['name']}"
+            )
+
+        dispatcher = self._m5_dispatcher()
+        task_ref = contract.task_ref
+        try:
+            if contract.task_action == "reopen":
+                dispatcher.task_action(task_ref or "", "reopen")
+            result = dispatcher.dispatch(
+                project_ref=contract.project_alias or "",
+                host=contract.host,
+                project_mode=contract.project_mode or "existing",
+                task_mode="new" if contract.task_action == "create" else "continue",
+                task_id=task_ref,
+                prompt=codex_prompt(issue, repo, self.cfg.review_state),
+                title=contract.task_title or str(issue.get("title") or identifier),
+                summary=contract.task_summary_update,
+                task_key=contract.task_key,
+                update_title=contract.task_title is not None,
+                model=contract.model,
+                reasoning_effort=contract.reasoning_effort,
+                execution_mode=contract.execution_mode,
+                issue_id=issue.get("id"),
+                execution_ref=identifier,
+            )
+            index = self._task_index().sync(
+                result.task_id or "",
+                project_id=(issue.get("project") or {}).get("id"),
+            )
+            task = dispatcher.tasks.get_task(result.task_id or "")
+        except Exception as exc:
+            self._record_bridge_failure(
+                issue,
+                repo,
+                f"Failed to execute M6 task handoff: {exc}",
+                prefix="M6_TASK_HANDOFF_FAILED",
+            )
+            return
+
+        body = (
+            "M6_TASK_DISPATCHED\n\n"
+            f"TASK_REF={result.task_id}\n"
+            f"TASK_STATUS={task.status}\n"
+            f"PROJECT={task.project_alias}\n"
+            f"HOST={task.host}\n"
+            f"TASK_TITLE={task.title}\n"
+            f"TASK_INDEX_ISSUE={index.identifier}\n"
+            f"MODEL={result.model or 'server default'}\n"
+            f"REASONING={result.reasoning_effort or 'server default'}\n"
+            f"EXECUTION_MODE={result.execution_mode}\n"
+            "EXACT_BOUND_CONVERSATION=PASS\n"
+            "HUMAN_THREAD_ID_REQUIRED=NO\n"
+            "HUMAN_SESSION_ID_REQUIRED=NO\n"
+            "LEGACY_CODEX_EXEC_DEFAULT=NO"
+        )
+        try:
+            self.linear.add_comment(issue["id"], body)
+        except Exception as exc:
+            print(f"Warning: failed to write M6 dispatch for {identifier}: {exc}")
+        try:
+            log_dir = write_dispatch_record(self.cfg, issue, result)
+        except Exception as exc:
+            log_dir = None
+            print(f"Warning: failed to write M6 dispatch log for {identifier}: {exc}")
+        print(
+            f"M6 dispatched {identifier}: task={result.task_id} turn={result.turn_id}"
+            + (f" logs={log_dir}" if log_dir else "")
+        )
+
     def execute_issue(self, issue: dict[str, Any], repo: Path) -> None:
         identifier = issue["identifier"]
         running_state_id = self.states[self.cfg.running_state]
@@ -2588,6 +2945,10 @@ class Bridge:
             contract = parse_dispatch_contract(issue.get("description"))
         except DispatchContractError as exc:
             self._record_bridge_failure(issue, repo, str(exc), prefix="DISPATCH_CONTRACT_FAILED")
+            return
+
+        if contract and contract.contract_kind == "m6":
+            self._execute_m6_issue(issue, repo, contract)
             return
 
         if contract and contract.contract_kind == "m5":
@@ -2913,6 +3274,24 @@ def build_parser() -> argparse.ArgumentParser:
     register.add_argument("--alias", required=True)
     register.add_argument("--thread-id", required=True)
     register.add_argument("--read-only", action="store_true", required=True)
+    tasks = sub.add_parser(
+        "tasks",
+        help="Read-only persistent task discovery",
+    )
+    task_sub = tasks.add_subparsers(dest="tasks_command", required=True)
+    tasks_list = task_sub.add_parser("list", help="List task registry records")
+    tasks_list.add_argument("--host")
+    tasks_list.add_argument("--project")
+    tasks_list.add_argument("--status", choices=("ACTIVE", "COMPLETED", "ARCHIVED"))
+    tasks_list.add_argument("--include-archived", action="store_true")
+    tasks_find = task_sub.add_parser("find", help="Find tasks by human title or summary")
+    tasks_find.add_argument("--host")
+    tasks_find.add_argument("--project", required=True)
+    tasks_find.add_argument("--query", required=True)
+    tasks_find.add_argument("--status", choices=("ACTIVE", "COMPLETED", "ARCHIVED"))
+    tasks_find.add_argument("--include-archived", action="store_true")
+    tasks_show = task_sub.add_parser("show", help="Show one task by hidden task reference")
+    tasks_show.add_argument("task_ref")
     sub.add_parser("once", help="Poll once and execute at most max_batch issues")
     sub.add_parser("run", help="Run foreground polling loop")
     return parser
@@ -2957,6 +3336,52 @@ def main() -> int:
             return 0
         except Exception as e:
             print(f"M4_A2_REGISTRATION=BLOCKED: {e}", file=sys.stderr)
+            return 1
+
+    if args.command == "tasks":
+        registry = TaskRegistry(
+            cfg.task_db_path
+            or (Path.home() / ".local" / "state" / "clinx" / "tasks.sqlite3")
+        )
+        try:
+            if args.tasks_command == "list":
+                rows = registry.list_tasks(
+                    host=args.host,
+                    project=args.project,
+                    status=args.status,
+                    include_archived=args.include_archived or args.status == "ARCHIVED",
+                )
+                payload: dict[str, Any] = {
+                    "read_only": True,
+                    "classification": "LIST",
+                    "tasks": [_task_public_record(registry, task) for task in rows],
+                }
+            elif args.tasks_command == "find":
+                result = registry.find_tasks(
+                    host=args.host,
+                    project=args.project,
+                    query=args.query,
+                    status=args.status,
+                    include_archived=args.include_archived or args.status == "ARCHIVED",
+                )
+                payload = {
+                    "read_only": True,
+                    "classification": result.classification,
+                    "tasks": [
+                        _task_public_record(registry, task) for task in result.tasks
+                    ],
+                }
+            else:
+                task = registry.get_task(args.task_ref)
+                payload = {
+                    "read_only": True,
+                    "classification": "EXACT",
+                    "task": _task_public_record(registry, task),
+                }
+            print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            return 0
+        except Exception as e:
+            print(f"TASK_QUERY_ERROR: {e}", file=sys.stderr)
             return 1
 
     api_key = os.environ.get("LINEAR_API_KEY", "").strip()

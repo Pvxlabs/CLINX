@@ -1,4 +1,4 @@
-"""Durable M5 task, workspace, and conversation registries.
+"""Durable M5/M6 task, workspace, and conversation registries.
 
 This module deliberately contains no Linear or Codex protocol code.  It owns
 the local durable identity that connects a Linear execution to one project and
@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import sqlite3
 import subprocess
+import unicodedata
 import uuid
 from typing import Any, Iterator
 
@@ -38,6 +39,10 @@ class WorkspaceResolutionError(TaskRegistryError):
 
 class ProjectResolutionError(TaskRegistryError):
     pass
+
+
+MAX_TASK_TITLE_LENGTH = 240
+MAX_TASK_SUMMARY_LENGTH = 2000
 
 
 @dataclasses.dataclass(frozen=True)
@@ -257,9 +262,27 @@ class TaskRecord:
     branch: str | None
     title: str
     summary: str | None
+    task_key: str | None
+    execution_mode: str
     status: str
     created_at: str
     updated_at: str
+
+
+@dataclasses.dataclass(frozen=True)
+class TaskIndexRecord:
+    task_id: str
+    issue_id: str
+    identifier: str
+    project_id: str | None
+    created_at: str
+    updated_at: str
+
+
+@dataclasses.dataclass(frozen=True)
+class TaskSearchResult:
+    classification: str
+    tasks: tuple[TaskRecord, ...]
 
 
 def _now() -> str:
@@ -297,6 +320,9 @@ class TaskRegistry:
                     branch TEXT,
                     title TEXT NOT NULL,
                     summary TEXT,
+                    task_key TEXT,
+                    execution_mode TEXT NOT NULL DEFAULT 'normal'
+                        CHECK(execution_mode IN ('normal','fast')),
                     status TEXT NOT NULL CHECK(status IN ('ACTIVE','COMPLETED','ARCHIVED')),
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -323,8 +349,25 @@ class TaskRegistry:
                     task_id TEXT NOT NULL REFERENCES tasks(task_id),
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS task_indexes (
+                    task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+                    issue_id TEXT NOT NULL UNIQUE,
+                    identifier TEXT NOT NULL,
+                    project_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
+            columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(tasks)")
+            }
+            if "task_key" not in columns:
+                conn.execute("ALTER TABLE tasks ADD COLUMN task_key TEXT")
+            if "execution_mode" not in columns:
+                conn.execute(
+                    "ALTER TABLE tasks ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'normal'"
+                )
 
     def create_task(
         self,
@@ -338,19 +381,31 @@ class TaskRegistry:
         branch: str | None,
         title: str,
         summary: str | None = None,
+        task_key: str | None = None,
+        execution_mode: str = "normal",
     ) -> TaskRecord:
+        if execution_mode not in {"normal", "fast"}:
+            raise TaskRegistryError(f"Unsupported execution mode: {execution_mode}")
+        title = self._validate_metadata_value(
+            "title", title or project_name, MAX_TASK_TITLE_LENGTH
+        )
+        summary = self._validate_metadata_value(
+            "summary", summary, MAX_TASK_SUMMARY_LENGTH
+        )
         task_id = "task_" + uuid.uuid4().hex
         stamp = _now()
         row = (
             task_id, host, workspace_alias, project_alias, project_name, cwd,
-            repository_origin, branch, title or project_name, summary, "ACTIVE", stamp, stamp,
+            repository_origin, branch, title, summary, task_key,
+            execution_mode, "ACTIVE", stamp, stamp,
         )
         with self._connect() as conn:
             conn.execute(
                 """INSERT INTO tasks
                 (task_id,host,workspace_alias,project_alias,project_name,cwd,
-                 repository_origin,branch,title,summary,status,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 repository_origin,branch,title,summary,task_key,execution_mode,
+                 status,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 row,
             )
         return self.get_task(task_id)
@@ -362,15 +417,153 @@ class TaskRegistry:
             raise UnknownTaskError(f"Unknown task: {task_id}")
         return TaskRecord(**dict(row))
 
-    def list_tasks(self, *, status: str | None = None) -> list[TaskRecord]:
+    def list_tasks(
+        self,
+        *,
+        host: str | None = None,
+        project: str | None = None,
+        status: str | None = None,
+        include_archived: bool = True,
+    ) -> list[TaskRecord]:
         query = "SELECT * FROM tasks"
-        args: tuple[str, ...] = ()
+        clauses: list[str] = []
+        args: list[str] = []
+        if host is not None:
+            clauses.append("lower(host) = lower(?)")
+            args.append(host)
+        if project is not None:
+            clauses.append("(lower(project_alias) = lower(?) OR lower(project_name) = lower(?))")
+            args.extend((project, project))
         if status is not None:
-            query += " WHERE status = ?"
-            args = (status,)
-        query += " ORDER BY created_at"
+            clauses.append("status = ?")
+            args.append(status.upper())
+        elif not include_archived:
+            clauses.append("status != 'ARCHIVED'")
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY updated_at DESC, created_at DESC"
         with self._connect() as conn:
-            return [TaskRecord(**dict(row)) for row in conn.execute(query, args)]
+            return [TaskRecord(**dict(row)) for row in conn.execute(query, tuple(args))]
+
+    @staticmethod
+    def _normalize(value: str | None) -> str:
+        normalized = unicodedata.normalize("NFKC", value or "").casefold()
+        return " ".join(re.findall(r"[\w]+", normalized, flags=re.UNICODE))
+
+    @staticmethod
+    def _validate_metadata_value(
+        name: str,
+        value: str | None,
+        maximum: int,
+    ) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise TaskRegistryError(f"Task {name} must not be empty")
+        if len(cleaned) > maximum:
+            raise TaskRegistryError(
+                f"Task {name} exceeds maximum length {maximum}"
+            )
+        return cleaned
+
+    @classmethod
+    def _match_score(cls, task: TaskRecord, query: str) -> int:
+        needle = cls._normalize(query)
+        if not needle:
+            return 0
+        title = cls._normalize(task.title)
+        summary = cls._normalize(task.summary)
+        task_key = cls._normalize(task.task_key)
+        if needle == title:
+            return 1000
+        if needle == task_key:
+            return 950
+        if needle in title:
+            return 800
+        if needle in task_key:
+            return 750
+        if needle in summary:
+            return 650
+        tokens = set(needle.split())
+        if not tokens:
+            return 0
+        title_tokens = set(title.split())
+        summary_tokens = set(summary.split())
+        key_tokens = set(task_key.split())
+        if not tokens.issubset(title_tokens | summary_tokens | key_tokens):
+            return 0
+        title_hits = len(tokens & title_tokens)
+        summary_hits = len(tokens & summary_tokens)
+        key_hits = len(tokens & key_tokens)
+        hits = title_hits * 5 + key_hits * 4 + summary_hits * 2
+        return hits
+
+    def find_tasks(
+        self,
+        *,
+        query: str,
+        host: str | None = None,
+        project: str | None = None,
+        status: str | None = None,
+        include_archived: bool = False,
+    ) -> TaskSearchResult:
+        candidates = self.list_tasks(
+            host=host,
+            project=project,
+            status=status,
+            include_archived=include_archived,
+        )
+        scored = [
+            (self._match_score(task, query), task) for task in candidates
+        ]
+        matches = [(score, task) for score, task in scored if score > 0]
+        matches.sort(key=lambda item: (-item[0], item[1].updated_at, item[1].task_id))
+        if not matches:
+            return TaskSearchResult("NONE", ())
+        best_score = matches[0][0]
+        best = tuple(task for score, task in matches if score == best_score)
+        return TaskSearchResult("UNIQUE" if len(best) == 1 else "AMBIGUOUS", best)
+
+    def update_metadata(
+        self,
+        task_id: str,
+        *,
+        title: str | None = None,
+        summary: str | None = None,
+        task_key: str | None = None,
+        execution_mode: str | None = None,
+    ) -> TaskRecord:
+        self.get_task(task_id)
+        if execution_mode is not None and execution_mode not in {"normal", "fast"}:
+            raise TaskRegistryError(f"Unsupported execution mode: {execution_mode}")
+        title = self._validate_metadata_value(
+            "title", title, MAX_TASK_TITLE_LENGTH
+        )
+        summary = self._validate_metadata_value(
+            "summary", summary, MAX_TASK_SUMMARY_LENGTH
+        )
+        changes: list[str] = []
+        values: list[str | None] = []
+        for column, value in (
+            ("title", title),
+            ("summary", summary),
+            ("task_key", task_key),
+            ("execution_mode", execution_mode),
+        ):
+            if value is not None:
+                changes.append(f"{column} = ?")
+                values.append(value)
+        if not changes:
+            return self.get_task(task_id)
+        changes.append("updated_at = ?")
+        values.extend((_now(), task_id))
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE tasks SET {', '.join(changes)} WHERE task_id = ?",
+                tuple(values),
+            )
+        return self.get_task(task_id)
 
     def get_binding(self, task_id: str) -> ConversationBinding | None:
         with self._connect() as conn:
@@ -446,6 +639,58 @@ class TaskRegistry:
                 "INSERT OR REPLACE INTO linear_executions(issue_id,task_id,created_at) VALUES (?,?,?)",
                 (issue_id, task_id, _now()),
             )
+
+    def last_linear_execution(self, task_id: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT issue_id FROM linear_executions
+                WHERE task_id = ? ORDER BY created_at DESC LIMIT 1""",
+                (task_id,),
+            ).fetchone()
+        return str(row["issue_id"]) if row is not None else None
+
+    def get_task_index(self, task_id: str) -> TaskIndexRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM task_indexes WHERE task_id = ?", (task_id,)
+            ).fetchone()
+        return TaskIndexRecord(**dict(row)) if row is not None else None
+
+    def record_task_index(
+        self,
+        *,
+        task_id: str,
+        issue_id: str,
+        identifier: str,
+        project_id: str | None,
+    ) -> TaskIndexRecord:
+        self.get_task(task_id)
+        stamp = _now()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT * FROM task_indexes WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            if existing is None:
+                conn.execute(
+                    """INSERT INTO task_indexes
+                    (task_id,issue_id,identifier,project_id,created_at,updated_at)
+                    VALUES (?,?,?,?,?,?)""",
+                    (task_id, issue_id, identifier, project_id, stamp, stamp),
+                )
+            elif existing["issue_id"] != issue_id:
+                raise TaskRegistryError(
+                    f"Task {task_id} already has a different Linear task index"
+                )
+            else:
+                conn.execute(
+                    """UPDATE task_indexes SET identifier = ?, project_id = ?, updated_at = ?
+                    WHERE task_id = ?""",
+                    (identifier, project_id, stamp, task_id),
+                )
+        result = self.get_task_index(task_id)
+        assert result is not None
+        return result
 
     def set_status(self, task_id: str, status: str) -> TaskRecord:
         if status not in {"ACTIVE", "COMPLETED", "ARCHIVED"}:

@@ -1,4 +1,4 @@
-# linear-local-codex-bridge v0.1 / Dispatcher V1 M5
+# linear-local-codex-bridge v0.1 / Dispatcher V1 M6
 #
 # Keep LINEAR_API_KEY in the environment, never in this file.
 
@@ -31,7 +31,7 @@ remote_command = ["codex", "app-server", "proxy"]
 request_timeout_seconds = 30
 client_name = "linear-local-codex-bridge"
 client_title = "Linear Local Codex Bridge"
-client_version = "1.0.0-m5"
+client_version = "1.0.0-m6"
 
 [runtime]
 runtime_host = "p620"
