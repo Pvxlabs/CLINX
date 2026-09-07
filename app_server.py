@@ -718,37 +718,46 @@ class CodexAppServerClient:
         if not isinstance(data, list):
             raise ModelCapabilityError("model/list capability data is unavailable")
         entries: list[ModelCapability] = []
+        malformed_ids: set[str] = set()
+        raw_aliases: dict[str, set[str]] = {}
         for item in data:
             if not isinstance(item, dict) or item.get("hidden") is True:
                 continue
             model_id = item.get("id")
             if not isinstance(model_id, str) or not model_id.strip():
                 raise ModelCapabilityError("model/list contains malformed model id")
+            aliases = {model_id.casefold()}
+            for key in ("model", "displayName"):
+                value = item.get(key)
+                if isinstance(value, str):
+                    aliases.add(value.casefold())
+            raw_aliases[model_id] = aliases
             efforts = item.get("supportedReasoningEfforts", ())
             if not isinstance(efforts, list) or any(not isinstance(v, str) or not v for v in efforts):
-                raise ModelCapabilityError(f"model/list has malformed reasoning schema for {model_id}")
+                malformed_ids.add(model_id)
+                continue
             default = item.get("defaultReasoningEffort")
             if default is not None and (not isinstance(default, str) or default not in efforts):
-                raise ModelCapabilityError(f"model/list has invalid default reasoning for {model_id}")
+                malformed_ids.add(model_id)
+                continue
             entries.append(ModelCapability(model_id, tuple(efforts), default))
         if not entries:
             raise ModelCapabilityError("model/list returned no usable models")
         wanted = (requested or "").strip()
         if not wanted:
             raise ModelCapabilityError("executable model is required")
+        if wanted in malformed_ids:
+            raise ModelCapabilityError(f"model/list has malformed capability for {wanted}")
         exact = [entry for entry in entries if entry.model_id == wanted]
         if exact:
             selected = exact[0]
         else:
             needle = wanted.casefold()
+            if any(needle in aliases for model_id, aliases in raw_aliases.items() if model_id in malformed_ids):
+                raise ModelCapabilityError(f"model/list has malformed capability for {wanted}")
             matches = []
             for entry in entries:
-                item = next((raw for raw in data if isinstance(raw, dict) and raw.get("id") == entry.model_id), {})
-                aliases = {entry.model_id.casefold()}
-                for key in ("model", "displayName"):
-                    value = item.get(key)
-                    if isinstance(value, str):
-                        aliases.add(value.casefold())
+                aliases = raw_aliases.get(entry.model_id, {entry.model_id.casefold()})
                 if needle in aliases or needle == entry.model_id.rsplit("-", 1)[-1].casefold():
                     matches.append(entry)
             if len(matches) != 1:

@@ -164,6 +164,24 @@ class M12ModelCapabilityTests(unittest.TestCase):
         with self.assertRaises(app_server.ModelCapabilityError):
             client.resolve_model("Terra", "low")
 
+    def test_unrelated_malformed_model_does_not_block_valid_selection(self):
+        client = self.client([
+            {"id": "gpt-4o-audio-preview", "supportedReasoningEfforts": "unsupported"},
+            {"id": "gpt-5.6-terra", "model": "Terra",
+             "supportedReasoningEfforts": ["medium"], "defaultReasoningEffort": "medium"},
+        ])
+        self.assertEqual(client.resolve_model("Terra", "medium"), ("gpt-5.6-terra", "medium"))
+
+    def test_requested_malformed_model_still_fails_closed(self):
+        client = self.client([
+            {"id": "gpt-4o-audio-preview", "model": "Audio",
+             "supportedReasoningEfforts": "unsupported"},
+            {"id": "gpt-5.6-terra", "model": "Terra",
+             "supportedReasoningEfforts": ["medium"]},
+        ])
+        with self.assertRaises(app_server.ModelCapabilityError):
+            client.resolve_model("Audio", "medium")
+
     def test_prepare_and_start_require_literal_true(self):
         with tempfile.TemporaryDirectory() as td:
             integration, _registry, _dispatcher, task = make_fixture(Path(td))
