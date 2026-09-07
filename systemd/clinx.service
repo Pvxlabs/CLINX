@@ -1,0 +1,16 @@
+[Unit]
+Description=CLINX Linear Codex Dispatcher
+After=network-online.target clinx-tunnel.service
+Wants=clinx-tunnel.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pvxlabs/dev/clinx
+EnvironmentFile=%h/.config/clinx/runtime.env
+Environment=PATH=/home/pvxlabs/.nvm/versions/node/v24.19.0/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /home/pvxlabs/dev/clinx/bridge.py --config /home/pvxlabs/dev/clinx/bridge.toml run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

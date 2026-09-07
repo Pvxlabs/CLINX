@@ -387,7 +387,11 @@ python3 bridge.py --config bridge.toml run
 
 Stop with `Ctrl-C`.
 
-v0.1 intentionally stays foreground. A LaunchAgent/systemd wrapper belongs in the next step after the protocol is proven.
+The checked-in units under `systemd/` keep the P620 bridge and tunnel-client
+lifecycle aligned. Install both units into the user systemd directory, then
+restart `clinx.service`; the tunnel child is replaced with the same restart
+and resolves the current `bin/clinx-context-mcp` launcher. The tunnel profile
+and credentials remain outside this repository.
 
 ## Failure behavior
 

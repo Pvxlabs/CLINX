@@ -1,0 +1,18 @@
+[Unit]
+Description=CLINX MCP tunnel-client runtime
+After=network-online.target
+Wants=network-online.target
+PartOf=clinx.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pvxlabs/dev/clinx
+EnvironmentFile=%h/.config/tunnel-client/runtime.env
+Environment=PATH=/home/pvxlabs/.nvm/versions/node/v24.19.0/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/pvxlabs/.local/bin/tunnel-client run --profile-dir %h/.config/tunnel-client --profile clinx-p620
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+
+[Install]
+WantedBy=default.target
