@@ -335,7 +335,7 @@ class ClinxIntegration:
     def get_topic_status(
         self,
         *,
-        host: str,
+        host: str | None = None,
         project: str,
         topic: str,
         include_completed: bool = True,

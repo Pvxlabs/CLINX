@@ -331,7 +331,7 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                     "recent_turns": {"type": "integer", "minimum": 1, "maximum": 20},
                     "max_bytes": {"type": "integer", "minimum": 1024, "maximum": 128000},
                 },
-                ["host", "project", "topic"],
+                ["project", "topic"],
             ),
             "outputSchema": _topic_status_output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},

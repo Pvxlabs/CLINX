@@ -1615,7 +1615,11 @@ def _read_only_transport_target(cfg: BridgeConfig, project: ProjectMapping) -> T
             if binding is not None
             else (cfg.threads[0].app_server_version if cfg.threads else cfg.app_server.client_version)
         ),
-        target_host=binding.target_host if binding is not None else "",
+        target_host=(
+            binding.target_host
+            if binding is not None and binding.target_host
+            else _project_target_host(cfg, project)
+        ),
     )
 
 
@@ -2057,7 +2061,7 @@ class TaskDispatcher:
         self,
         project_ref: str,
         *,
-        host: str | None,
+        host: str | None = None,
         project_mode: str,
     ) -> tuple[WorkspaceConfig, ProjectDescriptor, ProjectMapping]:
         workspace = self._workspace(host)
@@ -3900,7 +3904,7 @@ class TopicStatusReader:
     def read_topic_status(
         self,
         *,
-        host: str,
+        host: str | None,
         project_ref: str,
         topic: str,
         include_completed: bool = True,
@@ -3920,10 +3924,11 @@ class TopicStatusReader:
         workspace, _descriptor, project = self.dispatcher.resolve_project(
             project_ref, host=host, project_mode="existing"
         )
+        resolved_host = canonical_host(workspace.host or workspace.alias)
         evidence = _local_git_identity(str(project.repo))
         project_identity_guard(project, evidence)
         tasks = self.registry.list_tasks(
-            host=host, project=project.project_alias, include_archived=True
+            host=resolved_host, project=project.project_alias, include_archived=True
         )
         items: list[TopicWorkItem] = []
         for task in tasks:
@@ -4032,7 +4037,7 @@ class TopicStatusReader:
         summary_state = next((name for name in ("BLOCKED", "ACTIVE", "PAUSED", "UNKNOWN", "COMPLETED") if states[name]), "UNKNOWN")
         latest = max((item.last_activity for item in items if item.last_activity), default="")
         return TopicStatus(
-            host=workspace.host or workspace.alias,
+            host=resolved_host,
             project=project.project_alias,
             topic=topic,
             summary_state=summary_state,
@@ -5260,7 +5265,7 @@ def build_parser() -> argparse.ArgumentParser:
     tasks_topic = task_sub.add_parser(
         "topic", help="Read bounded deterministic status for a project topic"
     )
-    tasks_topic.add_argument("--host", required=True)
+    tasks_topic.add_argument("--host")
     tasks_topic.add_argument("--project", required=True)
     tasks_topic.add_argument("--topic", required=True)
     tasks_topic.add_argument("--include-completed", action=argparse.BooleanOptionalAction, default=True)
