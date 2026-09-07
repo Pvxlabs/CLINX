@@ -27,12 +27,7 @@ class ResultParseError(M9IntegrationError):
 
 @dataclasses.dataclass(frozen=True)
 class ExecutionHandoff:
-    """A canonical, in-memory Linear command-plane handoff.
-
-    This object deliberately contains no Codex conversation identity.  Linear
-    is the write/execution plane; CLINX only prepares the parser-compatible
-    issue contract after resolving and validating the existing local task.
-    """
+    """A canonical CLINX command-plane preparation."""
 
     task_action: str
     task_ref: str | None
@@ -49,15 +44,17 @@ class ExecutionHandoff:
     trigger_label: str
     todo_state: str
     description: str
+    prepared_execution_ref: str
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "execution_available": True,
-            "command_plane": "LINEAR",
+            "command_plane": "CLINX",
             "requires_user_approval": True,
-            "requires_command_write": True,
+            "requires_command_write": False,
             "approval_state": "SATISFIED",
             "handoff_ready": True,
+            "prepared_execution_ref": self.prepared_execution_ref,
             "task_action": self.task_action,
             "task_ref": self.task_ref,
             "host": self.host,
@@ -70,27 +67,11 @@ class ExecutionHandoff:
             "prompt": self.prompt,
             "description": self.description,
             "next_action": {
-                "provider": "LINEAR",
-                "operation": "CREATE_ISSUE",
+                "provider": "CLINX",
+                "operation": "START_EXECUTION",
                 "required": True,
             },
-            "linear_handoff": {
-                "team": self.team_id,
-                "project": self.linear_project,
-                "state": self.todo_state,
-                "labels": [self.trigger_label],
-                "host": self.host,
-                "project_alias": self.project,
-                "task_action": self.task_action,
-                "task_ref": self.task_ref,
-                "model": self.model,
-                "reasoning": self.reasoning,
-                "execution_mode": self.execution_mode,
-                "title": self.title,
-                "summary": self.summary,
-                "prompt": self.prompt,
-                "description": self.description,
-            },
+            "linear_audit": {"optional": True, "purpose": "audit/history compatibility"},
             "status_lookup": {"tool": "clinx_get_status"},
             "read_only": True,
         }
@@ -473,35 +454,38 @@ class ClinxIntegration:
         return status
 
     def get_capabilities(self) -> dict[str, Any]:
-        """Describe the separated CLINX, Linear, and Codex planes."""
+        """Describe the separated CLINX command, Codex execution, and Linear audit planes."""
         return {
             "context_plane": {
                 "available": True,
                 "transport": "CLINX_MCP",
+                "name": "CLINX",
                 "read_only": True,
             },
             "context_read_only": True,
             "execution_available": True,
-            "command_plane": "LINEAR",
+            "command_plane": "CLINX",
             "prepare_tool": "clinx_prepare_execution",
+            "start_tool": "clinx_start_execution",
             "status_tool": "clinx_get_status",
             "execution": {
                 "available": True,
-                "direct_mcp_execution": False,
-                "command_plane": "LINEAR",
+                "direct_mcp_execution": True,
+                "command_plane": "CLINX",
                 "requires_user_approval": True,
                 "prepare_tool": "clinx_prepare_execution",
+                "start_tool": "clinx_start_execution",
             },
             "status": {
                 "available": True,
                 "tool": "clinx_get_status",
             },
             "instructions": (
-                "Use CLINX for authoritative task context. execution.available=true "
-                "means the execution capability exists; direct_mcp_execution=false "
-                "is intentional. After explicit user approval, prepare a handoff "
-                "with clinx_prepare_execution and use an available Linear "
-                "issue-create capability for its next_action."
+                "Use CLINX for authoritative task context and command preparation. "
+                "Prepare with clinx_prepare_execution, then call "
+                "clinx_start_execution with only the returned prepared_execution_ref "
+                "and approved=true. Linear is optional audit/history compatibility "
+                "and is never required for Codex execution."
             ),
             "read_only": True,
         }
@@ -545,7 +529,7 @@ class ClinxIntegration:
         reasoning: str | None = None,
         execution_mode: str = "normal",
     ) -> dict[str, Any]:
-        """Prepare a parser-compatible Linear handoff without side effects."""
+        """Prepare an integrity-checked CLINX execution command without dispatching."""
         if approved is not True:
             raise M9IntegrationError("explicit approved=true is required for preparation")
         prompt = self._validated_text("prompt", prompt)
@@ -642,7 +626,7 @@ class ClinxIntegration:
 
         linear_project = self._linear_project_name()
         description_lines = [
-            "CLINX_M11_EXECUTION_HANDOFF_V1",
+            "CLINX_M12_EXECUTION_PREPARATION_V1",
             "",
             f"HOST={selected_host}",
             f"PROJECT={selected_project}",
@@ -661,6 +645,18 @@ class ClinxIntegration:
             "PROMPT:",
             prompt,
         ])
+        prepared = self.registry.create_prepared_execution(
+            task_action=selected_action,
+            task_ref=selected_ref,
+            host=selected_host,
+            project=selected_project,
+            title=selected_title,
+            summary=selected_summary,
+            prompt=prompt,
+            model=selected_model,
+            reasoning_effort=selected_reasoning,
+            execution_mode=execution_mode,
+        )
         return ExecutionHandoff(
             task_action=selected_action,
             task_ref=selected_ref,
@@ -677,7 +673,118 @@ class ClinxIntegration:
             trigger_label=str(getattr(self.cfg, "trigger_label", "local-codex")),
             todo_state=str(getattr(self.cfg, "todo_state", "Todo")),
             description="\n".join(description_lines),
+            prepared_execution_ref=prepared.prepared_execution_ref,
         ).as_dict()
+
+    def _audit_task_index(self, task_id: str) -> str:
+        """Best-effort Linear audit; never gates Codex dispatch."""
+        if self.linear is None:
+            return "NOT_CONFIGURED"
+        try:
+            from bridge import LinearTaskIndex
+
+            LinearTaskIndex(
+                self.linear,
+                self.registry,
+                str(getattr(self.cfg, "team_id", "")),
+            ).sync(task_id)
+        except Exception:
+            return "FAILED"
+        return "PASS"
+
+    @staticmethod
+    def _execution_public(
+        *,
+        prepared: Any,
+        execution_ref: str,
+        task_ref: str,
+        dispatch_status: str,
+        linear_audit: str,
+    ) -> dict[str, Any]:
+        return {
+            "execution_started": True,
+            "prepared_execution_ref": prepared.prepared_execution_ref,
+            "execution_ref": execution_ref,
+            "task_ref": task_ref,
+            "task_action": prepared.task_action,
+            "model": prepared.model,
+            "reasoning_effort": prepared.reasoning_effort,
+            "execution_mode": prepared.execution_mode,
+            "dispatch_status": dispatch_status,
+            "linear_audit": linear_audit,
+            "read_only": False,
+        }
+
+    def start_execution(
+        self,
+        *,
+        prepared_execution_ref: str,
+        approved: bool = False,
+    ) -> dict[str, Any]:
+        """Start exactly one previously prepared CLINX command."""
+        if approved is not True:
+            raise M9IntegrationError("explicit approved=true is required for execution")
+        if not isinstance(prepared_execution_ref, str) or not prepared_execution_ref.strip():
+            raise M9IntegrationError("prepared_execution_ref is required")
+        prepared = self.registry.verify_prepared_execution(prepared_execution_ref)
+        if prepared.status == "DISPATCHED":
+            if not prepared.resulting_execution_ref or not prepared.resulting_task_id:
+                raise M9IntegrationError("dispatched preparation has incomplete result")
+            return self._execution_public(
+                prepared=prepared,
+                execution_ref=prepared.resulting_execution_ref,
+                task_ref=prepared.resulting_task_id,
+                dispatch_status="DISPATCHED_REPLAY",
+                linear_audit="NOT_REPEATED",
+            )
+        self.registry.mark_prepared_execution_running(prepared_execution_ref)
+        execution_ref = "exec_" + prepared_execution_ref.removeprefix("prepared_")
+        try:
+            task_id = prepared.task_ref
+            if prepared.task_action == "reopen":
+                if not task_id:
+                    raise M9IntegrationError("reopen preparation has no task reference")
+                task = self.registry.get_task(task_id)
+                if task.status in {"COMPLETED", "ARCHIVED"}:
+                    self.dispatcher.task_action(task_id, "reopen")
+                elif task.status != "ACTIVE":
+                    raise M9IntegrationError(f"Unsupported task status: {task.status}")
+            result = self.dispatcher.dispatch(
+                project_ref=prepared.project,
+                host=prepared.host,
+                project_mode="existing",
+                task_mode="new" if prepared.task_action == "create" else "continue",
+                task_id=None if prepared.task_action == "create" else task_id,
+                prompt=prepared.prompt,
+                title=prepared.title,
+                summary=prepared.summary,
+                model=prepared.model,
+                reasoning_effort=prepared.reasoning_effort,
+                execution_mode=prepared.execution_mode,
+                execution_ref=execution_ref,
+            )
+            if not getattr(result, "task_id", None) or not getattr(result, "thread_id", None):
+                raise M9IntegrationError("dispatcher returned incomplete execution identity")
+            self.registry.complete_prepared_execution(
+                prepared_execution_ref,
+                task_id=result.task_id,
+                thread_id=result.thread_id,
+                turn_id=result.turn_id,
+                execution_ref=execution_ref,
+            )
+        except Exception:
+            self.registry.fail_prepared_execution(prepared_execution_ref)
+            raise
+        audit = self._audit_task_index(result.task_id)
+        current = self.registry.get_prepared_execution(prepared_execution_ref)
+        assert current is not None
+        return self._execution_public(
+            prepared=current,
+            execution_ref=execution_ref,
+            task_ref=result.task_id,
+            dispatch_status=result.dispatch_status,
+            linear_audit=audit,
+        )
 
     def execute(
         self,
@@ -794,6 +901,10 @@ def clinx_get_capabilities(integration: ClinxIntegration, **kwargs: Any) -> dict
 
 def clinx_prepare_execution(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
     return integration.prepare_execution(**kwargs)
+
+
+def clinx_start_execution(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
+    return integration.start_execution(**kwargs)
 
 
 def clinx_execute(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:

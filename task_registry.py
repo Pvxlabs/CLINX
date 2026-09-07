@@ -11,6 +11,8 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import datetime as _datetime
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -307,6 +309,32 @@ class TaskIndexRecord:
 
 
 @dataclasses.dataclass(frozen=True)
+class PreparedExecutionRecord:
+    """Durable, integrity-checked command-plane preparation."""
+
+    prepared_execution_ref: str
+    integrity_hash: str
+    approval_state: str
+    task_action: str
+    task_ref: str | None
+    host: str
+    project: str
+    title: str
+    summary: str | None
+    prompt: str
+    model: str
+    reasoning_effort: str
+    execution_mode: str
+    status: str
+    created_at: str
+    updated_at: str
+    resulting_task_id: str | None
+    resulting_thread_id: str | None
+    resulting_turn_id: str | None
+    resulting_execution_ref: str | None
+
+
+@dataclasses.dataclass(frozen=True)
 class TaskSearchResult:
     classification: str
     tasks: tuple[TaskRecord, ...]
@@ -441,6 +469,28 @@ class TaskRegistry:
                     project_id TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS prepared_executions (
+                    prepared_execution_ref TEXT PRIMARY KEY,
+                    integrity_hash TEXT NOT NULL,
+                    approval_state TEXT NOT NULL CHECK(approval_state IN ('APPROVED')),
+                    task_action TEXT NOT NULL CHECK(task_action IN ('create','continue','reopen')),
+                    task_ref TEXT,
+                    host TEXT NOT NULL,
+                    project TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    summary TEXT,
+                    prompt TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    reasoning_effort TEXT NOT NULL,
+                    execution_mode TEXT NOT NULL CHECK(execution_mode IN ('normal','fast')),
+                    status TEXT NOT NULL CHECK(status IN ('PREPARED','RUNNING','DISPATCHED','FAILED')),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    resulting_task_id TEXT,
+                    resulting_thread_id TEXT,
+                    resulting_turn_id TEXT,
+                    resulting_execution_ref TEXT
                 );
                 CREATE TABLE IF NOT EXISTS context_checkpoints (
                     checkpoint_id TEXT PRIMARY KEY,
@@ -913,6 +963,191 @@ class TaskRegistry:
         result = self.get_task_index(task_id)
         assert result is not None
         return result
+
+    @staticmethod
+    def _prepared_payload(
+        *,
+        task_action: str,
+        task_ref: str | None,
+        host: str,
+        project: str,
+        title: str,
+        summary: str | None,
+        prompt: str,
+        model: str,
+        reasoning_effort: str,
+        execution_mode: str,
+    ) -> dict[str, Any]:
+        return {
+            "approval_state": "APPROVED",
+            "task_action": task_action,
+            "task_ref": task_ref,
+            "host": host,
+            "project": project,
+            "title": title,
+            "summary": summary,
+            "prompt": prompt,
+            "model": model,
+            "reasoning_effort": reasoning_effort,
+            "execution_mode": execution_mode,
+        }
+
+    @staticmethod
+    def _prepared_hash(payload: dict[str, Any]) -> str:
+        encoded = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def create_prepared_execution(
+        self,
+        *,
+        task_action: str,
+        task_ref: str | None,
+        host: str,
+        project: str,
+        title: str,
+        summary: str | None,
+        prompt: str,
+        model: str,
+        reasoning_effort: str,
+        execution_mode: str,
+    ) -> PreparedExecutionRecord:
+        if task_action not in {"create", "continue", "reopen"}:
+            raise TaskRegistryError(f"Unsupported prepared task action: {task_action}")
+        if execution_mode not in {"normal", "fast"}:
+            raise TaskRegistryError(f"Unsupported execution mode: {execution_mode}")
+        values = {
+            "host": host, "project": project, "title": title,
+            "prompt": prompt, "model": model,
+            "reasoning_effort": reasoning_effort,
+        }
+        for name, value in values.items():
+            if not isinstance(value, str) or not value.strip():
+                raise TaskRegistryError(f"Prepared execution {name} is required")
+        summary = self._validate_metadata_value("prepared summary", summary, MAX_TASK_SUMMARY_LENGTH)
+        payload = self._prepared_payload(
+            task_action=task_action, task_ref=task_ref, host=host.strip(),
+            project=project.strip(), title=title.strip(), summary=summary,
+            prompt=prompt.strip(), model=model.strip(),
+            reasoning_effort=reasoning_effort.strip(), execution_mode=execution_mode,
+        )
+        stamp = _now()
+        record = PreparedExecutionRecord(
+            prepared_execution_ref="prepared_" + uuid.uuid4().hex,
+            integrity_hash=self._prepared_hash(payload),
+            approval_state="APPROVED",
+            status="PREPARED",
+            created_at=stamp,
+            updated_at=stamp,
+            resulting_task_id=None,
+            resulting_thread_id=None,
+            resulting_turn_id=None,
+            resulting_execution_ref=None,
+            **{key: payload[key] for key in (
+                "task_action", "task_ref", "host", "project", "title", "summary",
+                "prompt", "model", "reasoning_effort", "execution_mode",
+            )},
+        )
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO prepared_executions
+                (prepared_execution_ref,integrity_hash,approval_state,task_action,task_ref,
+                 host,project,title,summary,prompt,model,reasoning_effort,execution_mode,
+                 status,created_at,updated_at,resulting_task_id,resulting_thread_id,
+                 resulting_turn_id,resulting_execution_ref)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                dataclasses.astuple(record),
+            )
+        return record
+
+    def get_prepared_execution(self, prepared_execution_ref: str) -> PreparedExecutionRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM prepared_executions WHERE prepared_execution_ref = ?",
+                (prepared_execution_ref,),
+            ).fetchone()
+        return PreparedExecutionRecord(**dict(row)) if row is not None else None
+
+    def verify_prepared_execution(self, prepared_execution_ref: str) -> PreparedExecutionRecord:
+        record = self.get_prepared_execution(prepared_execution_ref)
+        if record is None:
+            raise TaskRegistryError(f"Unknown prepared execution: {prepared_execution_ref}")
+        payload = self._prepared_payload(
+            task_action=record.task_action, task_ref=record.task_ref, host=record.host,
+            project=record.project, title=record.title, summary=record.summary,
+            prompt=record.prompt, model=record.model,
+            reasoning_effort=record.reasoning_effort,
+            execution_mode=record.execution_mode,
+        )
+        if record.approval_state != "APPROVED" or self._prepared_hash(payload) != record.integrity_hash:
+            raise TaskRegistryError(
+                f"PREPARED_EXECUTION_INTEGRITY=FAIL: {prepared_execution_ref}"
+            )
+        return record
+
+    def mark_prepared_execution_running(self, prepared_execution_ref: str) -> PreparedExecutionRecord:
+        record = self.verify_prepared_execution(prepared_execution_ref)
+        if record.status == "DISPATCHED":
+            return record
+        if record.status != "PREPARED":
+            raise TaskRegistryError(
+                f"Prepared execution is not dispatchable: {prepared_execution_ref}"
+            )
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            updated = conn.execute(
+                """UPDATE prepared_executions SET status='RUNNING', updated_at=?
+                   WHERE prepared_execution_ref=? AND status='PREPARED'""",
+                (_now(), prepared_execution_ref),
+            ).rowcount
+            if updated != 1:
+                current = conn.execute(
+                    "SELECT * FROM prepared_executions WHERE prepared_execution_ref=?",
+                    (prepared_execution_ref,),
+                ).fetchone()
+                if current is not None and current["status"] == "DISPATCHED":
+                    return PreparedExecutionRecord(**dict(current))
+                raise TaskRegistryError(
+                    f"Prepared execution is no longer dispatchable: {prepared_execution_ref}"
+                )
+        return self.get_prepared_execution(prepared_execution_ref)  # type: ignore[return-value]
+
+    def complete_prepared_execution(
+        self,
+        prepared_execution_ref: str,
+        *,
+        task_id: str,
+        thread_id: str,
+        turn_id: str,
+        execution_ref: str,
+    ) -> PreparedExecutionRecord:
+        self.verify_prepared_execution(prepared_execution_ref)
+        for name, value in {
+            "task_id": task_id, "thread_id": thread_id,
+            "turn_id": turn_id, "execution_ref": execution_ref,
+        }.items():
+            if not isinstance(value, str) or not value.strip():
+                raise TaskRegistryError(f"Prepared execution result {name} is required")
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE prepared_executions SET status='DISPATCHED', updated_at=?,
+                   resulting_task_id=?, resulting_thread_id=?, resulting_turn_id=?,
+                   resulting_execution_ref=? WHERE prepared_execution_ref=?""",
+                (_now(), task_id, thread_id, turn_id, execution_ref, prepared_execution_ref),
+            )
+        return self.get_prepared_execution(prepared_execution_ref)  # type: ignore[return-value]
+
+    def fail_prepared_execution(self, prepared_execution_ref: str) -> PreparedExecutionRecord:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE prepared_executions SET status='FAILED', updated_at=? WHERE prepared_execution_ref=?",
+                (_now(), prepared_execution_ref),
+            )
+        record = self.get_prepared_execution(prepared_execution_ref)
+        if record is None:
+            raise TaskRegistryError(f"Unknown prepared execution: {prepared_execution_ref}")
+        return record
 
     def save_context_checkpoint(
         self,
