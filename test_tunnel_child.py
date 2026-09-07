@@ -125,6 +125,7 @@ class TunnelChildCompatibilityTests(unittest.TestCase):
                 [
                     "clinx_find_task",
                     "clinx_get_context",
+                    "clinx_get_topic_status",
                     "clinx_list_projects",
                     "clinx_get_status",
                 ],

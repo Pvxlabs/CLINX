@@ -27,6 +27,7 @@ SERVER_VERSION = "m9"
 READ_ONLY_TOOL_NAMES = (
     "clinx_find_task",
     "clinx_get_context",
+    "clinx_get_topic_status",
     "clinx_list_projects",
     "clinx_get_status",
 )
@@ -91,6 +92,24 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 ],
                 "additionalProperties": False,
             },
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "clinx_get_topic_status",
+            "description": "Read bounded deterministic status for a project topic.",
+            "inputSchema": _json_schema(
+                {
+                    "host": {"type": "string"},
+                    "project": {"type": "string"},
+                    "topic": {"type": "string"},
+                    "include_completed": {"type": "boolean", "default": True},
+                    "include_historical": {"type": "boolean", "default": True},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                    "recent_turns": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "max_bytes": {"type": "integer", "minimum": 1024, "maximum": 128000},
+                },
+                ["host", "project", "topic"],
+            ),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
         {
@@ -227,6 +246,8 @@ class ClinxMCPServer:
             result = self.integration.find_task(**arguments)
         elif name == "clinx_get_context":
             result = self.integration.get_context(**arguments)
+        elif name == "clinx_get_topic_status":
+            result = self.integration.get_topic_status(**arguments)
         elif name == "clinx_list_projects":
             result = self.integration.list_projects(**arguments)
         elif name == "clinx_get_status":
@@ -328,7 +349,10 @@ def build_server(
     )
     dispatcher = bridge.TaskDispatcher(cfg, task_registry=registry)
     reader = bridge.TaskContextReader(cfg, registry)
-    integration = ClinxIntegration(cfg, registry, dispatcher, reader, linear=None)
+    topic_reader = bridge.TopicStatusReader(cfg, registry)
+    integration = ClinxIntegration(
+        cfg, registry, dispatcher, reader, linear=None, topic_reader=topic_reader
+    )
     return ClinxMCPServer(integration, allow_execute=allow_execute)
 
 

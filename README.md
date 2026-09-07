@@ -50,11 +50,21 @@ in `mcp_server.py`:
 python3 mcp_server.py --config bridge.toml --stdio
 ```
 
-The default adapter exposes four bounded read-only tools:
-`clinx_find_task`, `clinx_get_context`, `clinx_get_status`, and
-`clinx_list_projects`.  They reuse the task registry, ConversationBinding, and
-the M8 bounded context reader.  Archived and historically adopted tasks remain
-discoverable through the human query path.
+The default adapter exposes five bounded read-only tools:
+`clinx_find_task`, `clinx_get_context`, `clinx_get_topic_status`,
+`clinx_get_status`, and `clinx_list_projects`.  They reuse the task registry,
+ConversationBinding, and the M8 bounded context reader.  Archived and
+historically adopted tasks remain discoverable through the human query path.
+
+Project topic status is read with an exact project identity and bounded Codex
+history.  It combines matching registered tasks with unadopted conversations,
+excludes conversations already bound to a task, and never starts a thread or
+turn:
+
+```bash
+python3 bridge.py --config bridge.toml tasks topic \
+  --host P620 --project ORION --topic "DATA NODE"
+```
 
 `clinx_execute` is retained only as an internal/experimental implementation
 path.  It is absent from the default `tools/list` catalog and is available only
