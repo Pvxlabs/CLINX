@@ -8,9 +8,13 @@ repo_root=$(CDPATH= cd -- "$launcher_dir/.." && pwd)
 # The tunnel control-plane key and unrelated host credentials must not reach the
 # read-only MCP child. Keep only the runtime baseline needed by Python and CLINX.
 home_dir=${HOME:-/home/pvxlabs}
+# The MCP child must be credential-isolated, but CLINX still needs the
+# installed Codex binary to create its app-server transport on demand.
+codex_path=$(command -v codex 2>/dev/null || true)
+codex_bin_dir=${codex_path%/*}
 exec /usr/bin/env -i \
   "HOME=$home_dir" \
-  PATH=/usr/bin:/bin \
+  "PATH=${codex_bin_dir:+$codex_bin_dir:}/usr/bin:/bin" \
   LANG=${LANG:-C.UTF-8} \
   LC_ALL=${LC_ALL:-C.UTF-8} \
   PYTHONUNBUFFERED=1 \

@@ -50,6 +50,8 @@ class TunnelChildCompatibilityTests(unittest.TestCase):
         self.assertIn("$repo_root/mcp_server.py", text)
         self.assertIn("$repo_root/bridge.toml", text)
         self.assertIn("/usr/bin/env -i", text)
+        self.assertIn("command -v codex", text)
+        self.assertIn('PATH=${codex_bin_dir:+$codex_bin_dir:}/usr/bin:/bin', text)
         self.assertNotIn("CONTROL_PLANE_API_KEY", text)
         self.assertNotIn("LINEAR_API_KEY", text)
 
