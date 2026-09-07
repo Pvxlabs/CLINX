@@ -2,7 +2,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from mcp_server import ClinxMCPServer, MCPRequestError, tool_definitions
+from mcp_server import (
+    READ_ONLY_TOOL_NAMES,
+    ClinxMCPServer,
+    MCPRequestError,
+    tool_definitions,
+)
 from m9_integration import (
     ClinxIntegration,
     ExecutionResultService,
@@ -116,8 +121,45 @@ class M9ResultTests(unittest.TestCase):
                     issue_id="linear-m9",
                 )
 
+    def test_status_resolves_exact_execution_ref_and_exposes_observability(self):
+        with tempfile.TemporaryDirectory() as td:
+            store, task = self._store(Path(td))
+            store.record_execution_result(
+                execution_ref="PVX-1783", task_id=task.task_id, turn_id="turn-m9",
+                status="BLOCKED", summary="blocked", changed_files="NONE",
+                validation="PASS", blockers="operator action", next_state="BLOCKED",
+                raw_result=RESULT.replace("STATUS=PASS", "STATUS=BLOCKED")
+                    .replace("BLOCKERS=NONE", "BLOCKERS=operator action")
+                    .replace("NEXT_STATE=IN_REVIEW", "NEXT_STATE=BLOCKED"),
+            )
+            integration = ClinxIntegration(None, store, None, None, None)
+            status = integration.get_status(execution_ref="PVX-1783")
+
+            self.assertEqual(status["execution_ref"], "PVX-1783")
+            self.assertEqual(status["EXECUTION_STATE"], "CODEX_RUNNING")
+            self.assertTrue(status["CODEX_RUNNING"])
+            self.assertTrue(status["TURN_PRESENT"])
+
 
 class M9SurfaceTests(unittest.TestCase):
+    def test_find_task_includes_archived_historical_tasks(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = TaskRegistry(Path(td) / "tasks.sqlite3")
+            task = store.create_task(
+                host="p620", workspace_alias="p620", project_alias="orion",
+                project_name="ORION", cwd=td, repository_origin=None,
+                branch="main", title="UI token historical task",
+            )
+            store.set_status(task.task_id, "ARCHIVED")
+            integration = ClinxIntegration(None, store, None, None, None)
+
+            result = integration.find_task(
+                host="p620", project="ORION", query="UI token", status="ARCHIVED",
+            )
+
+            self.assertEqual(result["classification"], "UNIQUE")
+            self.assertEqual(result["tasks"][0]["task_ref"], task.task_id)
+
     def test_execute_is_explicit_and_reuses_existing_task_binding(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -219,10 +261,9 @@ class M9MCPTests(unittest.TestCase):
         self.assertEqual(initialized["result"]["serverInfo"], {"name": "clinx", "version": "m9"})
         listed = self.server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = [tool["name"] for tool in listed["result"]["tools"]]
-        self.assertEqual(names, [
-            "clinx_find_task", "clinx_get_context", "clinx_list_projects",
-            "clinx_get_status", "clinx_execute",
-        ])
+        self.assertEqual(names, list(READ_ONLY_TOOL_NAMES))
+        self.assertEqual(names, [tool["name"] for tool in tool_definitions()])
+        self.assertNotIn("clinx_execute", names)
 
     def test_public_schemas_and_results_do_not_expose_private_identity(self):
         forbidden = {
@@ -249,25 +290,26 @@ class M9MCPTests(unittest.TestCase):
         self.assertNotIn("turn_ids", payload.get("provenance", {}))
         self.assertNotIn("turn-private", response["result"]["content"][0]["text"])
 
-    def test_read_tool_delegation_and_execute_read_only_fallback(self):
+    def test_read_tool_delegation_and_execute_is_not_public(self):
         response = self.server.handle({
             "jsonrpc": "2.0", "id": 4, "method": "tools/call",
             "params": {"name": "clinx_find_task", "arguments": {"query": "M9", "status": "ACTIVE"}},
         })
         self.assertEqual(response["result"]["structuredContent"]["read_only"], True)
         self.assertEqual(self.integration.calls[-1], ("find_task", {"query": "M9", "status": "ACTIVE"}))
-        fallback = self.server.handle({
-            "jsonrpc": "2.0", "id": 5, "method": "tools/call",
-            "params": {"name": "clinx_execute", "arguments": {
-                "approved": True, "prompt": "run", "execution_ref": "PVX-1783",
-            }},
-        })
-        content = fallback["result"]["structuredContent"]
-        self.assertEqual(content["execution"], "READ_ONLY_FALLBACK")
+        with self.assertRaisesRegex(MCPRequestError, "tool is not exposed"):
+            self.server.handle({
+                "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                "params": {"name": "clinx_execute", "arguments": {
+                    "approved": True, "prompt": "run", "execution_ref": "PVX-1783",
+                }},
+            })
         self.assertFalse(any(name == "execute" for name, _kwargs in self.integration.calls))
 
     def test_execute_delegates_only_when_transport_is_enabled(self):
         server = ClinxMCPServer(self.integration, allow_execute=True)
+        listed = server.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/list"})
+        self.assertIn("clinx_execute", [tool["name"] for tool in listed["result"]["tools"]])
         response = server.handle({
             "jsonrpc": "2.0", "id": 6, "method": "tools/call",
             "params": {"name": "clinx_execute", "arguments": {
@@ -277,6 +319,19 @@ class M9MCPTests(unittest.TestCase):
         self.assertEqual(response["result"]["structuredContent"]["task_ref"], "task_public")
         self.assertEqual(self.integration.calls[-1][0], "execute")
         self.assertNotIn("turn_id", response["result"]["structuredContent"])
+
+    def test_read_only_calls_never_reach_executor(self):
+        for request_id, name, arguments in (
+            (10, "clinx_find_task", {"query": "M9"}),
+            (11, "clinx_get_context", {"task_ref": "task_public"}),
+            (12, "clinx_list_projects", {}),
+            (13, "clinx_get_status", {"task_ref": "task_public"}),
+        ):
+            self.server.handle({
+                "jsonrpc": "2.0", "id": request_id, "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            })
+        self.assertFalse(any(name == "execute" for name, _kwargs in self.integration.calls))
 
     def test_malformed_requests_and_unknown_tools_fail_closed(self):
         with self.assertRaisesRegex(MCPRequestError, "method is required"):

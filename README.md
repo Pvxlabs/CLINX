@@ -43,24 +43,54 @@ The bridge never marks an issue `Done`.
 
 ## M9 ChatGPT integration surface
 
-CLINX exposes the M9 surface through the dependency-free stdio adapter in
-`mcp_server.py`:
+CLINX exposes the M9 context plane through the dependency-free stdio adapter
+in `mcp_server.py`:
 
 ```bash
 python3 mcp_server.py --config bridge.toml --stdio
 ```
 
-The adapter provides bounded task discovery, context, project listing, status,
-and an explicit execution tool.  Discovery and context are read-only.  The
-execution tool returns `READ_ONLY_FALLBACK` unless the local process is started
-with `--allow-execute` and the call includes `approved=true`.
+The default adapter exposes four bounded read-only tools:
+`clinx_find_task`, `clinx_get_context`, `clinx_get_status`, and
+`clinx_list_projects`.  They reuse the task registry, ConversationBinding, and
+the M8 bounded context reader.  Archived and historically adopted tasks remain
+discoverable through the human query path.
+
+`clinx_execute` is retained only as an internal/experimental implementation
+path.  It is absent from the default `tools/list` catalog and is available only
+when a local process is explicitly started with `--allow-execute`.  ChatGPT
+execution belongs to the authenticated Linear command and audit plane; the
+read-only context MCP never starts a Codex thread or turn.
 
 This repository does not open an HTTP listener or publish an unauthenticated
-endpoint.  ChatGPT discovery requires an authenticated, TLS-terminated,
-officially supported remote MCP boundary supplied by the deployment
-environment.  The local stdio adapter alone cannot make the service remotely
-discoverable; remote registration and transport remain operator/deployment
-actions.
+endpoint.  ChatGPT cannot connect directly to a private local stdio process;
+remote discovery requires an authenticated, TLS-terminated, officially
+supported MCP boundary supplied by the deployment environment.  The preferred
+topology is a loopback-bound CLINX stdio process wrapped by the official Secure
+MCP Tunnel.  The local adapter alone cannot make the service remotely
+discoverable, and tunnel provisioning plus ChatGPT custom-App registration
+remain operator/deployment actions.
+
+The M9 planes are intentionally separate:
+
+```text
+Linear   = command + audit plane
+CLINX    = read-only context plane
+Codex    = execution plane
+```
+
+Reference research informs the boundary but does not replace CLINX ownership:
+
+```text
+codex-from-chatgpt  -> remote MCP transport and tunnel topology
+codex-mcp-bridge    -> Desktop/session and writer-ownership patterns
+OpenAI Codex        -> app-server protocol authority
+CLINX               -> task lifecycle and authoritative context
+```
+
+Desktop-created versus CLINX-created thread restorability, native relay, and
+Desktop writer ownership remain a separate qualification.  They do not block
+the M9 read-only context plane and no Desktop private state is modified here.
 
 The public surface intentionally accepts task and project references rather
 than Codex thread, session, turn, cwd, repository-origin, or credential fields.
