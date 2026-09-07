@@ -23,6 +23,12 @@ from task_registry import TaskRegistry, TaskRegistryError
 MCP_PROTOCOL_VERSION = "2025-06-18"
 SERVER_NAME = "clinx"
 SERVER_VERSION = "m9"
+READ_ONLY_TOOL_NAMES = (
+    "clinx_find_task",
+    "clinx_get_context",
+    "clinx_list_projects",
+    "clinx_get_status",
+)
 
 
 class MCPServerError(RuntimeError):
@@ -45,8 +51,8 @@ def _json_schema(properties: dict[str, Any], required: list[str] | None = None) 
     }
 
 
-def tool_definitions() -> list[dict[str, Any]]:
-    """Return stable public schemas with no thread/session/cwd inputs."""
+def _read_only_tool_definitions() -> list[dict[str, Any]]:
+    """Return the public read-only context catalog."""
     task_selector = {
         "task_ref": {"type": "string", "description": "Opaque CLINX task reference."},
         "host": {"type": "string"},
@@ -99,42 +105,58 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Read task execution state and existing audit evidence.",
             "inputSchema": {
                 "type": "object",
-                "properties": task_selector,
+                "properties": {
+                    **task_selector,
+                    "execution_ref": {"type": "string"},
+                },
                 "anyOf": [
                     {"required": ["task_ref"]},
                     {"required": ["query", "project"]},
+                    {"required": ["execution_ref"]},
                 ],
                 "additionalProperties": False,
             },
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
-        {
-            "name": "clinx_execute",
-            "description": (
-                "Execute an explicitly approved CLINX task action. The caller must set "
-                "approved=true; no Codex thread/session/cwd identifiers are accepted."
-            ),
-            "inputSchema": _json_schema(
-                {
-                    "approved": {"type": "boolean", "const": True},
-                    "prompt": {"type": "string"},
-                    "execution_ref": {"type": "string"},
-                    "task_mode": {"type": "string", "enum": ["new", "continue"]},
-                    "task_ref": {"type": "string"},
-                    "host": {"type": "string"},
-                    "project": {"type": "string"},
-                    "query": {"type": "string"},
-                    "title": {"type": "string"},
-                    "summary": {"type": "string"},
-                    "model": {"type": "string"},
-                    "reasoning_effort": {"type": "string"},
-                    "execution_mode": {"type": "string", "enum": ["normal", "fast"]},
-                },
-                ["approved", "prompt", "execution_ref"],
-            ),
-            "annotations": {"readOnlyHint": False, "destructiveHint": True},
-        },
     ]
+
+
+def _execute_tool_definition() -> dict[str, Any]:
+    """Return the internal/experimental execution schema when explicitly enabled."""
+    return {
+        "name": "clinx_execute",
+        "description": (
+            "Internal execution path. ChatGPT public context MCP does not expose this; "
+            "execution belongs to the authenticated Linear command plane."
+        ),
+        "inputSchema": _json_schema(
+            {
+                "approved": {"type": "boolean", "const": True},
+                "prompt": {"type": "string"},
+                "execution_ref": {"type": "string"},
+                "task_mode": {"type": "string", "enum": ["new", "continue"]},
+                "task_ref": {"type": "string"},
+                "host": {"type": "string"},
+                "project": {"type": "string"},
+                "query": {"type": "string"},
+                "title": {"type": "string"},
+                "summary": {"type": "string"},
+                "model": {"type": "string"},
+                "reasoning_effort": {"type": "string"},
+                "execution_mode": {"type": "string", "enum": ["normal", "fast"]},
+            },
+            ["approved", "prompt", "execution_ref"],
+        ),
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
+    }
+
+
+def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
+    """Return the public catalog, with execution opt-in for internal use only."""
+    tools = _read_only_tool_definitions()
+    if include_execute:
+        tools.append(_execute_tool_definition())
+    return tools
 
 
 def _public_json(value: Any) -> Any:
@@ -167,6 +189,10 @@ class ClinxMCPServer:
         self.integration = integration
         self.allow_execute = allow_execute
         self.executor = executor or integration.execute
+        self.public_tools = tool_definitions(include_execute=allow_execute)
+        self.public_tool_names = {
+            tool["name"] for tool in self.public_tools
+        }
 
     def _call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(arguments, dict):
@@ -182,11 +208,11 @@ class ClinxMCPServer:
         elif name == "clinx_execute":
             if not self.allow_execute:
                 result = {
-                    "execution": "READ_ONLY_FALLBACK",
+                    "execution_action_required": "LINEAR_HANDOFF",
                     "status": "BLOCKED",
                     "reason": (
-                        "Direct MCP write/action transport is not enabled; use the "
-                        "existing authenticated CLINX/Linear execution handoff."
+                        "The public CLINX Context MCP is read-only; use the existing "
+                        "authenticated Linear command and audit plane."
                     ),
                     "read_only": True,
                 }
@@ -225,16 +251,22 @@ class ClinxMCPServer:
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
                 "instructions": (
-                    "Read-only discovery is available. Execution requires an explicit "
-                    "approved tool call and an authenticated supported boundary."
+                    "CLINX Context MCP is read-only: use it to find tasks, read "
+                    "authoritative context, inspect status, and discover bounded "
+                    "projects. Execution belongs to the authenticated Linear command "
+                    "and audit plane."
                 ),
             }
         elif method == "tools/list":
-            result = {"tools": tool_definitions()}
+            result = {"tools": self.public_tools}
         elif method == "tools/call":
             name = params.get("name")
             if not isinstance(name, str):
                 raise MCPRequestError(-32602, "tools/call requires name")
+            if name not in self.public_tool_names:
+                if name == "clinx_execute":
+                    raise MCPRequestError(-32602, f"tool is not exposed: {name}")
+                raise MCPRequestError(-32602, f"unknown tool: {name}")
             arguments = params.get("arguments", {})
             try:
                 result = self._tool_result(self._call_tool(name, arguments))

@@ -218,7 +218,7 @@ class ClinxIntegration:
             project=project,
             host=host,
             status=status,
-            include_archived=False,
+            include_archived=True,
         )
         return {
             "classification": found.classification,
@@ -296,8 +296,9 @@ class ClinxIntegration:
                     "project": descriptor.alias,
                     "name": descriptor.name,
                     "workspace": workspace.alias,
+                    "host": workspace.host or workspace.alias,
+                    "availability": "registered" if descriptor.registered else "discoverable",
                     "registered": descriptor.registered,
-                    "read_only": bool(getattr(_mapping, "read_only", False)),
                 }
             )
         return {
@@ -309,16 +310,23 @@ class ClinxIntegration:
         self,
         *,
         task_ref: str | None = None,
+        execution_ref: str | None = None,
         query: str | None = None,
         project: str | None = None,
         host: str | None = None,
     ) -> dict[str, Any]:
-        task = self.context_reader.resolve_task(
-            task_ref=task_ref,
-            query=query,
-            project=project,
-            host=host,
-        )
+        if execution_ref:
+            execution = self.registry.get_execution_result(execution_ref)
+            if execution is None:
+                raise M9IntegrationError(f"Unknown execution ref: {execution_ref}")
+            task = self.registry.get_task(execution.task_id)
+        else:
+            task = self.context_reader.resolve_task(
+                task_ref=task_ref,
+                query=query,
+                project=project,
+                host=host,
+            )
         result = self.registry.latest_execution_result(task.task_id)
         execution_result = None
         if result is not None:
@@ -332,11 +340,25 @@ class ClinxIntegration:
                 "received_at": result.received_at,
                 "writeback_state": result.writeback_state,
             }
-        return {
+        status = {
             **self._public(task),
             "execution_result": execution_result,
             "read_only": True,
         }
+        status.update(
+            {
+                "EXECUTION_STATE": task.execution_state,
+                "CODEX_RUNNING": bool(task.codex_running),
+                "CURRENT_STAGE": task.current_stage,
+                "CURRENT_BLOCKER": task.current_blocker,
+                "LAST_PROGRESS_AT": task.last_progress_at,
+                "TURN_PRESENT": bool(task.turn_id),
+                "RETRY_REQUIRED": bool(task.retry_required),
+            }
+        )
+        if execution_ref:
+            status["execution_ref"] = execution_ref
+        return status
 
     def execute(
         self,
@@ -403,13 +425,21 @@ class ClinxIntegration:
         }
 
     def _public(self, task: Any) -> dict[str, Any]:
+        context_available = bool(
+            self.registry.get_binding(task.task_id)
+            or self.registry.latest_context_checkpoint(task.task_id)
+        )
         return {
             "task_ref": task.task_id,
             "task_key": task.task_key,
+            "host": task.host,
             "project": task.project_alias,
+            "project_name": task.project_name,
             "title": task.title,
             "summary": task.summary,
             "status": task.status,
+            "updated_at": task.updated_at,
+            "context_available": context_available,
             "execution_state": task.execution_state,
             "current_stage": task.current_stage,
             "current_blocker": task.current_blocker,
