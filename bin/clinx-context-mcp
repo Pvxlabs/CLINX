@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+# Resolve the repository from this launcher so callers do not need a project cwd.
+launcher_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$launcher_dir/.." && pwd)
+
+# The tunnel control-plane key and unrelated host credentials must not reach the
+# read-only MCP child. Keep only the runtime baseline needed by Python and CLINX.
+home_dir=${HOME:-/home/pvxlabs}
+exec /usr/bin/env -i \
+  "HOME=$home_dir" \
+  PATH=/usr/bin:/bin \
+  LANG=${LANG:-C.UTF-8} \
+  LC_ALL=${LC_ALL:-C.UTF-8} \
+  PYTHONUNBUFFERED=1 \
+  /usr/bin/python3.12 "$repo_root/mcp_server.py" \
+  --config "$repo_root/bridge.toml" \
+  --stdio
