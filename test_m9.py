@@ -5,6 +5,7 @@ import unittest
 from mcp_server import (
     READ_ONLY_TOOL_NAMES,
     ClinxMCPServer,
+    MCP_INSTRUCTIONS,
     MCPRequestError,
     tool_definitions,
 )
@@ -281,14 +282,7 @@ class M9MCPTests(unittest.TestCase):
                         "version": "m11",
                     },
                 },
-                "instructions": (
-                    "CLINX Context MCP is the authoritative read-only context plane. "
-                    "Execution is available through the connected Linear Plugin as the "
-                    "command plane: after explicit user approval, resolve the exact task "
-                    "with CLINX, call clinx_prepare_execution, then create its returned "
-                    "handoff issue with Linear. CLINX never writes Linear or executes Codex "
-                    "directly, and humans do not need task, thread, session, turn, or cwd IDs."
-                ),
+                "instructions": MCP_INSTRUCTIONS,
                 "ttlMs": 3600000,
                 "cacheScope": "public",
             },

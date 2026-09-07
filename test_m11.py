@@ -5,7 +5,12 @@ import unittest
 
 import bridge
 from m9_integration import ClinxIntegration, M9IntegrationError
-from mcp_server import ClinxMCPServer, READ_ONLY_TOOL_NAMES, tool_definitions
+from mcp_server import (
+    ClinxMCPServer,
+    MCP_INSTRUCTIONS,
+    READ_ONLY_TOOL_NAMES,
+    tool_definitions,
+)
 from task_registry import TaskRegistry
 
 
@@ -104,6 +109,9 @@ class M11PrepareExecutionTests(unittest.TestCase):
         integration = ClinxIntegration(_cfg(), None, None, None, None)
         result = integration.get_capabilities()
         self.assertTrue(result["context_plane"]["read_only"])
+        self.assertTrue(result["execution"]["available"])
+        self.assertFalse(result["execution"]["direct_mcp_execution"])
+        self.assertEqual(result["execution"]["command_plane"], "LINEAR")
         self.assertEqual(result["execution"], {
             "available": True,
             "direct_mcp_execution": False,
@@ -137,6 +145,11 @@ class M11PrepareExecutionTests(unittest.TestCase):
             self.assertEqual(result["model"], "gpt-test")
             self.assertEqual(result["reasoning"], "low")
             self.assertEqual(result["execution_mode"], "fast")
+            self.assertEqual(result["next_action"], {
+                "provider": "LINEAR",
+                "operation": "CREATE_ISSUE",
+                "required": True,
+            })
             self.assertEqual(context.calls[-1]["task_ref"], task.task_id)
             self.assertEqual(dispatcher.calls[-1]["project_mode"], "existing")
             contract = bridge.parse_dispatch_contract(result["description"])
@@ -300,6 +313,45 @@ class M11MCPTests(unittest.TestCase):
         self.assertEqual([name for name, _ in integration.calls], [
             "get_capabilities", "prepare_execution",
         ])
+
+    def test_every_default_tool_declares_an_object_output_schema(self):
+        tools = tool_definitions()
+        self.assertEqual(len(tools), 7)
+        self.assertEqual({tool["name"] for tool in tools}, set(READ_ONLY_TOOL_NAMES))
+        for tool in tools:
+            with self.subTest(tool=tool["name"]):
+                schema = tool.get("outputSchema")
+                self.assertIsNotNone(schema)
+                self.assertEqual(schema["type"], "object")
+                self.assertIn("properties", schema)
+
+    def test_capabilities_and_prepare_schemas_freeze_plane_contract(self):
+        tools = {tool["name"]: tool for tool in tool_definitions()}
+        capabilities = tools["clinx_get_capabilities"]["outputSchema"]["properties"]
+        execution = capabilities["execution"]["properties"]
+        self.assertEqual(execution["available"], {"type": "boolean", "const": True})
+        self.assertEqual(execution["direct_mcp_execution"], {"type": "boolean", "const": False})
+        self.assertEqual(execution["command_plane"], {"type": "string", "const": "LINEAR"})
+
+        prepare = tools["clinx_prepare_execution"]["outputSchema"]["properties"]
+        self.assertEqual(prepare["handoff_ready"], {"type": "boolean", "const": True})
+        self.assertEqual(prepare["next_action"]["properties"]["provider"], {
+            "type": "string", "const": "LINEAR",
+        })
+        self.assertEqual(prepare["next_action"]["properties"]["operation"], {
+            "type": "string", "const": "CREATE_ISSUE",
+        })
+
+    def test_initialize_and_discover_share_explicit_linear_handoff_instructions(self):
+        integration = self.FakeIntegration()
+        server = ClinxMCPServer(integration)
+        initialized = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+        discovered = server.handle({"jsonrpc": "2.0", "id": 2, "method": "server/discover"})
+        self.assertEqual(initialized["result"]["instructions"], MCP_INSTRUCTIONS)
+        self.assertEqual(discovered["result"]["instructions"], MCP_INSTRUCTIONS)
+        self.assertIn("execution.available=true", MCP_INSTRUCTIONS)
+        self.assertIn("direct_mcp_execution=false", MCP_INSTRUCTIONS)
+        self.assertIn("operation=CREATE_ISSUE", MCP_INSTRUCTIONS)
 
     def test_prepare_schema_requires_exact_boolean_approval_and_public_result_scrubs_identity(self):
         prepare = next(item for item in tool_definitions() if item["name"] == "clinx_prepare_execution")

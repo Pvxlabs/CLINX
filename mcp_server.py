@@ -55,6 +55,215 @@ def _json_schema(properties: dict[str, Any], required: list[str] | None = None) 
     }
 
 
+def _public_task_schema() -> dict[str, Any]:
+    """Describe the public task projection without exposing private identity."""
+    return _json_schema({
+        "task_ref": {"type": "string"},
+        "task_key": {"type": ["string", "null"]},
+        "host": {"type": "string"},
+        "project": {"type": "string"},
+        "project_name": {"type": "string"},
+        "title": {"type": "string"},
+        "summary": {"type": ["string", "null"]},
+        "status": {"type": "string"},
+        "updated_at": {"type": "string"},
+        "context_available": {"type": "boolean"},
+        "execution_state": {"type": "string"},
+        "current_stage": {"type": "string"},
+        "current_blocker": {"type": ["string", "null"]},
+        "last_progress_at": {"type": "string"},
+        "codex_running": {"type": "boolean"},
+        "retry_required": {"type": "boolean"},
+    })
+
+
+def _context_output_schema() -> dict[str, Any]:
+    return _json_schema({
+        "task_context_read": {"type": "string", "const": "PASS"},
+        "task_ref": {"type": "string"},
+        "task_title": {"type": "string"},
+        "task_status": {"type": "string"},
+        "host": {"type": "string"},
+        "project": {"type": "string"},
+        "context_source": {"type": "string"},
+        "context_range": {"type": "string"},
+        "context_truncated": {"type": "boolean"},
+        "checkpoint_stale": {"type": "boolean"},
+        "last_user_intent": {"type": "string"},
+        "last_codex_result": {"type": "string"},
+        "changed_files": {"type": "string"},
+        "validation": {"type": "string"},
+        "blockers": {"type": "string"},
+        "current_state": {"type": "string"},
+        "ready_for_continuation": {"type": "boolean"},
+        "provenance": {"type": "object", "additionalProperties": True},
+        "read_only": {"type": "boolean", "const": True},
+    })
+
+
+def _topic_work_item_schema() -> dict[str, Any]:
+    return _json_schema({
+        "title": {"type": "string"},
+        "source_kind": {"type": "string"},
+        "registry_status": {"type": "string"},
+        "conversation_status": {"type": "string"},
+        "last_activity": {"type": "string"},
+        "last_user_intent": {"type": "string"},
+        "last_codex_result": {"type": "string"},
+        "current_state": {"type": "string"},
+        "blockers": {"type": "string"},
+        "validation": {"type": "string"},
+        "context_source": {"type": "string"},
+        "context_range": {"type": "string"},
+        "context_truncated": {"type": "boolean"},
+        "task_ref": {"type": ["string", "null"]},
+        "provenance": {"type": "object", "additionalProperties": True},
+    })
+
+
+def _topic_status_output_schema() -> dict[str, Any]:
+    work = {"type": "array", "items": _topic_work_item_schema()}
+    return _json_schema({
+        "topic_status_read": {"type": "string", "const": "PASS"},
+        "host": {"type": "string"},
+        "project": {"type": "string"},
+        "topic": {"type": "string"},
+        "summary_state": {"type": "string"},
+        "completed_work": work,
+        "active_work": work,
+        "blocked_work": work,
+        "paused_work": work,
+        "superseded_work": work,
+        "unknown_work": work,
+        "latest_activity": {"type": "string"},
+        "source_count": {"type": "integer", "minimum": 0},
+        "task_count": {"type": "integer", "minimum": 0},
+        "conversation_count": {"type": "integer", "minimum": 0},
+        "context_coverage": {"type": "string"},
+        "context_truncated": {"type": "boolean"},
+        "threads_screened": {"type": "integer", "minimum": 0},
+        "topic_candidate_threads": {"type": "integer", "minimum": 0},
+        "topic_matched_threads": {"type": "integer", "minimum": 0},
+        "deduplication": {"type": "string"},
+        "search_bounded": {"type": "boolean", "const": True},
+        "read_only": {"type": "boolean", "const": True},
+    })
+
+
+def _status_output_schema() -> dict[str, Any]:
+    execution_result = _json_schema({
+        "status": {"type": "string"},
+        "summary": {"type": "string"},
+        "changed_files": {"type": "string"},
+        "validation": {"type": "string"},
+        "blockers": {"type": "string"},
+        "next_state": {"type": "string"},
+        "received_at": {"type": "string"},
+        "writeback_state": {"type": "string"},
+    })
+    return _json_schema({
+        **_public_task_schema()["properties"],
+        "execution_result": {"anyOf": [execution_result, {"type": "null"}]},
+        "EXECUTION_STATE": {"type": "string"},
+        "CODEX_RUNNING": {"type": "boolean"},
+        "CURRENT_STAGE": {"type": "string"},
+        "CURRENT_BLOCKER": {"type": "string"},
+        "LAST_PROGRESS_AT": {"type": "string"},
+        "TURN_PRESENT": {"type": "boolean"},
+        "RETRY_REQUIRED": {"type": "boolean"},
+        "execution_ref": {"type": "string"},
+        "read_only": {"type": "boolean", "const": True},
+    })
+
+
+def _capabilities_output_schema() -> dict[str, Any]:
+    return _json_schema({
+        "context_plane": {"type": "object", "additionalProperties": True},
+        "execution": {
+            "type": "object",
+            "properties": {
+                "available": {"type": "boolean", "const": True},
+                "direct_mcp_execution": {"type": "boolean", "const": False},
+                "command_plane": {"type": "string", "const": "LINEAR"},
+                "requires_user_approval": {"type": "boolean", "const": True},
+                "prepare_tool": {"type": "string", "const": "clinx_prepare_execution"},
+            },
+            "required": [
+                "available", "direct_mcp_execution", "command_plane",
+                "requires_user_approval", "prepare_tool",
+            ],
+            "additionalProperties": False,
+        },
+        "status": {"type": "object", "additionalProperties": True},
+        "instructions": {"type": "string"},
+        "read_only": {"type": "boolean", "const": True},
+    })
+
+
+def _prepare_output_schema() -> dict[str, Any]:
+    handoff = _json_schema({
+        "team": {"type": "string"},
+        "project": {"type": "string"},
+        "state": {"type": "string"},
+        "labels": {"type": "array", "items": {"type": "string"}},
+        "host": {"type": "string"},
+        "project_alias": {"type": "string"},
+        "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
+        "task_ref": {"type": ["string", "null"]},
+        "model": {"type": "string"},
+        "reasoning": {"type": "string"},
+        "execution_mode": {"type": "string"},
+        "title": {"type": "string"},
+        "summary": {"type": "string"},
+        "prompt": {"type": "string"},
+        "description": {"type": "string"},
+    })
+    return _json_schema({
+        "execution_available": {"type": "boolean", "const": True},
+        "command_plane": {"type": "string", "const": "LINEAR"},
+        "requires_user_approval": {"type": "boolean", "const": True},
+        "approval_state": {"type": "string", "const": "SATISFIED"},
+        "handoff_ready": {"type": "boolean", "const": True},
+        "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
+        "task_ref": {"type": ["string", "null"]},
+        "host": {"type": "string"},
+        "project": {"type": "string"},
+        "model": {"type": "string"},
+        "reasoning": {"type": "string"},
+        "execution_mode": {"type": "string"},
+        "title": {"type": "string"},
+        "summary": {"type": "string"},
+        "prompt": {"type": "string"},
+        "description": {"type": "string"},
+        "linear_handoff": handoff,
+        "next_action": {
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "const": "LINEAR"},
+                "operation": {"type": "string", "const": "CREATE_ISSUE"},
+                "required": {"type": "boolean", "const": True},
+            },
+            "required": ["provider", "operation", "required"],
+            "additionalProperties": False,
+        },
+        "status_lookup": {"type": "object", "additionalProperties": True},
+        "read_only": {"type": "boolean", "const": True},
+    })
+
+
+MCP_INSTRUCTIONS = (
+    "CLINX MCP is the authoritative read-only context and execution-preparation "
+    "plane. execution.available=true means the execution capability exists; "
+    "direct_mcp_execution=false is intentional. Execution uses LINEAR as the "
+    "command plane and requires explicit user approval. Resolve the exact task "
+    "with CLINX, call clinx_prepare_execution, then use an available Linear "
+    "issue-create capability for its returned handoff when approved. The "
+    "handoff has next_action.provider=LINEAR and operation=CREATE_ISSUE. CLINX "
+    "never writes Linear or executes Codex directly, and humans do not need "
+    "task, thread, session, turn, or cwd IDs."
+)
+
+
 def _read_only_tool_definitions() -> list[dict[str, Any]]:
     """Return the public read-only context catalog."""
     task_selector = {
@@ -76,6 +285,11 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 },
                 ["query"],
             ),
+            "outputSchema": _json_schema({
+                "classification": {"type": "string"},
+                "tasks": {"type": "array", "items": _public_task_schema()},
+                "read_only": {"type": "boolean", "const": True},
+            }),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
         {
@@ -94,6 +308,7 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 ],
                 "additionalProperties": False,
             },
+            "outputSchema": _context_output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
         {
@@ -112,6 +327,7 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 },
                 ["host", "project", "topic"],
             ),
+            "outputSchema": _topic_status_output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
         {
@@ -120,6 +336,17 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": _json_schema(
                 {"host": {"type": "string"}, "query": {"type": "string"}},
             ),
+            "outputSchema": _json_schema({
+                "projects": {"type": "array", "items": _json_schema({
+                    "project": {"type": "string"},
+                    "name": {"type": "string"},
+                    "workspace": {"type": "string"},
+                    "host": {"type": "string"},
+                    "availability": {"type": "string"},
+                    "registered": {"type": "boolean"},
+                })},
+                "read_only": {"type": "boolean", "const": True},
+            }),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
         {
@@ -138,12 +365,14 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 ],
                 "additionalProperties": False,
             },
+            "outputSchema": _status_output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
         {
             "name": "clinx_get_capabilities",
             "description": "Discover how CLINX context and execution work. Execution uses Linear as the command plane.",
             "inputSchema": _json_schema({}, []),
+            "outputSchema": _capabilities_output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
         {
@@ -170,6 +399,7 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 "required": ["approved", "prompt"],
                 "additionalProperties": False,
             },
+            "outputSchema": _prepare_output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
     ]
@@ -228,14 +458,7 @@ def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any
                 "version": SERVER_VERSION,
             },
         },
-        "instructions": (
-            "CLINX Context MCP is the authoritative read-only context plane. "
-            "Execution is available through the connected Linear Plugin as the "
-            "command plane: after explicit user approval, resolve the exact task "
-            "with CLINX, call clinx_prepare_execution, then create its returned "
-            "handoff issue with Linear. CLINX never writes Linear or executes Codex "
-            "directly, and humans do not need task, thread, session, turn, or cwd IDs."
-        ),
+        "instructions": MCP_INSTRUCTIONS,
         "ttlMs": 3600000,
         "cacheScope": "public",
     }
@@ -339,14 +562,7 @@ class ClinxMCPServer:
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-                "instructions": (
-                    "CLINX Context MCP is the authoritative read-only context plane. "
-                    "Execution is available through the connected Linear Plugin as "
-                    "the command plane. After explicit user approval, resolve the "
-                    "exact task with CLINX, call clinx_prepare_execution, and create "
-                    "the returned handoff issue with Linear. CLINX never writes "
-                    "Linear or executes Codex directly."
-                ),
+                "instructions": MCP_INSTRUCTIONS,
             }
         elif method == "server/discover":
             result = _server_discover_result(self.public_tools)
