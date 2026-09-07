@@ -1,4 +1,4 @@
-"""Small, dependency-free MCP boundary for the CLINX M9 surface.
+"""Small, dependency-free MCP boundary for the CLINX M11 surface.
 
 The server intentionally supports stdio only.  A stdio server is safe to run
 locally and is deterministic for qualification, but it is not a remotely
@@ -23,13 +23,15 @@ from task_registry import TaskRegistry, TaskRegistryError
 MCP_PROTOCOL_VERSION = "2025-06-18"
 SERVER_DISCOVER_PROTOCOL_VERSION = "2026-07-28"
 SERVER_NAME = "clinx"
-SERVER_VERSION = "m9"
+SERVER_VERSION = "m11"
 READ_ONLY_TOOL_NAMES = (
     "clinx_find_task",
     "clinx_get_context",
     "clinx_get_topic_status",
     "clinx_list_projects",
     "clinx_get_status",
+    "clinx_get_capabilities",
+    "clinx_prepare_execution",
 )
 
 
@@ -138,6 +140,38 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
             },
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
+        {
+            "name": "clinx_get_capabilities",
+            "description": "Discover how CLINX context and execution work. Execution uses Linear as the command plane.",
+            "inputSchema": _json_schema({}, []),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "clinx_prepare_execution",
+            "description": "Prepare, but do not execute, a canonical Linear handoff for a user-approved Codex task.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "approved": {"type": "boolean", "const": True},
+                    "prompt": {"type": "string", "minLength": 1},
+                    "task_mode": {"type": "string", "enum": ["new", "continue"]},
+                    "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
+                    "task_ref": {"type": "string"},
+                    "host": {"type": "string"},
+                    "project": {"type": "string"},
+                    "query": {"type": "string"},
+                    "title": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "model": {"type": "string"},
+                    "reasoning_effort": {"type": "string"},
+                    "reasoning": {"type": "string"},
+                    "execution_mode": {"type": "string", "enum": ["normal", "fast"]},
+                },
+                "required": ["approved", "prompt"],
+                "additionalProperties": False,
+            },
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
     ]
 
 
@@ -195,9 +229,12 @@ def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any
             },
         },
         "instructions": (
-            "CLINX Context MCP is read-only: use it to find tasks, read "
-            "authoritative context, inspect status, and discover bounded "
-            "projects."
+            "CLINX Context MCP is the authoritative read-only context plane. "
+            "Execution is available through the connected Linear Plugin as the "
+            "command plane: after explicit user approval, resolve the exact task "
+            "with CLINX, call clinx_prepare_execution, then create its returned "
+            "handoff issue with Linear. CLINX never writes Linear or executes Codex "
+            "directly, and humans do not need task, thread, session, turn, or cwd IDs."
         ),
         "ttlMs": 3600000,
         "cacheScope": "public",
@@ -252,6 +289,10 @@ class ClinxMCPServer:
             result = self.integration.list_projects(**arguments)
         elif name == "clinx_get_status":
             result = self.integration.get_status(**arguments)
+        elif name == "clinx_get_capabilities":
+            result = self.integration.get_capabilities(**arguments)
+        elif name == "clinx_prepare_execution":
+            result = self.integration.prepare_execution(**arguments)
         elif name == "clinx_execute":
             if not self.allow_execute:
                 result = {
@@ -299,10 +340,12 @@ class ClinxMCPServer:
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
                 "instructions": (
-                    "CLINX Context MCP is read-only: use it to find tasks, read "
-                    "authoritative context, inspect status, and discover bounded "
-                    "projects. Execution belongs to the authenticated Linear command "
-                    "and audit plane."
+                    "CLINX Context MCP is the authoritative read-only context plane. "
+                    "Execution is available through the connected Linear Plugin as "
+                    "the command plane. After explicit user approval, resolve the "
+                    "exact task with CLINX, call clinx_prepare_execution, and create "
+                    "the returned handoff issue with Linear. CLINX never writes "
+                    "Linear or executes Codex directly."
                 ),
             }
         elif method == "server/discover":
@@ -381,7 +424,7 @@ def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="CLINX M9 MCP stdio server")
+    parser = argparse.ArgumentParser(description="CLINX M11 MCP stdio server")
     parser.add_argument("--config", default="bridge.toml")
     parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
     parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")
