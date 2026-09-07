@@ -7,7 +7,7 @@ import unittest
 import app_server
 import bridge
 from m9_integration import ClinxIntegration
-from mcp_server import ClinxMCPServer, READ_ONLY_TOOL_NAMES, tool_definitions
+from mcp_server import ClinxMCPServer, DEFAULT_TOOL_NAMES, READ_ONLY_TOOL_NAMES, tool_definitions
 from task_registry import ProjectResolutionError, TaskRegistry, WorkspaceConfig
 
 
@@ -257,7 +257,7 @@ class TopicIntegrationAndMCPTests(unittest.TestCase):
             ])
             server = ClinxMCPServer(integration)
             names = [item["name"] for item in tool_definitions()]
-            self.assertEqual(names, list(READ_ONLY_TOOL_NAMES))
+            self.assertEqual(names, list(DEFAULT_TOOL_NAMES))
             response = server.handle({
                 "jsonrpc": "2.0", "id": 1, "method": "tools/call",
                 "params": {"name": "clinx_get_topic_status", "arguments": {

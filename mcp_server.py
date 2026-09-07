@@ -1,4 +1,4 @@
-"""Small, dependency-free MCP boundary for the CLINX M11 surface.
+"""Small, dependency-free MCP boundary for the CLINX M12 surface.
 
 The server intentionally supports stdio only.  A stdio server is safe to run
 locally and is deterministic for qualification, but it is not a remotely
@@ -23,7 +23,7 @@ from task_registry import TaskRegistry, TaskRegistryError
 MCP_PROTOCOL_VERSION = "2025-06-18"
 SERVER_DISCOVER_PROTOCOL_VERSION = "2026-07-28"
 SERVER_NAME = "clinx"
-SERVER_VERSION = "m11"
+SERVER_VERSION = "m12"
 READ_ONLY_TOOL_NAMES = (
     "clinx_find_task",
     "clinx_get_context",
@@ -33,6 +33,7 @@ READ_ONLY_TOOL_NAMES = (
     "clinx_get_capabilities",
     "clinx_prepare_execution",
 )
+DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution",)
 
 
 class MCPServerError(RuntimeError):
@@ -181,21 +182,23 @@ def _capabilities_output_schema() -> dict[str, Any]:
         "context_plane": {"type": "object", "additionalProperties": True},
         "context_read_only": {"type": "boolean", "const": True},
         "execution_available": {"type": "boolean", "const": True},
-        "command_plane": {"type": "string", "const": "LINEAR"},
+        "command_plane": {"type": "string", "const": "CLINX"},
         "prepare_tool": {"type": "string", "const": "clinx_prepare_execution"},
+        "start_tool": {"type": "string", "const": "clinx_start_execution"},
         "status_tool": {"type": "string", "const": "clinx_get_status"},
         "execution": {
             "type": "object",
             "properties": {
                 "available": {"type": "boolean", "const": True},
-                "direct_mcp_execution": {"type": "boolean", "const": False},
-                "command_plane": {"type": "string", "const": "LINEAR"},
+                "direct_mcp_execution": {"type": "boolean", "const": True},
+                "command_plane": {"type": "string", "const": "CLINX"},
                 "requires_user_approval": {"type": "boolean", "const": True},
                 "prepare_tool": {"type": "string", "const": "clinx_prepare_execution"},
+                "start_tool": {"type": "string", "const": "clinx_start_execution"},
             },
             "required": [
                 "available", "direct_mcp_execution", "command_plane",
-                "requires_user_approval", "prepare_tool",
+                "requires_user_approval", "prepare_tool", "start_tool",
             ],
             "additionalProperties": False,
         },
@@ -225,9 +228,9 @@ def _prepare_output_schema() -> dict[str, Any]:
     })
     return _json_schema({
         "execution_available": {"type": "boolean", "const": True},
-        "command_plane": {"type": "string", "const": "LINEAR"},
+        "command_plane": {"type": "string", "const": "CLINX"},
         "requires_user_approval": {"type": "boolean", "const": True},
-        "requires_command_write": {"type": "boolean", "const": True},
+        "requires_command_write": {"type": "boolean", "const": False},
         "approval_state": {"type": "string", "const": "SATISFIED"},
         "handoff_ready": {"type": "boolean", "const": True},
         "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
@@ -245,8 +248,8 @@ def _prepare_output_schema() -> dict[str, Any]:
         "next_action": {
             "type": "object",
             "properties": {
-                "provider": {"type": "string", "const": "LINEAR"},
-                "operation": {"type": "string", "const": "CREATE_ISSUE"},
+                "provider": {"type": "string", "const": "CLINX"},
+                "operation": {"type": "string", "const": "START_EXECUTION"},
                 "required": {"type": "boolean", "const": True},
             },
             "required": ["provider", "operation", "required"],
@@ -260,13 +263,13 @@ def _prepare_output_schema() -> dict[str, Any]:
 MCP_INSTRUCTIONS = (
     "CLINX MCP is the authoritative read-only context and execution-preparation "
     "plane. execution.available=true means the execution capability exists; "
-    "direct_mcp_execution=false is intentional. Execution uses LINEAR as the "
+    "direct_mcp_execution=true is intentional. Execution uses CLINX as the "
     "command plane and requires explicit user approval. Resolve the exact task "
-    "with CLINX, call clinx_prepare_execution, then use an available Linear "
-    "issue-create capability for its returned handoff when approved. The "
-    "handoff has next_action.provider=LINEAR and operation=CREATE_ISSUE. CLINX "
-    "never writes Linear or executes Codex directly, and humans do not need "
-    "task, thread, session, turn, or cwd IDs."
+    "with CLINX, call clinx_prepare_execution, then call "
+    "clinx_start_execution with only the returned prepared_execution_ref and "
+    "approved=true. Linear is optional audit/history compatibility. CLINX "
+    "does not expose arbitrary execution inputs, and humans do not need task, "
+    "thread, session, turn, or cwd IDs."
 )
 
 
@@ -376,14 +379,14 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "clinx_get_capabilities",
-            "description": "Discover how CLINX context and execution work. Execution uses Linear as the command plane.",
+            "description": "Discover how CLINX context and execution work. CLINX is the command plane; Linear is optional audit history.",
             "inputSchema": _json_schema({}, []),
             "outputSchema": _capabilities_output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
         },
         {
             "name": "clinx_prepare_execution",
-            "description": "Prepare, but do not execute, a canonical Linear handoff for a user-approved Codex task.",
+            "description": "Prepare, but do not execute, a canonical CLINX command for a user-approved Codex task.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -407,6 +410,38 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
             },
             "outputSchema": _prepare_output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "clinx_start_execution",
+            "description": (
+                "Start exactly one previously prepared CLINX execution after explicit "
+                "approval. This does not accept arbitrary thread or repository identity."
+            ),
+            "inputSchema": _json_schema(
+                {
+                    "prepared_execution_ref": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Opaque reference returned by clinx_prepare_execution.",
+                    },
+                    "approved": {"type": "boolean", "const": True},
+                },
+                ["prepared_execution_ref", "approved"],
+            ),
+            "outputSchema": _json_schema({
+                "execution_started": {"type": "boolean", "const": True},
+                "prepared_execution_ref": {"type": "string"},
+                "execution_ref": {"type": "string"},
+                "task_ref": {"type": "string"},
+                "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
+                "model": {"type": "string"},
+                "reasoning_effort": {"type": "string"},
+                "execution_mode": {"type": "string", "enum": ["normal", "fast"]},
+                "dispatch_status": {"type": "string"},
+                "linear_audit": {"type": "string"},
+                "read_only": {"type": "boolean", "const": False},
+            }),
+            "annotations": {"readOnlyHint": False, "destructiveHint": True},
         },
     ]
 
@@ -452,8 +487,8 @@ def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
 def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any]:
     """Return the confirmed connector-discovery schema from the canonical registry."""
     names = tuple(tool["name"] for tool in public_tools)
-    if names != READ_ONLY_TOOL_NAMES:
-        raise MCPServerError("server/discover requires the canonical read-only tool registry")
+    if names not in {DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}:
+        raise MCPServerError("server/discover requires the canonical tool registry")
     return {
         "resultType": "complete",
         "supportedVersions": [SERVER_DISCOVER_PROTOCOL_VERSION],
@@ -522,6 +557,13 @@ class ClinxMCPServer:
             result = self.integration.get_capabilities(**arguments)
         elif name == "clinx_prepare_execution":
             result = self.integration.prepare_execution(**arguments)
+        elif name == "clinx_start_execution":
+            unexpected = set(arguments) - {"prepared_execution_ref", "approved"}
+            if unexpected:
+                raise TypeError(
+                    "clinx_start_execution accepts only prepared_execution_ref and approved"
+                )
+            result = self.integration.start_execution(**arguments)
         elif name == "clinx_execute":
             if not self.allow_execute:
                 result = {
@@ -646,7 +688,7 @@ def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="CLINX M11 MCP stdio server")
+    parser = argparse.ArgumentParser(description="CLINX M12 MCP stdio server")
     parser.add_argument("--config", default="bridge.toml")
     parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
     parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")

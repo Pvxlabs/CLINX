@@ -7,6 +7,7 @@ import bridge
 from m9_integration import ClinxIntegration, M9IntegrationError
 from mcp_server import (
     ClinxMCPServer,
+    DEFAULT_TOOL_NAMES,
     MCP_INSTRUCTIONS,
     READ_ONLY_TOOL_NAMES,
     tool_definitions,
@@ -110,19 +111,20 @@ class M11PrepareExecutionTests(unittest.TestCase):
         result = integration.get_capabilities()
         self.assertTrue(result["context_plane"]["read_only"])
         self.assertTrue(result["execution"]["available"])
-        self.assertFalse(result["execution"]["direct_mcp_execution"])
-        self.assertEqual(result["execution"]["command_plane"], "LINEAR")
+        self.assertTrue(result["execution"]["direct_mcp_execution"])
+        self.assertEqual(result["execution"]["command_plane"], "CLINX")
         self.assertTrue(result["context_read_only"])
         self.assertTrue(result["execution_available"])
-        self.assertEqual(result["command_plane"], "LINEAR")
+        self.assertEqual(result["command_plane"], "CLINX")
         self.assertEqual(result["prepare_tool"], "clinx_prepare_execution")
         self.assertEqual(result["status_tool"], "clinx_get_status")
         self.assertEqual(result["execution"], {
             "available": True,
-            "direct_mcp_execution": False,
-            "command_plane": "LINEAR",
+            "direct_mcp_execution": True,
+            "command_plane": "CLINX",
             "requires_user_approval": True,
             "prepare_tool": "clinx_prepare_execution",
+            "start_tool": "clinx_start_execution",
         })
         self.assertEqual(result["status"]["tool"], "clinx_get_status")
 
@@ -150,10 +152,10 @@ class M11PrepareExecutionTests(unittest.TestCase):
             self.assertEqual(result["model"], "gpt-test")
             self.assertEqual(result["reasoning"], "low")
             self.assertEqual(result["execution_mode"], "fast")
-            self.assertTrue(result["requires_command_write"])
+            self.assertFalse(result["requires_command_write"])
             self.assertEqual(result["next_action"], {
-                "provider": "LINEAR",
-                "operation": "CREATE_ISSUE",
+                "provider": "CLINX",
+                "operation": "START_EXECUTION",
                 "required": True,
             })
             self.assertEqual(context.calls[-1]["task_ref"], task.task_id)
@@ -277,6 +279,22 @@ class M11MCPTests(unittest.TestCase):
                 "read_only": True,
             }
 
+        def start_execution(self, **kwargs):
+            self.calls.append(("start_execution", kwargs))
+            return {
+                "execution_started": True,
+                "prepared_execution_ref": kwargs["prepared_execution_ref"],
+                "execution_ref": "exec-public",
+                "task_ref": "task-public",
+                "task_action": "continue",
+                "model": "gpt-test",
+                "reasoning_effort": "high",
+                "execution_mode": "normal",
+                "dispatch_status": "DISPATCHED",
+                "linear_audit": "NOT_CONFIGURED",
+                "read_only": False,
+            }
+
         def find_task(self, **kwargs):
             return {"tasks": [], "read_only": True}
 
@@ -296,10 +314,10 @@ class M11MCPTests(unittest.TestCase):
             raise AssertionError("default M11 catalog must not execute")
 
     def test_default_catalog_exposes_prepare_not_execute_and_routes_read_only_tools(self):
-        self.assertEqual(list(READ_ONLY_TOOL_NAMES), [
+        self.assertEqual(list(DEFAULT_TOOL_NAMES), [
             "clinx_find_task", "clinx_get_context", "clinx_get_topic_status",
             "clinx_list_projects", "clinx_get_status", "clinx_get_capabilities",
-            "clinx_prepare_execution",
+            "clinx_prepare_execution", "clinx_start_execution",
         ])
         self.assertNotIn("clinx_execute", [item["name"] for item in tool_definitions()])
         integration = self.FakeIntegration()
@@ -320,10 +338,19 @@ class M11MCPTests(unittest.TestCase):
             "get_capabilities", "prepare_execution",
         ])
 
+        started = server.handle({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "clinx_start_execution", "arguments": {
+                "prepared_execution_ref": "prepared-public", "approved": True,
+            }},
+        })
+        self.assertTrue(started["result"]["structuredContent"]["execution_started"])
+        self.assertEqual(integration.calls[-1][0], "start_execution")
+
     def test_every_default_tool_declares_an_object_output_schema(self):
         tools = tool_definitions()
-        self.assertEqual(len(tools), 7)
-        self.assertEqual({tool["name"] for tool in tools}, set(READ_ONLY_TOOL_NAMES))
+        self.assertEqual(len(tools), 8)
+        self.assertEqual({tool["name"] for tool in tools}, set(DEFAULT_TOOL_NAMES))
         for tool in tools:
             with self.subTest(tool=tool["name"]):
                 schema = tool.get("outputSchema")
@@ -337,7 +364,7 @@ class M11MCPTests(unittest.TestCase):
         execution = capabilities["execution"]["properties"]
         self.assertEqual(capabilities["context_read_only"], {"type": "boolean", "const": True})
         self.assertEqual(capabilities["execution_available"], {"type": "boolean", "const": True})
-        self.assertEqual(capabilities["command_plane"], {"type": "string", "const": "LINEAR"})
+        self.assertEqual(capabilities["command_plane"], {"type": "string", "const": "CLINX"})
         self.assertEqual(capabilities["prepare_tool"], {
             "type": "string", "const": "clinx_prepare_execution",
         })
@@ -345,17 +372,18 @@ class M11MCPTests(unittest.TestCase):
             "type": "string", "const": "clinx_get_status",
         })
         self.assertEqual(execution["available"], {"type": "boolean", "const": True})
-        self.assertEqual(execution["direct_mcp_execution"], {"type": "boolean", "const": False})
-        self.assertEqual(execution["command_plane"], {"type": "string", "const": "LINEAR"})
+        self.assertEqual(execution["direct_mcp_execution"], {"type": "boolean", "const": True})
+        self.assertEqual(execution["command_plane"], {"type": "string", "const": "CLINX"})
+        self.assertEqual(execution["start_tool"], {"type": "string", "const": "clinx_start_execution"})
 
         prepare = tools["clinx_prepare_execution"]["outputSchema"]["properties"]
-        self.assertEqual(prepare["requires_command_write"], {"type": "boolean", "const": True})
+        self.assertEqual(prepare["requires_command_write"], {"type": "boolean", "const": False})
         self.assertEqual(prepare["handoff_ready"], {"type": "boolean", "const": True})
         self.assertEqual(prepare["next_action"]["properties"]["provider"], {
-            "type": "string", "const": "LINEAR",
+            "type": "string", "const": "CLINX",
         })
         self.assertEqual(prepare["next_action"]["properties"]["operation"], {
-            "type": "string", "const": "CREATE_ISSUE",
+            "type": "string", "const": "START_EXECUTION",
         })
 
     def test_initialize_and_discover_share_explicit_linear_handoff_instructions(self):
@@ -366,8 +394,8 @@ class M11MCPTests(unittest.TestCase):
         self.assertEqual(initialized["result"]["instructions"], MCP_INSTRUCTIONS)
         self.assertEqual(discovered["result"]["instructions"], MCP_INSTRUCTIONS)
         self.assertIn("execution.available=true", MCP_INSTRUCTIONS)
-        self.assertIn("direct_mcp_execution=false", MCP_INSTRUCTIONS)
-        self.assertIn("operation=CREATE_ISSUE", MCP_INSTRUCTIONS)
+        self.assertIn("direct_mcp_execution=true", MCP_INSTRUCTIONS)
+        self.assertIn("clinx_start_execution", MCP_INSTRUCTIONS)
 
     def test_prepare_schema_requires_exact_boolean_approval_and_public_result_scrubs_identity(self):
         prepare = next(item for item in tool_definitions() if item["name"] == "clinx_prepare_execution")

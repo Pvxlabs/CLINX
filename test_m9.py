@@ -3,6 +3,7 @@ import tempfile
 import unittest
 
 from mcp_server import (
+    DEFAULT_TOOL_NAMES,
     READ_ONLY_TOOL_NAMES,
     ClinxMCPServer,
     MCP_INSTRUCTIONS,
@@ -259,10 +260,10 @@ class M9MCPTests(unittest.TestCase):
 
     def test_initialize_and_tool_discovery_are_deterministic(self):
         initialized = self.server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
-        self.assertEqual(initialized["result"]["serverInfo"], {"name": "clinx", "version": "m11"})
+        self.assertEqual(initialized["result"]["serverInfo"], {"name": "clinx", "version": "m12"})
         listed = self.server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = [tool["name"] for tool in listed["result"]["tools"]]
-        self.assertEqual(names, list(READ_ONLY_TOOL_NAMES))
+        self.assertEqual(names, list(DEFAULT_TOOL_NAMES))
         self.assertEqual(names, [tool["name"] for tool in tool_definitions()])
         self.assertNotIn("clinx_execute", names)
 
@@ -279,7 +280,7 @@ class M9MCPTests(unittest.TestCase):
                 "_meta": {
                     "io.modelcontextprotocol/serverInfo": {
                         "name": "clinx",
-                        "version": "m11",
+                        "version": "m12",
                     },
                 },
                 "instructions": MCP_INSTRUCTIONS,
@@ -290,7 +291,7 @@ class M9MCPTests(unittest.TestCase):
         listed = self.server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
         self.assertEqual(
             [tool["name"] for tool in listed["result"]["tools"]],
-            list(READ_ONLY_TOOL_NAMES),
+            list(DEFAULT_TOOL_NAMES),
         )
         self.assertNotIn("clinx_execute", discovered["result"])
 

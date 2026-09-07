@@ -130,6 +130,7 @@ class TunnelChildCompatibilityTests(unittest.TestCase):
                     "clinx_get_status",
                     "clinx_get_capabilities",
                     "clinx_prepare_execution",
+                    "clinx_start_execution",
                 ],
             )
             self.assertNotIn("clinx_execute", names)
