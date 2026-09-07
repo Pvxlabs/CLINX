@@ -202,7 +202,8 @@ class TopicIntegrationAndMCPTests(unittest.TestCase):
             self.assertEqual(result["topic_status_read"], "PASS")
             self.assertEqual(list(READ_ONLY_TOOL_NAMES), [
                 "clinx_find_task", "clinx_get_context", "clinx_get_topic_status",
-                "clinx_list_projects", "clinx_get_status",
+                "clinx_list_projects", "clinx_get_status", "clinx_get_capabilities",
+                "clinx_prepare_execution",
             ])
             server = ClinxMCPServer(integration)
             names = [item["name"] for item in tool_definitions()]

@@ -258,7 +258,7 @@ class M9MCPTests(unittest.TestCase):
 
     def test_initialize_and_tool_discovery_are_deterministic(self):
         initialized = self.server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
-        self.assertEqual(initialized["result"]["serverInfo"], {"name": "clinx", "version": "m9"})
+        self.assertEqual(initialized["result"]["serverInfo"], {"name": "clinx", "version": "m11"})
         listed = self.server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = [tool["name"] for tool in listed["result"]["tools"]]
         self.assertEqual(names, list(READ_ONLY_TOOL_NAMES))
@@ -278,13 +278,16 @@ class M9MCPTests(unittest.TestCase):
                 "_meta": {
                     "io.modelcontextprotocol/serverInfo": {
                         "name": "clinx",
-                        "version": "m9",
+                        "version": "m11",
                     },
                 },
                 "instructions": (
-                    "CLINX Context MCP is read-only: use it to find tasks, read "
-                    "authoritative context, inspect status, and discover bounded "
-                    "projects."
+                    "CLINX Context MCP is the authoritative read-only context plane. "
+                    "Execution is available through the connected Linear Plugin as the "
+                    "command plane: after explicit user approval, resolve the exact task "
+                    "with CLINX, call clinx_prepare_execution, then create its returned "
+                    "handoff issue with Linear. CLINX never writes Linear or executes Codex "
+                    "directly, and humans do not need task, thread, session, turn, or cwd IDs."
                 ),
                 "ttlMs": 3600000,
                 "cacheScope": "public",

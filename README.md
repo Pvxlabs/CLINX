@@ -41,18 +41,19 @@ verified.
 
 The bridge never marks an issue `Done`.
 
-## M9 ChatGPT integration surface
+## M11 ChatGPT integration and execution handoff surface
 
-CLINX exposes the M9 context plane through the dependency-free stdio adapter
+CLINX exposes the M11 context plane through the dependency-free stdio adapter
 in `mcp_server.py`:
 
 ```bash
 python3 mcp_server.py --config bridge.toml --stdio
 ```
 
-The default adapter exposes five bounded read-only tools:
+The default adapter exposes seven bounded read-only tools:
 `clinx_find_task`, `clinx_get_context`, `clinx_get_topic_status`,
-`clinx_get_status`, and `clinx_list_projects`.  They reuse the task registry,
+`clinx_get_status`, `clinx_list_projects`, `clinx_get_capabilities`, and
+`clinx_prepare_execution`.  They reuse the task registry,
 ConversationBinding, and the M8 bounded context reader.  Archived and
 historically adopted tasks remain discoverable through the human query path.
 
@@ -66,11 +67,32 @@ python3 bridge.py --config bridge.toml tasks topic \
   --host P620 --project ORION --topic "DATA NODE"
 ```
 
-`clinx_execute` is retained only as an internal/experimental implementation
-path.  It is absent from the default `tools/list` catalog and is available only
-when a local process is explicitly started with `--allow-execute`.  ChatGPT
-execution belongs to the authenticated Linear command and audit plane; the
-read-only context MCP never starts a Codex thread or turn.
+`clinx_get_capabilities` describes the current boundary.  `clinx_prepare_execution`
+is a read-only preparation step: it requires the exact boolean
+`approved=true`, resolves a new or existing task through CLINX, validates the
+configured project identity, selects model/reasoning/execution mode, and
+returns a parser-compatible Linear handoff.  It does not create a Task, write
+Linear, connect to Codex, or call `turn/start`.
+
+The default catalog does not expose `clinx_execute`.  That legacy execution
+adapter is retained only as an internal/experimental compatibility path and is
+available only when a local process is explicitly started with `--allow-execute`.
+The normal M11 flow is:
+
+```text
+ChatGPT human intent
+  -> CLINX task discovery / context
+  -> explicit approved=true
+  -> clinx_prepare_execution
+  -> authenticated Linear Plugin creates the returned execution issue
+  -> existing bridge claims and executes the Linear issue
+```
+
+CLINX is the read-only context plane, Linear is the command and audit plane,
+and Codex is the execution plane.  Human-facing calls require no task UUID,
+thread ID, session ID, turn ID, cwd, or repository-origin value.  Those remain
+inside CLINX's registry and dispatcher.  The read-only context MCP never starts
+a Codex thread or turn.
 
 This repository does not open an HTTP listener or publish an unauthenticated
 endpoint.  ChatGPT cannot connect directly to a private local stdio process;

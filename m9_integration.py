@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+from pathlib import Path
 import re
 from typing import Any
 
@@ -22,6 +23,71 @@ class M9IntegrationError(RuntimeError):
 
 class ResultParseError(M9IntegrationError):
     pass
+
+
+@dataclasses.dataclass(frozen=True)
+class ExecutionHandoff:
+    """A canonical, in-memory Linear command-plane handoff.
+
+    This object deliberately contains no Codex conversation identity.  Linear
+    is the write/execution plane; CLINX only prepares the parser-compatible
+    issue contract after resolving and validating the existing local task.
+    """
+
+    task_action: str
+    task_ref: str | None
+    host: str
+    project: str
+    model: str
+    reasoning: str
+    execution_mode: str
+    title: str
+    summary: str
+    prompt: str
+    linear_project: str
+    team_id: str
+    trigger_label: str
+    todo_state: str
+    description: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "execution_available": True,
+            "command_plane": "LINEAR",
+            "requires_user_approval": True,
+            "approval_state": "SATISFIED",
+            "handoff_ready": True,
+            "task_action": self.task_action,
+            "task_ref": self.task_ref,
+            "host": self.host,
+            "project": self.project,
+            "model": self.model,
+            "reasoning": self.reasoning,
+            "execution_mode": self.execution_mode,
+            "title": self.title,
+            "summary": self.summary,
+            "prompt": self.prompt,
+            "description": self.description,
+            "linear_handoff": {
+                "team": self.team_id,
+                "project": self.linear_project,
+                "state": self.todo_state,
+                "labels": [self.trigger_label],
+                "host": self.host,
+                "project_alias": self.project,
+                "task_action": self.task_action,
+                "task_ref": self.task_ref,
+                "model": self.model,
+                "reasoning": self.reasoning,
+                "execution_mode": self.execution_mode,
+                "title": self.title,
+                "summary": self.summary,
+                "prompt": self.prompt,
+                "description": self.description,
+            },
+            "status_lookup": {"tool": "clinx_get_status"},
+            "read_only": True,
+        }
 
 
 @dataclasses.dataclass(frozen=True)
@@ -193,7 +259,7 @@ class ExecutionResultService:
 
 
 class ClinxIntegration:
-    """Public M9 operations backed by existing CLINX services."""
+    """Public M11 operations backed by existing CLINX services."""
 
     def __init__(
         self,
@@ -400,6 +466,206 @@ class ClinxIntegration:
             status["execution_ref"] = execution_ref
         return status
 
+    def get_capabilities(self) -> dict[str, Any]:
+        """Describe the separated CLINX, Linear, and Codex planes."""
+        return {
+            "context_plane": {
+                "available": True,
+                "transport": "CLINX_MCP",
+                "read_only": True,
+            },
+            "execution": {
+                "available": True,
+                "direct_mcp_execution": False,
+                "command_plane": "LINEAR",
+                "requires_user_approval": True,
+                "prepare_tool": "clinx_prepare_execution",
+            },
+            "status": {
+                "available": True,
+                "tool": "clinx_get_status",
+            },
+            "instructions": (
+                "Use CLINX for authoritative task context. After explicit user "
+                "approval, prepare a handoff with clinx_prepare_execution and use "
+                "the connected Linear Plugin to create the returned execution issue."
+            ),
+            "read_only": True,
+        }
+
+    def _linear_project_name(self) -> str:
+        configured = getattr(self.cfg, "linear_project_name", None)
+        if configured:
+            return str(configured)
+        for mapping in getattr(self.cfg, "projects", ()):
+            name = str(getattr(mapping, "linear_name", ""))
+            if name == "ChatGPT × Linear × Codex Dispatcher V1":
+                return name
+        # Existing configurations predate an explicit control-plane setting;
+        # preserve their configured project name without inventing a new one.
+        names = [str(getattr(item, "linear_name", "")) for item in getattr(self.cfg, "projects", ())]
+        return next((name for name in names if name), "ChatGPT × Linear × Codex Dispatcher V1")
+
+    @staticmethod
+    def _validated_text(name: str, value: str | None, *, required: bool = True) -> str:
+        if not isinstance(value, str) or not value.strip():
+            if required:
+                raise M9IntegrationError(f"{name} is required")
+            return ""
+        return value.strip()
+
+    def prepare_execution(
+        self,
+        *,
+        prompt: str,
+        approved: bool = False,
+        task_mode: str = "continue",
+        task_action: str | None = None,
+        task_ref: str | None = None,
+        query: str | None = None,
+        host: str | None = None,
+        project: str | None = None,
+        title: str | None = None,
+        summary: str | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        reasoning: str | None = None,
+        execution_mode: str = "normal",
+    ) -> dict[str, Any]:
+        """Prepare a parser-compatible Linear handoff without side effects."""
+        if approved is not True:
+            raise M9IntegrationError("explicit approved=true is required for preparation")
+        prompt = self._validated_text("prompt", prompt)
+        if task_action is not None:
+            if task_action not in {"create", "continue", "reopen"}:
+                raise M9IntegrationError("task_action must be create, continue, or reopen")
+            if task_action == "create":
+                # The default task_mode is continue so callers may provide the
+                # concise task_action=create form without also repeating mode.
+                if task_mode not in {"new", "continue"}:
+                    raise M9IntegrationError("task_mode and task_action disagree")
+                task_mode = "new"
+            else:
+                if task_mode != "continue":
+                    raise M9IntegrationError("task_mode and task_action disagree")
+                task_mode = "continue"
+        if task_mode not in {"new", "continue"}:
+            raise M9IntegrationError("task_mode must be new or continue")
+        if execution_mode not in {"normal", "fast"}:
+            raise M9IntegrationError("execution_mode must be normal or fast")
+        selected_model = self._validated_text("model", model, required=False) or "gpt-5.6-luna"
+        selected_reasoning = (
+            self._validated_text("reasoning_effort", reasoning_effort, required=False)
+            or self._validated_text("reasoning", reasoning, required=False)
+            or "high"
+        )
+
+        if task_mode == "continue":
+            task = self.context_reader.resolve_task(
+                task_ref=task_ref,
+                query=query,
+                project=project,
+                host=host,
+            )
+            # Import lazily because bridge imports the integration service.
+            from bridge import TargetResolutionError, canonical_host
+
+            if host and canonical_host(task.host) != canonical_host(host):
+                raise TargetResolutionError(
+                    f"Task host mismatch: expected {task.host!r}, got {host!r}"
+                )
+            if project and project.casefold() not in {
+                task.project_alias.casefold(), task.project_name.casefold()
+            }:
+                raise TargetResolutionError(
+                    f"Task project mismatch: expected {task.project_alias!r}, got {project!r}"
+                )
+            binding = self.registry.get_binding(task.task_id)
+            if binding is None:
+                raise M9IntegrationError(f"Task {task.task_id} has no conversation binding")
+            if not task.project_alias or not task.workspace_alias or not task.cwd:
+                raise M9IntegrationError(f"Task {task.task_id} has incomplete project identity")
+            if hasattr(self.dispatcher, "resolve_project"):
+                _workspace, descriptor, _mapping = self.dispatcher.resolve_project(
+                    task.project_alias,
+                    host=task.host,
+                    project_mode="existing",
+                )
+                if descriptor.alias.casefold() != task.project_alias.casefold():
+                    raise M9IntegrationError("Resolved project does not match task project")
+                if str(descriptor.cwd.resolve()) != str(Path(task.cwd).resolve()):
+                    raise M9IntegrationError("Resolved project cwd does not match task")
+            if task.status not in {"ACTIVE", "COMPLETED", "ARCHIVED"}:
+                raise M9IntegrationError(f"Unsupported task status: {task.status}")
+            if task_action == "reopen" and task.status not in {"COMPLETED", "ARCHIVED"}:
+                raise M9IntegrationError("task_action=reopen requires a completed or archived task")
+            selected_action = (
+                task_action
+                if task_action is not None
+                else "reopen" if task.status in {"COMPLETED", "ARCHIVED"} else "continue"
+            )
+            selected_host = task.host
+            selected_project = task.project_alias
+            selected_title = self._validated_text("title", title, required=False) or task.title
+            selected_summary = (
+                self._validated_text("summary", summary, required=False)
+                if summary is not None else (task.summary or "")
+            )
+            selected_ref = task.task_id
+        else:
+            selected_host = self._validated_text("host", host)
+            selected_project = self._validated_text("project", project)
+            selected_title = self._validated_text("title", title)
+            selected_summary = self._validated_text("summary", summary, required=False)
+            selected_action = "create"
+            selected_ref = None
+            if not hasattr(self.dispatcher, "resolve_project"):
+                raise M9IntegrationError("project resolver is not configured")
+            self.dispatcher.resolve_project(
+                selected_project,
+                host=selected_host,
+                project_mode="existing",
+            )
+
+        linear_project = self._linear_project_name()
+        description_lines = [
+            "CLINX_M11_EXECUTION_HANDOFF_V1",
+            "",
+            f"HOST={selected_host}",
+            f"PROJECT={selected_project}",
+            "PROJECT_MODE=existing",
+            f"TASK_ACTION={selected_action}",
+        ]
+        if selected_ref is not None:
+            description_lines.append(f"TASK_REF={selected_ref}")
+        description_lines.extend([
+            f"MODEL={selected_model}",
+            f"REASONING={selected_reasoning}",
+            f"EXECUTION_MODE={execution_mode}",
+            f"TASK_TITLE={selected_title}",
+            f"TASK_SUMMARY_UPDATE={selected_summary or 'UNKNOWN'}",
+            "",
+            "PROMPT:",
+            prompt,
+        ])
+        return ExecutionHandoff(
+            task_action=selected_action,
+            task_ref=selected_ref,
+            host=selected_host,
+            project=selected_project,
+            model=selected_model,
+            reasoning=selected_reasoning,
+            execution_mode=execution_mode,
+            title=selected_title,
+            summary=selected_summary,
+            prompt=prompt,
+            linear_project=linear_project,
+            team_id=str(getattr(self.cfg, "team_id", "")),
+            trigger_label=str(getattr(self.cfg, "trigger_label", "local-codex")),
+            todo_state=str(getattr(self.cfg, "todo_state", "Todo")),
+            description="\n".join(description_lines),
+        ).as_dict()
+
     def execute(
         self,
         *,
@@ -507,6 +773,14 @@ def clinx_list_projects(integration: ClinxIntegration, **kwargs: Any) -> dict[st
 
 def clinx_get_status(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
     return integration.get_status(**kwargs)
+
+
+def clinx_get_capabilities(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
+    return integration.get_capabilities(**kwargs)
+
+
+def clinx_prepare_execution(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
+    return integration.prepare_execution(**kwargs)
 
 
 def clinx_execute(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
