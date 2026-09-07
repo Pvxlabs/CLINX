@@ -480,6 +480,19 @@ class TurnStartInfo:
     reasoning_effort: str | None
 
 
+@dataclasses.dataclass(frozen=True)
+class ModelCapability:
+    """The executable provider model and its accepted reasoning values."""
+
+    model_id: str
+    reasoning_efforts: tuple[str, ...]
+    default_reasoning_effort: str | None
+
+
+class ModelCapabilityError(AppServerProtocolError):
+    pass
+
+
 class CodexAppServerClient:
     """Synchronous JSON-RPC client with notification/event draining."""
 
@@ -697,6 +710,58 @@ class CodexAppServerClient:
         if not isinstance(result, dict):
             raise AppServerProtocolError("model/list result must be an object")
         return result
+
+    def resolve_model(self, requested: str | None, reasoning_effort: str | None) -> tuple[str, str | None]:
+        """Resolve a logical or provider model against the live capability list."""
+        payload = self.model_list()
+        data = payload.get("data")
+        if not isinstance(data, list):
+            raise ModelCapabilityError("model/list capability data is unavailable")
+        entries: list[ModelCapability] = []
+        for item in data:
+            if not isinstance(item, dict) or item.get("hidden") is True:
+                continue
+            model_id = item.get("id")
+            if not isinstance(model_id, str) or not model_id.strip():
+                raise ModelCapabilityError("model/list contains malformed model id")
+            efforts = item.get("supportedReasoningEfforts", ())
+            if not isinstance(efforts, list) or any(not isinstance(v, str) or not v for v in efforts):
+                raise ModelCapabilityError(f"model/list has malformed reasoning schema for {model_id}")
+            default = item.get("defaultReasoningEffort")
+            if default is not None and (not isinstance(default, str) or default not in efforts):
+                raise ModelCapabilityError(f"model/list has invalid default reasoning for {model_id}")
+            entries.append(ModelCapability(model_id, tuple(efforts), default))
+        if not entries:
+            raise ModelCapabilityError("model/list returned no usable models")
+        wanted = (requested or "").strip()
+        if not wanted:
+            raise ModelCapabilityError("executable model is required")
+        exact = [entry for entry in entries if entry.model_id == wanted]
+        if exact:
+            selected = exact[0]
+        else:
+            needle = wanted.casefold()
+            matches = []
+            for entry in entries:
+                item = next((raw for raw in data if isinstance(raw, dict) and raw.get("id") == entry.model_id), {})
+                aliases = {entry.model_id.casefold()}
+                for key in ("model", "displayName"):
+                    value = item.get(key)
+                    if isinstance(value, str):
+                        aliases.add(value.casefold())
+                if needle in aliases or needle == entry.model_id.rsplit("-", 1)[-1].casefold():
+                    matches.append(entry)
+            if len(matches) != 1:
+                raise ModelCapabilityError(
+                    f"model {wanted!r} is unsupported or ambiguous"
+                )
+            selected = matches[0]
+        effort = reasoning_effort.strip() if isinstance(reasoning_effort, str) else reasoning_effort
+        if effort is not None and effort not in selected.reasoning_efforts:
+            raise ModelCapabilityError(
+                f"reasoning effort {effort!r} is unsupported for {selected.model_id}"
+            )
+        return selected.model_id, effort or selected.default_reasoning_effort
 
     def turn_start(
         self,

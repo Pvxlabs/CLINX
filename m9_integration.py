@@ -732,6 +732,8 @@ class ClinxIntegration:
             summary=selected_summary,
             prompt=prompt,
             model=selected_model,
+            logical_model=selected_model,
+            resolved_executable_model=selected_model,
             reasoning_effort=selected_reasoning,
             execution_mode=execution_mode,
         )
