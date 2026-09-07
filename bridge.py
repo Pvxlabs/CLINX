@@ -53,6 +53,15 @@ BRIDGE_VERSION = "1.0.0-m6"
 LEGACY_CODEX_EXEC_DEFAULT = False
 
 
+def _resolve_dispatch_model(client: Any, model: str | None, reasoning_effort: str | None) -> tuple[str | None, str | None]:
+    """Resolve logical model names only when the client exposes live capabilities."""
+    resolver = getattr(client, "resolve_model", None)
+    if not callable(resolver):
+        return model, reasoning_effort
+    requested = model or "gpt-5.6-luna"
+    return resolver(requested, reasoning_effort)
+
+
 def canonical_host(value: str) -> str:
     """Return the small, stable host identity used for transport selection."""
     host = value.strip().lower()
@@ -2209,9 +2218,12 @@ class TaskDispatcher:
                             client_title=self.cfg.app_server.client_title,
                             client_version=self.cfg.app_server.client_version,
                         )
+                        executable_model, executable_reasoning = _resolve_dispatch_model(
+                            client, model, reasoning_effort
+                        )
                         started = client.thread_start(
                             cwd=str(project.repo),
-                            model=model,
+                            model=executable_model,
                             sandbox=self.cfg.sandbox,
                             ephemeral=False,
                         )
@@ -2260,8 +2272,8 @@ class TaskDispatcher:
                             new_thread_id,
                             prompt,
                             cwd=str(project.repo),
-                            model=model,
-                            reasoning_effort=reasoning_effort,
+                            model=executable_model,
+                            reasoning_effort=executable_reasoning,
                             approval_policy=self.cfg.approval,
                         )
                         self._execution_state(
@@ -2273,13 +2285,20 @@ class TaskDispatcher:
                             turn_id=turn.turn_id,
                             retry_required=False,
                         )
-                except (IdentityGuardError, AppServerError):
+                except IdentityGuardError:
                     self._execution_state(
                         leased.task_id,
                         "BLOCKED",
                         current_stage="project identity guard",
                         current_blocker="pre-dispatch handoff failed",
                         codex_running=False,
+                        retry_required=True,
+                    )
+                    raise
+                except AppServerError:
+                    self._execution_state(
+                        leased.task_id, "RECOVERY_REQUIRED", current_stage="dispatch",
+                        current_blocker="recoverable app-server failure", codex_running=False,
                         retry_required=True,
                     )
                     raise
@@ -2363,6 +2382,9 @@ class TaskDispatcher:
                         client_title=self.cfg.app_server.client_title,
                         client_version=self.cfg.app_server.client_version,
                     )
+                    executable_model, executable_reasoning = _resolve_dispatch_model(
+                        client, model, reasoning_effort
+                    )
                     thread = self._read_and_guard(client, target, initialize_info)
                     turn_start_guard(thread)
                     self.tasks.mark_verified(
@@ -2375,8 +2397,8 @@ class TaskDispatcher:
                         binding.thread_id,
                         prompt,
                         cwd=str(project.repo),
-                        model=model,
-                        reasoning_effort=reasoning_effort,
+                        model=executable_model,
+                        reasoning_effort=executable_reasoning,
                         approval_policy=self.cfg.approval,
                     )
                     self._execution_state(
@@ -2388,10 +2410,17 @@ class TaskDispatcher:
                         turn_id=turn.turn_id,
                         retry_required=False,
                     )
-            except (IdentityGuardError, AppServerError):
+            except IdentityGuardError:
                 self._execution_state(
                     leased.task_id, "BLOCKED", current_stage="project identity guard",
                     current_blocker="pre-dispatch handoff failed", codex_running=False,
+                    retry_required=True,
+                )
+                raise
+            except AppServerError:
+                self._execution_state(
+                    leased.task_id, "RECOVERY_REQUIRED", current_stage="dispatch",
+                    current_blocker="recoverable app-server failure", codex_running=False,
                     retry_required=True,
                 )
                 raise
@@ -4112,6 +4141,9 @@ class Dispatcher:
                     client_title=self.cfg.app_server.client_title,
                     client_version=self.cfg.app_server.client_version,
                 )
+                executable_model, executable_reasoning = _resolve_dispatch_model(
+                    client, model, reasoning_effort
+                )
                 thread = client.thread_read(target.thread_id)
                 identity_guard(
                     target,
@@ -4138,8 +4170,8 @@ class Dispatcher:
                     target.thread_id,
                     prompt,
                     cwd=str(project.repo),
-                    model=model,
-                    reasoning_effort=reasoning_effort,
+                    model=executable_model,
+                    reasoning_effort=executable_reasoning,
                     approval_policy=self.cfg.approval,
                 )
                 return DispatchResult(
@@ -4215,9 +4247,12 @@ class Dispatcher:
                     client_title=self.cfg.app_server.client_title,
                     client_version=self.cfg.app_server.client_version,
                 )
+                executable_model, executable_reasoning = _resolve_dispatch_model(
+                    client, model, reasoning_effort
+                )
                 started = client.thread_start(
                     cwd=str(project.repo),
-                    model=model,
+                    model=executable_model,
                     sandbox=self.cfg.sandbox,
                     ephemeral=False,
                 )
@@ -4269,8 +4304,8 @@ class Dispatcher:
                     new_thread_id,
                     prompt,
                     cwd=str(project.repo),
-                    model=model,
-                    reasoning_effort=reasoning_effort,
+                    model=executable_model,
+                    reasoning_effort=executable_reasoning,
                     approval_policy=self.cfg.approval,
                 )
                 return DispatchResult(
@@ -4326,6 +4361,9 @@ class Dispatcher:
                     client_title=self.cfg.app_server.client_title,
                     client_version=self.cfg.app_server.client_version,
                 )
+                executable_model, executable_reasoning = _resolve_dispatch_model(
+                    client, model, reasoning_effort
+                )
                 thread = client.thread_read(target.thread_id)
 
                 # Thread identity is checked before any repository command.
@@ -4365,8 +4403,8 @@ class Dispatcher:
                     target.thread_id,
                     prompt,
                     cwd=target.cwd,
-                    model=model,
-                    reasoning_effort=reasoning_effort,
+                    model=executable_model,
+                    reasoning_effort=executable_reasoning,
                     approval_policy=self.cfg.approval,
                 )
                 return DispatchResult(

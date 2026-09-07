@@ -323,6 +323,8 @@ class PreparedExecutionRecord:
     summary: str | None
     prompt: str
     model: str
+    logical_model: str
+    resolved_executable_model: str
     reasoning_effort: str
     execution_mode: str
     status: str
@@ -481,7 +483,9 @@ class TaskRegistry:
                     title TEXT NOT NULL,
                     summary TEXT,
                     prompt TEXT NOT NULL,
-                    model TEXT NOT NULL,
+                model TEXT NOT NULL,
+                    logical_model TEXT NOT NULL DEFAULT '',
+                    resolved_executable_model TEXT NOT NULL DEFAULT '',
                     reasoning_effort TEXT NOT NULL,
                     execution_mode TEXT NOT NULL CHECK(execution_mode IN ('normal','fast')),
                     status TEXT NOT NULL CHECK(status IN ('PREPARED','RUNNING','DISPATCHED','FAILED')),
@@ -559,6 +563,19 @@ class TaskRegistry:
             for column, statement in migrations.items():
                 if column not in columns:
                     conn.execute(statement)
+            prepared_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(prepared_executions)")
+            }
+            if "logical_model" not in prepared_columns:
+                conn.execute("ALTER TABLE prepared_executions ADD COLUMN logical_model TEXT NOT NULL DEFAULT ''")
+            if "resolved_executable_model" not in prepared_columns:
+                conn.execute("ALTER TABLE prepared_executions ADD COLUMN resolved_executable_model TEXT NOT NULL DEFAULT ''")
+            conn.execute(
+                """UPDATE prepared_executions
+                   SET logical_model = CASE WHEN logical_model = '' THEN model ELSE logical_model END,
+                       resolved_executable_model = CASE WHEN resolved_executable_model = '' THEN model ELSE resolved_executable_model END
+                   WHERE logical_model = '' OR resolved_executable_model = ''"""
+            )
             conn.execute(
                 "UPDATE tasks SET last_progress_at = COALESCE(NULLIF(last_progress_at, ''), updated_at)"
             )
@@ -977,6 +994,8 @@ class TaskRegistry:
         model: str,
         reasoning_effort: str,
         execution_mode: str,
+        logical_model: str | None = None,
+        resolved_executable_model: str | None = None,
     ) -> dict[str, Any]:
         return {
             "approval_state": "APPROVED",
@@ -988,6 +1007,8 @@ class TaskRegistry:
             "summary": summary,
             "prompt": prompt,
             "model": model,
+            "logical_model": logical_model if logical_model is not None else model,
+            "resolved_executable_model": resolved_executable_model if resolved_executable_model is not None else model,
             "reasoning_effort": reasoning_effort,
             "execution_mode": execution_mode,
         }
@@ -1012,6 +1033,8 @@ class TaskRegistry:
         model: str,
         reasoning_effort: str,
         execution_mode: str,
+        logical_model: str | None = None,
+        resolved_executable_model: str | None = None,
     ) -> PreparedExecutionRecord:
         if task_action not in {"create", "continue", "reopen"}:
             raise TaskRegistryError(f"Unsupported prepared task action: {task_action}")
@@ -1030,6 +1053,8 @@ class TaskRegistry:
             task_action=task_action, task_ref=task_ref, host=host.strip(),
             project=project.strip(), title=title.strip(), summary=summary,
             prompt=prompt.strip(), model=model.strip(),
+            logical_model=(logical_model or model).strip(),
+            resolved_executable_model=(resolved_executable_model or model).strip(),
             reasoning_effort=reasoning_effort.strip(), execution_mode=execution_mode,
         )
         stamp = _now()
@@ -1047,17 +1072,18 @@ class TaskRegistry:
             **{key: payload[key] for key in (
                 "task_action", "task_ref", "host", "project", "title", "summary",
                 "prompt", "model", "reasoning_effort", "execution_mode",
+                "logical_model", "resolved_executable_model",
             )},
         )
         with self._connect() as conn:
             conn.execute(
                 """INSERT INTO prepared_executions
                 (prepared_execution_ref,integrity_hash,approval_state,task_action,task_ref,
-                 host,project,title,summary,prompt,model,reasoning_effort,execution_mode,
+                 host,project,title,summary,prompt,model,logical_model,resolved_executable_model,reasoning_effort,execution_mode,
                  status,created_at,updated_at,resulting_task_id,resulting_thread_id,
                  resulting_turn_id,resulting_execution_ref)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                dataclasses.astuple(record),
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                tuple(getattr(record, field.name) for field in dataclasses.fields(record)),
             )
         return record
 
@@ -1077,6 +1103,8 @@ class TaskRegistry:
             task_action=record.task_action, task_ref=record.task_ref, host=record.host,
             project=record.project, title=record.title, summary=record.summary,
             prompt=record.prompt, model=record.model,
+            logical_model=record.logical_model,
+            resolved_executable_model=record.resolved_executable_model,
             reasoning_effort=record.reasoning_effort,
             execution_mode=record.execution_mode,
         )
@@ -1288,7 +1316,7 @@ class TaskRegistry:
         allowed = {
             "QUEUED", "CLAIMED", "DISPATCHING", "CODEX_RUNNING",
             "RESULT_RECEIVED", "RESULT_PARSE", "LINEAR_WRITEBACK",
-            "BLOCKED", "IN_REVIEW", "COMPLETED",
+            "BLOCKED", "RECOVERY_REQUIRED", "IN_REVIEW", "COMPLETED",
         }
         if state not in allowed:
             raise TaskRegistryError(f"Unsupported execution state: {state}")
@@ -1299,7 +1327,7 @@ class TaskRegistry:
             candidate_turn = task.turn_id if turn_id is _UNSET else turn_id
             if not isinstance(candidate_turn, str) or not candidate_turn.strip():
                 raise TaskRegistryError("CODEX_RUNNING requires an exact turn_id")
-        if state == "BLOCKED":
+        if state in {"BLOCKED", "RECOVERY_REQUIRED"}:
             running = False
         effective_turn = task.turn_id if turn_id is _UNSET else turn_id
         if running and not effective_turn:

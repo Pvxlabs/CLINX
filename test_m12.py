@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 import bridge
+import app_server
 from m9_integration import ClinxIntegration, M9IntegrationError
 from mcp_server import ClinxMCPServer, DEFAULT_TOOL_NAMES, tool_definitions
 from task_registry import TaskRegistry, TaskRegistryError
@@ -105,6 +106,63 @@ class M12PreparationAndStartTests(unittest.TestCase):
             self.assertEqual(prepared.model, "gpt-test")
             self.assertEqual(prepared.reasoning_effort, "low")
             self.assertEqual(dispatcher.dispatch_calls, [])
+
+    def test_prepare_persists_logical_and_provider_model_layers(self):
+        with tempfile.TemporaryDirectory() as td:
+            integration, registry, _dispatcher, task = make_fixture(Path(td))
+            result = integration.prepare_execution(
+                prompt="continue the task", approved=True, task_ref=task.task_id,
+                model="Terra", reasoning_effort="low",
+            )
+            prepared = registry.get_prepared_execution(result["prepared_execution_ref"])
+            self.assertEqual(prepared.logical_model, "Terra")
+            self.assertEqual(prepared.resolved_executable_model, "Terra")
+
+
+class M12ModelCapabilityTests(unittest.TestCase):
+    class FakeTransport:
+        def __init__(self, models):
+            self.models = models
+            self.responses = []
+
+        def send(self, message):
+            if message.get("method") == "model/list":
+                self.responses.append({"id": message["id"], "result": {"data": self.models}})
+
+        def receive(self, _timeout):
+            return self.responses.pop(0)
+
+        def close(self):
+            pass
+
+    def client(self, models):
+        return app_server.CodexAppServerClient(self.FakeTransport(models))
+
+    def test_logical_model_resolves_to_unique_provider(self):
+        client = self.client([{
+            "id": "gpt-5.6-terra", "model": "Terra", "displayName": "Terra",
+            "supportedReasoningEfforts": ["low", "high"],
+            "defaultReasoningEffort": "high",
+        }])
+        self.assertEqual(client.resolve_model("Terra", "low"), ("gpt-5.6-terra", "low"))
+
+    def test_unsupported_and_ambiguous_models_fail_closed(self):
+        models = [
+            {"id": "gpt-5.6-terra", "model": "Terra", "supportedReasoningEfforts": ["high"]},
+            {"id": "gpt-5.7-terra", "model": "Terra", "supportedReasoningEfforts": ["high"]},
+        ]
+        with self.assertRaises(app_server.ModelCapabilityError):
+            self.client(models).resolve_model("Terra", "high")
+        with self.assertRaises(app_server.ModelCapabilityError):
+            self.client(models).resolve_model("missing", "high")
+
+    def test_reasoning_must_be_supported(self):
+        client = self.client([{
+            "id": "gpt-5.6-terra", "model": "Terra",
+            "supportedReasoningEfforts": ["high"], "defaultReasoningEffort": "high",
+        }])
+        with self.assertRaises(app_server.ModelCapabilityError):
+            client.resolve_model("Terra", "low")
 
     def test_prepare_and_start_require_literal_true(self):
         with tempfile.TemporaryDirectory() as td:
