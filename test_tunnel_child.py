@@ -75,9 +75,22 @@ class TunnelChildCompatibilityTests(unittest.TestCase):
 
             discover, discover_line = _request(
                 process,
-                {"jsonrpc": "2.0", "id": 0, "method": "server/discover", "params": {}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 0,
+                    "method": "server/discover",
+                    "params": {
+                        "_meta": {
+                            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                            "io.modelcontextprotocol/clientInfo": {"name": "modern", "version": "1"},
+                            "io.modelcontextprotocol/clientCapabilities": {},
+                        },
+                    },
+                },
             )
-            self.assertEqual(discover["result"], {"supportedVersions": ["2026-07-28"]})
+            self.assertEqual(discover["result"]["resultType"], "complete")
+            self.assertEqual(discover["result"]["supportedVersions"], ["2026-07-28"])
+            self.assertEqual(discover["result"]["capabilities"], {"tools": {}})
             self.assertIsNone(process.poll())
 
             notification = {
@@ -92,8 +105,20 @@ class TunnelChildCompatibilityTests(unittest.TestCase):
 
             tools, tools_line = _request(
                 process,
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/list",
+                    "params": {
+                        "_meta": {
+                            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                            "io.modelcontextprotocol/clientInfo": {"name": "modern", "version": "1"},
+                            "io.modelcontextprotocol/clientCapabilities": {},
+                        },
+                    },
+                },
             )
+            self.assertEqual(tools["result"]["resultType"], "complete")
             names = [tool["name"] for tool in tools["result"]["tools"]]
             self.assertEqual(
                 names,
@@ -116,11 +141,17 @@ class TunnelChildCompatibilityTests(unittest.TestCase):
                     "params": {
                         "name": "clinx_find_task",
                         "arguments": {"query": "__tunnel_child_harness__"},
+                        "_meta": {
+                            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                            "io.modelcontextprotocol/clientInfo": {"name": "modern", "version": "1"},
+                            "io.modelcontextprotocol/clientCapabilities": {},
+                        },
                     },
                 },
             )
             self.assertEqual(find_task["id"], 3)
             self.assertIn("result", find_task)
+            self.assertEqual(find_task["result"]["resultType"], "complete")
             self.assertIsNone(process.poll())
 
             get_status, get_status_line = _request(

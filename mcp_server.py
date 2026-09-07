@@ -165,7 +165,24 @@ def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any
     names = tuple(tool["name"] for tool in public_tools)
     if names != READ_ONLY_TOOL_NAMES:
         raise MCPServerError("server/discover requires the canonical read-only tool registry")
-    return {"supportedVersions": [SERVER_DISCOVER_PROTOCOL_VERSION]}
+    return {
+        "resultType": "complete",
+        "supportedVersions": [SERVER_DISCOVER_PROTOCOL_VERSION],
+        "capabilities": {"tools": {}},
+        "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+                "name": SERVER_NAME,
+                "version": SERVER_VERSION,
+            },
+        },
+        "instructions": (
+            "CLINX Context MCP is read-only: use it to find tasks, read "
+            "authoritative context, inspect status, and discover bounded "
+            "projects."
+        ),
+        "ttlMs": 3600000,
+        "cacheScope": "public",
+    }
 
 
 def _public_json(value: Any) -> Any:
@@ -234,6 +251,7 @@ class ClinxMCPServer:
     @staticmethod
     def _tool_result(value: dict[str, Any], *, is_error: bool = False) -> dict[str, Any]:
         return {
+            "resultType": "complete",
             "content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, sort_keys=True)}],
             "structuredContent": value,
             "isError": is_error,
@@ -269,7 +287,12 @@ class ClinxMCPServer:
         elif method == "server/discover":
             result = _server_discover_result(self.public_tools)
         elif method == "tools/list":
-            result = {"tools": self.public_tools}
+            result = {
+                "resultType": "complete",
+                "tools": self.public_tools,
+                "ttlMs": 3600000,
+                "cacheScope": "public",
+            }
         elif method == "tools/call":
             name = params.get("name")
             if not isinstance(name, str):

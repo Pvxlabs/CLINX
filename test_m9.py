@@ -271,7 +271,24 @@ class M9MCPTests(unittest.TestCase):
         })
         self.assertEqual(
             discovered["result"],
-            {"supportedVersions": ["2026-07-28"]},
+            {
+                "resultType": "complete",
+                "supportedVersions": ["2026-07-28"],
+                "capabilities": {"tools": {}},
+                "_meta": {
+                    "io.modelcontextprotocol/serverInfo": {
+                        "name": "clinx",
+                        "version": "m9",
+                    },
+                },
+                "instructions": (
+                    "CLINX Context MCP is read-only: use it to find tasks, read "
+                    "authoritative context, inspect status, and discover bounded "
+                    "projects."
+                ),
+                "ttlMs": 3600000,
+                "cacheScope": "public",
+            },
         )
         listed = self.server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
         self.assertEqual(
@@ -279,6 +296,36 @@ class M9MCPTests(unittest.TestCase):
             list(READ_ONLY_TOOL_NAMES),
         )
         self.assertNotIn("clinx_execute", discovered["result"])
+
+    def test_modern_results_are_complete_and_legacy_initialize_remains_stable(self):
+        modern_meta = {
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientInfo": {"name": "test", "version": "1"},
+                "io.modelcontextprotocol/clientCapabilities": {},
+            },
+        }
+        discovered = self.server.handle({
+            "jsonrpc": "2.0", "id": "d", "method": "server/discover", "params": modern_meta,
+        })
+        listed = self.server.handle({
+            "jsonrpc": "2.0", "id": "l", "method": "tools/list", "params": modern_meta,
+        })
+        called = self.server.handle({
+            "jsonrpc": "2.0", "id": "c", "method": "tools/call", "params": {
+                **modern_meta,
+                "name": "clinx_list_projects",
+                "arguments": {},
+            },
+        })
+        self.assertEqual(discovered["result"]["resultType"], "complete")
+        self.assertEqual(listed["result"]["resultType"], "complete")
+        self.assertEqual(called["result"]["resultType"], "complete")
+        self.assertEqual(listed["result"]["tools"], tool_definitions())
+        self.assertEqual(self.server.handle({
+            "jsonrpc": "2.0", "id": "i", "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {}},
+        })["result"]["protocolVersion"], "2025-06-18")
 
     def test_public_schemas_and_results_do_not_expose_private_identity(self):
         forbidden = {
