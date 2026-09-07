@@ -21,6 +21,7 @@ from task_registry import TaskRegistry, TaskRegistryError
 
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
+SERVER_DISCOVER_PROTOCOL_VERSION = "2026-07-28"
 SERVER_NAME = "clinx"
 SERVER_VERSION = "m9"
 READ_ONLY_TOOL_NAMES = (
@@ -159,6 +160,14 @@ def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
     return tools
 
 
+def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return the confirmed connector-discovery schema from the canonical registry."""
+    names = tuple(tool["name"] for tool in public_tools)
+    if names != READ_ONLY_TOOL_NAMES:
+        raise MCPServerError("server/discover requires the canonical read-only tool registry")
+    return {"supportedVersions": [SERVER_DISCOVER_PROTOCOL_VERSION]}
+
+
 def _public_json(value: Any) -> Any:
     """Defensive response scrubber for accidental internal-field leakage."""
     forbidden = {
@@ -257,6 +266,8 @@ class ClinxMCPServer:
                     "and audit plane."
                 ),
             }
+        elif method == "server/discover":
+            result = _server_discover_result(self.public_tools)
         elif method == "tools/list":
             result = {"tools": self.public_tools}
         elif method == "tools/call":

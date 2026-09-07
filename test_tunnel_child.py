@@ -73,6 +73,13 @@ class TunnelChildCompatibilityTests(unittest.TestCase):
             self.assertIn("result", initialize)
             self.assertIsNone(process.poll())
 
+            discover, discover_line = _request(
+                process,
+                {"jsonrpc": "2.0", "id": 0, "method": "server/discover", "params": {}},
+            )
+            self.assertEqual(discover["result"], {"supportedVersions": ["2026-07-28"]})
+            self.assertIsNone(process.poll())
+
             notification = {
                 "jsonrpc": "2.0",
                 "method": "notifications/initialized",
@@ -135,7 +142,7 @@ class TunnelChildCompatibilityTests(unittest.TestCase):
             self.assertIn("result", get_status)
             self.assertIsNone(process.poll())
 
-            for line in (initialize_line, tools_line, find_task_line, get_status_line):
+            for line in (discover_line, initialize_line, tools_line, find_task_line, get_status_line):
                 self.assertIsInstance(json.loads(line), dict)
                 self.assertTrue(line.endswith("\n"))
         finally:

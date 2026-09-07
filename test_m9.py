@@ -265,6 +265,21 @@ class M9MCPTests(unittest.TestCase):
         self.assertEqual(names, [tool["name"] for tool in tool_definitions()])
         self.assertNotIn("clinx_execute", names)
 
+    def test_server_discover_uses_confirmed_schema_and_canonical_catalog(self):
+        discovered = self.server.handle({
+            "jsonrpc": "2.0", "id": 2, "method": "server/discover", "params": {},
+        })
+        self.assertEqual(
+            discovered["result"],
+            {"supportedVersions": ["2026-07-28"]},
+        )
+        listed = self.server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
+        self.assertEqual(
+            [tool["name"] for tool in listed["result"]["tools"]],
+            list(READ_ONLY_TOOL_NAMES),
+        )
+        self.assertNotIn("clinx_execute", discovered["result"])
+
     def test_public_schemas_and_results_do_not_expose_private_identity(self):
         forbidden = {
             "thread_id", "threadId", "session_id", "sessionId", "turn_id", "turnId",
