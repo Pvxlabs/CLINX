@@ -1,3 +1,4 @@
+import dataclasses
 from pathlib import Path
 import subprocess
 import tempfile
@@ -150,6 +151,55 @@ def _fixture(root: Path):
 
 
 class TopicStatusReaderTests(unittest.TestCase):
+    def test_host_can_be_omitted_and_project_workspace_supplies_transport_host(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg, registry, client, _reader, _task = _fixture(Path(td))
+            cfg_without_thread_binding = dataclasses.replace(cfg, threads=())
+            target = bridge._read_only_transport_target(
+                cfg_without_thread_binding, cfg.projects[0]
+            )
+            self.assertEqual(target.target_host, "p620")
+
+            reader = bridge.TopicStatusReader(
+                cfg_without_thread_binding,
+                registry,
+                client_factory=lambda _target: client,
+            )
+            result = reader.read_topic_status(
+                host=None,
+                project_ref="orion",
+                topic="DATA NODE",
+                include_historical=False,
+            )
+            self.assertEqual(result.host, "p620")
+
+    def test_explicit_host_mismatch_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            _cfg, _registry, _client, reader, _task = _fixture(Path(td))
+            with self.assertRaises(bridge.TargetResolutionError):
+                reader.read_topic_status(
+                    host="other-host", project_ref="orion", topic="DATA NODE"
+                )
+
+    def test_omitted_host_is_ambiguous_with_multiple_workspaces(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg, registry, client, _reader, _task = _fixture(Path(td))
+            cfg_with_two_workspaces = dataclasses.replace(
+                cfg,
+                workspaces=cfg.workspaces + (
+                    WorkspaceConfig("other", Path(td) / "other", host="other"),
+                ),
+            )
+            reader = bridge.TopicStatusReader(
+                cfg_with_two_workspaces,
+                registry,
+                client_factory=lambda _target: client,
+            )
+            with self.assertRaises(bridge.TargetResolutionError):
+                reader.read_topic_status(
+                    host=None, project_ref="orion", topic="DATA NODE"
+                )
+
     def test_aggregates_task_and_unadopted_history_with_exact_scope_and_dedup(self):
         with tempfile.TemporaryDirectory() as td:
             _cfg, registry, client, reader, task = _fixture(Path(td))
@@ -198,7 +248,7 @@ class TopicIntegrationAndMCPTests(unittest.TestCase):
             cfg, registry, client, reader, _task = _fixture(Path(td))
             dispatcher = bridge.TaskDispatcher(cfg, task_registry=registry, client_factory=lambda _target: client)
             integration = ClinxIntegration(cfg, registry, dispatcher, bridge.TaskContextReader(cfg, registry, client_factory=lambda _target: client), None, reader)
-            result = integration.get_topic_status(host="p620", project="orion", topic="DATA NODE")
+            result = integration.get_topic_status(host=None, project="orion", topic="DATA NODE")
             self.assertEqual(result["topic_status_read"], "PASS")
             self.assertEqual(list(READ_ONLY_TOOL_NAMES), [
                 "clinx_find_task", "clinx_get_context", "clinx_get_topic_status",
@@ -211,10 +261,15 @@ class TopicIntegrationAndMCPTests(unittest.TestCase):
             response = server.handle({
                 "jsonrpc": "2.0", "id": 1, "method": "tools/call",
                 "params": {"name": "clinx_get_topic_status", "arguments": {
-                    "host": "p620", "project": "orion", "topic": "DATA NODE",
+                    "project": "orion", "topic": "DATA NODE",
                 }},
             })
             self.assertEqual(response["result"]["structuredContent"]["topic_status_read"], "PASS")
+            topic_tool = next(
+                tool for tool in tool_definitions()
+                if tool["name"] == "clinx_get_topic_status"
+            )
+            self.assertNotIn("host", topic_tool["inputSchema"]["required"])
             forbidden = {
                 "thread_id", "threadId", "session_id", "sessionId", "turn_id", "turnId",
                 "turn_ids", "item_ids", "message_ids", "execution_ids", "cwd",
