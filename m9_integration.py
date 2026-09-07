@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
 from pathlib import Path
 import re
 from typing import Any
@@ -135,6 +136,83 @@ def parse_execution_result(text: str) -> ExecutionResult:
     )
 
 
+def parse_codex_result(text: str) -> ExecutionResult:
+    """Parse a strict CLINX result or the bounded external Codex result shape.
+
+    The direct-execution pilot returned a structured JSON qualification result
+    rather than the line-oriented CLINX contract.  Keep the line parser strict,
+    but accept this separately validated shape so result ingestion does not
+    depend on a model formatting its final response exactly as CLINX text.
+    Every normalized field below is derived from an explicitly required JSON
+    field; missing or contradictory evidence remains a parse failure.
+    """
+    try:
+        return parse_execution_result(text)
+    except ResultParseError as strict_error:
+        candidate = text.strip()
+        if candidate.startswith("```") and candidate.endswith("```"):
+            if candidate.startswith("```json"):
+                candidate = candidate.removeprefix("```json").removesuffix("```").strip()
+            else:
+                lines = candidate.splitlines()
+                if len(lines) < 3 or lines[0].strip() != "```json" or lines[-1].strip() != "```":
+                    raise strict_error
+                candidate = "\n".join(lines[1:-1]).strip()
+        try:
+            payload = json.loads(candidate)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise strict_error from exc
+        if not isinstance(payload, dict):
+            raise strict_error
+        if payload.get("execution") != "CLINX" or payload.get("result") != "PASS":
+            raise strict_error
+        repository = payload.get("repository")
+        head = payload.get("head")
+        modifications = payload.get("modifications")
+        business_actions = payload.get("business_actions")
+        git_status = payload.get("git_status")
+        required_strings = {
+            "repository": repository,
+            "head": head,
+            "modifications": modifications,
+            "business_actions": business_actions,
+        }
+        if any(not isinstance(value, str) or not value.strip() for value in required_strings.values()):
+            raise strict_error
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", head):
+            raise strict_error
+        if modifications.casefold() != "none" or business_actions.casefold() != "none":
+            raise strict_error
+        if not isinstance(git_status, dict):
+            raise strict_error
+        if (
+            git_status.get("working_tree") != "clean"
+            or git_status.get("staged_changes") is not False
+            or git_status.get("unstaged_changes") is not False
+            or git_status.get("untracked_files") is not False
+        ):
+            raise strict_error
+        branch = git_status.get("branch")
+        if not isinstance(branch, str) or not branch.strip():
+            raise strict_error
+        return ExecutionResult(
+            status="PASS",
+            summary=(
+                f"Read-only Codex qualification passed for {repository.strip()} "
+                f"on branch {branch.strip()} at HEAD {head.lower()}."
+            ),
+            changed_files="NONE (reported modifications=none)",
+            validation=(
+                "Repository reported clean; staged_changes=false, "
+                "unstaged_changes=false, untracked_files=false; "
+                f"HEAD={head.lower()}"
+            ),
+            blockers="NONE",
+            next_state="IN_REVIEW",
+            raw_result=text,
+        )
+
+
 class ExecutionResultService:
     """Receive one exact turn result and own its idempotent Linear writeback."""
 
@@ -168,7 +246,7 @@ class ExecutionResultService:
         issue_id: str,
         review_state_id: str | None = None,
     ) -> ExecutionResult:
-        result = parse_execution_result(raw_result)
+        result = parse_codex_result(raw_result)
         record = self.registry.record_execution_result(
             execution_ref=execution_ref,
             task_id=task_id,

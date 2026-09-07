@@ -15,6 +15,7 @@ from m9_integration import (
     ExecutionResultService,
     M9IntegrationError,
     ResultParseError,
+    parse_codex_result,
     parse_execution_result,
 )
 from task_registry import TaskRegistry, WorkspaceConfig
@@ -28,6 +29,25 @@ VALIDATION=118 tests passed; py_compile passed
 BLOCKERS=NONE
 NEXT_STATE=IN_REVIEW
 """
+
+
+PILOT_CODEX_RESULT = """```json
+{
+  "execution": "CLINX",
+  "result": "PASS",
+  "repository": "/home/pvxlabs/dev/clinx-pilot",
+  "git_status": {
+    "branch": "main",
+    "working_tree": "clean",
+    "staged_changes": false,
+    "unstaged_changes": false,
+    "untracked_files": false
+  },
+  "head": "30900f5c3fef3a9153208c1a404aeb147dc3d0f5",
+  "modifications": "none",
+  "business_actions": "none"
+}
+```"""
 
 
 class FakeLinear:
@@ -70,6 +90,34 @@ class M9ResultTests(unittest.TestCase):
         self.assertEqual(parsed.next_state, "IN_REVIEW")
         with self.assertRaises(ResultParseError):
             parse_execution_result(RESULT.replace("BLOCKERS=NONE", "BLOCKERS=missing"))
+
+    def test_external_codex_result_requires_complete_read_only_schema(self):
+        parsed = parse_codex_result(PILOT_CODEX_RESULT)
+        self.assertEqual(parsed.status, "PASS")
+        self.assertEqual(parsed.changed_files, "NONE (reported modifications=none)")
+        self.assertIn("30900f5c3fef3a9153208c1a404aeb147dc3d0f5", parsed.validation)
+        self.assertEqual(parsed.blockers, "NONE")
+        self.assertEqual(parsed.next_state, "IN_REVIEW")
+        self.assertEqual(parsed.raw_result, PILOT_CODEX_RESULT)
+        self.assertEqual(
+            parse_codex_result("```json" + PILOT_CODEX_RESULT.split("```json", 1)[1].split("```", 1)[0] + "```"),
+            parsed,
+        )
+
+        for mutation in (
+            '"unstaged_changes": true',
+            '"modifications": "bridge.py"',
+            '"business_actions": "created issue"',
+        ):
+            with self.subTest(mutation=mutation):
+                candidate = PILOT_CODEX_RESULT.replace(
+                    mutation.replace("true", "false").replace("bridge.py", "none").replace(
+                        "created issue", "none"
+                    ),
+                    mutation,
+                )
+                with self.assertRaises(ResultParseError):
+                    parse_codex_result(candidate)
 
     def test_result_survives_restart_and_writeback_retry_is_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
