@@ -3177,10 +3177,11 @@ class TaskContextReader:
         recent_turns: int,
         max_bytes: int,
         anchor_turn_id: str | None = None,
+        allow_not_ready: bool = False,
     ) -> dict[str, Any]:
         thread = client.thread_read(binding.thread_id)
         evidence = _repository_identity_evidence(thread)
-        if anchor_turn_id is not None:
+        if anchor_turn_id is not None or allow_not_ready:
             # Historical adoption is read-only and may point at a completed
             # thread that is not currently ready to accept direct input.
             HistoricalConversationDiscovery._historical_guard(
@@ -3408,6 +3409,7 @@ class TaskContextReader:
         *,
         recent_turns: int = DEFAULT_RECENT_TURNS,
         max_bytes: int = DEFAULT_MAX_BYTES,
+        allow_not_ready: bool = False,
     ) -> TaskContext:
         if not isinstance(recent_turns, int) or isinstance(recent_turns, bool) or not 1 <= recent_turns <= self.MAX_RECENT_TURNS:
             raise ContextReadError("recent_turns must be an integer from 1 to 20")
@@ -3436,6 +3438,7 @@ class TaskContextReader:
                     recent_turns=recent_turns,
                     max_bytes=max_bytes,
                     anchor_turn_id=anchor.turn_id if anchor is not None else None,
+                    allow_not_ready=allow_not_ready,
                 )
         except BoundedHistoryUnavailable:
             native = None
@@ -3518,6 +3521,539 @@ class TaskContextReader:
         if not result or result == "UNKNOWN":
             raise ContextReadError(f"Exact turn {turn_id} has no assistant result")
         return result
+
+
+@dataclasses.dataclass(frozen=True)
+class TopicWorkItem:
+    """One bounded task or unadopted conversation contributing to a topic."""
+
+    title: str
+    source_kind: str
+    registry_status: str
+    conversation_status: str
+    last_activity: str
+    last_user_intent: str
+    last_codex_result: str
+    current_state: str
+    blockers: str
+    validation: str
+    context_source: str
+    context_range: str
+    context_truncated: bool
+    task_ref: str | None = None
+    thread_id: str | None = None
+    provenance: dict[str, tuple[str, ...]] = dataclasses.field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "source_kind": self.source_kind,
+            "registry_status": self.registry_status,
+            "conversation_status": self.conversation_status,
+            "last_activity": self.last_activity,
+            "last_user_intent": self.last_user_intent,
+            "last_codex_result": self.last_codex_result,
+            "current_state": self.current_state,
+            "blockers": self.blockers,
+            "validation": self.validation,
+            "context_source": self.context_source,
+            "context_range": self.context_range,
+            "context_truncated": self.context_truncated,
+            "task_ref": self.task_ref,
+            "thread_id": self.thread_id,
+            "provenance": self.provenance,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
+class TopicStatus:
+    host: str
+    project: str
+    topic: str
+    summary_state: str
+    completed_work: tuple[TopicWorkItem, ...]
+    active_work: tuple[TopicWorkItem, ...]
+    blocked_work: tuple[TopicWorkItem, ...]
+    paused_work: tuple[TopicWorkItem, ...]
+    superseded_work: tuple[TopicWorkItem, ...]
+    unknown_work: tuple[TopicWorkItem, ...]
+    latest_activity: str
+    source_count: int
+    task_count: int
+    conversation_count: int
+    context_coverage: str
+    context_truncated: bool
+    threads_screened: int
+    topic_candidate_threads: int
+    topic_matched_threads: int
+    deduplication: str
+    search_bounded: bool = True
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "topic_status_read": "PASS",
+            "host": self.host,
+            "project": self.project,
+            "topic": self.topic,
+            "summary_state": self.summary_state,
+            "completed_work": [item.as_dict() for item in self.completed_work],
+            "active_work": [item.as_dict() for item in self.active_work],
+            "blocked_work": [item.as_dict() for item in self.blocked_work],
+            "paused_work": [item.as_dict() for item in self.paused_work],
+            "superseded_work": [item.as_dict() for item in self.superseded_work],
+            "unknown_work": [item.as_dict() for item in self.unknown_work],
+            "latest_activity": self.latest_activity,
+            "source_count": self.source_count,
+            "task_count": self.task_count,
+            "conversation_count": self.conversation_count,
+            "context_coverage": self.context_coverage,
+            "context_truncated": self.context_truncated,
+            "threads_screened": self.threads_screened,
+            "topic_candidate_threads": self.topic_candidate_threads,
+            "topic_matched_threads": self.topic_matched_threads,
+            "deduplication": self.deduplication,
+            "search_bounded": self.search_bounded,
+            "read_only": True,
+        }
+
+
+class TopicStatusReader:
+    """Aggregate bounded authoritative context for one exact project topic."""
+
+    INITIAL_TURNS = 4
+    EXPANSION_TURNS = 8
+    MAX_EXPANSION_PAGES = 8
+    MAX_TOPIC_BYTES = TaskContextReader.DEFAULT_MAX_BYTES
+    MAX_LIMIT = 100
+
+    def __init__(
+        self,
+        cfg: BridgeConfig,
+        registry: TaskRegistry,
+        *,
+        client_factory=None,
+    ):
+        self.cfg = cfg
+        self.registry = registry
+        self.client_factory = client_factory or (
+            lambda target: _default_app_server_client(cfg, target)
+        )
+        self.dispatcher = TaskDispatcher(
+            cfg, task_registry=registry, client_factory=self.client_factory
+        )
+        self.context_reader = TaskContextReader(
+            cfg, registry, client_factory=self.client_factory
+        )
+
+    @staticmethod
+    def _topic_tokens(topic: str) -> tuple[str, ...]:
+        return tuple(
+            token for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", topic.casefold())
+            if token
+        )
+
+    @classmethod
+    def _topic_match(cls, topic: str, text: str) -> bool:
+        topic_text = " ".join(cls._topic_tokens(topic))
+        haystack = " ".join(re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", text.casefold()))
+        if not topic_text or not haystack:
+            return False
+        if topic_text in haystack:
+            return True
+        tokens = cls._topic_tokens(topic)
+        return all(token in haystack.split() for token in tokens)
+
+    @staticmethod
+    def _activity(value: Any) -> str:
+        if isinstance(value, str) and value:
+            return value
+        return ""
+
+    @classmethod
+    def _thread_activity(cls, thread: dict[str, Any]) -> str:
+        for key in (
+            "updatedAt", "updated_at", "lastActivityAt", "last_activity_at",
+            "createdAt", "created_at",
+        ):
+            value = cls._activity(thread.get(key))
+            if value:
+                return value
+        return ""
+
+    @staticmethod
+    def _status_text(value: Any) -> str:
+        if isinstance(value, dict):
+            value = value.get("type") or value.get("status")
+        return _context_text(value, 4000).upper() if value else "UNKNOWN"
+
+    @classmethod
+    def _classify(cls, *, registry_status: str, conversation_status: str,
+                  current_state: str, blockers: str, result: str) -> str:
+        combined = " ".join(
+            item for item in (current_state, blockers, result)
+            if item
+        ).casefold()
+        if any(token in combined for token in ("superseded", "replaced", "obsolete")):
+            return "SUPERSEDED"
+        blocker_text = blockers.casefold()
+        explicit_blocker = bool(blocker_text and not re.fullmatch(
+            r"(?:none|no|unknown|nil|n/?a|clear|resolved|false|0)",
+            blocker_text.strip(" .;,:"),
+        ))
+        if "blocked" in combined or explicit_blocker or "cannot continue" in combined:
+            return "BLOCKED"
+        if any(token in combined for token in ("paused", "on hold", "waiting")):
+            return "PAUSED"
+        if registry_status.upper() == "COMPLETED":
+            return "COMPLETED"
+        if any(token in combined for token in ("completed", "closed", "status=pass", "next_state=completed")):
+            return "COMPLETED"
+        if re.search(r"(?:^|[\s:=])pass(?:$|[\s;,.])", combined):
+            return "COMPLETED"
+        if registry_status.upper() == "ACTIVE" or current_state not in {"", "UNKNOWN"}:
+            return "ACTIVE"
+        return "UNKNOWN"
+
+    @staticmethod
+    def _context_range(turn_ids: tuple[str, ...]) -> str:
+        return f"{turn_ids[-1]}..{turn_ids[0]}" if turn_ids else "bounded-tail"
+
+    def _task_item(self, task: Any, *, recent_turns: int, max_bytes: int) -> TopicWorkItem:
+        binding = self.registry.get_binding(task.task_id)
+        if binding is None:
+            state = "UNKNOWN"
+            return TopicWorkItem(
+                title=task.title,
+                source_kind="TASK",
+                registry_status=task.status,
+                conversation_status="UNKNOWN",
+                last_activity=task.updated_at,
+                last_user_intent="UNKNOWN",
+                last_codex_result="UNKNOWN",
+                current_state=state,
+                blockers=task.current_blocker or "UNKNOWN",
+                validation="UNKNOWN",
+                context_source="TASK_REGISTRY",
+                context_range="none",
+                context_truncated=False,
+                task_ref=task.task_id,
+            )
+        try:
+            context = self.context_reader.read_task_context(
+                task.task_id,
+                recent_turns=recent_turns,
+                max_bytes=max_bytes,
+                allow_not_ready=True,
+            )
+            conversation_status = context.current_state
+            state = self._classify(
+                registry_status=task.status,
+                conversation_status=conversation_status,
+                current_state=context.current_state,
+                blockers=context.blockers,
+                result=context.last_codex_result,
+            )
+            return TopicWorkItem(
+                title=task.title,
+                source_kind="TASK",
+                registry_status=task.status,
+                conversation_status=conversation_status,
+                last_activity=task.updated_at,
+                last_user_intent=context.last_user_intent,
+                last_codex_result=context.last_codex_result,
+                current_state=context.current_state,
+                blockers=context.blockers,
+                validation=context.validation,
+                context_source=context.context_source,
+                context_range=context.context_range,
+                context_truncated=context.context_truncated,
+                task_ref=task.task_id,
+                thread_id=binding.thread_id,
+                provenance=context.provenance,
+            )
+        except (ContextReadError, AppServerError):
+            return TopicWorkItem(
+                title=task.title,
+                source_kind="TASK",
+                registry_status=task.status,
+                conversation_status="UNKNOWN",
+                last_activity=task.updated_at,
+                last_user_intent="UNKNOWN",
+                last_codex_result="UNKNOWN",
+                current_state="UNKNOWN",
+                blockers=task.current_blocker or "UNKNOWN",
+                validation="UNKNOWN",
+                context_source="TASK_REGISTRY",
+                context_range="none",
+                context_truncated=False,
+                task_ref=task.task_id,
+                thread_id=binding.thread_id,
+            )
+
+    def _historical_item(
+        self,
+        thread: dict[str, Any],
+        turn_texts: dict[str, str],
+        *,
+        page_truncated: bool,
+        role_texts: dict[str, tuple[list[str], list[str], list[str]]] | None = None,
+    ) -> TopicWorkItem:
+        ordered = list(turn_texts.items())
+        all_text = [text for _turn_id, text in ordered]
+        users: list[str] = []
+        assistants: list[str] = []
+        item_ids: list[str] = []
+        for turn_id, text in ordered:
+            if role_texts and turn_id in role_texts:
+                turn_users, turn_assistants, turn_items = role_texts[turn_id]
+                users.extend(turn_users)
+                assistants.extend(turn_assistants)
+                item_ids.extend(turn_items)
+                continue
+            # Expanded pages currently expose normalized text only.  Honor
+            # explicit role prefixes if present, but do not infer a role from
+            # arbitrary prose.
+            if text.casefold().startswith(("user:", "human:", "request:")):
+                users.append(text.split(":", 1)[1].strip())
+            elif text.casefold().startswith(("assistant:", "codex:", "result:")):
+                assistants.append(text.split(":", 1)[1].strip())
+        if not users and all_text:
+            users = [all_text[0]]
+        if not assistants and all_text:
+            assistants = [all_text[-1]]
+        changed, validation, blockers, state = _context_extract_fields(all_text)
+        status = self._status_text(thread.get("status"))
+        classified = self._classify(
+            registry_status="UNKNOWN",
+            conversation_status=status,
+            current_state=state,
+            blockers=blockers,
+            result=assistants[0] if assistants else "UNKNOWN",
+        )
+        turn_ids = tuple(turn_id for turn_id, _text in ordered)
+        return TopicWorkItem(
+            title="Historical Codex conversation",
+            source_kind="HISTORICAL_CONVERSATION",
+            registry_status="UNADOPTED",
+            conversation_status=status,
+            last_activity=self._thread_activity(thread),
+            last_user_intent=_latest_bounded_text(users, 4000),
+            last_codex_result=_latest_bounded_text(assistants, 4000),
+            current_state=state,
+            blockers=blockers,
+            validation=validation,
+            context_source="APP_SERVER_NATIVE",
+            context_range=self._context_range(turn_ids),
+            context_truncated=bool(page_truncated),
+            thread_id=str(thread.get("id")),
+            provenance={
+                "turn_ids": turn_ids,
+                "item_ids": tuple(item_ids),
+                "message_ids": tuple(item_ids),
+            },
+        )
+
+    def _read_historical_candidate(
+        self,
+        client: Any,
+        thread: dict[str, Any],
+        first_page: dict[str, Any],
+    ) -> TopicWorkItem:
+        texts = HistoricalConversationDiscovery(self.cfg, self.registry,
+                                                client_factory=self.client_factory)
+        rows = [row for row in first_page.get("data", ()) if isinstance(row, dict)]
+        turn_texts = texts._turn_summary_texts(rows)
+        role_texts: dict[str, tuple[list[str], list[str], list[str]]] = {}
+        for row in rows:
+            turn_id = texts._row_id(row)
+            if turn_id is None:
+                continue
+            users, assistants, _all, ids, _roles = self.context_reader._collect_item_text(
+                row.get("items", row)
+            )
+            role_texts[turn_id] = (users, assistants, ids)
+        expanded = texts._expand_candidate(client, str(thread["id"]), first_page)
+        page_truncated = bool(first_page.get("nextCursor"))
+        return self._historical_item(thread, expanded or turn_texts,
+                                     page_truncated=page_truncated,
+                                     role_texts=role_texts)
+
+    def _apply_supersession(self, items: list[TopicWorkItem]) -> list[TopicWorkItem]:
+        """Only mark explicit later replacement evidence as superseded."""
+        result = list(items)
+        for index, older in enumerate(result):
+            if older.conversation_status not in {"BLOCKED", "PAUSED"} and older.current_state not in {"BLOCKED", "PAUSED"}:
+                continue
+            older_tokens = set(self._topic_tokens(older.title))
+            for newer in result:
+                if newer is older or newer.last_activity <= older.last_activity:
+                    continue
+                text = " ".join((newer.last_codex_result, newer.current_state)).casefold()
+                if not any(word in text for word in ("superseded", "replaced", "resolved", "closed")):
+                    continue
+                if older_tokens and not older_tokens.intersection(self._topic_tokens(newer.title)):
+                    continue
+                result[index] = dataclasses.replace(older, conversation_status="SUPERSEDED")
+                break
+        return result
+
+    def read_topic_status(
+        self,
+        *,
+        host: str,
+        project_ref: str,
+        topic: str,
+        include_completed: bool = True,
+        include_historical: bool = True,
+        limit: int = 20,
+        recent_turns: int = INITIAL_TURNS,
+        max_bytes: int = MAX_TOPIC_BYTES,
+    ) -> TopicStatus:
+        if not isinstance(topic, str) or not topic.strip():
+            raise ContextReadError("topic is required")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= self.MAX_LIMIT:
+            raise ContextReadError("limit must be an integer from 1 to 100")
+        if not 1 <= recent_turns <= TaskContextReader.MAX_RECENT_TURNS:
+            raise ContextReadError("recent_turns is outside the bounded range")
+        if not 1024 <= max_bytes <= TaskContextReader.MAX_CONTEXT_BYTES:
+            raise ContextReadError("max_bytes is outside the bounded range")
+        workspace, _descriptor, project = self.dispatcher.resolve_project(
+            project_ref, host=host, project_mode="existing"
+        )
+        evidence = _local_git_identity(str(project.repo))
+        project_identity_guard(project, evidence)
+        tasks = self.registry.list_tasks(
+            host=host, project=project.project_alias, include_archived=True
+        )
+        items: list[TopicWorkItem] = []
+        for task in tasks:
+            if not include_completed and task.status == "COMPLETED":
+                continue
+            metadata = " ".join((task.title, task.summary or "", task.task_key or ""))
+            if self._topic_match(topic, metadata):
+                items.append(self._task_item(task, recent_turns=recent_turns, max_bytes=max_bytes))
+
+        bound_threads = {
+            binding.thread_id
+            for task in tasks
+            if (binding := self.registry.get_binding(task.task_id)) is not None
+        }
+        screened = candidates = matched = 0
+        if include_historical:
+            target = _read_only_transport_target(self.cfg, project)
+            client = self.client_factory(target)
+            with client:
+                initialize_info = client.initialize(
+                    client_name=self.cfg.app_server.client_name,
+                    client_title=self.cfg.app_server.client_title,
+                    client_version=self.cfg.app_server.client_version,
+                )
+                metadata_rows = _enumerate_threads(client)
+                for row in metadata_rows:
+                    thread_id = row.get("id")
+                    if not isinstance(thread_id, str) or not thread_id or thread_id in bound_threads:
+                        continue
+                    thread = client.thread_read(thread_id)
+                    if thread.get("cwd") != str(project.repo):
+                        continue
+                    try:
+                        thread_evidence = _repository_identity_evidence(thread)
+                        target_for_thread = dataclasses.replace(
+                            target,
+                            thread_id=thread_id,
+                            session_id=str(thread.get("sessionId") or ""),
+                            project_id=thread.get("projectId"),
+                        )
+                        HistoricalConversationDiscovery._historical_guard(
+                            target_for_thread, thread,
+                            initialize_info=initialize_info,
+                            repository_evidence=thread_evidence,
+                        )
+                    except (IdentityGuardError, AppServerError):
+                        continue
+                    screened += 1
+                    page = client.thread_turns_list(
+                        thread_id, limit=recent_turns,
+                        sort_direction="desc", items_view="summary"
+                    )
+                    summary_text = "\n".join(
+                        HistoricalConversationDiscovery(self.cfg, self.registry,
+                                                        client_factory=self.client_factory)
+                        ._turn_summary_texts([
+                            entry for entry in page.get("data", ()) if isinstance(entry, dict)
+                        ]).values()
+                    )
+                    if not self._topic_match(topic, summary_text):
+                        continue
+                    candidates += 1
+                    item = self._read_historical_candidate(client, thread, page)
+                    matched += 1
+                    items.append(item)
+
+        items = self._apply_supersession(items)
+        # A topic query is a bounded discovery surface.  Keep newest records
+        # while preserving deterministic source order for equal activity.
+        items.sort(key=lambda item: (item.last_activity, item.title), reverse=True)
+        items = items[:limit]
+        completed = tuple(item for item in items if self._classify(
+            registry_status=item.registry_status,
+            conversation_status=item.conversation_status,
+            current_state=item.current_state,
+            blockers=item.blockers,
+            result=item.last_codex_result,
+        ) == "COMPLETED")
+        active = tuple(item for item in items if self._classify(
+            registry_status=item.registry_status,
+            conversation_status=item.conversation_status,
+            current_state=item.current_state,
+            blockers=item.blockers,
+            result=item.last_codex_result,
+        ) == "ACTIVE")
+        blocked = tuple(item for item in items if self._classify(
+            registry_status=item.registry_status,
+            conversation_status=item.conversation_status,
+            current_state=item.current_state,
+            blockers=item.blockers,
+            result=item.last_codex_result,
+        ) == "BLOCKED")
+        paused = tuple(item for item in items if self._classify(
+            registry_status=item.registry_status,
+            conversation_status=item.conversation_status,
+            current_state=item.current_state,
+            blockers=item.blockers,
+            result=item.last_codex_result,
+        ) == "PAUSED")
+        superseded = tuple(item for item in items if item.conversation_status == "SUPERSEDED")
+        unknown = tuple(item for item in items if item not in completed + active + blocked + paused + superseded)
+        contextual = sum(item.context_source not in {"TASK_REGISTRY", "UNKNOWN"} for item in items)
+        coverage = f"{contextual}/{len(items)}" if items else "0/0"
+        states = {"COMPLETED": completed, "ACTIVE": active, "BLOCKED": blocked,
+                  "PAUSED": paused, "SUPERSEDED": superseded, "UNKNOWN": unknown}
+        summary_state = next((name for name in ("BLOCKED", "ACTIVE", "PAUSED", "UNKNOWN", "COMPLETED") if states[name]), "UNKNOWN")
+        latest = max((item.last_activity for item in items if item.last_activity), default="")
+        return TopicStatus(
+            host=workspace.host or workspace.alias,
+            project=project.project_alias,
+            topic=topic,
+            summary_state=summary_state,
+            completed_work=completed,
+            active_work=active,
+            blocked_work=blocked,
+            paused_work=paused,
+            superseded_work=superseded,
+            unknown_work=unknown,
+            latest_activity=latest,
+            source_count=len(items),
+            task_count=sum(item.source_kind == "TASK" for item in items),
+            conversation_count=sum(item.source_kind == "HISTORICAL_CONVERSATION" for item in items),
+            context_coverage=coverage,
+            context_truncated=any(item.context_truncated for item in items),
+            threads_screened=screened,
+            topic_candidate_threads=candidates,
+            topic_matched_threads=matched,
+            deduplication="ADOPTED_THREADS_EXCLUDED",
+            search_bounded=True,
+        )
 
 
 class Dispatcher:
@@ -4721,6 +5257,17 @@ def build_parser() -> argparse.ArgumentParser:
     tasks_context.add_argument("--query")
     tasks_context.add_argument("--recent-turns", type=int, default=TaskContextReader.DEFAULT_RECENT_TURNS)
     tasks_context.add_argument("--max-bytes", type=int, default=TaskContextReader.DEFAULT_MAX_BYTES)
+    tasks_topic = task_sub.add_parser(
+        "topic", help="Read bounded deterministic status for a project topic"
+    )
+    tasks_topic.add_argument("--host", required=True)
+    tasks_topic.add_argument("--project", required=True)
+    tasks_topic.add_argument("--topic", required=True)
+    tasks_topic.add_argument("--include-completed", action=argparse.BooleanOptionalAction, default=True)
+    tasks_topic.add_argument("--include-historical", action=argparse.BooleanOptionalAction, default=True)
+    tasks_topic.add_argument("--limit", type=int, default=TopicStatusReader.MAX_LIMIT)
+    tasks_topic.add_argument("--recent-turns", type=int, default=TopicStatusReader.INITIAL_TURNS)
+    tasks_topic.add_argument("--max-bytes", type=int, default=TopicStatusReader.MAX_TOPIC_BYTES)
     sub.add_parser("once", help="Poll once and execute at most max_batch issues")
     sub.add_parser("run", help="Run foreground polling loop")
     return parser
@@ -4848,6 +5395,18 @@ def main() -> int:
                 )
                 payload = reader.read_task_context(
                     task.task_id,
+                    recent_turns=args.recent_turns,
+                    max_bytes=args.max_bytes,
+                ).as_dict()
+            elif args.tasks_command == "topic":
+                reader = TopicStatusReader(cfg, registry)
+                payload = reader.read_topic_status(
+                    host=args.host,
+                    project_ref=args.project,
+                    topic=args.topic,
+                    include_completed=args.include_completed,
+                    include_historical=args.include_historical,
+                    limit=args.limit,
                     recent_turns=args.recent_turns,
                     max_bytes=args.max_bytes,
                 ).as_dict()

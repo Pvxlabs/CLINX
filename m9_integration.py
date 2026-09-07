@@ -195,12 +195,23 @@ class ExecutionResultService:
 class ClinxIntegration:
     """Public M9 operations backed by existing CLINX services."""
 
-    def __init__(self, cfg: Any, registry: TaskRegistry, dispatcher: Any, context_reader: Any, linear: Any):
+    def __init__(
+        self,
+        cfg: Any,
+        registry: TaskRegistry,
+        dispatcher: Any,
+        context_reader: Any,
+        linear: Any,
+        topic_reader: Any = None,
+    ):
         self.cfg = cfg
         self.registry = registry
         self.dispatcher = dispatcher
         self.context_reader = context_reader
         self.linear = linear
+        # Keep the legacy test construction lightweight.  Production callers
+        # inject the reader explicitly because it owns the app-server client.
+        self.topic_reader = topic_reader
 
     def _resolve(self, task_ref: str | None = None, query: str | None = None, project: str | None = None) -> Any:
         return self.context_reader.resolve_task(task_ref=task_ref, query=query, project=project)
@@ -248,6 +259,35 @@ class ClinxIntegration:
         if max_bytes is not None:
             options["max_bytes"] = max_bytes
         return self.context_reader.read_task_context(task.task_id, **options).as_dict()
+
+    def get_topic_status(
+        self,
+        *,
+        host: str,
+        project: str,
+        topic: str,
+        include_completed: bool = True,
+        include_historical: bool = True,
+        limit: int = 20,
+        recent_turns: int | None = None,
+        max_bytes: int | None = None,
+    ) -> dict[str, Any]:
+        """Read deterministic topic status without executing or writing."""
+        if self.topic_reader is None:
+            raise M9IntegrationError("topic status reader is not configured")
+        options: dict[str, Any] = {
+            "host": host,
+            "project_ref": project,
+            "topic": topic,
+            "include_completed": include_completed,
+            "include_historical": include_historical,
+            "limit": limit,
+        }
+        if recent_turns is not None:
+            options["recent_turns"] = recent_turns
+        if max_bytes is not None:
+            options["max_bytes"] = max_bytes
+        return self.topic_reader.read_topic_status(**options).as_dict()
 
     def list_projects(
         self,
@@ -455,6 +495,10 @@ def clinx_find_task(integration: ClinxIntegration, query: str, **kwargs: Any) ->
 
 def clinx_get_context(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
     return integration.get_context(**kwargs)
+
+
+def clinx_get_topic_status(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
+    return integration.get_topic_status(**kwargs)
 
 
 def clinx_list_projects(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
