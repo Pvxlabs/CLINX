@@ -112,6 +112,11 @@ class M11PrepareExecutionTests(unittest.TestCase):
         self.assertTrue(result["execution"]["available"])
         self.assertFalse(result["execution"]["direct_mcp_execution"])
         self.assertEqual(result["execution"]["command_plane"], "LINEAR")
+        self.assertTrue(result["context_read_only"])
+        self.assertTrue(result["execution_available"])
+        self.assertEqual(result["command_plane"], "LINEAR")
+        self.assertEqual(result["prepare_tool"], "clinx_prepare_execution")
+        self.assertEqual(result["status_tool"], "clinx_get_status")
         self.assertEqual(result["execution"], {
             "available": True,
             "direct_mcp_execution": False,
@@ -145,6 +150,7 @@ class M11PrepareExecutionTests(unittest.TestCase):
             self.assertEqual(result["model"], "gpt-test")
             self.assertEqual(result["reasoning"], "low")
             self.assertEqual(result["execution_mode"], "fast")
+            self.assertTrue(result["requires_command_write"])
             self.assertEqual(result["next_action"], {
                 "provider": "LINEAR",
                 "operation": "CREATE_ISSUE",
@@ -329,11 +335,21 @@ class M11MCPTests(unittest.TestCase):
         tools = {tool["name"]: tool for tool in tool_definitions()}
         capabilities = tools["clinx_get_capabilities"]["outputSchema"]["properties"]
         execution = capabilities["execution"]["properties"]
+        self.assertEqual(capabilities["context_read_only"], {"type": "boolean", "const": True})
+        self.assertEqual(capabilities["execution_available"], {"type": "boolean", "const": True})
+        self.assertEqual(capabilities["command_plane"], {"type": "string", "const": "LINEAR"})
+        self.assertEqual(capabilities["prepare_tool"], {
+            "type": "string", "const": "clinx_prepare_execution",
+        })
+        self.assertEqual(capabilities["status_tool"], {
+            "type": "string", "const": "clinx_get_status",
+        })
         self.assertEqual(execution["available"], {"type": "boolean", "const": True})
         self.assertEqual(execution["direct_mcp_execution"], {"type": "boolean", "const": False})
         self.assertEqual(execution["command_plane"], {"type": "string", "const": "LINEAR"})
 
         prepare = tools["clinx_prepare_execution"]["outputSchema"]["properties"]
+        self.assertEqual(prepare["requires_command_write"], {"type": "boolean", "const": True})
         self.assertEqual(prepare["handoff_ready"], {"type": "boolean", "const": True})
         self.assertEqual(prepare["next_action"]["properties"]["provider"], {
             "type": "string", "const": "LINEAR",
