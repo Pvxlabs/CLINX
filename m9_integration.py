@@ -68,6 +68,11 @@ class ExecutionHandoff:
             "summary": self.summary,
             "prompt": self.prompt,
             "description": self.description,
+            "next_action": {
+                "provider": "LINEAR",
+                "operation": "CREATE_ISSUE",
+                "required": True,
+            },
             "linear_handoff": {
                 "team": self.team_id,
                 "project": self.linear_project,
@@ -486,9 +491,11 @@ class ClinxIntegration:
                 "tool": "clinx_get_status",
             },
             "instructions": (
-                "Use CLINX for authoritative task context. After explicit user "
-                "approval, prepare a handoff with clinx_prepare_execution and use "
-                "the connected Linear Plugin to create the returned execution issue."
+                "Use CLINX for authoritative task context. execution.available=true "
+                "means the execution capability exists; direct_mcp_execution=false "
+                "is intentional. After explicit user approval, prepare a handoff "
+                "with clinx_prepare_execution and use an available Linear "
+                "issue-create capability for its next_action."
             ),
             "read_only": True,
         }
