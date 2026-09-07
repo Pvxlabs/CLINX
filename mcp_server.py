@@ -179,6 +179,11 @@ def _status_output_schema() -> dict[str, Any]:
 def _capabilities_output_schema() -> dict[str, Any]:
     return _json_schema({
         "context_plane": {"type": "object", "additionalProperties": True},
+        "context_read_only": {"type": "boolean", "const": True},
+        "execution_available": {"type": "boolean", "const": True},
+        "command_plane": {"type": "string", "const": "LINEAR"},
+        "prepare_tool": {"type": "string", "const": "clinx_prepare_execution"},
+        "status_tool": {"type": "string", "const": "clinx_get_status"},
         "execution": {
             "type": "object",
             "properties": {
@@ -222,6 +227,7 @@ def _prepare_output_schema() -> dict[str, Any]:
         "execution_available": {"type": "boolean", "const": True},
         "command_plane": {"type": "string", "const": "LINEAR"},
         "requires_user_approval": {"type": "boolean", "const": True},
+        "requires_command_write": {"type": "boolean", "const": True},
         "approval_state": {"type": "string", "const": "SATISFIED"},
         "handoff_ready": {"type": "boolean", "const": True},
         "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
