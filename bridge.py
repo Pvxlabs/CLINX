@@ -2069,6 +2069,8 @@ class TaskDispatcher:
             elif isinstance(item, list):
                 for child in item:
                     visit(child)
+            elif isinstance(item, str) and item.strip():
+                parts.append(item.strip())
         visit(value)
         return "\n".join(dict.fromkeys(parts))
 
