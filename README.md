@@ -50,12 +50,23 @@ in `mcp_server.py`:
 python3 mcp_server.py --config bridge.toml --stdio
 ```
 
-The default adapter exposes seven bounded read-only tools:
+The default adapter exposes seven bounded read-only tools plus explicit start
+and cancellation actions:
 `clinx_find_task`, `clinx_get_context`, `clinx_get_topic_status`,
 `clinx_get_status`, `clinx_list_projects`, `clinx_get_capabilities`, and
 `clinx_prepare_execution`.  They reuse the task registry,
 ConversationBinding, and the M8 bounded context reader.  Archived and
 historically adopted tasks remain discoverable through the human query path.
+
+`clinx_start_execution` requires
+the exact boolean `approved=true`, an opaque prepared execution reference, and
+the persisted integrity checks for the selected logical and executable
+provider models.  Recoverable dispatch failures remain `RECOVERY_REQUIRED`;
+identity guard failures remain `BLOCKED`.
+
+`clinx_cancel_execution` accepts only an opaque CLINX `execution_ref` and
+interrupts the exact active CLINX-managed turn. It never accepts a PID, shell,
+thread, turn, or cwd value; cancellation is durable and idempotent.
 
 Project topic status is read with an exact project identity and bounded Codex
 history.  It combines matching registered tasks with unadopted conversations,
@@ -75,8 +86,9 @@ returns a parser-compatible Linear handoff.  It does not create a Task, write
 Linear, connect to Codex, or call `turn/start`.
 
 The default catalog does not expose `clinx_execute`.  That legacy execution
-adapter is retained only as an internal/experimental compatibility path and is
-available only when a local process is explicitly started with `--allow-execute`.
+adapter is retained only as an internal/experimental break-glass compatibility
+path and is available only when a local process is explicitly started with
+`--allow-execute`; it is never the normal command-plane path.
 The normal M11 flow is:
 
 ```text
@@ -84,12 +96,13 @@ ChatGPT human intent
   -> CLINX task discovery / context
   -> explicit approved=true
   -> clinx_prepare_execution
-  -> authenticated Linear Plugin creates the returned execution issue
-  -> existing bridge claims and executes the Linear issue
+  -> clinx_start_execution owns the command and Codex dispatch
+  -> Linear mirrors the CLINX Task once and records audit comments/status
 ```
 
-CLINX is the read-only context plane, Linear is the command and audit plane,
-and Codex is the execution plane.  Human-facing calls require no task UUID,
+CLINX is the authoritative context, command, and execution-history plane;
+Linear is the human-readable audit and notification projection, and Codex is
+the provider execution plane. Human-facing calls require no task UUID,
 thread ID, session ID, turn ID, cwd, or repository-origin value.  Those remain
 inside CLINX's registry and dispatcher.  The read-only context MCP never starts
 a Codex thread or turn.
@@ -106,8 +119,8 @@ remain operator/deployment actions.
 The M9 planes are intentionally separate:
 
 ```text
-Linear   = command + audit plane
-CLINX    = read-only context plane
+CLINX    = context + command + authoritative execution/history plane
+Linear   = audit + human notification projection only
 Codex    = execution plane
 ```
 
@@ -211,8 +224,8 @@ urgency. ChatGPT decides whether the request creates, continues, or reopens a
 task, selects the model and reasoning effort, drafts the execution prompt, and
 waits for the user's execution confirmation.
 
-After confirmation, ChatGPT creates a separate Linear execution issue with the
-canonical M6 machine handoff:
+After confirmation, CLINX starts the prepared command with the canonical M12
+machine handoff; the first real Task mirror creates one Linear audit issue:
 
 ```text
 HOST=P620
@@ -225,8 +238,13 @@ TASK_TITLE=Long-running disposable pilot task
 TASK_SUMMARY_UPDATE=Current short task summary
 ```
 
+The mirror issue is reused for every continuation, reopen, recovery, and
+execution. CLINX writes structured lifecycle comments, moves it to In Progress
+only after a real `TURN_STARTED`, and moves successful completion to In Review;
+Codex never marks it Done.
+
 For continuation or explicit historical recovery, CLINX receives the hidden
-task reference resolved by ChatGPT from the task index:
+task reference resolved by ChatGPT from the Task Registry:
 
 ```text
 HOST=P620

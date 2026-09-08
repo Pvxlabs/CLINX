@@ -40,6 +40,7 @@ from task_registry import (
     DynamicProjectResolver,
     ProjectDescriptor,
     TaskExecutionBusy,
+    WorktreeExecutionBusy,
     TaskIndexRecord,
     TaskRegistry,
     TaskRegistryError,
@@ -1155,8 +1156,8 @@ class LinearTaskIndex:
             f"LAST_EXECUTION={public['last_execution'] or ''}\n"
             f"LAST_CONTEXT_SYNC_AT={checkpoint.timestamp if checkpoint else ''}\n"
             f"UPDATED_AT={task.updated_at}\n\n"
-            "This issue is the durable CLINX task discovery record. "
-            "Execution issues remain separate. Conversation IDs are intentionally omitted."
+            "This issue is the single durable CLINX task audit record. "
+            "Execution and turn lifecycle updates are appended here; conversation IDs are omitted."
         )
 
     @staticmethod
@@ -2192,6 +2193,18 @@ class TaskDispatcher:
             workspace, _descriptor, project = self.resolve_project(
                 project_ref, host=host, project_mode=project_mode
             )
+            conflict = self.tasks.active_worktree_conflict(
+                host=host or workspace.alias, cwd=str(project.repo),
+                repository_origin=project.repository_origin,
+            )
+            if conflict is not None:
+                raise WorktreeExecutionBusy(
+                    f"Worktree already has an active execution: {project.repo}",
+                    active_task_id=conflict["active_task_id"],
+                    active_execution_ref=conflict.get("active_execution_ref"),
+                    stage=conflict.get("stage") or "ACTIVE",
+                    worktree_key=conflict["worktree_key"],
+                )
             task = self.tasks.create_task(
                 host=host or workspace.alias,
                 workspace_alias=workspace.alias,
@@ -2206,7 +2219,10 @@ class TaskDispatcher:
                 execution_mode=execution_mode,
             )
             self.last_task_id = task.task_id
-            with self.tasks.execution(task.task_id, issue_id) as leased:
+            with self.tasks.execution(
+                task.task_id, issue_id, execution_ref=execution_ref,
+                retain=bool(execution_ref and execution_ref.startswith("exec_"))
+            ) as leased:
                 self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
                 target = self._new_target(workspace, project)
                 client = self.client_factory(target)
@@ -2221,6 +2237,11 @@ class TaskDispatcher:
                         executable_model, executable_reasoning = _resolve_dispatch_model(
                             client, model, reasoning_effort
                         )
+                        if execution_ref:
+                            self.tasks.set_execution_models(
+                                execution_ref, logical_model=model,
+                                resolved_model=executable_model,
+                            )
                         started = client.thread_start(
                             cwd=str(project.repo),
                             model=executable_model,
@@ -2369,7 +2390,10 @@ class TaskDispatcher:
             summary=summary,
             execution_mode=execution_mode,
         )
-        with self.tasks.execution(task.task_id, issue_id) as leased:
+        with self.tasks.execution(
+            task.task_id, issue_id, execution_ref=execution_ref,
+            retain=bool(execution_ref and execution_ref.startswith("exec_"))
+        ) as leased:
             self.last_task_id = leased.task_id
             self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
             target = self._target(workspace, project, binding)
@@ -2385,6 +2409,11 @@ class TaskDispatcher:
                     executable_model, executable_reasoning = _resolve_dispatch_model(
                         client, model, reasoning_effort
                     )
+                    if execution_ref:
+                        self.tasks.set_execution_models(
+                            execution_ref, logical_model=model,
+                            resolved_model=executable_model,
+                        )
                     thread = self._read_and_guard(client, target, initialize_info)
                     turn_start_guard(thread)
                     self.tasks.mark_verified(
@@ -2608,6 +2637,33 @@ class TaskDispatcher:
             self.tasks.reset_execution(task_id)
             return self.tasks.set_status(task_id, "ACTIVE").status
         raise DispatchContractError(f"Unsupported TASK_ACTION={action!r}")
+
+    def cancel_execution(self, execution_ref: str) -> dict[str, Any]:
+        """Interrupt the exact CLINX-owned turn, then close its durable lease."""
+        active = self.tasks.get_active_execution(execution_ref)
+        if active is None:
+            raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
+        task = self.tasks.get_task(active["task_id"])
+        binding = self.tasks.get_binding(task.task_id)
+        if binding is None or not task.turn_id:
+            raise TaskRegistryError("Active execution has no exact conversation turn")
+        workspace = self.workspaces.resolve(task.workspace_alias)
+        project_path = self.workspaces.validate_path(workspace, Path(task.cwd))
+        project = ProjectMapping(
+            linear_name=task.project_name, repo=project_path, alias=task.project_alias,
+            repository_origin=task.repository_origin, branch=task.branch,
+            workspace_alias=task.workspace_alias,
+        )
+        client = self.client_factory(self._target(workspace, project, binding))
+        with client:
+            client.initialize(
+                client_name=self.cfg.app_server.client_name,
+                client_title=self.cfg.app_server.client_title,
+                client_version=self.cfg.app_server.client_version,
+            )
+            client.turn_interrupt(binding.thread_id, task.turn_id)
+        cancelled = self.tasks.cancel_execution(execution_ref)
+        return {"execution_ref": execution_ref, "task_ref": cancelled.task_id, "status": "CANCELLED"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -4522,6 +4578,7 @@ class Bridge:
             raw_result=raw_result,
             issue_id=issue_id,
             review_state_id=self.states.get(self.cfg.review_state),
+            blocked_state_id=self.states.get(self.cfg.todo_state),
         )
 
     def _m5_repo(self, contract: DispatchContract) -> Path:

@@ -35,6 +35,18 @@ class TaskExecutionBusy(TaskRegistryError):
     pass
 
 
+class WorktreeExecutionBusy(TaskExecutionBusy):
+    """A second mutating execution attempted to claim an active worktree."""
+
+    def __init__(self, message: str, *, active_task_id: str, active_execution_ref: str | None,
+                 stage: str, worktree_key: str):
+        super().__init__(message)
+        self.active_task_id = active_task_id
+        self.active_execution_ref = active_execution_ref
+        self.stage = stage
+        self.worktree_key = worktree_key
+
+
 class WorkspaceResolutionError(TaskRegistryError):
     pass
 
@@ -299,6 +311,15 @@ class TaskRecord:
 
 
 @dataclasses.dataclass(frozen=True)
+class LinearAuditRecord:
+    task_id: str
+    sync_state: str
+    retry_required: bool
+    last_error: str | None
+    updated_at: str
+
+
+@dataclasses.dataclass(frozen=True)
 class TaskIndexRecord:
     task_id: str
     issue_id: str
@@ -327,6 +348,7 @@ class PreparedExecutionRecord:
     resolved_executable_model: str
     reasoning_effort: str
     execution_mode: str
+    network_access: bool
     status: str
     created_at: str
     updated_at: str
@@ -403,7 +425,14 @@ class TaskRegistry:
     def __init__(self, path: Path | str):
         self.path = Path(path).expanduser()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+        try:
+            self._initialize()
+        except sqlite3.OperationalError as exc:
+            # The tunnel child may be intentionally launched with a read-only
+            # state directory. Existing M11 read paths remain usable; a normal
+            # CLINX process will run migrations when its DB is writable.
+            if "readonly" not in str(exc).casefold():
+                raise
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
@@ -457,6 +486,25 @@ class TaskRegistry:
                 CREATE TABLE IF NOT EXISTS executions (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
                     issue_id TEXT,
+                    execution_ref TEXT,
+                    worktree_key TEXT,
+                    logical_model TEXT,
+                    resolved_model TEXT,
+                    stage TEXT NOT NULL DEFAULT 'CLAIMED',
+                    acquired_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS work_item_fingerprints (
+                    task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+                    fingerprint TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_work_item_fingerprint
+                    ON work_item_fingerprints(fingerprint);
+                CREATE TABLE IF NOT EXISTS worktree_leases (
+                    worktree_key TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    execution_ref TEXT,
+                    stage TEXT NOT NULL,
                     acquired_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS linear_executions (
@@ -488,6 +536,7 @@ class TaskRegistry:
                     resolved_executable_model TEXT NOT NULL DEFAULT '',
                     reasoning_effort TEXT NOT NULL,
                     execution_mode TEXT NOT NULL CHECK(execution_mode IN ('normal','fast')),
+                    network_access INTEGER NOT NULL DEFAULT 0 CHECK(network_access IN (0,1)),
                     status TEXT NOT NULL CHECK(status IN ('PREPARED','RUNNING','DISPATCHED','FAILED')),
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -540,6 +589,16 @@ class TaskRegistry:
                 );
                 CREATE INDEX IF NOT EXISTS idx_execution_results_task
                     ON execution_results(task_id, received_at DESC);
+                CREATE TABLE IF NOT EXISTS linear_audit_events (
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    event_key TEXT NOT NULL,
+                    body_hash TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('PENDING','WRITTEN','FAILED')),
+                    retry_required INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(task_id, event_key)
+                );
                 """
             )
             columns = {
@@ -551,6 +610,20 @@ class TaskRegistry:
                 conn.execute(
                     "ALTER TABLE tasks ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'normal'"
                 )
+            execution_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(executions)")
+            }
+            if "execution_ref" not in execution_columns:
+                conn.execute("ALTER TABLE executions ADD COLUMN execution_ref TEXT")
+            if "stage" not in execution_columns:
+                conn.execute("ALTER TABLE executions ADD COLUMN stage TEXT NOT NULL DEFAULT 'CLAIMED'")
+            if "worktree_key" not in execution_columns:
+                conn.execute("ALTER TABLE executions ADD COLUMN worktree_key TEXT")
+            if "logical_model" not in execution_columns:
+                conn.execute("ALTER TABLE executions ADD COLUMN logical_model TEXT")
+            if "resolved_model" not in execution_columns:
+                conn.execute("ALTER TABLE executions ADD COLUMN resolved_model TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_executions_ref ON executions(execution_ref)")
             migrations = {
                 "execution_state": "ALTER TABLE tasks ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'QUEUED'",
                 "current_stage": "ALTER TABLE tasks ADD COLUMN current_stage TEXT NOT NULL DEFAULT 'queued'",
@@ -570,6 +643,10 @@ class TaskRegistry:
                 conn.execute("ALTER TABLE prepared_executions ADD COLUMN logical_model TEXT NOT NULL DEFAULT ''")
             if "resolved_executable_model" not in prepared_columns:
                 conn.execute("ALTER TABLE prepared_executions ADD COLUMN resolved_executable_model TEXT NOT NULL DEFAULT ''")
+            if "network_access" not in prepared_columns:
+                conn.execute(
+                    "ALTER TABLE prepared_executions ADD COLUMN network_access INTEGER NOT NULL DEFAULT 0"
+                )
             conn.execute(
                 """UPDATE prepared_executions
                    SET logical_model = CASE WHEN logical_model = '' THEN model ELSE logical_model END,
@@ -579,6 +656,16 @@ class TaskRegistry:
             conn.execute(
                 "UPDATE tasks SET last_progress_at = COALESCE(NULLIF(last_progress_at, ''), updated_at)"
             )
+            for task in conn.execute("SELECT * FROM tasks").fetchall():
+                fingerprint = self.canonical_work_item_fingerprint(
+                    host=task["host"], project_alias=task["project_alias"],
+                    cwd=task["cwd"], repository_origin=task["repository_origin"],
+                    title=task["title"], summary=task["summary"], task_key=task["task_key"],
+                )
+                conn.execute(
+                    "INSERT OR IGNORE INTO work_item_fingerprints(task_id,fingerprint,created_at) VALUES (?,?,?)",
+                    (task["task_id"], fingerprint, task["created_at"]),
+                )
 
     def create_task(
         self,
@@ -621,6 +708,15 @@ class TaskRegistry:
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 row,
             )
+            fingerprint = self.canonical_work_item_fingerprint(
+                host=host, project_alias=project_alias, cwd=cwd,
+                repository_origin=repository_origin, title=title,
+                summary=summary, task_key=task_key,
+            )
+            conn.execute(
+                "INSERT INTO work_item_fingerprints(task_id,fingerprint,created_at) VALUES (?,?,?)",
+                (task_id, fingerprint, stamp),
+            )
         return self.get_task(task_id)
 
     def get_task(self, task_id: str) -> TaskRecord:
@@ -662,6 +758,55 @@ class TaskRegistry:
     def _normalize(value: str | None) -> str:
         normalized = unicodedata.normalize("NFKC", value or "").casefold()
         return " ".join(re.findall(r"[\w]+", normalized, flags=re.UNICODE))
+
+    @classmethod
+    def canonical_work_item_fingerprint(
+        cls,
+        *,
+        host: str,
+        project_alias: str,
+        cwd: str,
+        repository_origin: str | None,
+        title: str,
+        summary: str | None = None,
+        task_key: str | None = None,
+    ) -> str:
+        """Build a deterministic exact-work-item identity without NLP."""
+        payload = "\x1f".join((
+            cls._normalize(host), cls._normalize(project_alias),
+            os.path.realpath(cwd), cls._normalize(repository_origin),
+            cls._normalize(title), cls._normalize(summary),
+        ))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def record_work_item_fingerprint(self, task_id: str, fingerprint: str) -> None:
+        self.get_task(task_id)
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO work_item_fingerprints(task_id,fingerprint,created_at)
+                   VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET fingerprint=excluded.fingerprint""",
+                (task_id, fingerprint, _now()),
+            )
+
+    def find_active_work_item(
+        self, *, fingerprint: str, exclude_task_id: str | None = None
+    ) -> TaskRecord | None:
+        query = """SELECT t.* FROM tasks t JOIN work_item_fingerprints f ON f.task_id=t.task_id
+                   WHERE f.fingerprint=? AND t.status='ACTIVE'
+                   ORDER BY t.updated_at DESC LIMIT 1"""
+        args: list[Any] = [fingerprint]
+        if exclude_task_id:
+            query = query.replace("AND t.status='ACTIVE'", "AND t.status='ACTIVE' AND t.task_id != ?")
+            args.append(exclude_task_id)
+        with self._connect() as conn:
+            row = conn.execute(query, tuple(args)).fetchone()
+        return TaskRecord(**dict(row)) if row is not None else None
+
+    @staticmethod
+    def worktree_key(*, host: str, cwd: str, repository_origin: str | None) -> str:
+        payload = "\x1f".join((host.strip().casefold(), os.path.realpath(cwd),
+                               (repository_origin or "").strip().casefold()))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _validate_metadata_value(
@@ -776,7 +921,17 @@ class TaskRegistry:
                 f"UPDATE tasks SET {', '.join(changes)} WHERE task_id = ?",
                 tuple(values),
             )
-        return self.get_task(task_id)
+        refreshed = self.get_task(task_id)
+        self.record_work_item_fingerprint(
+            task_id,
+            self.canonical_work_item_fingerprint(
+                host=refreshed.host, project_alias=refreshed.project_alias,
+                cwd=refreshed.cwd, repository_origin=refreshed.repository_origin,
+                title=refreshed.title, summary=refreshed.summary,
+                task_key=refreshed.task_key,
+            ),
+        )
+        return refreshed
 
     def get_binding(self, task_id: str) -> ConversationBinding | None:
         with self._connect() as conn:
@@ -855,6 +1010,15 @@ class TaskRegistry:
                 (task_id,thread_id,session_id,project_id,bound_at,last_verified_at,app_server_version)
                 VALUES (?,?,?,?,?,?,?)""",
                 (task_id, thread_id, session_id, project_id, stamp, stamp, app_server_version),
+            )
+            fingerprint = self.canonical_work_item_fingerprint(
+                host=host, project_alias=project_alias, cwd=cwd,
+                repository_origin=repository_origin, title=title,
+                summary=summary, task_key=task_key,
+            )
+            conn.execute(
+                "INSERT INTO work_item_fingerprints(task_id,fingerprint,created_at) VALUES (?,?,?)",
+                (task_id, fingerprint, stamp),
             )
         task = self.get_task(task_id)
         binding = self.get_binding(task_id)
@@ -996,6 +1160,7 @@ class TaskRegistry:
         execution_mode: str,
         logical_model: str | None = None,
         resolved_executable_model: str | None = None,
+        network_access: bool = False,
     ) -> dict[str, Any]:
         return {
             "approval_state": "APPROVED",
@@ -1011,6 +1176,7 @@ class TaskRegistry:
             "resolved_executable_model": resolved_executable_model if resolved_executable_model is not None else model,
             "reasoning_effort": reasoning_effort,
             "execution_mode": execution_mode,
+            "network_access": network_access,
         }
 
     @staticmethod
@@ -1035,11 +1201,14 @@ class TaskRegistry:
         execution_mode: str,
         logical_model: str | None = None,
         resolved_executable_model: str | None = None,
+        network_access: bool = False,
     ) -> PreparedExecutionRecord:
         if task_action not in {"create", "continue", "reopen"}:
             raise TaskRegistryError(f"Unsupported prepared task action: {task_action}")
         if execution_mode not in {"normal", "fast"}:
             raise TaskRegistryError(f"Unsupported execution mode: {execution_mode}")
+        if not isinstance(network_access, bool):
+            raise TaskRegistryError("network_access must be a boolean")
         values = {
             "host": host, "project": project, "title": title,
             "prompt": prompt, "model": model,
@@ -1056,6 +1225,7 @@ class TaskRegistry:
             logical_model=(logical_model or model).strip(),
             resolved_executable_model=(resolved_executable_model or model).strip(),
             reasoning_effort=reasoning_effort.strip(), execution_mode=execution_mode,
+            network_access=network_access,
         )
         stamp = _now()
         record = PreparedExecutionRecord(
@@ -1072,7 +1242,7 @@ class TaskRegistry:
             **{key: payload[key] for key in (
                 "task_action", "task_ref", "host", "project", "title", "summary",
                 "prompt", "model", "reasoning_effort", "execution_mode",
-                "logical_model", "resolved_executable_model",
+                "logical_model", "resolved_executable_model", "network_access",
             )},
         )
         with self._connect() as conn:
@@ -1080,6 +1250,7 @@ class TaskRegistry:
                 """INSERT INTO prepared_executions
                 (prepared_execution_ref,integrity_hash,approval_state,task_action,task_ref,
                  host,project,title,summary,prompt,model,logical_model,resolved_executable_model,reasoning_effort,execution_mode,
+                 network_access,
                  status,created_at,updated_at,resulting_task_id,resulting_thread_id,
                  resulting_turn_id,resulting_execution_ref)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -1095,6 +1266,30 @@ class TaskRegistry:
             ).fetchone()
         return PreparedExecutionRecord(**dict(row)) if row is not None else None
 
+    def get_prepared_execution_for_execution(
+        self, execution_ref: str
+    ) -> PreparedExecutionRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT * FROM prepared_executions
+                   WHERE resulting_execution_ref=?
+                   ORDER BY updated_at DESC LIMIT 1""",
+                (execution_ref,),
+            ).fetchone()
+        return PreparedExecutionRecord(**dict(row)) if row is not None else None
+
+    def get_prepared_execution_for_task(
+        self, task_id: str
+    ) -> PreparedExecutionRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT * FROM prepared_executions
+                   WHERE resulting_task_id=?
+                   ORDER BY updated_at DESC LIMIT 1""",
+                (task_id,),
+            ).fetchone()
+        return PreparedExecutionRecord(**dict(row)) if row is not None else None
+
     def verify_prepared_execution(self, prepared_execution_ref: str) -> PreparedExecutionRecord:
         record = self.get_prepared_execution(prepared_execution_ref)
         if record is None:
@@ -1107,8 +1302,16 @@ class TaskRegistry:
             resolved_executable_model=record.resolved_executable_model,
             reasoning_effort=record.reasoning_effort,
             execution_mode=record.execution_mode,
+            network_access=bool(record.network_access),
         )
-        if record.approval_state != "APPROVED" or self._prepared_hash(payload) != record.integrity_hash:
+        valid_hash = self._prepared_hash(payload) == record.integrity_hash
+        if not valid_hash and not bool(record.network_access):
+            # Existing preparations predate the explicit capability field. Keep
+            # them safely disabled while allowing their original sealed hash.
+            legacy_payload = dict(payload)
+            legacy_payload.pop("network_access", None)
+            valid_hash = self._prepared_hash(legacy_payload) == record.integrity_hash
+        if record.approval_state != "APPROVED" or not valid_hash:
             raise TaskRegistryError(
                 f"PREPARED_EXECUTION_INTEGRITY=FAIL: {prepared_execution_ref}"
             )
@@ -1339,9 +1542,9 @@ class TaskRegistry:
         retry_required: bool | None | object = _UNSET,
     ) -> TaskRecord:
         allowed = {
-            "QUEUED", "CLAIMED", "DISPATCHING", "CODEX_RUNNING",
+            "QUEUED", "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
             "RESULT_RECEIVED", "RESULT_PARSE", "LINEAR_WRITEBACK",
-            "BLOCKED", "RECOVERY_REQUIRED", "IN_REVIEW", "COMPLETED",
+            "BLOCKED", "RECOVERY_REQUIRED", "IN_REVIEW", "COMPLETED", "CANCELLED", "STOPPED",
         }
         if state not in allowed:
             raise TaskRegistryError(f"Unsupported execution state: {state}")
@@ -1373,6 +1576,10 @@ class TaskRegistry:
                    WHERE task_id=?""",
                 (state, stage, blocker, stamp, int(running), effective_turn, int(retry),
                  _now() if changed else task.updated_at, task_id),
+            )
+            conn.execute(
+                "UPDATE executions SET stage=? WHERE task_id=?",
+                (str(stage or state), task_id),
             )
         return self.get_task(task_id)
 
@@ -1480,8 +1687,184 @@ class TaskRegistry:
             codex_running=False, turn_id=None, retry_required=False,
         )
 
+    def get_active_execution(self, execution_ref: str) -> dict[str, Any] | None:
+        if not isinstance(execution_ref, str) or not execution_ref.strip():
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT e.*, t.host, t.cwd, t.repository_origin, t.execution_state,
+                          t.current_stage, t.codex_running
+                   FROM executions e JOIN tasks t ON t.task_id=e.task_id
+                   WHERE e.execution_ref=?""", (execution_ref,)
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def get_latest_execution_for_task(self, task_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM executions WHERE task_id=? ORDER BY acquired_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def set_execution_models(self, execution_ref: str, *, logical_model: str | None,
+                             resolved_model: str | None) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE executions SET logical_model=?, resolved_model=? WHERE execution_ref=?",
+                (logical_model, resolved_model, execution_ref),
+            )
+
+    def get_execution_models(self, execution_ref: str) -> tuple[str | None, str | None]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT logical_model,resolved_model FROM executions WHERE execution_ref=?",
+                (execution_ref,),
+            ).fetchone()
+        return (row["logical_model"], row["resolved_model"]) if row is not None else (None, None)
+
+    def active_worktree_conflict(
+        self, *, host: str, cwd: str, repository_origin: str | None,
+        exclude_task_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        key = self.worktree_key(host=host, cwd=cwd, repository_origin=repository_origin)
+        active_states = ("CLAIMED", "DISPATCHING", "CODEX_RUNNING", "TURN_STARTED")
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT l.*, t.host, t.cwd, t.repository_origin, t.execution_state,
+                          t.current_stage, t.codex_running
+                   FROM worktree_leases l JOIN tasks t ON t.task_id=l.task_id
+                   WHERE l.worktree_key=? AND (? IS NULL OR l.task_id != ?)""",
+                (key, exclude_task_id, exclude_task_id),
+            ).fetchone()
+            if row is None:
+                # Durable task state is the fallback for a process that exited
+                # after turn/start but before its lease row was flushed.
+                candidates = conn.execute(
+                    """SELECT * FROM tasks WHERE status='ACTIVE' AND lower(host)=lower(?)
+                       AND (? IS NULL OR task_id != ?)""",
+                    (host, exclude_task_id, exclude_task_id),
+                ).fetchall()
+                for candidate in candidates:
+                    candidate_key = self.worktree_key(
+                        host=candidate["host"], cwd=candidate["cwd"],
+                        repository_origin=candidate["repository_origin"],
+                    )
+                    if candidate_key == key and (
+                        candidate["execution_state"] in active_states or candidate["codex_running"]
+                    ):
+                        return {
+                            "active_task_id": candidate["task_id"],
+                            "active_execution_ref": None,
+                            "stage": candidate["current_stage"] if candidate["current_stage"] not in {None, "queued"}
+                            else candidate["execution_state"],
+                            "worktree_key": key,
+                        }
+                return None
+        return {
+            "active_task_id": row["task_id"],
+            "active_execution_ref": row["execution_ref"],
+            "stage": row["current_stage"] if row["stage"] == "CLAIMED"
+            and row["current_stage"] not in {None, "queued"}
+            else row["stage"] or row["current_stage"],
+            "worktree_key": key,
+        }
+
+    def cancel_execution(self, execution_ref: str) -> TaskRecord:
+        active = self.get_active_execution(execution_ref)
+        if active is None:
+            raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
+        task = self.get_task(active["task_id"])
+        if task.execution_state == "CANCELLED":
+            return task
+        if task.execution_state not in {"CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING"}:
+            raise TaskRegistryError(f"Execution is not active: {execution_ref}")
+        if task.execution_state in {"STOPPED", "COMPLETED", "IN_REVIEW", "BLOCKED"}:
+            raise TaskRegistryError(f"Execution is terminal: {execution_ref}")
+        cancelled = self.set_execution_state(
+            task.task_id, "CANCELLED", current_stage="CANCELLED",
+            current_blocker="cancelled by CLINX", codex_running=False,
+            retry_required=False,
+        )
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE executions SET stage='CANCELLED' WHERE task_id=? AND execution_ref=?",
+                (task.task_id, execution_ref),
+            )
+            conn.execute(
+                "DELETE FROM worktree_leases WHERE task_id=? AND execution_ref=?",
+                (task.task_id, execution_ref),
+            )
+        return cancelled
+
+    def release_execution(self, task_id: str, execution_ref: str | None = None) -> None:
+        with self._connect() as conn:
+            if execution_ref:
+                row = conn.execute(
+                    "SELECT worktree_key FROM executions WHERE task_id=? AND execution_ref=?",
+                    (task_id, execution_ref),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT worktree_key FROM executions WHERE task_id=?", (task_id,)
+                ).fetchone()
+            conn.execute(
+                "DELETE FROM executions WHERE task_id=?" + (" AND execution_ref=?" if execution_ref else ""),
+                (task_id, execution_ref) if execution_ref else (task_id,),
+            )
+            if row is not None:
+                conn.execute("DELETE FROM worktree_leases WHERE worktree_key=?", (row["worktree_key"],))
+
+    def get_linear_audit(self, task_id: str) -> LinearAuditRecord | None:
+        self.get_task(task_id)
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT task_id,
+                          CASE WHEN SUM(state='FAILED') > 0 THEN 'DEGRADED'
+                               WHEN SUM(state='WRITTEN') > 0 THEN 'PASS'
+                               ELSE 'PENDING' END AS sync_state,
+                          MAX(retry_required) AS retry_required,
+                          (SELECT last_error FROM linear_audit_events x
+                           WHERE x.task_id=linear_audit_events.task_id
+                           ORDER BY updated_at DESC LIMIT 1) AS last_error,
+                          MAX(updated_at) AS updated_at
+                   FROM linear_audit_events WHERE task_id=? GROUP BY task_id""",
+                (task_id,),
+            ).fetchone()
+        return LinearAuditRecord(**dict(row)) if row is not None else None
+
+    def get_linear_event(self, task_id: str, event_key: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM linear_audit_events WHERE task_id=? AND event_key=?",
+                (task_id, event_key),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def record_linear_event(
+        self, task_id: str, event_key: str, body_hash: str, *,
+        state: str, retry_required: bool = False, last_error: str | None = None,
+    ) -> None:
+        if state not in {"PENDING", "WRITTEN", "FAILED"}:
+            raise TaskRegistryError(f"Unsupported Linear audit state: {state}")
+        self.get_task(task_id)
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO linear_audit_events
+                   (task_id,event_key,body_hash,state,retry_required,last_error,updated_at)
+                   VALUES (?,?,?,?,?,?,?)
+                   ON CONFLICT(task_id,event_key) DO UPDATE SET
+                     body_hash=excluded.body_hash,state=excluded.state,
+                     retry_required=excluded.retry_required,last_error=excluded.last_error,
+                     updated_at=excluded.updated_at""",
+                (task_id, event_key, body_hash, state, int(retry_required), last_error, _now()),
+            )
+
     @contextlib.contextmanager
-    def execution(self, task_id: str, issue_id: str | None = None) -> Iterator[TaskRecord]:
+    def execution(
+        self, task_id: str, issue_id: str | None = None, *,
+        execution_ref: str | None = None, retain: bool = False,
+    ) -> Iterator[TaskRecord]:
         task = self.get_task(task_id)
         if task.status == "ARCHIVED":
             raise TaskRegistryError(f"Archived task requires explicit reopen: {task_id}")
@@ -1489,18 +1872,40 @@ class TaskRegistry:
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 try:
-                    conn.execute(
-                        "INSERT INTO executions(task_id,issue_id,acquired_at) VALUES (?,?,?)",
-                        (task_id, issue_id, _now()),
+                    worktree_key = self.worktree_key(
+                        host=task.host, cwd=task.cwd, repository_origin=task.repository_origin
                     )
+                    try:
+                        conn.execute(
+                            "INSERT INTO executions(task_id,issue_id,execution_ref,worktree_key,logical_model,resolved_model,stage,acquired_at) VALUES (?,?,?,?,?,?,?,?)",
+                            (task_id, issue_id, execution_ref, worktree_key, None, None, "CLAIMED", _now()),
+                        )
+                        conn.execute(
+                            "INSERT INTO worktree_leases(worktree_key,task_id,execution_ref,stage,acquired_at) VALUES (?,?,?,?,?)",
+                            (worktree_key, task_id, execution_ref, "CLAIMED", _now()),
+                        )
+                    except sqlite3.IntegrityError as exc:
+                        active = conn.execute(
+                            "SELECT * FROM worktree_leases WHERE worktree_key=?", (worktree_key,)
+                        ).fetchone()
+                        if active is not None:
+                            raise WorktreeExecutionBusy(
+                                f"Worktree already has an active execution: {task.cwd}",
+                                active_task_id=active["task_id"],
+                                active_execution_ref=active["execution_ref"],
+                                stage=active["stage"], worktree_key=worktree_key,
+                            ) from exc
+                        raise TaskExecutionBusy(f"Task already has an active execution: {task_id}") from exc
                 except sqlite3.IntegrityError as exc:
                     raise TaskExecutionBusy(f"Task already has an active execution: {task_id}") from exc
                 conn.execute("COMMIT")
             except Exception:
                 conn.execute("ROLLBACK")
                 raise
+        completed = False
         try:
             yield task
+            completed = True
         finally:
-            with self._connect() as release:
-                release.execute("DELETE FROM executions WHERE task_id = ?", (task_id,))
+            if not retain or not completed:
+                self.release_execution(task_id, execution_ref)

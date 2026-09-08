@@ -16,7 +16,7 @@ import re
 from typing import Any
 
 from app_server import AppServerError
-from task_registry import TaskRegistry, TaskRegistryError
+from task_registry import TaskRegistry, TaskRegistryError, TaskExecutionBusy, WorktreeExecutionBusy
 
 
 class M9IntegrationError(RuntimeError):
@@ -52,6 +52,7 @@ class ExecutionHandoff:
         return {
             "execution_available": True,
             "command_plane": "CLINX",
+            "linear_role": "AUDIT",
             "requires_user_approval": True,
             "requires_command_write": False,
             "approval_state": "SATISFIED",
@@ -73,7 +74,7 @@ class ExecutionHandoff:
                 "operation": "START_EXECUTION",
                 "required": True,
             },
-            "linear_audit": {"optional": True, "purpose": "audit/history compatibility"},
+            "linear_audit": {"optional": True, "purpose": "AUDIT + HUMAN_NOTIFICATION only"},
             "status_lookup": {"tool": "clinx_get_status"},
             "read_only": True,
         }
@@ -222,18 +223,24 @@ class ExecutionResultService:
         self.linear = linear
 
     @staticmethod
-    def _body(execution_ref: str, task_id: str, turn_id: str, result: ExecutionResult) -> str:
+    def _body(execution_ref: str, task_id: str, turn_id: str, result: ExecutionResult,
+              logical_model: str | None = None, resolved_model: str | None = None) -> str:
         return (
             "CLINX_EXECUTION_RESULT_V1\n\n"
             f"EXECUTION_REF={execution_ref}\n"
-            f"TASK_ID={task_id}\n"
-            f"TURN_ID={turn_id}\n"
+            f"TASK_REF={task_id}\n"
             f"STATUS={result.status}\n"
             f"SUMMARY={result.summary}\n"
             f"CHANGED_FILES={result.changed_files}\n"
             f"VALIDATION={result.validation}\n"
             f"BLOCKERS={result.blockers}\n"
             f"NEXT_STATE={result.next_state}\n"
+            f"MODEL_LOGICAL_TO_RESOLVED={logical_model or 'UNKNOWN'} -> {resolved_model or 'UNKNOWN'}\n"
+            f"TESTS={result.validation}\n"
+            "COMMIT=UNKNOWN\n"
+            "WORKTREE_STATE=UNKNOWN\n"
+            f"BLOCKER={result.blockers}\n"
+            f"SUMMARY={result.summary}\n"
             "CLINX_LINEAR_MCP_WRITE_REQUIRED=NO\n"
         )
 
@@ -246,6 +253,7 @@ class ExecutionResultService:
         raw_result: str,
         issue_id: str,
         review_state_id: str | None = None,
+        blocked_state_id: str | None = None,
     ) -> ExecutionResult:
         result = parse_codex_result(raw_result)
         record = self.registry.record_execution_result(
@@ -278,7 +286,15 @@ class ExecutionResultService:
             turn_id=turn_id,
             retry_required=False,
         )
-        body = self._body(execution_ref, task_id, turn_id, result)
+        index = self.registry.get_task_index(task_id)
+        target_issue_id = index.issue_id if index is not None else issue_id
+        if not target_issue_id:
+            raise TaskRegistryError(f"Task {task_id} has no Linear mirror issue")
+        logical_model, resolved_model = self.registry.get_execution_models(execution_ref)
+        body = self._body(
+            execution_ref, task_id, turn_id, result,
+            logical_model=logical_model, resolved_model=resolved_model,
+        )
         body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
         if record.writeback_state != "WRITTEN":
             self.registry.set_execution_state(
@@ -290,27 +306,39 @@ class ExecutionResultService:
                 turn_id=turn_id,
                 retry_required=False,
             )
-            try:
-                self.linear.add_comment(issue_id, body)
+            event_key = f"completion:{execution_ref}"
+            event = self.registry.get_linear_event(task_id, event_key)
+            if event is not None and event["state"] == "WRITTEN" and event["body_hash"] == body_hash:
+                record = self.registry.mark_execution_result_writeback(
+                    execution_ref, state="WRITTEN", body_hash=body_hash
+                )
+            else:
+                self.registry.record_linear_event(task_id, event_key, body_hash, state="PENDING")
+                try:
+                    self.linear.add_comment(target_issue_id, body)
+                    self.registry.record_linear_event(task_id, event_key, body_hash, state="WRITTEN")
+                except Exception as exc:
+                    self.registry.record_linear_event(
+                        task_id, event_key, body_hash, state="FAILED",
+                        retry_required=True, last_error=str(exc)[:2000],
+                    )
+                    self.registry.mark_execution_result_writeback(
+                        execution_ref, state="FAILED", body_hash=body_hash
+                    )
+                    self.registry.set_execution_state(
+                        task_id, "LINEAR_WRITEBACK", current_stage="LINEAR_WRITEBACK",
+                        current_blocker=str(exc)[:2000], codex_running=False,
+                        turn_id=turn_id, retry_required=True,
+                    )
+                    self.registry.release_execution(task_id, execution_ref)
+                    raise
                 if result.status == "PASS" and review_state_id:
-                    self.linear.update_issue_state(issue_id, review_state_id)
-            except Exception as exc:
+                    self.linear.update_issue_state(target_issue_id, review_state_id)
+                elif result.status == "BLOCKED" and blocked_state_id:
+                    self.linear.update_issue_state(target_issue_id, blocked_state_id)
                 self.registry.mark_execution_result_writeback(
-                    execution_ref, state="FAILED", body_hash=body_hash
+                    execution_ref, state="WRITTEN", body_hash=body_hash
                 )
-                self.registry.set_execution_state(
-                    task_id,
-                    "LINEAR_WRITEBACK",
-                    current_stage="LINEAR_WRITEBACK",
-                    current_blocker=str(exc)[:2000],
-                    codex_running=False,
-                    turn_id=turn_id,
-                    retry_required=True,
-                )
-                raise
-            self.registry.mark_execution_result_writeback(
-                execution_ref, state="WRITTEN", body_hash=body_hash
-            )
         final_state = "BLOCKED" if result.status == "BLOCKED" else "IN_REVIEW"
         self.registry.set_execution_state(
             task_id,
@@ -321,6 +349,7 @@ class ExecutionResultService:
             turn_id=turn_id,
             retry_required=final_state == "BLOCKED",
         )
+        self.registry.release_execution(task_id, execution_ref)
         return result
 
 
@@ -489,9 +518,13 @@ class ClinxIntegration:
     ) -> dict[str, Any]:
         if execution_ref:
             execution = self.registry.get_execution_result(execution_ref)
-            if execution is None:
-                raise M9IntegrationError(f"Unknown execution ref: {execution_ref}")
-            task = self.registry.get_task(execution.task_id)
+            if execution is not None:
+                task = self.registry.get_task(execution.task_id)
+            else:
+                active = self.registry.get_active_execution(execution_ref)
+                if active is None:
+                    raise M9IntegrationError(f"Unknown execution ref: {execution_ref}")
+                task = self.registry.get_task(active["task_id"])
         else:
             task = self.context_reader.resolve_task(
                 task_ref=task_ref,
@@ -517,6 +550,21 @@ class ClinxIntegration:
             "execution_result": execution_result,
             "read_only": True,
         }
+        audit = self.registry.get_linear_audit(task.task_id)
+        status["linear_audit_sync"] = audit.sync_state if audit else "PENDING"
+        status["linear_retry_required"] = bool(audit.retry_required) if audit else False
+        status["linear_last_error"] = audit.last_error if audit else None
+        active_execution = None
+        with self.registry._connect() as conn:
+            row = conn.execute(
+                "SELECT execution_ref, stage FROM executions WHERE task_id=? ORDER BY acquired_at DESC LIMIT 1",
+                (task.task_id,),
+            ).fetchone()
+        if row is not None and row["execution_ref"]:
+            active_execution = {"execution_ref": row["execution_ref"], "stage": row["stage"]}
+        status["active_execution"] = active_execution
+        index = self.registry.get_task_index(task.task_id)
+        status["linear_issue_ref"] = index.identifier if index else None
         status.update(
             {
                 "EXECUTION_STATE": task.execution_state,
@@ -546,6 +594,7 @@ class ClinxIntegration:
             "command_plane": "CLINX",
             "prepare_tool": "clinx_prepare_execution",
             "start_tool": "clinx_start_execution",
+            "cancel_tool": "clinx_cancel_execution",
             "status_tool": "clinx_get_status",
             "execution": {
                 "available": True,
@@ -558,6 +607,11 @@ class ClinxIntegration:
             "status": {
                 "available": True,
                 "tool": "clinx_get_status",
+            },
+            "linear": {
+                "role": "AUDIT",
+                "failure_does_not_block_codex": True,
+                "task_issue_binding": "1:1",
             },
             "instructions": (
                 "Use CLINX for authoritative task context and command preparation. "
@@ -758,20 +812,102 @@ class ClinxIntegration:
         ).as_dict()
 
     def _audit_task_index(self, task_id: str) -> str:
-        """Best-effort Linear audit; never gates Codex dispatch."""
+        """Best-effort 1:1 Linear mirror; never gates Codex dispatch."""
         if self.linear is None:
             return "NOT_CONFIGURED"
         try:
             from bridge import LinearTaskIndex
-
-            LinearTaskIndex(
+            index = LinearTaskIndex(
                 self.linear,
                 self.registry,
                 str(getattr(self.cfg, "team_id", "")),
             ).sync(task_id)
-        except Exception:
+            transition = self._linear_transition(task_id, index.issue_id, "TODO")
+            if transition != "PASS":
+                return "DEGRADED"
+        except Exception as exc:
+            self.registry.record_linear_event(
+                task_id, "task-mirror", hashlib.sha256(task_id.encode()).hexdigest(),
+                state="FAILED", retry_required=True, last_error=str(exc)[:2000],
+            )
+            # Preserve the historical public audit label while the durable
+            # registry records the M12 DEGRADED/retry state.
             return "FAILED"
         return "PASS"
+
+    def _linear_state_id(self, state_name: str) -> str | None:
+        if self.linear is None:
+            return None
+        direct = getattr(self.linear, "state_id", None)
+        if callable(direct):
+            return direct(state_name)
+        states = getattr(self.linear, "team_states", None)
+        if not callable(states):
+            return None
+        values = states(str(getattr(self.cfg, "team_id", "")))
+        return values.get(state_name)
+
+    def _linear_transition(self, task_id: str, issue_id: str, state_name: str) -> str:
+        """Write a deterministic lifecycle event and state when available."""
+        body = (
+            "CLINX_TASK_LIFECYCLE_V1\n"
+            f"TASK_REF={task_id}\nSTATE={state_name}\n"
+            f"LINEAR_AUDIT_SYNC=PASS\n"
+        )
+        event_key = f"lifecycle:{state_name.lower()}"
+        body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        existing = self.registry.get_linear_event(task_id, event_key)
+        if existing and existing["state"] == "WRITTEN" and existing["body_hash"] == body_hash:
+            return "PASS"
+        self.registry.record_linear_event(task_id, event_key, body_hash, state="PENDING")
+        try:
+            state_id = self._linear_state_id(
+                getattr(self.cfg, "todo_state", "Todo") if state_name == "TODO"
+                else getattr(self.cfg, "running_state", "In Progress")
+                if state_name == "IN_PROGRESS" else getattr(self.cfg, "review_state", "In Review")
+            )
+            if state_id and hasattr(self.linear, "update_issue_state"):
+                self.linear.update_issue_state(issue_id, state_id)
+            if hasattr(self.linear, "add_comment"):
+                self.linear.add_comment(issue_id, body)
+            self.registry.record_linear_event(task_id, event_key, body_hash, state="WRITTEN")
+            return "PASS"
+        except Exception as exc:
+            self.registry.record_linear_event(
+                task_id, event_key, body_hash, state="FAILED",
+                retry_required=True, last_error=str(exc)[:2000],
+            )
+            return "DEGRADED"
+
+    def _linear_failure_writeback(self, task_id: str, *, state: str, detail: str) -> str:
+        index = self.registry.get_task_index(task_id)
+        if index is None or self.linear is None:
+            return "NOT_CONFIGURED"
+        body = (
+            "CLINX_EXECUTION_FAILURE_V1\n"
+            f"TASK_REF={task_id}\nSTATE={state}\n"
+            f"RETRY_REQUIRED={'YES' if state == 'RECOVERY_REQUIRED' else 'NO'}\n"
+            f"BLOCKER={detail[:2000]}\n"
+            "LINEAR_AUDIT_SYNC=DEGRADED\n"
+        )
+        event_key = f"failure:{state.lower()}:{hashlib.sha256(detail.encode()).hexdigest()[:16]}"
+        body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        existing = self.registry.get_linear_event(task_id, event_key)
+        if existing and existing["state"] == "WRITTEN":
+            return "PASS"
+        self.registry.record_linear_event(task_id, event_key, body_hash, state="PENDING")
+        try:
+            if hasattr(self.linear, "add_comment"):
+                self.linear.add_comment(index.issue_id, body)
+            self.registry.record_linear_event(task_id, event_key, body_hash, state="WRITTEN")
+            self._linear_transition(task_id, index.issue_id, "IN_PROGRESS" if state == "RECOVERY_REQUIRED" else "TODO")
+            return "PASS"
+        except Exception as exc:
+            self.registry.record_linear_event(
+                task_id, event_key, body_hash, state="FAILED", retry_required=True,
+                last_error=str(exc)[:2000],
+            )
+            return "DEGRADED"
 
     @staticmethod
     def _execution_public(
@@ -822,6 +958,75 @@ class ClinxIntegration:
         execution_ref = "exec_" + prepared_execution_ref.removeprefix("prepared_")
         try:
             task_id = prepared.task_ref
+            dispatch_mode = "new" if prepared.task_action == "create" else "continue"
+            duplicate = None
+            # Resolve the canonical worktree before dispatch so a second
+            # mutating command cannot reach app-server turn/start.
+            if hasattr(self.dispatcher, "resolve_project"):
+                _workspace, descriptor, _mapping = self.dispatcher.resolve_project(
+                    prepared.project, host=prepared.host, project_mode="existing"
+                )
+                conflict = self.registry.active_worktree_conflict(
+                    host=prepared.host, cwd=str(descriptor.cwd),
+                    repository_origin=descriptor.repository_origin,
+                    exclude_task_id=task_id if prepared.task_action == "create" else None,
+                )
+                if conflict is not None and prepared.task_action != "create":
+                    return {
+                        "execution_started": False,
+                        "status": "WORKTREE_CONFLICT",
+                        "worktree_lease": "ACTIVE",
+                        "active_task_ref": conflict["active_task_id"],
+                        "active_execution_ref": conflict.get("active_execution_ref"),
+                        "active_stage": conflict.get("stage"),
+                        "read_only": False,
+                    }
+                if prepared.task_action == "create":
+                    fingerprint = self.registry.canonical_work_item_fingerprint(
+                        host=prepared.host, project_alias=descriptor.alias,
+                        cwd=str(descriptor.cwd), repository_origin=descriptor.repository_origin,
+                        title=prepared.title, summary=prepared.summary,
+                    )
+                    duplicate = self.registry.find_active_work_item(fingerprint=fingerprint)
+                    if duplicate is None:
+                        fingerprint = self.registry.canonical_work_item_fingerprint(
+                            host=prepared.host, project_alias=descriptor.alias,
+                            cwd=str(descriptor.cwd), repository_origin=descriptor.repository_origin,
+                            title=prepared.title, summary=prepared.summary,
+                            task_key=f"{descriptor.alias.casefold()}/{re.sub(r'[^a-z0-9]+', '-', prepared.title.casefold()).strip('-') or 'task'}",
+                        )
+                        duplicate = self.registry.find_active_work_item(fingerprint=fingerprint)
+                    if duplicate is not None:
+                        if duplicate.codex_running or duplicate.execution_state in {
+                            "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING"
+                        }:
+                            active = self.registry.get_latest_execution_for_task(duplicate.task_id) or {}
+                            return {
+                                "execution_started": False,
+                                "status": "DUPLICATE_ACTIVE",
+                                "duplicate_prevented": True,
+                                "task_ref": duplicate.task_id,
+                                "execution_ref": active.get("execution_ref"),
+                                "stage": duplicate.current_stage,
+                                "linear_audit": "NOT_ATTEMPTED",
+                                "read_only": False,
+                            }
+                        task_id = duplicate.task_id
+                        dispatch_mode = "continue"
+                if conflict is not None and duplicate is None:
+                    return {
+                        "execution_started": False,
+                        "status": "WORKTREE_CONFLICT",
+                        "worktree_lease": "ACTIVE",
+                        "active_task_ref": conflict["active_task_id"],
+                        "active_execution_ref": conflict.get("active_execution_ref"),
+                        "active_stage": conflict.get("stage"),
+                        "read_only": False,
+                    }
+            if task_id and dispatch_mode == "continue":
+                # Ensure a continuing/reopened task has its one audit mirror
+                # before any provider failure can require recovery writeback.
+                self._audit_task_index(task_id)
             if prepared.task_action == "reopen":
                 if not task_id:
                     raise M9IntegrationError("reopen preparation has no task reference")
@@ -834,8 +1039,8 @@ class ClinxIntegration:
                 project_ref=prepared.project,
                 host=prepared.host,
                 project_mode="existing",
-                task_mode="new" if prepared.task_action == "create" else "continue",
-                task_id=None if prepared.task_action == "create" else task_id,
+                task_mode=dispatch_mode,
+                task_id=None if dispatch_mode == "new" else task_id,
                 prompt=prepared.prompt,
                 title=prepared.title,
                 summary=prepared.summary,
@@ -853,13 +1058,63 @@ class ClinxIntegration:
                 turn_id=result.turn_id,
                 execution_ref=execution_ref,
             )
+            try:
+                self.registry.set_execution_state(
+                    result.task_id, "TURN_STARTED", current_stage="TURN_STARTED",
+                    current_blocker=None, codex_running=False, turn_id=result.turn_id,
+                    retry_required=False,
+                )
+                self.registry.set_execution_state(
+                    result.task_id, "CODEX_RUNNING", current_stage="Codex turn",
+                    current_blocker=None, codex_running=True, turn_id=result.turn_id,
+                    retry_required=False,
+                )
+            except TaskRegistryError:
+                # Dispatcher-owned state remains authoritative for lightweight
+                # adapters that do not persist the task locally.
+                pass
+        except WorktreeExecutionBusy as exc:
+            self.registry.restore_prepared_execution(prepared_execution_ref)
+            return {
+                "execution_started": False,
+                "status": "WORKTREE_CONFLICT",
+                "worktree_lease": "ACTIVE",
+                "active_task_ref": exc.active_task_id,
+                "active_execution_ref": exc.active_execution_ref,
+                "active_stage": exc.stage,
+                "read_only": False,
+            }
+        except TaskExecutionBusy as exc:
+            self.registry.restore_prepared_execution(prepared_execution_ref)
+            active = self.registry.get_latest_execution_for_task(task_id) if task_id else None
+            if active is not None:
+                return {
+                    "execution_started": False,
+                    "status": "ACTIVE_EXECUTION_CONFLICT",
+                    "active_task_ref": task_id,
+                    "active_execution_ref": active.get("execution_ref"),
+                    "active_stage": active.get("stage"),
+                    "read_only": False,
+                }
+            raise exc
         except AppServerError:
+            if task_id:
+                self._linear_failure_writeback(
+                    task_id, state="RECOVERY_REQUIRED", detail="recoverable app-server failure"
+                )
             self.registry.restore_prepared_execution(prepared_execution_ref)
             raise
         except Exception:
+            if task_id:
+                self._linear_failure_writeback(
+                    task_id, state="BLOCKED", detail="CLINX dispatch failure"
+                )
             self.registry.fail_prepared_execution(prepared_execution_ref)
             raise
         audit = self._audit_task_index(result.task_id)
+        index = self.registry.get_task_index(result.task_id)
+        if index is not None:
+            self._linear_transition(result.task_id, index.issue_id, "IN_PROGRESS")
         current = self.registry.get_prepared_execution(prepared_execution_ref)
         assert current is not None
         return self._execution_public(
@@ -869,6 +1124,40 @@ class ClinxIntegration:
             dispatch_status=result.dispatch_status,
             linear_audit=audit,
         )
+
+    def cancel_execution(self, *, execution_ref: str) -> dict[str, Any]:
+        """Cancel one active opaque CLINX execution; never accepts raw IDs."""
+        if not isinstance(execution_ref, str) or not execution_ref.startswith("exec_"):
+            raise M9IntegrationError("execution_ref must be an opaque CLINX execution reference")
+        active = self.registry.get_active_execution(execution_ref)
+        if active is None:
+            raise M9IntegrationError(f"Unknown or inactive execution: {execution_ref}")
+        if active.get("stage") == "CANCELLED":
+            return {
+                "execution_cancelled": True,
+                "execution_ref": execution_ref,
+                "task_ref": active["task_id"],
+                "status": "CANCELLED",
+                "idempotent": True,
+                "read_only": False,
+            }
+        cancel = getattr(self.dispatcher, "cancel_execution", None)
+        if callable(cancel):
+            result = cancel(execution_ref)
+        else:
+            task = self.registry.cancel_execution(execution_ref)
+            result = {"execution_ref": execution_ref, "task_ref": task.task_id, "status": "CANCELLED"}
+        index = self.registry.get_task_index(result["task_ref"])
+        if index is not None:
+            self._linear_transition(result["task_ref"], index.issue_id, "CANCELLED")
+        return {
+            "execution_cancelled": True,
+            "execution_ref": execution_ref,
+            "task_ref": result["task_ref"],
+            "status": "CANCELLED",
+            "idempotent": False,
+            "read_only": False,
+        }
 
     def execute(
         self,
@@ -989,6 +1278,10 @@ def clinx_prepare_execution(integration: ClinxIntegration, **kwargs: Any) -> dic
 
 def clinx_start_execution(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
     return integration.start_execution(**kwargs)
+
+
+def clinx_cancel_execution(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
+    return integration.cancel_execution(**kwargs)
 
 
 def clinx_execute(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:

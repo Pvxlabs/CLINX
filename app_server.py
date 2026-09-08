@@ -35,6 +35,10 @@ class AppServerProtocolError(AppServerError):
     pass
 
 
+class AppServerSandboxPolicyError(AppServerProtocolError):
+    """The requested per-turn sandbox policy could not be honored."""
+
+
 class AppServerRemoteError(AppServerError):
     def __init__(self, method: str, error: dict[str, Any]):
         message = error.get("message", "unknown app-server error")
@@ -804,7 +808,11 @@ class CodexAppServerClient:
         model: str | None = None,
         reasoning_effort: str | None = None,
         approval_policy: str | None = None,
+        network_access: bool = False,
+        writable_roots: list[str] | None = None,
     ) -> TurnStartInfo:
+        if not isinstance(network_access, bool):
+            raise AppServerSandboxPolicyError("network_access must be a boolean")
         params: dict[str, Any] = {
             "threadId": thread_id,
             "input": [{"type": "text", "text": prompt}],
@@ -816,7 +824,34 @@ class CodexAppServerClient:
             params["effort"] = reasoning_effort
         if approval_policy is not None:
             params["approvalPolicy"] = approval_policy
-        result = self._request("turn/start", params)
+        if network_access:
+            roots = writable_roots if writable_roots is not None else [cwd]
+            if not isinstance(cwd, str) or not os.path.isabs(cwd):
+                raise AppServerSandboxPolicyError(
+                    "NETWORK_ACCESS=ENABLED requires an absolute turn cwd"
+                )
+            if (
+                not isinstance(roots, list)
+                or not roots
+                or any(not isinstance(root, str) or not os.path.isabs(root) for root in roots)
+            ):
+                raise AppServerSandboxPolicyError(
+                    "NETWORK_ACCESS=ENABLED requires non-empty absolute writableRoots"
+                )
+            params["sandboxPolicy"] = {
+                "type": "workspaceWrite",
+                "writableRoots": roots,
+                "networkAccess": True,
+            }
+        try:
+            result = self._request("turn/start", params)
+        except AppServerError as exc:
+            if network_access:
+                raise AppServerSandboxPolicyError(
+                    "NETWORK_ACCESS=ENABLED TURN_START=BLOCKED: "
+                    f"app-server rejected or could not apply workspaceWrite network policy: {exc}"
+                ) from exc
+            raise
         if not isinstance(result, dict):
             raise AppServerProtocolError("turn/start result must be an object")
         turn = result.get("turn")
@@ -829,6 +864,13 @@ class CodexAppServerClient:
                 _optional_string(result.get("reasoningEffort")) or reasoning_effort
             ),
         )
+
+    def turn_interrupt(self, thread_id: str, turn_id: str) -> bool:
+        """Interrupt only the exact turn owned by a CLINX-managed binding."""
+        result = self._request(
+            "turn/interrupt", {"threadId": thread_id, "turnId": turn_id}
+        )
+        return result is None or isinstance(result, dict)
 
 
 def _thread_result(result: Any, method: str) -> dict[str, Any]:

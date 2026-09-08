@@ -34,7 +34,7 @@ READ_ONLY_TOOL_NAMES = (
     "clinx_get_capabilities",
     "clinx_prepare_execution",
 )
-DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution",)
+DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution")
 
 
 class MCPServerError(RuntimeError):
@@ -174,6 +174,11 @@ def _status_output_schema() -> dict[str, Any]:
         "TURN_PRESENT": {"type": "boolean"},
         "RETRY_REQUIRED": {"type": "boolean"},
         "execution_ref": {"type": "string"},
+        "active_execution": {"anyOf": [{"type": "object", "additionalProperties": True}, {"type": "null"}]},
+        "linear_audit_sync": {"type": "string"},
+        "linear_retry_required": {"type": "boolean"},
+        "linear_last_error": {"type": ["string", "null"]},
+        "linear_issue_ref": {"type": ["string", "null"]},
         "read_only": {"type": "boolean", "const": True},
     })
 
@@ -184,8 +189,10 @@ def _capabilities_output_schema() -> dict[str, Any]:
         "context_read_only": {"type": "boolean", "const": True},
         "execution_available": {"type": "boolean", "const": True},
         "command_plane": {"type": "string", "const": "CLINX"},
+        "linear_role": {"type": "string", "const": "AUDIT"},
         "prepare_tool": {"type": "string", "const": "clinx_prepare_execution"},
         "start_tool": {"type": "string", "const": "clinx_start_execution"},
+        "cancel_tool": {"type": "string", "const": "clinx_cancel_execution"},
         "status_tool": {"type": "string", "const": "clinx_get_status"},
         "execution": {
             "type": "object",
@@ -193,9 +200,11 @@ def _capabilities_output_schema() -> dict[str, Any]:
                 "available": {"type": "boolean", "const": True},
                 "direct_mcp_execution": {"type": "boolean", "const": True},
                 "command_plane": {"type": "string", "const": "CLINX"},
+                "linear_role": {"type": "string", "const": "AUDIT"},
                 "requires_user_approval": {"type": "boolean", "const": True},
                 "prepare_tool": {"type": "string", "const": "clinx_prepare_execution"},
                 "start_tool": {"type": "string", "const": "clinx_start_execution"},
+                "cancel_tool": {"type": "string", "const": "clinx_cancel_execution"},
             },
             "required": [
                 "available", "direct_mcp_execution", "command_plane",
@@ -204,6 +213,7 @@ def _capabilities_output_schema() -> dict[str, Any]:
             "additionalProperties": False,
         },
         "status": {"type": "object", "additionalProperties": True},
+        "linear": {"type": "object", "additionalProperties": True},
         "instructions": {"type": "string"},
         "read_only": {"type": "boolean", "const": True},
     })
@@ -268,7 +278,10 @@ MCP_INSTRUCTIONS = (
     "command plane and requires explicit user approval. Resolve the exact task "
     "with CLINX, call clinx_prepare_execution, then call "
     "clinx_start_execution with only the returned prepared_execution_ref and "
-    "approved=true. Linear is optional audit/history compatibility. CLINX "
+    "approved=true. Linear role=AUDIT: it is the human-notification projection "
+    "only and never gates execution. CLINX "
+    "Use clinx_cancel_execution only with an opaque CLINX execution_ref returned "
+    "by CLINX. It never accepts PID, shell, thread, turn, or cwd values. CLINX "
     "does not expose arbitrary execution inputs, and humans do not need task, "
     "thread, session, turn, or cwd IDs."
 )
@@ -430,7 +443,7 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 ["prepared_execution_ref", "approved"],
             ),
             "outputSchema": _json_schema({
-                "execution_started": {"type": "boolean", "const": True},
+                "execution_started": {"type": "boolean"},
                 "prepared_execution_ref": {"type": "string"},
                 "execution_ref": {"type": "string"},
                 "task_ref": {"type": "string"},
@@ -440,6 +453,31 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 "execution_mode": {"type": "string", "enum": ["normal", "fast"]},
                 "dispatch_status": {"type": "string"},
                 "linear_audit": {"type": "string"},
+                "status": {"type": "string"},
+                "duplicate_prevented": {"type": "boolean"},
+                "active_task_ref": {"type": "string"},
+                "active_execution_ref": {"type": ["string", "null"]},
+                "active_stage": {"type": "string"},
+                "read_only": {"type": "boolean", "const": False},
+            }),
+            "annotations": {"readOnlyHint": False, "destructiveHint": True},
+        },
+        {
+            "name": "clinx_cancel_execution",
+            "description": (
+                "Cancel one active CLINX-managed Codex turn by opaque execution_ref. "
+                "PID, shell, thread, turn, and cwd inputs are not accepted."
+            ),
+            "inputSchema": _json_schema(
+                {"execution_ref": {"type": "string", "pattern": "^exec_[A-Za-z0-9]+$"}},
+                ["execution_ref"],
+            ),
+            "outputSchema": _json_schema({
+                "execution_cancelled": {"type": "boolean", "const": True},
+                "execution_ref": {"type": "string"},
+                "task_ref": {"type": "string"},
+                "status": {"type": "string", "enum": ["CANCELLED"]},
+                "idempotent": {"type": "boolean"},
                 "read_only": {"type": "boolean", "const": False},
             }),
             "annotations": {"readOnlyHint": False, "destructiveHint": True},
@@ -453,7 +491,7 @@ def _execute_tool_definition() -> dict[str, Any]:
         "name": "clinx_execute",
         "description": (
             "Internal execution path. ChatGPT public context MCP does not expose this; "
-            "execution belongs to the authenticated Linear command plane."
+            "execution belongs to the CLINX command plane; Linear is audit-only."
         ),
         "inputSchema": _json_schema(
             {
@@ -565,6 +603,11 @@ class ClinxMCPServer:
                     "clinx_start_execution accepts only prepared_execution_ref and approved"
                 )
             result = self.integration.start_execution(**arguments)
+        elif name == "clinx_cancel_execution":
+            unexpected = set(arguments) - {"execution_ref"}
+            if unexpected:
+                raise TypeError("clinx_cancel_execution accepts only execution_ref")
+            result = self.integration.cancel_execution(**arguments)
         elif name == "clinx_execute":
             if not self.allow_execute:
                 result = {
@@ -572,7 +615,7 @@ class ClinxMCPServer:
                     "status": "BLOCKED",
                     "reason": (
                         "The public CLINX Context MCP is read-only; use the existing "
-                        "authenticated Linear command and audit plane."
+                        "CLINX command plane with Linear as audit-only projection."
                     ),
                     "read_only": True,
                 }
