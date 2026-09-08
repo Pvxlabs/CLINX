@@ -107,7 +107,34 @@ def parse_execution_result(text: str) -> ExecutionResult:
     try:
         start = lines.index("CLINX_EXECUTION_RESULT")
     except ValueError as exc:
-        raise ResultParseError("missing exact CLINX_EXECUTION_RESULT header") from exc
+        # Some app-server summary views collapse line breaks.  Preserve the
+        # strict field contract while accepting that bounded representation.
+        compact = " ".join(text.split())
+        if not compact.startswith("CLINX_EXECUTION_RESULT"):
+            raise ResultParseError("missing exact CLINX_EXECUTION_RESULT header") from exc
+        keys = "STATUS|SUMMARY|CHANGED_FILES|VALIDATION|BLOCKERS|NEXT_STATE"
+        values = {
+            key: value.strip()
+            for key, value in re.findall(
+                rf"(?:^|\s)({keys})=(.*?)(?=\s+(?:{keys})=|$)", compact
+            )
+        }
+        missing = [key for key in _RESULT_KEYS if not values.get(key)]
+        if missing:
+            raise ResultParseError("missing result fields: " + ", ".join(missing)) from exc
+        if values["STATUS"] not in {"PASS", "BLOCKED"}:
+            raise ResultParseError("STATUS must be PASS or BLOCKED") from exc
+        if values["NEXT_STATE"] not in {"IN_REVIEW", "BLOCKED", "COMPLETED"}:
+            raise ResultParseError("NEXT_STATE is invalid") from exc
+        if values["STATUS"] == "BLOCKED" and values["NEXT_STATE"] != "BLOCKED":
+            raise ResultParseError("BLOCKED results must use NEXT_STATE=BLOCKED") from exc
+        if values["STATUS"] == "PASS" and values["BLOCKERS"].upper() != "NONE":
+            raise ResultParseError("PASS results must use BLOCKERS=NONE") from exc
+        return ExecutionResult(
+            status=values["STATUS"], summary=values["SUMMARY"],
+            changed_files=values["CHANGED_FILES"], validation=values["VALIDATION"],
+            blockers=values["BLOCKERS"], next_state=values["NEXT_STATE"], raw_result=text,
+        )
     values: dict[str, str] = {}
     pattern = re.compile(r"^(STATUS|SUMMARY|CHANGED_FILES|VALIDATION|BLOCKERS|NEXT_STATE)=(.*)$")
     for line in lines[start + 1:]:
