@@ -2757,12 +2757,40 @@ class TaskDispatcher:
             value = row.get("state") or row.get("statusType")
         return str(value or "UNKNOWN").replace("_", "").replace("-", "").casefold()
 
-    def reconcile_execution(self, execution_ref: str) -> dict[str, Any]:
-        """Perform one bounded provider read and converge durable execution truth."""
-        active = self.tasks.get_active_execution(execution_ref)
-        if active is None:
+    def reconcile_execution(
+        self, execution_ref: str | None = None, *, task_id: str | None = None
+    ) -> dict[str, Any]:
+        """Perform one bounded provider read and converge durable execution truth.
+
+        ``task_id`` is only used for the legacy orphan case where the durable
+        execution and lease have no opaque execution identity.  It is never a
+        substitute for an identity when a live execution exists.
+        """
+        active = self.tasks.get_active_execution(execution_ref) if execution_ref else None
+        orphaned = False
+        if active is None and task_id is not None and not execution_ref:
+            task = self.tasks.get_task(task_id)
+            latest = self.tasks.get_latest_execution_for_task(task_id)
+            orphaned = bool(
+                (latest is None or latest.get("execution_ref") is None)
+                and task.codex_running
+                and task.execution_state in {
+                    "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
+                    "TRANSPORT_UNCERTAIN", "CANCEL_REQUESTED", "CANCELLATION_PENDING",
+                }
+            )
+            if not orphaned:
+                return {"state": "UNKNOWN", "authoritative": False}
+        elif active is None:
             return {"state": "UNKNOWN", "authoritative": False}
-        task = self.tasks.get_task(active["task_id"])
+        else:
+            task = self.tasks.get_task(active["task_id"])
+
+        def terminalize(state: str, **kwargs: Any):
+            if orphaned:
+                return self.tasks.reconcile_orphaned_terminal(task.task_id, state, **kwargs)
+            return self.tasks.reconcile_terminal(execution_ref, state, **kwargs)
+
         binding = self.tasks.get_binding(task.task_id)
         if binding is None or not task.turn_id:
             return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
@@ -2774,6 +2802,7 @@ class TaskDispatcher:
             workspace_alias=task.workspace_alias,
         )
         client = self.client_factory(self._target(workspace, project, binding))
+        bounded_items: list[dict[str, Any]] = []
         try:
             with client:
                 client.initialize(
@@ -2800,8 +2829,8 @@ class TaskDispatcher:
             # A child exit/closed byte channel is terminal evidence for this
             # local execution; a generic reachability failure is uncertain.
             if "exit " in evidence.casefold() or "byte transport closed" in evidence.casefold():
-                self.tasks.reconcile_terminal(
-                    execution_ref, "RECOVERY_REQUIRED", failure_stage="transport",
+                terminalize(
+                    "RECOVERY_REQUIRED", failure_stage="transport",
                     failure_code="APP_SERVER_TRANSPORT_FAILURE", evidence=evidence,
                 )
                 return {"state": "RECOVERY_REQUIRED", "authoritative": True, "evidence": evidence}
@@ -2846,8 +2875,8 @@ class TaskDispatcher:
             return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
         status = self._turn_status(row)
         if status in {"cancelled", "canceled", "interrupted", "aborted"}:
-            self.tasks.reconcile_terminal(
-                execution_ref, "CANCELLED", failure_stage="provider",
+            terminalize(
+                "CANCELLED", failure_stage="provider",
                 failure_code="TURN_CANCELLED", evidence=f"provider turn status={status}",
                 retry_required=False,
             )
@@ -2856,8 +2885,8 @@ class TaskDispatcher:
             result = self.tasks.latest_execution_result(task.task_id)
             if result is not None:
                 final_state = "BLOCKED" if result.status == "BLOCKED" else "COMPLETED"
-                self.tasks.reconcile_terminal(
-                    execution_ref, final_state, failure_stage=None,
+                terminalize(
+                    final_state, failure_stage=None,
                     failure_code=None, evidence=None,
                     retry_required=final_state == "BLOCKED",
                 )
@@ -2873,6 +2902,15 @@ class TaskDispatcher:
                 except Exception:
                     parsed = None
                 if parsed is not None:
+                    if orphaned:
+                        # A legacy row has no safe execution identity under
+                        # which to persist a new result.  The exact provider
+                        # turn is still authoritative for the task terminal
+                        # projection; preserve the parsed outcome and release
+                        # only this null-ref lease.
+                        final_state = "BLOCKED" if parsed.status == "BLOCKED" else "COMPLETED"
+                        terminalize(final_state, retry_required=final_state == "BLOCKED")
+                        return {"state": final_state, "authoritative": True}
                     if self.linear is not None and index is not None:
                         try:
                             states = self.linear.team_states(self.cfg.team_id)
@@ -2903,24 +2941,28 @@ class TaskDispatcher:
                             next_state=parsed.next_state, raw_result=raw_result,
                         )
                         final_state = "BLOCKED" if parsed.status == "BLOCKED" else "COMPLETED"
-                        self.tasks.reconcile_terminal(
-                            execution_ref, final_state,
+                        terminalize(
+                            final_state,
                             retry_required=final_state == "BLOCKED",
                         )
                     return {"state": "COMPLETED", "authoritative": True}
-            self.tasks.reconcile_terminal(
-                execution_ref, "RECOVERY_REQUIRED", failure_stage="result",
+            terminalize(
+                "RECOVERY_REQUIRED", failure_stage="result",
                 failure_code="TURN_COMPLETED_WITHOUT_RESULT",
                 evidence="provider turn is terminal but no CLINX result marker was persisted",
             )
             return {"state": "RECOVERY_REQUIRED", "authoritative": True}
         if status in {"failed", "error", "systemerror", "errored"}:
-            self.tasks.reconcile_terminal(
-                execution_ref, "RECOVERY_REQUIRED", failure_stage="provider",
+            terminalize(
+                "RECOVERY_REQUIRED", failure_stage="provider",
                 failure_code="PROVIDER_TURN_FAILURE", evidence=f"provider turn status={status}",
             )
             return {"state": "RECOVERY_REQUIRED", "authoritative": True}
         return {"state": "CODEX_RUNNING", "authoritative": False, "status": status}
+
+    def reconcile_task(self, task_id: str) -> dict[str, Any]:
+        """Reconcile a task's exact bound turn, including legacy null-ref state."""
+        return self.reconcile_execution(None, task_id=task_id)
 
 
 @dataclasses.dataclass(frozen=True)

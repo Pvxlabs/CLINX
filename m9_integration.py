@@ -564,6 +564,11 @@ class ClinxIntegration:
                 project=project,
                 host=host,
             )
+        # Context adapters may return a cached TaskRecord.  Refresh the
+        # durable row before selecting reconciliation evidence so a previous
+        # self-heal is visible on the next status read.
+        if self.registry is not None:
+            task = self.registry.get_task(task.task_id)
         # A status read is also a bounded recovery point.  The registry is
         # authoritative for identity, while the dispatcher may reconcile one
         # exact active turn against provider state without reading history.
@@ -571,10 +576,37 @@ class ClinxIntegration:
             self.registry.get_active_execution(execution_ref)
             if execution_ref else self.registry.get_latest_execution_for_task(task.task_id)
         )
+        if (
+            active_for_reconcile is None
+            and not execution_ref
+            and task.codex_running
+            and task.execution_state in {
+                "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
+                "TRANSPORT_UNCERTAIN", "CANCEL_REQUESTED", "CANCELLATION_PENDING",
+            }
+        ):
+            # Some pre-M12 runtimes never flushed an executions row at all;
+            # the task projection is still a bounded owner candidate.
+            active_for_reconcile = {"execution_ref": None, "stage": task.current_stage}
         reconcile = getattr(self.dispatcher, "reconcile_execution", None)
+        if not callable(reconcile):
+            reconcile = getattr(self.dispatcher, "reconcile_task", None)
         if active_for_reconcile and callable(reconcile):
             try:
-                reconcile(active_for_reconcile.get("execution_ref"))
+                active_ref = active_for_reconcile.get("execution_ref")
+                if active_ref:
+                    reconcile(active_ref)
+                else:
+                    # Legacy executions may have a lease but no opaque
+                    # execution identity.  Reconcile the exact bound task;
+                    # the dispatcher will release it only on terminal proof.
+                    try:
+                        reconcile(None, task_id=task.task_id)
+                    except TypeError:
+                        # Lightweight adapters may expose only task-level
+                        # reconciliation; keep this compatibility bounded to
+                        # the null-ref legacy path.
+                        reconcile(task.task_id)
                 task = self.registry.get_task(task.task_id)
             except Exception:
                 # Status remains useful even when a bounded provider read is
@@ -1047,15 +1079,30 @@ class ClinxIntegration:
                     exclude_task_id=task_id if prepared.task_action == "create" else None,
                 )
                 if conflict is not None and prepared.task_action != "create":
-                    return {
-                        "execution_started": False,
-                        "status": "WORKTREE_CONFLICT",
-                        "worktree_lease": "ACTIVE",
-                        "active_task_ref": conflict["active_task_id"],
-                        "active_execution_ref": conflict.get("active_execution_ref"),
-                        "active_stage": conflict.get("stage"),
-                        "read_only": False,
-                    }
+                    if conflict.get("active_execution_ref") is None:
+                        reconcile_task = getattr(self.dispatcher, "reconcile_task", None)
+                        if callable(reconcile_task):
+                            try:
+                                reconcile_task(conflict["active_task_id"])
+                            except Exception:
+                                # The conflict remains authoritative when the
+                                # bounded owner inspection is uncertain.
+                                pass
+                            conflict = self.registry.active_worktree_conflict(
+                                host=prepared.host, cwd=str(descriptor.cwd),
+                                repository_origin=descriptor.repository_origin,
+                                exclude_task_id=task_id if prepared.task_action == "create" else None,
+                            )
+                    if conflict is not None:
+                        return {
+                            "execution_started": False,
+                            "status": "WORKTREE_CONFLICT",
+                            "worktree_lease": "ACTIVE",
+                            "active_task_ref": conflict["active_task_id"],
+                            "active_execution_ref": conflict.get("active_execution_ref"),
+                            "active_stage": conflict.get("stage"),
+                            "read_only": False,
+                        }
                 if prepared.task_action == "create":
                     fingerprint = self.registry.canonical_work_item_fingerprint(
                         host=prepared.host, project_alias=descriptor.alias,
