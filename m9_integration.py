@@ -110,8 +110,10 @@ def parse_execution_result(text: str) -> ExecutionResult:
         # Some app-server summary views collapse line breaks.  Preserve the
         # strict field contract while accepting that bounded representation.
         compact = " ".join(text.split())
-        if not compact.startswith("CLINX_EXECUTION_RESULT"):
+        header_offset = compact.find("CLINX_EXECUTION_RESULT")
+        if header_offset < 0:
             raise ResultParseError("missing exact CLINX_EXECUTION_RESULT header") from exc
+        compact = compact[header_offset:]
         keys = "STATUS|SUMMARY|CHANGED_FILES|VALIDATION|BLOCKERS|NEXT_STATE"
         values = {
             key: value.strip()

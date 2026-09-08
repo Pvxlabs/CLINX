@@ -2062,7 +2062,7 @@ class TaskDispatcher:
                 text = item.get("text")
                 if isinstance(text, str) and text.strip():
                     parts.append(text.strip())
-                for key in ("items", "content", "message", "output", "parts"):
+                for key in ("items", "item", "content", "message", "output", "parts"):
                     if key in item:
                         visit(item[key])
             elif isinstance(item, list):
