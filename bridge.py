@@ -2059,11 +2059,10 @@ class TaskDispatcher:
         def visit(item: Any) -> None:
             if isinstance(item, dict):
                 kind = str(item.get("type", "")).casefold()
-                if kind in {"user", "assistant", "message", "agentmessage", "text"}:
-                    text = item.get("text")
-                    if isinstance(text, str) and text.strip():
-                        parts.append(text.strip())
-                for key in ("items", "content", "message", "output"):
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+                for key in ("items", "content", "message", "output", "parts"):
                     if key in item:
                         visit(item[key])
             elif isinstance(item, list):
