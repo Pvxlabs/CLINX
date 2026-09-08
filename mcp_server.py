@@ -750,9 +750,6 @@ def build_server(
         or cfg.task_db_path
         or (Path.home() / ".local" / "state" / "clinx" / "tasks.sqlite3")
     )
-    dispatcher = bridge.TaskDispatcher(cfg, task_registry=registry)
-    reader = bridge.TaskContextReader(cfg, registry)
-    topic_reader = bridge.TopicStatusReader(cfg, registry)
     # The stdio launcher deliberately starts with a minimal environment.  The
     # service-owned runtime.env remains the configured secret source; it is
     # read locally and never returned through MCP or written to the registry.
@@ -768,6 +765,9 @@ def build_server(
         except OSError:
             pass
     linear = bridge.LinearClient(api_key) if api_key else None
+    dispatcher = bridge.TaskDispatcher(cfg, task_registry=registry, linear=linear)
+    reader = bridge.TaskContextReader(cfg, registry)
+    topic_reader = bridge.TopicStatusReader(cfg, registry)
     integration = ClinxIntegration(
         cfg, registry, dispatcher, reader, linear=linear, topic_reader=topic_reader
     )
