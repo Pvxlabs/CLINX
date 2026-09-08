@@ -308,6 +308,9 @@ class TaskRecord:
     codex_running: bool
     turn_id: str | None
     retry_required: bool
+    failure_stage: str | None
+    failure_code: str | None
+    failure_evidence: str | None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -469,7 +472,10 @@ class TaskRegistry:
                     last_progress_at TEXT NOT NULL DEFAULT '',
                     codex_running INTEGER NOT NULL DEFAULT 0,
                     turn_id TEXT,
-                    retry_required INTEGER NOT NULL DEFAULT 0
+                    retry_required INTEGER NOT NULL DEFAULT 0,
+                    failure_stage TEXT,
+                    failure_code TEXT,
+                    failure_evidence TEXT
                 );
                 CREATE TABLE IF NOT EXISTS conversation_bindings (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
@@ -632,6 +638,9 @@ class TaskRegistry:
                 "codex_running": "ALTER TABLE tasks ADD COLUMN codex_running INTEGER NOT NULL DEFAULT 0",
                 "turn_id": "ALTER TABLE tasks ADD COLUMN turn_id TEXT",
                 "retry_required": "ALTER TABLE tasks ADD COLUMN retry_required INTEGER NOT NULL DEFAULT 0",
+                "failure_stage": "ALTER TABLE tasks ADD COLUMN failure_stage TEXT",
+                "failure_code": "ALTER TABLE tasks ADD COLUMN failure_code TEXT",
+                "failure_evidence": "ALTER TABLE tasks ADD COLUMN failure_evidence TEXT",
             }
             for column, statement in migrations.items():
                 if column not in columns:
@@ -1540,10 +1549,14 @@ class TaskRegistry:
         codex_running: bool | None | object = _UNSET,
         turn_id: str | None | object = _UNSET,
         retry_required: bool | None | object = _UNSET,
+        failure_stage: str | None | object = _UNSET,
+        failure_code: str | None | object = _UNSET,
+        failure_evidence: str | None | object = _UNSET,
     ) -> TaskRecord:
         allowed = {
             "QUEUED", "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
             "RESULT_RECEIVED", "RESULT_PARSE", "LINEAR_WRITEBACK",
+            "TRANSPORT_UNCERTAIN", "CANCEL_REQUESTED", "CANCELLATION_PENDING",
             "BLOCKED", "RECOVERY_REQUIRED", "IN_REVIEW", "COMPLETED", "CANCELLED", "STOPPED",
         }
         if state not in allowed:
@@ -1555,7 +1568,10 @@ class TaskRegistry:
             candidate_turn = task.turn_id if turn_id is _UNSET else turn_id
             if not isinstance(candidate_turn, str) or not candidate_turn.strip():
                 raise TaskRegistryError("CODEX_RUNNING requires an exact turn_id")
-        if state in {"BLOCKED", "RECOVERY_REQUIRED"}:
+        if state in {
+            "BLOCKED", "RECOVERY_REQUIRED", "IN_REVIEW",
+            "COMPLETED", "CANCELLED", "STOPPED",
+        }:
             running = False
         effective_turn = task.turn_id if turn_id is _UNSET else turn_id
         if running and not effective_turn:
@@ -1563,18 +1579,32 @@ class TaskRegistry:
         stage = task.current_stage if current_stage is _UNSET else current_stage
         blocker = task.current_blocker if current_blocker is _UNSET else current_blocker
         retry = task.retry_required if retry_required is _UNSET else bool(retry_required)
+        effective_failure_stage = (
+            task.failure_stage if failure_stage is _UNSET else failure_stage
+        )
+        effective_failure_code = (
+            task.failure_code if failure_code is _UNSET else failure_code
+        )
+        effective_failure_evidence = (
+            task.failure_evidence if failure_evidence is _UNSET else failure_evidence
+        )
         changed = (
             task.execution_state != state or task.current_stage != stage
             or task.current_blocker != blocker or task.codex_running != running
             or task.turn_id != effective_turn or task.retry_required != retry
+            or task.failure_stage != effective_failure_stage
+            or task.failure_code != effective_failure_code
+            or task.failure_evidence != effective_failure_evidence
         )
         stamp = _now() if changed else task.last_progress_at
         with self._connect() as conn:
             conn.execute(
                 """UPDATE tasks SET execution_state=?, current_stage=?, current_blocker=?,
-                   last_progress_at=?, codex_running=?, turn_id=?, retry_required=?, updated_at=?
+                   last_progress_at=?, codex_running=?, turn_id=?, retry_required=?,
+                   failure_stage=?, failure_code=?, failure_evidence=?, updated_at=?
                    WHERE task_id=?""",
                 (state, stage, blocker, stamp, int(running), effective_turn, int(retry),
+                 effective_failure_stage, effective_failure_code, effective_failure_evidence,
                  _now() if changed else task.updated_at, task_id),
             )
             conn.execute(
@@ -1582,6 +1612,98 @@ class TaskRegistry:
                 (str(stage or state), task_id),
             )
         return self.get_task(task_id)
+
+    def request_cancellation(self, execution_ref: str) -> TaskRecord:
+        """Persist cancellation intent before contacting the provider."""
+        active = self.get_active_execution(execution_ref)
+        if active is None:
+            raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
+        task = self.get_task(active["task_id"])
+        if task.execution_state == "CANCELLED":
+            return task
+        if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
+            return task
+        if task.execution_state not in {
+            "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
+            "TRANSPORT_UNCERTAIN",
+        }:
+            raise TaskRegistryError(f"Execution is not active: {execution_ref}")
+        return self.set_execution_state(
+            task.task_id,
+            "CANCEL_REQUESTED",
+            current_stage="CANCEL_REQUESTED",
+            current_blocker="cancellation requested by CLINX",
+            codex_running=task.codex_running,
+            retry_required=False,
+            failure_stage=None,
+            failure_code=None,
+            failure_evidence=None,
+        )
+
+    def mark_cancellation_pending(
+        self, execution_ref: str, *, evidence: str | None = None
+    ) -> TaskRecord:
+        active = self.get_active_execution(execution_ref)
+        if active is None:
+            raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
+        return self.set_execution_state(
+            active["task_id"],
+            "CANCELLATION_PENDING",
+            current_stage="CANCELLATION_PENDING",
+            current_blocker="provider cancellation could not be confirmed",
+            codex_running=True,
+            retry_required=True,
+            failure_stage="cancel",
+            failure_code="PROVIDER_UNAVAILABLE",
+            failure_evidence=(evidence or "provider cancellation unavailable")[:4000],
+        )
+
+    def finalize_cancellation(self, execution_ref: str) -> TaskRecord:
+        active = self.get_active_execution(execution_ref)
+        if active is None:
+            raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
+        task = self.set_execution_state(
+            active["task_id"],
+            "CANCELLED",
+            current_stage="CANCELLED",
+            current_blocker="cancelled by CLINX",
+            codex_running=False,
+            retry_required=False,
+            failure_stage=None,
+            failure_code=None,
+            failure_evidence=None,
+        )
+        self.release_execution(task.task_id, execution_ref)
+        return task
+
+    def reconcile_terminal(
+        self,
+        execution_ref: str,
+        state: str,
+        *,
+        failure_stage: str | None = None,
+        failure_code: str | None = None,
+        evidence: str | None = None,
+        retry_required: bool | None = None,
+    ) -> TaskRecord:
+        """Persist authoritative terminal evidence and release its lease."""
+        if state not in {"COMPLETED", "RECOVERY_REQUIRED", "BLOCKED", "CANCELLED"}:
+            raise TaskRegistryError(f"Unsupported terminal reconciliation state: {state}")
+        active = self.get_active_execution(execution_ref)
+        if active is None:
+            raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
+        task = self.set_execution_state(
+            active["task_id"], state,
+            current_stage=state,
+            current_blocker=(evidence or None) if state != "COMPLETED" else None,
+            codex_running=False,
+            retry_required=(state == "RECOVERY_REQUIRED") if retry_required is None else retry_required,
+            failure_stage=failure_stage,
+            failure_code=failure_code,
+            failure_evidence=evidence,
+        )
+        self.release_execution(task.task_id, execution_ref)
+        return task
 
     def get_execution_result(self, execution_ref: str) -> ExecutionResultRecord | None:
         with self._connect() as conn:
@@ -1728,7 +1850,10 @@ class TaskRegistry:
         exclude_task_id: str | None = None,
     ) -> dict[str, Any] | None:
         key = self.worktree_key(host=host, cwd=cwd, repository_origin=repository_origin)
-        active_states = ("CLAIMED", "DISPATCHING", "CODEX_RUNNING", "TURN_STARTED")
+        active_states = (
+            "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
+            "TRANSPORT_UNCERTAIN", "CANCEL_REQUESTED", "CANCELLATION_PENDING",
+        )
         with self._connect() as conn:
             row = conn.execute(
                 """SELECT l.*, t.host, t.cwd, t.repository_origin, t.execution_state,
@@ -1771,31 +1896,8 @@ class TaskRegistry:
         }
 
     def cancel_execution(self, execution_ref: str) -> TaskRecord:
-        active = self.get_active_execution(execution_ref)
-        if active is None:
-            raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
-        task = self.get_task(active["task_id"])
-        if task.execution_state == "CANCELLED":
-            return task
-        if task.execution_state not in {"CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING"}:
-            raise TaskRegistryError(f"Execution is not active: {execution_ref}")
-        if task.execution_state in {"STOPPED", "COMPLETED", "IN_REVIEW", "BLOCKED"}:
-            raise TaskRegistryError(f"Execution is terminal: {execution_ref}")
-        cancelled = self.set_execution_state(
-            task.task_id, "CANCELLED", current_stage="CANCELLED",
-            current_blocker="cancelled by CLINX", codex_running=False,
-            retry_required=False,
-        )
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE executions SET stage='CANCELLED' WHERE task_id=? AND execution_ref=?",
-                (task.task_id, execution_ref),
-            )
-            conn.execute(
-                "DELETE FROM worktree_leases WHERE task_id=? AND execution_ref=?",
-                (task.task_id, execution_ref),
-            )
-        return cancelled
+        self.request_cancellation(execution_ref)
+        return self.finalize_cancellation(execution_ref)
 
     def release_execution(self, task_id: str, execution_ref: str | None = None) -> None:
         with self._connect() as conn:
@@ -1907,5 +2009,12 @@ class TaskRegistry:
             yield task
             completed = True
         finally:
-            if not retain or not completed:
+            terminal = False
+            try:
+                terminal = self.get_task(task_id).execution_state in {
+                    "COMPLETED", "IN_REVIEW", "BLOCKED", "RECOVERY_REQUIRED", "CANCELLED", "STOPPED",
+                }
+            except UnknownTaskError:
+                terminal = True
+            if not retain or not completed or terminal:
                 self.release_execution(task_id, execution_ref)
