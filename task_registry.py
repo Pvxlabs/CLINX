@@ -1725,6 +1725,62 @@ class TaskRegistry:
         self.release_execution(task.task_id, execution_ref)
         return task
 
+    def reconcile_orphaned_terminal(
+        self,
+        task_id: str,
+        state: str,
+        *,
+        failure_stage: str | None = None,
+        failure_code: str | None = None,
+        evidence: str | None = None,
+        retry_required: bool | None = None,
+    ) -> TaskRecord | None:
+        """Converge a legacy null-ref execution only with terminal evidence.
+
+        Older runtimes could persist an execution and its mutating lease before
+        they had an opaque ``execution_ref`` (or never flush those rows).  This
+        path is intentionally narrower than :meth:`reconcile_terminal`: it
+        only accepts a task with no active execution identity, and releases the
+        lease after persisting a terminal task state.  Unknown/active identities are
+        left untouched so transport uncertainty cannot release a real lease.
+        """
+        if state not in {"COMPLETED", "RECOVERY_REQUIRED", "BLOCKED", "CANCELLED"}:
+            raise TaskRegistryError(f"Unsupported terminal reconciliation state: {state}")
+        task = self.get_task(task_id)
+        with self._connect() as conn:
+            execution = conn.execute(
+                "SELECT execution_ref FROM executions WHERE task_id=?",
+                (task_id,),
+            ).fetchone()
+            lease = conn.execute(
+                "SELECT task_id, execution_ref FROM worktree_leases WHERE task_id=?",
+                (task_id,),
+            ).fetchone()
+        if execution is not None and execution["execution_ref"] is not None:
+            return None
+        if lease is not None and lease["execution_ref"] is not None:
+            return None
+        if task.execution_state in {
+            "COMPLETED", "BLOCKED", "RECOVERY_REQUIRED", "CANCELLED", "STOPPED", "IN_REVIEW",
+        } and not task.codex_running:
+            # The durable terminal projection already won.  A repeated read is
+            # idempotent, and there is no stale lease left to release.
+            self.release_execution(task_id, None)
+            return task
+        reconciled = self.set_execution_state(
+            task_id,
+            state,
+            current_stage=state,
+            current_blocker=(evidence or None) if state != "COMPLETED" else None,
+            codex_running=False,
+            retry_required=(state == "RECOVERY_REQUIRED") if retry_required is None else retry_required,
+            failure_stage=failure_stage,
+            failure_code=failure_code,
+            failure_evidence=evidence,
+        )
+        self.release_execution(task_id, None)
+        return reconciled
+
     def get_execution_result(self, execution_ref: str) -> ExecutionResultRecord | None:
         with self._connect() as conn:
             row = conn.execute(

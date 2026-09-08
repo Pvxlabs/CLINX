@@ -100,6 +100,31 @@ class FlakyDispatcher(FakeDispatcher):
         )
 
 
+class OrphanReconcilingDispatcher(FakeDispatcher):
+    def __init__(self, root: Path, registry: TaskRegistry):
+        super().__init__(root, registry)
+        self.reconcile_calls = []
+
+    def reconcile_execution(self, execution_ref=None, *, task_id=None):
+        self.reconcile_calls.append((execution_ref, task_id))
+        if task_id is None:
+            return {"state": "UNKNOWN", "authoritative": False}
+        reconciled = self.registry.reconcile_orphaned_terminal(task_id, "COMPLETED")
+        return {
+            "state": "COMPLETED" if reconciled is not None else "UNKNOWN",
+            "authoritative": reconciled is not None,
+        }
+
+    def reconcile_task(self, task_id):
+        return self.reconcile_execution(None, task_id=task_id)
+
+
+class UncertainOrphanDispatcher(OrphanReconcilingDispatcher):
+    def reconcile_execution(self, execution_ref=None, *, task_id=None):
+        self.reconcile_calls.append((execution_ref, task_id))
+        return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
+
+
 class FailingLinear:
     def create_task_index_issue(self, **_kwargs):
         raise RuntimeError("linear audit unavailable")
@@ -322,6 +347,87 @@ class M12RecoveryAndCancellationTests(unittest.TestCase):
             self.assertTrue(second["idempotent"])
             self.assertTrue(second["cancel_confirmed"])
             self.assertIsNone(registry.get_active_execution("exec_recovery"))
+
+
+class M124OrphanedLeaseTests(unittest.TestCase):
+    def _orphan(self, registry, task):
+        with registry.execution(task.task_id, execution_ref=None, retain=True):
+            registry.set_execution_state(
+                task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
+                turn_id="turn-orphan", codex_running=True,
+            )
+
+    def test_get_status_self_heals_null_ref_terminal_owner_durably_and_idempotently(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            integration, registry, _dispatcher, task = make_fixture(root)
+            dispatcher = OrphanReconcilingDispatcher(root, registry)
+            integration.dispatcher = dispatcher
+            self._orphan(registry, task)
+
+            status = integration.get_status(task_ref=task.task_id)
+            self.assertEqual(status["EXECUTION_STATE"], "COMPLETED")
+            self.assertFalse(status["CODEX_RUNNING"])
+            self.assertIsNone(status["active_execution"])
+            self.assertIsNone(registry.get_latest_execution_for_task(task.task_id))
+            self.assertIsNone(registry.active_worktree_conflict(
+                host=task.host, cwd=task.cwd, repository_origin=task.repository_origin
+            ))
+
+            repeated = integration.get_status(task_ref=task.task_id)
+            self.assertEqual(repeated["EXECUTION_STATE"], "COMPLETED")
+            self.assertFalse(repeated["CODEX_RUNNING"])
+            self.assertEqual(len(dispatcher.reconcile_calls), 1)
+
+    def test_start_conflict_self_heals_same_prepared_ref_and_proceeds(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            integration, registry, _dispatcher, task = make_fixture(root)
+            dispatcher = OrphanReconcilingDispatcher(root, registry)
+            integration.dispatcher = dispatcher
+            self._orphan(registry, task)
+            prepared = integration.prepare_execution(
+                prompt="continue after stale lease", approved=True, task_ref=task.task_id,
+            )
+
+            result = integration.start_execution(
+                prepared_execution_ref=prepared["prepared_execution_ref"], approved=True,
+            )
+            self.assertTrue(result["execution_started"])
+            self.assertEqual(result["dispatch_status"], "DISPATCHED")
+            self.assertEqual(dispatcher.reconcile_calls, [(None, task.task_id)])
+            self.assertEqual(len(dispatcher.dispatch_calls), 1)
+
+    def test_uncertain_owner_keeps_null_ref_lease(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            integration, registry, _dispatcher, task = make_fixture(root)
+            dispatcher = UncertainOrphanDispatcher(root, registry)
+            integration.dispatcher = dispatcher
+            self._orphan(registry, task)
+
+            status = integration.get_status(task_ref=task.task_id)
+            self.assertEqual(status["EXECUTION_STATE"], "CODEX_RUNNING")
+            self.assertTrue(status["CODEX_RUNNING"])
+            self.assertIsNotNone(registry.active_worktree_conflict(
+                host=task.host, cwd=task.cwd, repository_origin=task.repository_origin
+            ))
+
+    def test_missing_execution_row_is_reconciled_from_task_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            integration, registry, _dispatcher, task = make_fixture(root)
+            dispatcher = OrphanReconcilingDispatcher(root, registry)
+            integration.dispatcher = dispatcher
+            registry.set_execution_state(
+                task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
+                turn_id="turn-legacy", codex_running=True,
+            )
+
+            status = integration.get_status(task_ref=task.task_id)
+            self.assertEqual(status["EXECUTION_STATE"], "COMPLETED")
+            self.assertFalse(status["CODEX_RUNNING"])
+            self.assertEqual(dispatcher.reconcile_calls, [(None, task.task_id)])
 
 
 class M12ModelCapabilityTests(unittest.TestCase):
