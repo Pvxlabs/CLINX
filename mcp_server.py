@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+import re
 import sys
 from typing import Any, Callable
 
@@ -76,6 +78,9 @@ def _public_task_schema() -> dict[str, Any]:
         "last_progress_at": {"type": "string"},
         "codex_running": {"type": "boolean"},
         "retry_required": {"type": "boolean"},
+        "failure_stage": {"type": ["string", "null"]},
+        "failure_code": {"type": ["string", "null"]},
+        "failure_evidence": {"type": ["string", "null"]},
     })
 
 
@@ -173,6 +178,9 @@ def _status_output_schema() -> dict[str, Any]:
         "LAST_PROGRESS_AT": {"type": "string"},
         "TURN_PRESENT": {"type": "boolean"},
         "RETRY_REQUIRED": {"type": "boolean"},
+        "failure_stage": {"type": ["string", "null"]},
+        "failure_code": {"type": ["string", "null"]},
+        "failure_evidence": {"type": ["string", "null"]},
         "execution_ref": {"type": "string"},
         "active_execution": {"anyOf": [{"type": "object", "additionalProperties": True}, {"type": "null"}]},
         "linear_audit_sync": {"type": "string"},
@@ -482,10 +490,13 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 ["execution_ref"],
             ),
             "outputSchema": _json_schema({
-                "execution_cancelled": {"type": "boolean", "const": True},
+                "execution_cancelled": {"type": "boolean"},
                 "execution_ref": {"type": "string"},
                 "task_ref": {"type": "string"},
-                "status": {"type": "string", "enum": ["CANCELLED"]},
+                "status": {"type": "string", "enum": ["CANCELLED", "CANCELLATION_PENDING"]},
+                "cancel_requested": {"type": "boolean", "const": True},
+                "cancel_confirmed": {"type": "boolean"},
+                "retry_required": {"type": "boolean"},
                 "idempotent": {"type": "boolean"},
                 "read_only": {"type": "boolean", "const": False},
             }),
@@ -742,8 +753,23 @@ def build_server(
     dispatcher = bridge.TaskDispatcher(cfg, task_registry=registry)
     reader = bridge.TaskContextReader(cfg, registry)
     topic_reader = bridge.TopicStatusReader(cfg, registry)
+    # The stdio launcher deliberately starts with a minimal environment.  The
+    # service-owned runtime.env remains the configured secret source; it is
+    # read locally and never returned through MCP or written to the registry.
+    api_key = os.environ.get("LINEAR_API_KEY", "").strip()
+    if not api_key:
+        runtime_env = Path.home() / ".config" / "clinx" / "runtime.env"
+        try:
+            for line in runtime_env.read_text(encoding="utf-8").splitlines():
+                match = re.fullmatch(r"\s*LINEAR_API_KEY\s*=\s*(.*?)\s*", line)
+                if match:
+                    api_key = match.group(1).strip().strip("'\"")
+                    break
+        except OSError:
+            pass
+    linear = bridge.LinearClient(api_key) if api_key else None
     integration = ClinxIntegration(
-        cfg, registry, dispatcher, reader, linear=None, topic_reader=topic_reader
+        cfg, registry, dispatcher, reader, linear=linear, topic_reader=topic_reader
     )
     return ClinxMCPServer(integration, allow_execute=allow_execute)
 

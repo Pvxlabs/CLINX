@@ -272,6 +272,46 @@ class M12PreparationAndStartTests(unittest.TestCase):
             self.assertEqual(len(dispatcher.dispatch_calls), 2)
 
 
+class M12RecoveryAndCancellationTests(unittest.TestCase):
+    def _active(self, registry, task):
+        with registry.execution(task.task_id, execution_ref="exec_recovery", retain=True):
+            registry.set_execution_state(
+                task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
+                turn_id="turn-recovery", codex_running=True,
+            )
+
+    def test_provider_unavailable_cancel_is_durable_and_retains_lease(self):
+        with tempfile.TemporaryDirectory() as td:
+            integration, registry, dispatcher, task = make_fixture(Path(td))
+            self._active(registry, task)
+            calls = []
+            dispatcher.cancel_execution = lambda _ref: calls.append(True) or (_ for _ in ()).throw(
+                RuntimeError("provider unavailable")
+            )
+            result = integration.cancel_execution(execution_ref="exec_recovery")
+            self.assertEqual(result["status"], "CANCELLATION_PENDING")
+            self.assertTrue(result["cancel_requested"])
+            self.assertFalse(result["cancel_confirmed"])
+            self.assertIsNotNone(registry.get_active_execution("exec_recovery"))
+            self.assertEqual(registry.get_task(task.task_id).execution_state, "CANCELLATION_PENDING")
+            repeated = integration.cancel_execution(execution_ref="exec_recovery")
+            self.assertTrue(repeated["idempotent"])
+            self.assertEqual(len(calls), 1)
+
+    def test_terminal_reconciliation_clears_running_and_releases_lease(self):
+        with tempfile.TemporaryDirectory() as td:
+            _integration, registry, _dispatcher, task = make_fixture(Path(td))
+            self._active(registry, task)
+            reconciled = registry.reconcile_terminal(
+                "exec_recovery", "RECOVERY_REQUIRED", failure_stage="transport",
+                failure_code="APP_SERVER_TRANSPORT_FAILURE", evidence="exit 127",
+            )
+            self.assertFalse(reconciled.codex_running)
+            self.assertEqual(reconciled.execution_state, "RECOVERY_REQUIRED")
+            self.assertEqual(reconciled.failure_code, "APP_SERVER_TRANSPORT_FAILURE")
+            self.assertIsNone(registry.get_active_execution("exec_recovery"))
+
+
 class M12ModelCapabilityTests(unittest.TestCase):
     class FakeTransport:
         def __init__(self, models):

@@ -1121,6 +1121,9 @@ def _task_public_record(registry: TaskRegistry, task: Any) -> dict[str, Any]:
         "codex_running": task.codex_running,
         "turn_id": task.turn_id,
         "retry_required": task.retry_required,
+        "failure_stage": task.failure_stage,
+        "failure_code": task.failure_code,
+        "failure_evidence": task.failure_evidence,
         "bound_thread_exists": registry.get_binding(task.task_id) is not None,
         "last_execution": registry.last_linear_execution(task.task_id),
         "task_index_issue": index.identifier if index is not None else None,
@@ -2675,10 +2678,11 @@ class TaskDispatcher:
         raise DispatchContractError(f"Unsupported TASK_ACTION={action!r}")
 
     def cancel_execution(self, execution_ref: str) -> dict[str, Any]:
-        """Interrupt the exact CLINX-owned turn, then close its durable lease."""
+        """Durably request cancellation, then confirm it with the provider."""
         active = self.tasks.get_active_execution(execution_ref)
         if active is None:
             raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
+        self.tasks.request_cancellation(execution_ref)
         task = self.tasks.get_task(active["task_id"])
         binding = self.tasks.get_binding(task.task_id)
         if binding is None or not task.turn_id:
@@ -2691,15 +2695,152 @@ class TaskDispatcher:
             workspace_alias=task.workspace_alias,
         )
         client = self.client_factory(self._target(workspace, project, binding))
-        with client:
-            client.initialize(
-                client_name=self.cfg.app_server.client_name,
-                client_title=self.cfg.app_server.client_title,
-                client_version=self.cfg.app_server.client_version,
+        try:
+            with client:
+                client.initialize(
+                    client_name=self.cfg.app_server.client_name,
+                    client_title=self.cfg.app_server.client_title,
+                    client_version=self.cfg.app_server.client_version,
+                )
+                client.turn_interrupt(binding.thread_id, task.turn_id)
+        except Exception as exc:
+            pending = self.tasks.mark_cancellation_pending(
+                execution_ref, evidence=str(exc)
             )
-            client.turn_interrupt(binding.thread_id, task.turn_id)
-        cancelled = self.tasks.cancel_execution(execution_ref)
-        return {"execution_ref": execution_ref, "task_ref": cancelled.task_id, "status": "CANCELLED"}
+            return {
+                "execution_ref": execution_ref,
+                "task_ref": pending.task_id,
+                "status": "CANCELLATION_PENDING",
+                "cancel_requested": True,
+                "cancel_confirmed": False,
+                "retry_required": True,
+            }
+        cancelled = self.tasks.finalize_cancellation(execution_ref)
+        return {
+            "execution_ref": execution_ref,
+            "task_ref": cancelled.task_id,
+            "status": "CANCELLED",
+            "cancel_requested": True,
+            "cancel_confirmed": True,
+            "retry_required": False,
+        }
+
+    @staticmethod
+    def _turn_status(row: dict[str, Any]) -> str:
+        value = row.get("status")
+        if isinstance(value, dict):
+            value = value.get("type") or value.get("status") or value.get("state")
+        if value is None:
+            value = row.get("state") or row.get("statusType")
+        return str(value or "UNKNOWN").replace("_", "").replace("-", "").casefold()
+
+    def reconcile_execution(self, execution_ref: str) -> dict[str, Any]:
+        """Perform one bounded provider read and converge durable execution truth."""
+        active = self.tasks.get_active_execution(execution_ref)
+        if active is None:
+            return {"state": "UNKNOWN", "authoritative": False}
+        task = self.tasks.get_task(active["task_id"])
+        binding = self.tasks.get_binding(task.task_id)
+        if binding is None or not task.turn_id:
+            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
+        workspace = self.workspaces.resolve(task.workspace_alias)
+        project_path = self.workspaces.validate_path(workspace, Path(task.cwd))
+        project = ProjectMapping(
+            linear_name=task.project_name, repo=project_path, alias=task.project_alias,
+            repository_origin=task.repository_origin, branch=task.branch,
+            workspace_alias=task.workspace_alias,
+        )
+        client = self.client_factory(self._target(workspace, project, binding))
+        try:
+            with client:
+                client.initialize(
+                    client_name=self.cfg.app_server.client_name,
+                    client_title=self.cfg.app_server.client_title,
+                    client_version=self.cfg.app_server.client_version,
+                )
+                page = client.thread_turns_list(
+                    binding.thread_id, limit=20, sort_direction="desc", items_view="summary"
+                )
+        except AppServerError as exc:
+            evidence = str(exc)
+            # A child exit/closed byte channel is terminal evidence for this
+            # local execution; a generic reachability failure is uncertain.
+            if "exit " in evidence.casefold() or "byte transport closed" in evidence.casefold():
+                self.tasks.reconcile_terminal(
+                    execution_ref, "RECOVERY_REQUIRED", failure_stage="transport",
+                    failure_code="APP_SERVER_TRANSPORT_FAILURE", evidence=evidence,
+                )
+                return {"state": "RECOVERY_REQUIRED", "authoritative": True, "evidence": evidence}
+            if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
+                self.tasks.mark_cancellation_pending(execution_ref, evidence=evidence)
+                return {"state": "CANCELLATION_PENDING", "authoritative": False, "evidence": evidence}
+            self.tasks.set_execution_state(
+                task.task_id, "TRANSPORT_UNCERTAIN", current_stage="reconciliation",
+                current_blocker=evidence[:2000], codex_running=bool(task.codex_running),
+                retry_required=True, failure_stage="transport",
+                failure_code="PROVIDER_UNAVAILABLE", failure_evidence=evidence[:4000],
+            )
+            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False, "evidence": evidence}
+        except Exception as exc:
+            evidence = str(exc)
+            if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
+                self.tasks.mark_cancellation_pending(execution_ref, evidence=evidence)
+                return {"state": "CANCELLATION_PENDING", "authoritative": False, "evidence": evidence}
+            self.tasks.set_execution_state(
+                task.task_id, "TRANSPORT_UNCERTAIN", current_stage="reconciliation",
+                current_blocker=evidence[:2000], codex_running=bool(task.codex_running),
+                retry_required=True, failure_stage="transport",
+                failure_code="PROVIDER_UNAVAILABLE", failure_evidence=evidence[:4000],
+            )
+            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False, "evidence": evidence}
+        rows = [item for item in page.get("data", ()) if isinstance(item, dict)]
+        row = next((item for item in rows if item.get("id") == task.turn_id), None)
+        if row is None:
+            if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
+                self.tasks.mark_cancellation_pending(
+                    execution_ref,
+                    evidence="bounded thread/turns/list did not contain the exact turn",
+                )
+                return {"state": "CANCELLATION_PENDING", "authoritative": False}
+            self.tasks.set_execution_state(
+                task.task_id, "TRANSPORT_UNCERTAIN", current_stage="reconciliation",
+                current_blocker="exact turn was not present in bounded provider history",
+                codex_running=bool(task.codex_running), retry_required=True,
+                failure_stage="reconciliation", failure_code="TURN_NOT_OBSERVED",
+                failure_evidence="bounded thread/turns/list did not contain the exact turn",
+            )
+            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
+        status = self._turn_status(row)
+        if status in {"cancelled", "canceled", "interrupted", "aborted"}:
+            self.tasks.reconcile_terminal(
+                execution_ref, "CANCELLED", failure_stage="provider",
+                failure_code="TURN_CANCELLED", evidence=f"provider turn status={status}",
+                retry_required=False,
+            )
+            return {"state": "CANCELLED", "authoritative": True}
+        if status in {"completed", "succeeded", "success"}:
+            result = self.tasks.latest_execution_result(task.task_id)
+            if result is not None:
+                final_state = "BLOCKED" if result.status == "BLOCKED" else "COMPLETED"
+                self.tasks.reconcile_terminal(
+                    execution_ref, final_state, failure_stage=None,
+                    failure_code=None, evidence=None,
+                    retry_required=final_state == "BLOCKED",
+                )
+                return {"state": final_state, "authoritative": True}
+            self.tasks.reconcile_terminal(
+                execution_ref, "RECOVERY_REQUIRED", failure_stage="result",
+                failure_code="TURN_COMPLETED_WITHOUT_RESULT",
+                evidence="provider turn is terminal but no CLINX result marker was persisted",
+            )
+            return {"state": "RECOVERY_REQUIRED", "authoritative": True}
+        if status in {"failed", "error", "systemerror", "errored"}:
+            self.tasks.reconcile_terminal(
+                execution_ref, "RECOVERY_REQUIRED", failure_stage="provider",
+                failure_code="PROVIDER_TURN_FAILURE", evidence=f"provider turn status={status}",
+            )
+            return {"state": "RECOVERY_REQUIRED", "authoritative": True}
+        return {"state": "CODEX_RUNNING", "authoritative": False, "status": status}
 
 
 @dataclasses.dataclass(frozen=True)

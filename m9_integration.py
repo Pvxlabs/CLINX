@@ -535,6 +535,22 @@ class ClinxIntegration:
                 project=project,
                 host=host,
             )
+        # A status read is also a bounded recovery point.  The registry is
+        # authoritative for identity, while the dispatcher may reconcile one
+        # exact active turn against provider state without reading history.
+        active_for_reconcile = (
+            self.registry.get_active_execution(execution_ref)
+            if execution_ref else self.registry.get_latest_execution_for_task(task.task_id)
+        )
+        reconcile = getattr(self.dispatcher, "reconcile_execution", None)
+        if active_for_reconcile and callable(reconcile):
+            try:
+                reconcile(active_for_reconcile.get("execution_ref"))
+                task = self.registry.get_task(task.task_id)
+            except Exception:
+                # Status remains useful even when a bounded provider read is
+                # unavailable; the registry keeps the explicit uncertainty.
+                task = self.registry.get_task(task.task_id)
         result = self.registry.latest_execution_result(task.task_id)
         execution_result = None
         if result is not None:
@@ -562,7 +578,9 @@ class ClinxIntegration:
         status["network_access"] = network_access
         status["NETWORK_ACCESS"] = "ENABLED" if network_access else "DISABLED"
         audit = self.registry.get_linear_audit(task.task_id)
-        status["linear_audit_sync"] = audit.sync_state if audit else "PENDING"
+        status["linear_audit_sync"] = (
+            "NOT_CONFIGURED" if self.linear is None else audit.sync_state if audit else "PENDING"
+        )
         status["linear_retry_required"] = bool(audit.retry_required) if audit else False
         status["linear_last_error"] = audit.last_error if audit else None
         active_execution = None
@@ -1161,21 +1179,59 @@ class ClinxIntegration:
                 "idempotent": True,
                 "read_only": False,
             }
+        if active.get("stage") in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
+            return {
+                "execution_cancelled": False,
+                "execution_ref": execution_ref,
+                "task_ref": active["task_id"],
+                "status": "CANCELLATION_PENDING",
+                "cancel_requested": True,
+                "cancel_confirmed": False,
+                "retry_required": True,
+                "idempotent": True,
+                "read_only": False,
+            }
+        # Persist intent before invoking any provider code.  This is the
+        # durable contract even when the app-server transport is unavailable.
+        requested = self.registry.request_cancellation(execution_ref)
         cancel = getattr(self.dispatcher, "cancel_execution", None)
-        if callable(cancel):
-            result = cancel(execution_ref)
-        else:
-            task = self.registry.cancel_execution(execution_ref)
-            result = {"execution_ref": execution_ref, "task_ref": task.task_id, "status": "CANCELLED"}
-        index = self.registry.get_task_index(result["task_ref"])
+        try:
+            if callable(cancel):
+                result = cancel(execution_ref)
+            else:
+                task = self.registry.finalize_cancellation(execution_ref)
+                result = {
+                    "execution_ref": execution_ref,
+                    "task_ref": task.task_id,
+                    "status": "CANCELLED",
+                    "cancel_requested": True,
+                    "cancel_confirmed": True,
+                }
+        except Exception as exc:
+            pending = self.registry.mark_cancellation_pending(execution_ref, evidence=str(exc))
+            result = {
+                "execution_ref": execution_ref,
+                "task_ref": pending.task_id,
+                "status": "CANCELLATION_PENDING",
+                "cancel_requested": True,
+                "cancel_confirmed": False,
+                "retry_required": True,
+            }
+        task_ref = result.get("task_ref", requested.task_id)
+        index = self.registry.get_task_index(task_ref)
         if index is not None:
-            self._linear_transition(result["task_ref"], index.issue_id, "CANCELLED")
+            # Cancellation remains a CLINX state; Linear receives a bounded
+            # audit event but is never allowed to gate or alter execution.
+            self._linear_transition(task_ref, index.issue_id, "TODO")
         return {
-            "execution_cancelled": True,
+            "execution_cancelled": result.get("status") == "CANCELLED",
             "execution_ref": execution_ref,
-            "task_ref": result["task_ref"],
-            "status": "CANCELLED",
-            "idempotent": False,
+            "task_ref": task_ref,
+            "status": result.get("status", "CANCELLATION_PENDING"),
+            "cancel_requested": True,
+            "cancel_confirmed": bool(result.get("cancel_confirmed", False)),
+            "retry_required": bool(result.get("retry_required", False)),
+            "idempotent": active.get("stage") in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"},
             "read_only": False,
         }
 
@@ -1265,6 +1321,9 @@ class ClinxIntegration:
             "last_progress_at": task.last_progress_at,
             "codex_running": bool(task.codex_running),
             "retry_required": bool(task.retry_required),
+            "failure_stage": task.failure_stage,
+            "failure_code": task.failure_code,
+            "failure_evidence": task.failure_evidence,
         }
 
 
