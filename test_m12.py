@@ -311,6 +311,18 @@ class M12RecoveryAndCancellationTests(unittest.TestCase):
             self.assertEqual(reconciled.failure_code, "APP_SERVER_TRANSPORT_FAILURE")
             self.assertIsNone(registry.get_active_execution("exec_recovery"))
 
+    def test_confirmed_cancel_is_idempotent_after_lease_release(self):
+        with tempfile.TemporaryDirectory() as td:
+            integration, registry, dispatcher, task = make_fixture(Path(td))
+            self._active(registry, task)
+            dispatcher.cancel_execution = None
+            first = integration.cancel_execution(execution_ref="exec_recovery")
+            second = integration.cancel_execution(execution_ref="exec_recovery")
+            self.assertEqual(first["status"], "CANCELLED")
+            self.assertTrue(second["idempotent"])
+            self.assertTrue(second["cancel_confirmed"])
+            self.assertIsNone(registry.get_active_execution("exec_recovery"))
+
 
 class M12ModelCapabilityTests(unittest.TestCase):
     class FakeTransport:

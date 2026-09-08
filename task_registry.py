@@ -1683,7 +1683,17 @@ class TaskRegistry:
             failure_code=None,
             failure_evidence=None,
         )
-        self.release_execution(task.task_id, execution_ref)
+        # Keep the terminal identity for idempotent repeated cancellation,
+        # while releasing only the mutating worktree lease.
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE executions SET stage='CANCELLED' WHERE task_id=? AND execution_ref=?",
+                (task.task_id, execution_ref),
+            )
+            conn.execute(
+                "DELETE FROM worktree_leases WHERE task_id=? AND execution_ref=?",
+                (task.task_id, execution_ref),
+            )
         return task
 
     def reconcile_terminal(
@@ -1827,7 +1837,23 @@ class TaskRegistry:
                 """SELECT e.*, t.host, t.cwd, t.repository_origin, t.execution_state,
                           t.current_stage, t.codex_running
                    FROM executions e JOIN tasks t ON t.task_id=e.task_id
-                   WHERE e.execution_ref=?""", (execution_ref,)
+                   WHERE e.execution_ref=?
+                     AND e.stage NOT IN ('CANCELLED','COMPLETED','IN_REVIEW','BLOCKED','RECOVERY_REQUIRED','STOPPED')""",
+                (execution_ref,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def get_execution_record(self, execution_ref: str) -> dict[str, Any] | None:
+        """Read one execution identity, including a retained terminal cancel."""
+        if not isinstance(execution_ref, str) or not execution_ref.strip():
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT e.*, t.host, t.cwd, t.repository_origin, t.execution_state,
+                          t.current_stage, t.codex_running
+                   FROM executions e JOIN tasks t ON t.task_id=e.task_id
+                   WHERE e.execution_ref=?""",
+                (execution_ref,),
             ).fetchone()
         return dict(row) if row is not None else None
 
