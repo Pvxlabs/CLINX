@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from app_server import AppServerError
 from task_registry import TaskRegistry, TaskRegistryError
 
 
@@ -852,6 +853,9 @@ class ClinxIntegration:
                 turn_id=result.turn_id,
                 execution_ref=execution_ref,
             )
+        except AppServerError:
+            self.registry.restore_prepared_execution(prepared_execution_ref)
+            raise
         except Exception:
             self.registry.fail_prepared_execution(prepared_execution_ref)
             raise

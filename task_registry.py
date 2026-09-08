@@ -1118,7 +1118,18 @@ class TaskRegistry:
         record = self.verify_prepared_execution(prepared_execution_ref)
         if record.status == "DISPATCHED":
             return record
-        if record.status != "PREPARED":
+        if record.status == "FAILED" and any(
+            value is not None for value in (
+                record.resulting_task_id,
+                record.resulting_thread_id,
+                record.resulting_turn_id,
+                record.resulting_execution_ref,
+            )
+        ):
+            raise TaskRegistryError(
+                f"Prepared execution is not retryable: {prepared_execution_ref}"
+            )
+        if record.status not in {"PREPARED", "FAILED"}:
             raise TaskRegistryError(
                 f"Prepared execution is not dispatchable: {prepared_execution_ref}"
             )
@@ -1126,7 +1137,7 @@ class TaskRegistry:
             conn.execute("BEGIN IMMEDIATE")
             updated = conn.execute(
                 """UPDATE prepared_executions SET status='RUNNING', updated_at=?
-                   WHERE prepared_execution_ref=? AND status='PREPARED'""",
+                   WHERE prepared_execution_ref=? AND status IN ('PREPARED','FAILED')""",
                 (_now(), prepared_execution_ref),
             ).rowcount
             if updated != 1:
@@ -1139,6 +1150,20 @@ class TaskRegistry:
                 raise TaskRegistryError(
                     f"Prepared execution is no longer dispatchable: {prepared_execution_ref}"
                 )
+        return self.get_prepared_execution(prepared_execution_ref)  # type: ignore[return-value]
+
+    def restore_prepared_execution(self, prepared_execution_ref: str) -> PreparedExecutionRecord:
+        record = self.verify_prepared_execution(prepared_execution_ref)
+        if record.status == "DISPATCHED":
+            return record
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE prepared_executions SET status='PREPARED', updated_at=?,
+                   resulting_task_id=NULL, resulting_thread_id=NULL,
+                   resulting_turn_id=NULL, resulting_execution_ref=NULL
+                   WHERE prepared_execution_ref=?""",
+                (_now(), prepared_execution_ref),
+            )
         return self.get_prepared_execution(prepared_execution_ref)  # type: ignore[return-value]
 
     def complete_prepared_execution(

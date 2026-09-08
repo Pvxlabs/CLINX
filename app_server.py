@@ -493,6 +493,23 @@ class ModelCapabilityError(AppServerProtocolError):
     pass
 
 
+def _parse_reasoning_efforts(value: Any, *, model_id: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ModelCapabilityError(f"model/list has malformed capability for {model_id}")
+    efforts: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            efforts.append(item.strip())
+            continue
+        if isinstance(item, dict):
+            effort = item.get("reasoningEffort")
+            if isinstance(effort, str) and effort.strip():
+                efforts.append(effort.strip())
+                continue
+        raise ModelCapabilityError(f"model/list has malformed capability for {model_id}")
+    return tuple(efforts)
+
+
 class CodexAppServerClient:
     """Synchronous JSON-RPC client with notification/event draining."""
 
@@ -732,15 +749,21 @@ class CodexAppServerClient:
                 if isinstance(value, str):
                     aliases.add(value.casefold())
             raw_aliases[model_id] = aliases
-            efforts = item.get("supportedReasoningEfforts", ())
-            if not isinstance(efforts, list) or any(not isinstance(v, str) or not v for v in efforts):
+            try:
+                efforts = _parse_reasoning_efforts(
+                    item.get("supportedReasoningEfforts", ()),
+                    model_id=model_id,
+                )
+            except ModelCapabilityError:
                 malformed_ids.add(model_id)
                 continue
             default = item.get("defaultReasoningEffort")
-            if default is not None and (not isinstance(default, str) or default not in efforts):
+            if default is not None and (
+                not isinstance(default, str) or not default.strip() or default.strip() not in efforts
+            ):
                 malformed_ids.add(model_id)
                 continue
-            entries.append(ModelCapability(model_id, tuple(efforts), default))
+            entries.append(ModelCapability(model_id, tuple(efforts), default.strip() if isinstance(default, str) else None))
         if not entries:
             raise ModelCapabilityError("model/list returned no usable models")
         wanted = (requested or "").strip()

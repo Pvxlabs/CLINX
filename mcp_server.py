@@ -15,6 +15,7 @@ from pathlib import Path
 import sys
 from typing import Any, Callable
 
+import app_server
 import bridge
 from m9_integration import ClinxIntegration, M9IntegrationError
 from task_registry import TaskRegistry, TaskRegistryError
@@ -582,6 +583,36 @@ class ClinxMCPServer:
         return _public_json(result)
 
     @staticmethod
+    def _app_server_error_result(exc: app_server.AppServerError) -> dict[str, Any]:
+        payload = {
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+            "codex_running": False,
+            "retry_required": True,
+        }
+        if isinstance(exc, app_server.ModelCapabilityError):
+            payload.update(
+                failure_stage="MODEL_RESOLUTION",
+                failure_code="MODEL_CAPABILITY_UNAVAILABLE",
+            )
+        elif isinstance(exc, app_server.AppServerTransportError):
+            payload.update(
+                failure_stage="APP_SERVER_TRANSPORT",
+                failure_code="PROVIDER_UNAVAILABLE",
+            )
+        elif isinstance(exc, app_server.AppServerProtocolError):
+            payload.update(
+                failure_stage="APP_SERVER_PROTOCOL",
+                failure_code="MODEL_LIST_MALFORMED",
+            )
+        else:
+            payload.update(
+                failure_stage="APP_SERVER_REQUEST",
+                failure_code="APP_SERVER_REQUEST_ERROR",
+            )
+        return payload
+
+    @staticmethod
     def _tool_result(value: dict[str, Any], *, is_error: bool = False) -> dict[str, Any]:
         return {
             "resultType": "complete",
@@ -632,6 +663,8 @@ class ClinxMCPServer:
             arguments = params.get("arguments", {})
             try:
                 result = self._tool_result(self._call_tool(name, arguments))
+            except app_server.AppServerError as exc:
+                result = self._tool_result(self._app_server_error_result(exc), is_error=True)
             except (M9IntegrationError, TaskRegistryError, bridge.BridgeError, KeyError, TypeError, ValueError) as exc:
                 result = self._tool_result({"error": str(exc)}, is_error=True)
         else:

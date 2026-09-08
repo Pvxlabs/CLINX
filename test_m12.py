@@ -1,3 +1,5 @@
+import json
+import io
 from pathlib import Path
 from types import SimpleNamespace
 import sqlite3
@@ -7,7 +9,7 @@ import unittest
 import bridge
 import app_server
 from m9_integration import ClinxIntegration, M9IntegrationError
-from mcp_server import ClinxMCPServer, DEFAULT_TOOL_NAMES, tool_definitions
+from mcp_server import ClinxMCPServer, DEFAULT_TOOL_NAMES, serve_stdio, tool_definitions
 from task_registry import TaskRegistry, TaskRegistryError
 
 
@@ -46,6 +48,47 @@ class FakeDispatcher:
     def dispatch(self, **kwargs):
         self.dispatch_calls.append(kwargs)
         task_id = kwargs["task_id"] or "task-created"
+        return SimpleNamespace(
+            task_id=task_id,
+            thread_id="thread-dispatched",
+            turn_id="turn-dispatched",
+            dispatch_status="DISPATCHED",
+            model=kwargs["model"],
+            reasoning_effort=kwargs["reasoning_effort"],
+            execution_mode=kwargs["execution_mode"],
+        )
+
+
+class FlakyDispatcher(FakeDispatcher):
+    def __init__(self, root: Path, registry: TaskRegistry):
+        super().__init__(root, registry)
+        self.fail_next_dispatch = True
+
+    def dispatch(self, **kwargs):
+        self.dispatch_calls.append(kwargs)
+        if self.fail_next_dispatch:
+            self.fail_next_dispatch = False
+            if kwargs.get("task_id"):
+                self.registry.set_execution_state(
+                    kwargs["task_id"],
+                    "RECOVERY_REQUIRED",
+                    current_stage="dispatch",
+                    current_blocker="recoverable app-server failure",
+                    codex_running=False,
+                    retry_required=True,
+                )
+            raise app_server.ModelCapabilityError("model/list returned no usable models")
+        task_id = kwargs["task_id"] or "task-created"
+        if kwargs.get("task_id"):
+            self.registry.set_execution_state(
+                kwargs["task_id"],
+                "CODEX_RUNNING",
+                current_stage="Codex turn",
+                current_blocker=None,
+                codex_running=True,
+                turn_id="turn-dispatched",
+                retry_required=False,
+            )
         return SimpleNamespace(
             task_id=task_id,
             thread_id="thread-dispatched",
@@ -118,6 +161,56 @@ class M12PreparationAndStartTests(unittest.TestCase):
             self.assertEqual(prepared.logical_model, "Terra")
             self.assertEqual(prepared.resolved_executable_model, "Terra")
 
+    def test_model_capability_failure_restores_prepared_execution_and_allows_retry(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = registry.create_task(
+                host="p620",
+                workspace_alias="p620",
+                project_alias="orion",
+                project_name="ORION",
+                cwd=str(root),
+                repository_origin="git@github.com:Pvxlabs/ORION.git",
+                branch="master",
+                title="M12 task",
+                summary="M12 direct execution qualification",
+            )
+            registry.bind_conversation(
+                task_id=task.task_id,
+                thread_id="thread-existing",
+                session_id="session-existing",
+                project_id=None,
+                app_server_version="0.152.1",
+            )
+            dispatcher = FlakyDispatcher(root, registry)
+            context = FakeContext(task)
+            cfg = SimpleNamespace(team_id="team", trigger_label="local-codex", todo_state="Todo", projects=())
+            integration = ClinxIntegration(cfg, registry, dispatcher, context, None)
+            prepared = integration.prepare_execution(
+                prompt="continue the task",
+                approved=True,
+                task_ref=task.task_id,
+                model="Terra",
+                reasoning_effort="medium",
+            )
+            with self.assertRaises(app_server.ModelCapabilityError):
+                integration.start_execution(
+                    prepared_execution_ref=prepared["prepared_execution_ref"],
+                    approved=True,
+                )
+            current = registry.get_prepared_execution(prepared["prepared_execution_ref"])
+            self.assertEqual(current.status, "PREPARED")
+            self.assertEqual(registry.get_task(task.task_id).execution_state, "RECOVERY_REQUIRED")
+            self.assertFalse(registry.get_task(task.task_id).codex_running)
+            retry = integration.start_execution(
+                prepared_execution_ref=prepared["prepared_execution_ref"],
+                approved=True,
+            )
+            self.assertEqual(retry["dispatch_status"], "DISPATCHED")
+            self.assertEqual(registry.get_prepared_execution(prepared["prepared_execution_ref"]).status, "DISPATCHED")
+            self.assertEqual(len(dispatcher.dispatch_calls), 2)
+
 
 class M12ModelCapabilityTests(unittest.TestCase):
     class FakeTransport:
@@ -181,6 +274,26 @@ class M12ModelCapabilityTests(unittest.TestCase):
         ])
         with self.assertRaises(app_server.ModelCapabilityError):
             client.resolve_model("Audio", "medium")
+
+    def test_current_provider_shape_resolves_to_usable_model(self):
+        client = self.client([
+            {
+                "id": "gpt-5.6-terra",
+                "model": "Terra",
+                "displayName": "GPT-5.6-Terra",
+                "supportedReasoningEfforts": [
+                    {"reasoningEffort": "low", "description": "Fast responses"},
+                    {"reasoningEffort": "medium", "description": "Balanced responses"},
+                    {"reasoningEffort": "high", "description": "Deeper reasoning"},
+                ],
+                "defaultReasoningEffort": "medium",
+            }
+        ])
+        self.assertEqual(client.resolve_model("Terra", "medium"), ("gpt-5.6-terra", "medium"))
+
+    def test_empty_model_list_fails_closed(self):
+        with self.assertRaises(app_server.ModelCapabilityError):
+            self.client([]).resolve_model("Terra", "medium")
 
     def test_prepare_and_start_require_literal_true(self):
         with tempfile.TemporaryDirectory() as td:
@@ -376,6 +489,59 @@ class M12MCPSurfaceTests(unittest.TestCase):
         })
         self.assertTrue(response["result"]["isError"])
         self.assertEqual(integration.calls, [])
+
+    def test_stdio_loop_survives_model_capability_failure(self):
+        class FlakyIntegration:
+            def __init__(self):
+                self.calls = []
+
+            def start_execution(self, **kwargs):
+                self.calls.append(("start_execution", kwargs))
+                raise app_server.ModelCapabilityError("model/list returned no usable models")
+
+            def get_capabilities(self, **kwargs):
+                self.calls.append(("get_capabilities", kwargs))
+                return {"execution_available": True, "read_only": True}
+
+            def execute(self, **kwargs):
+                self.calls.append(("execute", kwargs))
+                return {"read_only": True}
+
+        server = ClinxMCPServer(FlakyIntegration())
+        stdin = io.StringIO(
+            "\n".join([
+                json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "clinx_start_execution",
+                        "arguments": {"prepared_execution_ref": "prepared-public", "approved": True},
+                    },
+                }),
+                json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "clinx_get_capabilities",
+                        "arguments": {},
+                    },
+                }),
+                "",
+            ])
+        )
+        stdout = io.StringIO()
+        serve_stdio(server, stdin=stdin, stdout=stdout)
+        lines = [json.loads(line) for line in stdout.getvalue().splitlines() if line.strip()]
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0]["result"]["isError"])
+        self.assertEqual(lines[0]["result"]["structuredContent"]["failure_stage"], "MODEL_RESOLUTION")
+        self.assertEqual(lines[0]["result"]["structuredContent"]["failure_code"], "MODEL_CAPABILITY_UNAVAILABLE")
+        self.assertFalse(lines[0]["result"]["structuredContent"]["codex_running"])
+        self.assertTrue(lines[0]["result"]["structuredContent"]["retry_required"])
+        self.assertIn("execution_available", lines[1]["result"]["structuredContent"])
+        self.assertTrue(lines[1]["result"]["structuredContent"]["read_only"])
 
 
 if __name__ == "__main__":
