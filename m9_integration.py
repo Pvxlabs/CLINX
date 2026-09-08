@@ -38,6 +38,7 @@ class ExecutionHandoff:
     model: str
     reasoning: str
     execution_mode: str
+    network_access: bool
     title: str
     summary: str
     prompt: str
@@ -65,6 +66,8 @@ class ExecutionHandoff:
             "model": self.model,
             "reasoning": self.reasoning,
             "execution_mode": self.execution_mode,
+            "network_access": self.network_access,
+            "NETWORK_ACCESS": "ENABLED" if self.network_access else "DISABLED",
             "title": self.title,
             "summary": self.summary,
             "prompt": self.prompt,
@@ -550,6 +553,14 @@ class ClinxIntegration:
             "execution_result": execution_result,
             "read_only": True,
         }
+        prepared = (
+            self.registry.get_prepared_execution_for_execution(execution_ref)
+            if execution_ref
+            else self.registry.get_prepared_execution_for_task(task.task_id)
+        )
+        network_access = bool(prepared.network_access) if prepared is not None else False
+        status["network_access"] = network_access
+        status["NETWORK_ACCESS"] = "ENABLED" if network_access else "DISABLED"
         audit = self.registry.get_linear_audit(task.task_id)
         status["linear_audit_sync"] = audit.sync_state if audit else "PENDING"
         status["linear_retry_required"] = bool(audit.retry_required) if audit else False
@@ -661,6 +672,7 @@ class ClinxIntegration:
         reasoning_effort: str | None = None,
         reasoning: str | None = None,
         execution_mode: str = "normal",
+        network_access: bool = False,
     ) -> dict[str, Any]:
         """Prepare an integrity-checked CLINX execution command without dispatching."""
         if approved is not True:
@@ -683,6 +695,8 @@ class ClinxIntegration:
             raise M9IntegrationError("task_mode must be new or continue")
         if execution_mode not in {"normal", "fast"}:
             raise M9IntegrationError("execution_mode must be normal or fast")
+        if not isinstance(network_access, bool):
+            raise M9IntegrationError("network_access must be a boolean")
         selected_model = self._validated_text("model", model, required=False) or "gpt-5.6-luna"
         selected_reasoning = (
             self._validated_text("reasoning_effort", reasoning_effort, required=False)
@@ -772,6 +786,7 @@ class ClinxIntegration:
             f"MODEL={selected_model}",
             f"REASONING={selected_reasoning}",
             f"EXECUTION_MODE={execution_mode}",
+            f"NETWORK_ACCESS={'ENABLED' if network_access else 'DISABLED'}",
             f"TASK_TITLE={selected_title}",
             f"TASK_SUMMARY_UPDATE={selected_summary or 'UNKNOWN'}",
             "",
@@ -791,6 +806,7 @@ class ClinxIntegration:
             resolved_executable_model=selected_model,
             reasoning_effort=selected_reasoning,
             execution_mode=execution_mode,
+            network_access=network_access,
         )
         return ExecutionHandoff(
             task_action=selected_action,
@@ -800,6 +816,7 @@ class ClinxIntegration:
             model=selected_model,
             reasoning=selected_reasoning,
             execution_mode=execution_mode,
+            network_access=network_access,
             title=selected_title,
             summary=selected_summary,
             prompt=prompt,
@@ -927,6 +944,8 @@ class ClinxIntegration:
             "model": prepared.model,
             "reasoning_effort": prepared.reasoning_effort,
             "execution_mode": prepared.execution_mode,
+            "network_access": bool(prepared.network_access),
+            "NETWORK_ACCESS": "ENABLED" if prepared.network_access else "DISABLED",
             "dispatch_status": dispatch_status,
             "linear_audit": linear_audit,
             "read_only": False,
@@ -1047,6 +1066,7 @@ class ClinxIntegration:
                 model=prepared.model,
                 reasoning_effort=prepared.reasoning_effort,
                 execution_mode=prepared.execution_mode,
+                network_access=bool(prepared.network_access),
                 execution_ref=execution_ref,
             )
             if not getattr(result, "task_id", None) or not getattr(result, "thread_id", None):

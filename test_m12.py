@@ -148,7 +148,67 @@ class M12PreparationAndStartTests(unittest.TestCase):
             self.assertEqual(prepared.status, "PREPARED")
             self.assertEqual(prepared.model, "gpt-test")
             self.assertEqual(prepared.reasoning_effort, "low")
+            self.assertFalse(prepared.network_access)
+            self.assertFalse(result["network_access"])
+            self.assertEqual(result["NETWORK_ACCESS"], "DISABLED")
+            self.assertIn("NETWORK_ACCESS=DISABLED", result["description"])
             self.assertEqual(dispatcher.dispatch_calls, [])
+
+    def test_network_access_is_sealed_and_start_cannot_override_it(self):
+        with tempfile.TemporaryDirectory() as td:
+            integration, registry, dispatcher, task = make_fixture(Path(td))
+            prepared_result = integration.prepare_execution(
+                prompt="inspect production readiness",
+                approved=True,
+                task_ref=task.task_id,
+                network_access=True,
+            )
+            prepared = registry.verify_prepared_execution(
+                prepared_result["prepared_execution_ref"]
+            )
+            self.assertTrue(prepared.network_access)
+            self.assertTrue(prepared_result["network_access"])
+            self.assertEqual(prepared_result["NETWORK_ACCESS"], "ENABLED")
+            self.assertIn("NETWORK_ACCESS=ENABLED", prepared_result["description"])
+
+            status = integration.get_status(task_ref=task.task_id)
+            self.assertTrue(status["network_access"])
+            self.assertEqual(status["NETWORK_ACCESS"], "ENABLED")
+
+            with self.assertRaises(TypeError):
+                integration.start_execution(
+                    prepared_execution_ref=prepared_result["prepared_execution_ref"],
+                    approved=True,
+                    network_access=False,
+                )
+
+            result = integration.start_execution(
+                prepared_execution_ref=prepared_result["prepared_execution_ref"],
+                approved=True,
+            )
+            self.assertTrue(result["network_access"])
+            self.assertEqual(result["NETWORK_ACCESS"], "ENABLED")
+            self.assertTrue(dispatcher.dispatch_calls[0]["network_access"])
+
+    def test_mcp_network_contract_is_explicit_and_start_has_no_override(self):
+        tools = {tool["name"]: tool for tool in tool_definitions()}
+        prepare = tools["clinx_prepare_execution"]
+        self.assertEqual(
+            prepare["inputSchema"]["properties"]["network_access"],
+            {"type": "boolean", "default": False},
+        )
+        self.assertEqual(
+            tools["clinx_start_execution"]["inputSchema"]["properties"].keys(),
+            {"prepared_execution_ref", "approved"},
+        )
+        self.assertEqual(
+            tools["clinx_start_execution"]["outputSchema"]["properties"]["NETWORK_ACCESS"],
+            {"type": "string", "enum": ["ENABLED", "DISABLED"]},
+        )
+        self.assertEqual(
+            tools["clinx_get_status"]["outputSchema"]["properties"]["network_access"],
+            {"type": "boolean"},
+        )
 
     def test_prepare_persists_logical_and_provider_model_layers(self):
         with tempfile.TemporaryDirectory() as td:

@@ -1,4 +1,5 @@
 import dataclasses
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -1706,7 +1707,86 @@ class AppServerClientTests(unittest.TestCase):
             turn_request["params"]["input"],
             [{"type": "text", "text": "DISPATCHER_M0_PROBE_PASS"}],
         )
+        self.assertNotIn("sandboxPolicy", turn_request["params"])
+
+        client.turn_start(
+            "durable-thread",
+            "NETWORKED_TURN_PROBE",
+            cwd="/tmp/pilot",
+            model="gpt-5.2",
+            reasoning_effort="high",
+            approval_policy="never",
+            network_access=True,
+            writable_roots=["/tmp/pilot"],
+        )
+        networked_request = [
+            item for item in transport.sent if item.get("method") == "turn/start"
+        ][-1]
+        self.assertEqual(
+            networked_request["params"]["sandboxPolicy"],
+            {
+                "type": "workspaceWrite",
+                "writableRoots": ["/tmp/pilot"],
+                "networkAccess": True,
+            },
+        )
+        self.assertNotIn("dangerFullAccess", json.dumps(networked_request))
+        self.assertNotIn("danger-full-access", json.dumps(networked_request))
         self.assertEqual(turn.turn_id, "turn-1")
+
+    def test_networked_turn_rejects_relative_writable_root_before_transport(self):
+        class Transport:
+            def __init__(self):
+                self.sent = []
+
+            def send(self, message):
+                self.sent.append(message)
+
+        transport = Transport()
+        client = app_server.CodexAppServerClient(transport)
+        with self.assertRaises(app_server.AppServerSandboxPolicyError):
+            client.turn_start(
+                "durable-thread",
+                "NETWORKED_TURN_INVALID_ROOT",
+                cwd="/tmp/pilot",
+                network_access=True,
+                writable_roots=["relative-root"],
+            )
+        self.assertFalse(any(item.get("method") == "turn/start" for item in transport.sent))
+
+    def test_networked_turn_fails_closed_when_app_server_rejects_policy(self):
+        class RejectingTransport:
+            def __init__(self):
+                self.sent = []
+                self.responses = []
+
+            def send(self, message):
+                self.sent.append(message)
+                if message.get("method") == "turn/start":
+                    self.responses.append({
+                        "id": message["id"],
+                        "error": {"code": -32602, "message": "sandbox policy unsupported"},
+                    })
+
+            def receive(self, _timeout):
+                return self.responses.pop(0)
+
+            def close(self):
+                pass
+
+        transport = RejectingTransport()
+        client = app_server.CodexAppServerClient(transport)
+        with self.assertRaisesRegex(
+            app_server.AppServerSandboxPolicyError,
+            "NETWORK_ACCESS=ENABLED TURN_START=BLOCKED",
+        ):
+            client.turn_start(
+                "durable-thread",
+                "NETWORKED_TURN_REJECTED",
+                cwd="/tmp/pilot",
+                network_access=True,
+                writable_roots=["/tmp/pilot"],
+            )
 
     def test_thread_start_builds_minimal_durable_payload(self):
         class FakeTransport:

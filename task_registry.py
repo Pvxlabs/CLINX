@@ -1250,10 +1250,10 @@ class TaskRegistry:
                 """INSERT INTO prepared_executions
                 (prepared_execution_ref,integrity_hash,approval_state,task_action,task_ref,
                  host,project,title,summary,prompt,model,logical_model,resolved_executable_model,reasoning_effort,execution_mode,
-                 network_access,
+                network_access,
                  status,created_at,updated_at,resulting_task_id,resulting_thread_id,
                  resulting_turn_id,resulting_execution_ref)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 tuple(getattr(record, field.name) for field in dataclasses.fields(record)),
             )
         return record
@@ -1284,9 +1284,9 @@ class TaskRegistry:
         with self._connect() as conn:
             row = conn.execute(
                 """SELECT * FROM prepared_executions
-                   WHERE resulting_task_id=?
+                   WHERE resulting_task_id=? OR task_ref=?
                    ORDER BY updated_at DESC LIMIT 1""",
-                (task_id,),
+                (task_id, task_id),
             ).fetchone()
         return PreparedExecutionRecord(**dict(row)) if row is not None else None
 
