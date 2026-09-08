@@ -1205,6 +1205,19 @@ class ClinxIntegration:
         """Cancel one active opaque CLINX execution; never accepts raw IDs."""
         if not isinstance(execution_ref, str) or not execution_ref.startswith("exec_"):
             raise M9IntegrationError("execution_ref must be an opaque CLINX execution reference")
+        terminal_record = self.registry.get_execution_record(execution_ref)
+        if terminal_record is not None and terminal_record.get("stage") == "CANCELLED":
+            return {
+                "execution_cancelled": True,
+                "execution_ref": execution_ref,
+                "task_ref": terminal_record["task_id"],
+                "status": "CANCELLED",
+                "cancel_requested": True,
+                "cancel_confirmed": True,
+                "retry_required": False,
+                "idempotent": True,
+                "read_only": False,
+            }
         active = self.registry.get_active_execution(execution_ref)
         if active is None:
             raise M9IntegrationError(f"Unknown or inactive execution: {execution_ref}")
