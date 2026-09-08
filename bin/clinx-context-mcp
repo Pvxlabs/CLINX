@@ -12,6 +12,13 @@ home_dir=${HOME:-/home/pvxlabs}
 # installed Codex binary to create its app-server transport on demand.
 codex_path=$(command -v codex 2>/dev/null || true)
 codex_bin_dir=${codex_path%/*}
+# The installed codex wrapper delegates to Node. Preserve the credential
+# isolated environment while carrying the host's Node binary directory.
+node_path=$(command -v node 2>/dev/null || true)
+node_bin_dir=${node_path%/*}
+if [ -n "$node_bin_dir" ] && [ -n "$codex_bin_dir" ]; then
+  codex_bin_dir="$codex_bin_dir:$node_bin_dir"
+fi
 exec /usr/bin/env -i \
   "HOME=$home_dir" \
   "PATH=${codex_bin_dir:+$codex_bin_dir:}/usr/bin:/bin" \
