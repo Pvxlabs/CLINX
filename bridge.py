@@ -2037,6 +2037,7 @@ class TaskDispatcher:
         *,
         task_registry: TaskRegistry | None = None,
         client_factory=None,
+        linear=None,
     ):
         self.cfg = cfg
         self.workspaces = WorkspaceRegistry(cfg.workspaces)
@@ -2047,9 +2048,29 @@ class TaskDispatcher:
         self.client_factory = client_factory or (
             lambda target: _default_app_server_client(cfg, target)
         )
+        self.linear = linear
         self.projects = DynamicProjectResolver(self.workspaces, cfg.projects)
         self.last_task_id: str | None = None
         self.last_execution_ref: str | None = None
+
+    @staticmethod
+    def _turn_text(value: Any) -> str:
+        parts: list[str] = []
+        def visit(item: Any) -> None:
+            if isinstance(item, dict):
+                kind = str(item.get("type", "")).casefold()
+                if kind in {"user", "assistant", "message", "agentmessage", "text"}:
+                    text = item.get("text")
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text.strip())
+                for key in ("items", "content", "message", "output"):
+                    if key in item:
+                        visit(item[key])
+            elif isinstance(item, list):
+                for child in item:
+                    visit(child)
+        visit(value)
+        return "\n".join(dict.fromkeys(parts))
 
     def _execution_state(self, task_id: str, state: str, **kwargs: Any) -> None:
         """Persist machine execution state without changing Linear's coarse state."""
@@ -2695,6 +2716,7 @@ class TaskDispatcher:
             workspace_alias=task.workspace_alias,
         )
         client = self.client_factory(self._target(workspace, project, binding))
+        bounded_items: list[dict[str, Any]] = []
         try:
             with client:
                 client.initialize(
@@ -2761,6 +2783,17 @@ class TaskDispatcher:
                 page = client.thread_turns_list(
                     binding.thread_id, limit=20, sort_direction="desc", items_view="summary"
                 )
+                candidate = next(
+                    (item for item in page.get("data", ())
+                     if isinstance(item, dict) and item.get("id") == task.turn_id),
+                    None,
+                )
+                if candidate is not None and not candidate.get("items") and hasattr(client, "thread_items_list"):
+                    item_page = client.thread_items_list(
+                        binding.thread_id, turn_id=task.turn_id, limit=100,
+                        sort_direction="desc",
+                    )
+                    bounded_items = [item for item in item_page.get("data", ()) if isinstance(item, dict)]
         except AppServerError as exc:
             evidence = str(exc)
             # A child exit/closed byte channel is terminal evidence for this
@@ -2828,6 +2861,52 @@ class TaskDispatcher:
                     retry_required=final_state == "BLOCKED",
                 )
                 return {"state": final_state, "authoritative": True}
+            raw_result = self._turn_text(row.get("items", row))
+            if not raw_result and bounded_items:
+                raw_result = self._turn_text(bounded_items)
+            if raw_result:
+                index = self.tasks.get_task_index(task.task_id)
+                try:
+                    from m9_integration import parse_codex_result
+                    parsed = parse_codex_result(raw_result)
+                except Exception:
+                    parsed = None
+                if parsed is not None:
+                    if self.linear is not None and index is not None:
+                        try:
+                            states = self.linear.team_states(self.cfg.team_id)
+                            ExecutionResultService(self.tasks, self.linear).receive_and_writeback(
+                                execution_ref=execution_ref,
+                                task_id=task.task_id,
+                                turn_id=task.turn_id,
+                                raw_result=raw_result,
+                                issue_id=index.issue_id,
+                                review_state_id=states.get(self.cfg.review_state),
+                                blocked_state_id=states.get(self.cfg.todo_state),
+                            )
+                        except Exception as exc:
+                            self.tasks.set_execution_state(
+                                task.task_id, "RECOVERY_REQUIRED", current_stage="result",
+                                current_blocker=str(exc)[:2000], codex_running=False,
+                                retry_required=True, failure_stage="linear_writeback",
+                                failure_code="LINEAR_AUDIT_SYNC_FAILED",
+                                failure_evidence=str(exc)[:4000],
+                            )
+                            return {"state": "RECOVERY_REQUIRED", "authoritative": True}
+                    else:
+                        self.tasks.record_execution_result(
+                            execution_ref=execution_ref, task_id=task.task_id,
+                            turn_id=task.turn_id, status=parsed.status,
+                            summary=parsed.summary, changed_files=parsed.changed_files,
+                            validation=parsed.validation, blockers=parsed.blockers,
+                            next_state=parsed.next_state, raw_result=raw_result,
+                        )
+                        final_state = "BLOCKED" if parsed.status == "BLOCKED" else "COMPLETED"
+                        self.tasks.reconcile_terminal(
+                            execution_ref, final_state,
+                            retry_required=final_state == "BLOCKED",
+                        )
+                    return {"state": "COMPLETED", "authoritative": True}
             self.tasks.reconcile_terminal(
                 execution_ref, "RECOVERY_REQUIRED", failure_stage="result",
                 failure_code="TURN_COMPLETED_WITHOUT_RESULT",
