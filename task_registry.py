@@ -1588,6 +1588,16 @@ class TaskRegistry:
         effective_failure_evidence = (
             task.failure_evidence if failure_evidence is _UNSET else failure_evidence
         )
+        if state in {"CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING"}:
+            # A new/continued turn starts a fresh failure window; stale
+            # transport evidence from an earlier execution must not project
+            # onto the active turn.
+            if failure_stage is _UNSET:
+                effective_failure_stage = None
+            if failure_code is _UNSET:
+                effective_failure_code = None
+            if failure_evidence is _UNSET:
+                effective_failure_evidence = None
         changed = (
             task.execution_state != state or task.current_stage != stage
             or task.current_blocker != blocker or task.codex_running != running

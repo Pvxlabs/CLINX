@@ -625,7 +625,16 @@ class ClinxIntegration:
         status["linear_issue_ref"] = index.identifier if index else None
         status.update(
             {
-                "EXECUTION_STATE": task.execution_state,
+                # Linear's human lifecycle is already In Review, while the
+                # execution contract reports the provider terminal state as
+                # COMPLETED for a successful result.
+                "EXECUTION_STATE": (
+                    "COMPLETED"
+                    if task.execution_state == "IN_REVIEW"
+                    and result is not None
+                    and result.status == "PASS"
+                    else task.execution_state
+                ),
                 "CODEX_RUNNING": bool(task.codex_running),
                 "CURRENT_STAGE": task.current_stage,
                 "CURRENT_BLOCKER": task.current_blocker,
