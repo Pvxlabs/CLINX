@@ -1286,6 +1286,7 @@ class DispatchResult:
     cwd: str | None = None
     task_id: str | None = None
     execution_mode: str = "normal"
+    network_access: bool = False
 
 
 def write_dispatch_record(
@@ -1315,6 +1316,8 @@ def write_dispatch_record(
         "cwd": result.cwd,
         "task_id": result.task_id,
         "execution_mode": result.execution_mode,
+        "network_access": result.network_access,
+        "NETWORK_ACCESS": "ENABLED" if result.network_access else "DISABLED",
     }
     (run_dir / "dispatch.json").write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n",
@@ -2180,6 +2183,7 @@ class TaskDispatcher:
         model: str | None,
         reasoning_effort: str | None,
         execution_mode: str = "normal",
+        network_access: bool = False,
         issue_id: str | None = None,
         execution_ref: str | None = None,
     ) -> DispatchResult:
@@ -2187,6 +2191,12 @@ class TaskDispatcher:
             raise DispatchContractError(f"Unsupported task mode: {task_mode!r}")
         if execution_mode not in {"normal", "fast"}:
             raise DispatchContractError(f"Unsupported execution mode: {execution_mode!r}")
+        if not isinstance(network_access, bool):
+            raise DispatchContractError("network_access must be a boolean")
+        if network_access and self.cfg.sandbox != "workspace-write":
+            raise DispatchContractError(
+                "NETWORK_ACCESS=ENABLED requires configured sandbox=workspace-write"
+            )
 
         if task_mode == "new":
             self.last_execution_ref = execution_ref or issue_id
@@ -2289,14 +2299,26 @@ class TaskDispatcher:
                             project_id=actual_project_id,
                             app_server_version=version,
                         )
-                        turn = client.turn_start(
-                            new_thread_id,
-                            prompt,
-                            cwd=str(project.repo),
-                            model=executable_model,
-                            reasoning_effort=executable_reasoning,
-                            approval_policy=self.cfg.approval,
-                        )
+                        if network_access:
+                            turn = client.turn_start(
+                                new_thread_id,
+                                prompt,
+                                cwd=str(project.repo),
+                                model=executable_model,
+                                reasoning_effort=executable_reasoning,
+                                approval_policy=self.cfg.approval,
+                                network_access=True,
+                                writable_roots=[str(project.repo)],
+                            )
+                        else:
+                            turn = client.turn_start(
+                                new_thread_id,
+                                prompt,
+                                cwd=str(project.repo),
+                                model=executable_model,
+                                reasoning_effort=executable_reasoning,
+                                approval_policy=self.cfg.approval,
+                            )
                         self._execution_state(
                             leased.task_id,
                             "CODEX_RUNNING",
@@ -2353,6 +2375,7 @@ class TaskDispatcher:
                 cwd=str(project.repo),
                 task_id=leased.task_id,
                 execution_mode=execution_mode,
+                network_access=network_access,
             )
 
         if not task_id:
@@ -2422,14 +2445,26 @@ class TaskDispatcher:
                             initialize_info, target.app_server_version
                         ),
                     )
-                    turn = client.turn_start(
-                        binding.thread_id,
-                        prompt,
-                        cwd=str(project.repo),
-                        model=executable_model,
-                        reasoning_effort=executable_reasoning,
-                        approval_policy=self.cfg.approval,
-                    )
+                    if network_access:
+                        turn = client.turn_start(
+                            binding.thread_id,
+                            prompt,
+                            cwd=str(project.repo),
+                            model=executable_model,
+                            reasoning_effort=executable_reasoning,
+                            approval_policy=self.cfg.approval,
+                            network_access=True,
+                            writable_roots=[str(project.repo)],
+                        )
+                    else:
+                        turn = client.turn_start(
+                            binding.thread_id,
+                            prompt,
+                            cwd=str(project.repo),
+                            model=executable_model,
+                            reasoning_effort=executable_reasoning,
+                            approval_policy=self.cfg.approval,
+                        )
                     self._execution_state(
                         leased.task_id,
                         "CODEX_RUNNING",
@@ -2475,6 +2510,7 @@ class TaskDispatcher:
             cwd=str(project.repo),
             task_id=leased.task_id,
             execution_mode=execution_mode,
+            network_access=network_access,
         )
 
     def adopt_existing_conversation(
