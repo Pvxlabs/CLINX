@@ -53,6 +53,28 @@ def make_task(registry, *, routing=None):
 
 
 class M13SemanticsTests(unittest.TestCase):
+    def test_result_parser_uses_only_assistant_turn_text(self):
+        turn = {
+            "items": [
+                {
+                    "type": "userMessage",
+                    "content": "CLINX_EXECUTION_RESULT\nSTATUS=PASS\n"
+                    "SUMMARY=prompt copy\nCHANGED_FILES=NONE\n"
+                    "VALIDATION=prompt\nBLOCKERS=NONE\nNEXT_STATE=COMPLETED",
+                },
+                {
+                    "type": "agentMessage",
+                    "text": "CLINX_EXECUTION_RESULT\nSTATUS=PASS\n"
+                    "SUMMARY=provider response\nCHANGED_FILES=NONE\n"
+                    "VALIDATION=provider\nBLOCKERS=NONE\nNEXT_STATE=COMPLETED",
+                },
+            ]
+        }
+        text = bridge.TaskDispatcher._turn_text(turn, assistant_only=True)
+        self.assertNotIn("prompt copy", text)
+        from m9_integration import parse_codex_result
+        self.assertEqual(parse_codex_result(text).summary, "provider response")
+
     def test_host_identity_separates_stable_display_machine_and_alias(self):
         identity = normalize_host(
             "WORKSTATION-P620",
@@ -695,6 +717,37 @@ class M13ProjectionTests(unittest.TestCase):
             })
 
             registry.reconcile_terminal("exec_b", "COMPLETED")
+
+    def test_status_retries_only_the_retained_recovery_execution(self):
+        class RecoveryDispatcher:
+            def __init__(self):
+                self.execution_refs = []
+
+            def reconcile_execution(self, execution_ref):
+                self.execution_refs.append(execution_ref)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = make_task(registry)
+            with registry.execution(task.task_id, execution_ref="exec_recovery", retain=True):
+                registry.set_execution_state(
+                    task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
+                    turn_id="turn-recovery", codex_running=True,
+                )
+            registry.reconcile_terminal(
+                "exec_recovery", "RECOVERY_REQUIRED", retry_required=True,
+            )
+            dispatcher = RecoveryDispatcher()
+            integration = ClinxIntegration(
+                SimpleNamespace(team_id="", projects=()), registry,
+                dispatcher, self.Context(task), None,
+            )
+
+            status = integration.get_status(execution_ref="exec_recovery")
+
+            self.assertEqual(status["execution_ref"], "exec_recovery")
+            self.assertEqual(dispatcher.execution_refs, ["exec_recovery"])
 
     def test_mcp_catalog_remains_nine_and_execute_is_absent(self):
         self.assertEqual(len(DEFAULT_TOOL_NAMES), 9)

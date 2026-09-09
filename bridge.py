@@ -2068,11 +2068,15 @@ class TaskDispatcher:
         self.last_execution_ref: str | None = None
 
     @staticmethod
-    def _turn_text(value: Any) -> str:
+    def _turn_text(value: Any, *, assistant_only: bool = False) -> str:
         parts: list[str] = []
         def visit(item: Any) -> None:
             if isinstance(item, dict):
                 kind = str(item.get("type", "")).casefold()
+                if assistant_only and kind in {
+                    "usermessage", "user_message", "humanmessage", "human_message",
+                }:
+                    return
                 text = item.get("text")
                 if isinstance(text, str) and text.strip():
                     parts.append(text.strip())
@@ -3101,9 +3105,11 @@ class TaskDispatcher:
                     retry_required=final_state == "BLOCKED",
                 )
                 return {"state": final_state, "authoritative": True}
-            raw_result = self._turn_text(row.get("items", row))
+            # A turn summary can contain both the prompt and its response.  Only
+            # the provider response may satisfy the strict result contract.
+            raw_result = self._turn_text(row.get("items", row), assistant_only=True)
             if not raw_result and bounded_items:
-                raw_result = self._turn_text(bounded_items)
+                raw_result = self._turn_text(bounded_items, assistant_only=True)
             if raw_result:
                 index = self.tasks.get_task_index(task.task_id)
                 try:
