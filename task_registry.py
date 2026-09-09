@@ -295,6 +295,20 @@ class ConversationBinding:
 
 
 @dataclasses.dataclass(frozen=True)
+class ConversationBindingLineage:
+    task_id: str
+    predecessor_thread: str
+    successor_thread: str
+    migration_reason: str
+    migrated_at: str
+    predecessor_session_id: str
+    predecessor_project_id: str | None
+    predecessor_app_server_version: str | None
+    predecessor_status: str
+    successor_status: str
+
+
+@dataclasses.dataclass(frozen=True)
 class ConversationAdoption:
     """Bounded provenance for importing an existing Codex conversation."""
 
@@ -518,6 +532,18 @@ class TaskRegistry:
                 CREATE UNIQUE INDEX IF NOT EXISTS
                     idx_conversation_bindings_thread_id
                     ON conversation_bindings(thread_id);
+                CREATE TABLE IF NOT EXISTS conversation_binding_lineage (
+                    task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+                    predecessor_thread TEXT NOT NULL,
+                    successor_thread TEXT NOT NULL UNIQUE,
+                    migration_reason TEXT NOT NULL,
+                    migrated_at TEXT NOT NULL,
+                    predecessor_session_id TEXT NOT NULL,
+                    predecessor_project_id TEXT,
+                    predecessor_app_server_version TEXT,
+                    predecessor_status TEXT NOT NULL DEFAULT 'SUPERSEDED',
+                    successor_status TEXT NOT NULL DEFAULT 'ACTIVE'
+                );
                 CREATE TABLE IF NOT EXISTS conversation_adoptions (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
                     thread_id TEXT NOT NULL UNIQUE,
@@ -821,6 +847,64 @@ class TaskRegistry:
             # execution was created.  Legacy execution rows remain `{}` and
             # are read back as unknown/non-executable until native evidence
             # exists.
+        self.reclaim_stale_worktree_leases()
+
+    def reclaim_stale_worktree_leases(self) -> int:
+        """Release leases whose durable owner is terminal or inactive."""
+        reclaimed = 0
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT l.worktree_key, l.task_id, l.execution_ref AS lease_execution_ref,
+                          e.execution_ref, e.stage AS execution_stage,
+                          e.issue_id, e.logical_model, e.resolved_model,
+                          e.acquired_at, e.routing_identity_json,
+                          e.execution_policy_json,
+                          t.execution_state, t.codex_running
+                   FROM worktree_leases l
+                   JOIN tasks t ON t.task_id=l.task_id
+                   LEFT JOIN executions e ON e.task_id=l.task_id"""
+            ).fetchall()
+            for row in rows:
+                task_terminal = (
+                    row["execution_state"] in TERMINAL_EXECUTION_STAGES
+                    and not bool(row["codex_running"])
+                )
+                execution_terminal = row["execution_stage"] in TERMINAL_EXECUTION_STAGES
+                # A task can be RECOVERY_REQUIRED while its execution remains
+                # active because provider truth is unavailable.  Reclaim only
+                # a terminal execution, or a terminal non-running task whose
+                # execution row has already disappeared.
+                if not (execution_terminal or (
+                    row["execution_ref"] is None and task_terminal
+                )):
+                    continue
+                execution_ref = row["execution_ref"] or row["lease_execution_ref"]
+                if row["execution_ref"] is not None and execution_ref:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO execution_history
+                           (execution_ref,task_id,issue_id,worktree_key,logical_model,
+                            resolved_model,stage,acquired_at,routing_identity_json,
+                            execution_policy_json,released_at)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            execution_ref, row["task_id"], row["issue_id"],
+                            row["worktree_key"], row["logical_model"],
+                            row["resolved_model"],
+                            row["execution_stage"] or row["execution_state"],
+                            row["acquired_at"], row["routing_identity_json"] or "{}",
+                            row["execution_policy_json"] or "{}", _now(),
+                        ),
+                    )
+                    conn.execute(
+                        "DELETE FROM executions WHERE task_id=?",
+                        (row["task_id"],),
+                    )
+                conn.execute(
+                    "DELETE FROM worktree_leases WHERE worktree_key=?",
+                    (row["worktree_key"],),
+                )
+                reclaimed += 1
+        return reclaimed
 
     @staticmethod
     def _routing_json(value: RoutingIdentity | str | None) -> str:
@@ -1156,6 +1240,57 @@ class TaskRegistry:
                 (thread_id,),
             ).fetchone()
         return ConversationBinding(**dict(row)) if row is not None else None
+
+    def get_binding_lineage(self, task_id: str) -> ConversationBindingLineage | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM conversation_binding_lineage WHERE task_id = ?", (task_id,)
+            ).fetchone()
+        return ConversationBindingLineage(**dict(row)) if row is not None else None
+
+    def migrate_conversation_binding(
+        self, *, task_id: str, successor_thread: str, successor_session_id: str,
+        successor_project_id: str | None, successor_app_server_version: str | None,
+        reason: str,
+    ) -> ConversationBinding:
+        if reason != "DYNAMIC_TOOL_SCHEMA_UPGRADE":
+            raise TaskRegistryError("unsupported conversation migration reason")
+        stamp = _now()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            task = conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if task is None:
+                raise UnknownTaskError(f"Unknown task: {task_id}")
+            old = conn.execute(
+                "SELECT * FROM conversation_bindings WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            if old is None:
+                raise TaskRegistryError("conversation migration requires an existing binding")
+            if conn.execute(
+                "SELECT 1 FROM conversation_bindings WHERE thread_id = ?", (successor_thread,)
+            ).fetchone() is not None:
+                raise TaskRegistryError(f"Thread {successor_thread} is already bound")
+            if conn.execute(
+                "SELECT 1 FROM conversation_binding_lineage WHERE task_id = ?", (task_id,)
+            ).fetchone() is not None:
+                raise TaskRegistryError("conversation binding has already migrated")
+            conn.execute(
+                """INSERT INTO conversation_binding_lineage
+                (task_id,predecessor_thread,successor_thread,migration_reason,migrated_at,
+                 predecessor_session_id,predecessor_project_id,predecessor_app_server_version)
+                VALUES (?,?,?,?,?,?,?,?)""",
+                (task_id, old["thread_id"], successor_thread, reason, stamp,
+                 old["session_id"], old["project_id"], old["app_server_version"]),
+            )
+            conn.execute(
+                """UPDATE conversation_bindings SET thread_id=?, session_id=?, project_id=?,
+                   bound_at=?, last_verified_at=?, app_server_version=? WHERE task_id=?""",
+                (successor_thread, successor_session_id, successor_project_id,
+                 stamp, stamp, successor_app_server_version, task_id),
+            )
+        binding = self.get_binding(task_id)
+        assert binding is not None
+        return binding
 
     def get_adoption(self, task_id: str) -> ConversationAdoption | None:
         with self._connect() as conn:
@@ -2279,7 +2414,9 @@ class TaskRegistry:
                 old.conversation.status == "BOUND"
                 and old.conversation.binding != new.conversation.binding
             ):
-                raise TaskRegistryError("routing identity conversation changed")
+                lineage = self.get_binding_lineage(task_id)
+                if lineage is None or lineage.successor_thread != new.conversation.binding:
+                    raise TaskRegistryError("routing identity conversation changed")
         elif old is not None and old.host.status == "KNOWN":
             # A legacy route may be incomplete, but its known host/workspace
             # identity is still historical data and cannot drift.
@@ -2594,6 +2731,7 @@ class TaskRegistry:
         self, *, host: str, cwd: str, repository_origin: str | None,
         exclude_task_id: str | None = None,
     ) -> dict[str, Any] | None:
+        self.reclaim_stale_worktree_leases()
         key = self.worktree_key(host=host, cwd=cwd, repository_origin=repository_origin)
         active_states = (
             "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",

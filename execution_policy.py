@@ -52,6 +52,18 @@ HOST_CAPABILITIES = (
     "TAILSCALE",
 )
 
+# A registered local development workspace gets one stable authority envelope.
+# Individual commands are still executed with argv/cwd validation by the host
+# executor; callers do not need to enumerate every tool used by a project.
+DEVELOPMENT_CAPABILITIES = (
+    "LOCAL_HOST_PROCESS",
+    "SYSTEMD_USER",
+    "HOST_FILESYSTEM",
+    "GIT",
+    "DOCKER",
+    "POSTGRES",
+)
+
 _SURFACE_ALIASES = {
     "sandbox_workspace": SANDBOX_WORKSPACE,
     "sandbox-workspace": SANDBOX_WORKSPACE,
@@ -159,16 +171,35 @@ def build_execution_policy(
     operation_classes: Any = None,
     production_mutation_intent: bool = False,
     network_access: bool = False,
+    development_workspace: bool = False,
 ) -> ExecutionPolicy:
     if not isinstance(network_access, bool):
         raise ExecutionPolicyError("network_access must be a boolean")
     if not isinstance(production_mutation_intent, bool):
         raise ExecutionPolicyError("production_mutation_intent must be a boolean")
-    surface = _normalize_surface(execution_surface, network_access=network_access)
     capabilities = _normalized_values(
         "required_capabilities", required_capabilities, HOST_CAPABILITIES
     )
     classes = _normalized_values("operation_classes", operation_classes, OPERATION_CLASSES)
+
+    # Explicit host requirements select the existing trusted host executor
+    # contract when no surface was supplied.  An explicitly requested sandbox
+    # remains invalid for host capabilities and fails closed below.
+    selected_surface = execution_surface
+    if (
+        selected_surface is None
+        and development_workspace
+        and not network_access
+        and required_capabilities is None
+        and operation_classes is None
+        and not production_mutation_intent
+    ):
+        selected_surface = HOST_EXECUTOR
+        capabilities = DEVELOPMENT_CAPABILITIES
+        classes = (DEVELOPMENT_MUTATION,)
+    if selected_surface is None and (capabilities or classes or production_mutation_intent):
+        selected_surface = HOST_EXECUTOR
+    surface = _normalize_surface(selected_surface, network_access=network_access)
 
     if surface == SANDBOX_WORKSPACE and network_access:
         raise ExecutionPolicyError("SANDBOX_WORKSPACE cannot enable network_access")
@@ -193,6 +224,11 @@ def build_execution_policy(
                 "PRODUCTION_MUTATION requires explicit production_mutation_intent=true"
             )
     return ExecutionPolicy(surface, capabilities, classes, production_mutation_intent)
+
+
+def build_development_policy() -> ExecutionPolicy:
+    """Return the default authority for a registered local dev project."""
+    return build_execution_policy(development_workspace=True)
 
 
 def parse_execution_policy(value: str | None) -> ExecutionPolicy | None:
