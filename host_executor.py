@@ -23,6 +23,7 @@ from typing import Any
 from execution_policy import (
     BUSINESS_ACTION,
     DEVELOPMENT_MUTATION,
+    DEVELOPMENT_CAPABILITIES,
     HOST_EXECUTOR,
     PRODUCTION_MUTATION,
     ExecutionPolicy,
@@ -103,6 +104,9 @@ def _target_map(values: tuple[RegisteredTarget, ...]) -> dict[str, RegisteredTar
 class HostExecutor:
     """Execute only registered structured operations in the real host namespace."""
 
+    DYNAMIC_TOOL_NAMESPACE = "clinx"
+    DYNAMIC_TOOL_NAME = "clinx_host_operation"
+
     _SENSITIVE_PATTERNS = (
         re.compile(
             r"(?i)\b(token|secret|password|api[_-]?key|authorization)\b"
@@ -126,49 +130,58 @@ class HostExecutor:
     @staticmethod
     def dynamic_tool_spec() -> dict[str, Any]:
         return {
-            "type": "function",
-            "name": "clinx_host_operation",
+            "type": "namespace",
+            "name": HostExecutor.DYNAMIC_TOOL_NAMESPACE,
             "description": (
                 "Request one structured operation from the CLINX-managed trusted P620 "
                 "host executor. The task, execution, route, cwd, and targets are supplied "
                 "and validated by CLINX; no shell, PID, cwd, or raw host is accepted."
             ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "operation_class": {
-                        "type": "string",
-                        "enum": [
-                            "READ_ONLY_HOST",
-                            "DEVELOPMENT_MUTATION",
-                            "PRODUCTION_READ_ONLY",
-                            "PRODUCTION_MUTATION",
-                            "BUSINESS_ACTION",
-                        ],
+            "tools": [{
+                "type": "function",
+                "name": HostExecutor.DYNAMIC_TOOL_NAME,
+                "description": (
+                    "Request one structured operation from the CLINX-managed trusted P620 "
+                    "host executor."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "operation_class": {
+                            "type": "string",
+                            "enum": [
+                                "READ_ONLY_HOST",
+                                "DEVELOPMENT_MUTATION",
+                                "PRODUCTION_READ_ONLY",
+                                "PRODUCTION_MUTATION",
+                                "BUSINESS_ACTION",
+                            ],
+                        },
+                        "capability": {
+                            "type": "string",
+                            "enum": [
+                                "LOCAL_HOST_PROCESS",
+                                "SYSTEMD_USER",
+                                "OUTBOUND_NETWORK",
+                                "SSH",
+                                "HOST_FILESYSTEM",
+                                "GIT",
+                                "DOCKER",
+                                "POSTGRES",
+                            ],
+                        },
+                        "operation": {"type": "string"},
+                        "arguments": {"type": "object"},
+                        "timeout_seconds": {
+                            "type": "number",
+                            "minimum": 0.1,
+                            "maximum": 120,
+                        },
                     },
-                    "capability": {
-                        "type": "string",
-                        "enum": [
-                            "LOCAL_HOST_PROCESS",
-                            "SYSTEMD_USER",
-                            "OUTBOUND_NETWORK",
-                            "SSH",
-                            "HOST_FILESYSTEM",
-                        ],
-                    },
-                    "operation": {"type": "string"},
-                    "arguments": {"type": "object"},
-                    "timeout_seconds": {
-                        "type": "number",
-                        "minimum": 0.1,
-                        "maximum": 120,
-                    },
+                    "required": ["arguments"],
+                    "additionalProperties": False,
                 },
-                "required": [
-                    "operation_class", "capability", "operation", "arguments"
-                ],
-                "additionalProperties": False,
-            },
+            }],
         }
 
     def _clean_environment(self) -> dict[str, str]:
@@ -309,6 +322,57 @@ class HostExecutor:
         capability = request.capability
         operation = request.operation
         arguments = request.arguments
+
+        # Registered development workspaces use one generic argv surface. This
+        # keeps normal git/test/build/script workflows on the same task lease
+        # without growing a primitive allowlist, while retaining a strict
+        # project cwd and blocking known authority-escape vectors.
+        if (
+            capability in DEVELOPMENT_CAPABILITIES
+            and operation == "development_command"
+        ):
+            if request.operation_class != DEVELOPMENT_MUTATION:
+                raise AuthorityDenied(
+                    "development_command requires DEVELOPMENT_MUTATION"
+                )
+            self._arguments(arguments, required=("argv",))
+            argv = arguments["argv"]
+            if (
+                not isinstance(argv, list)
+                or not argv
+                or any(not isinstance(item, str) or not item.strip() for item in argv)
+            ):
+                raise HostExecutorError("development_command argv must be a non-empty string array")
+            argv = tuple(item.strip() for item in argv)
+            binary = Path(argv[0]).name.casefold()
+            denied = {
+                "sudo", "su", "ssh", "scp", "rsync", "aws", "wrangler",
+                "kubectl", "terraform", "cloudflared", "systemctl",
+            }
+            if binary in denied:
+                raise AuthorityDenied(
+                    f"development_command cannot invoke external or privileged binary: {binary}"
+                )
+            if binary == "git" and any(
+                value.casefold() in {"push", "fetch", "pull", "clone", "submodule"}
+                for value in argv[1:]
+            ):
+                raise AuthorityDenied(
+                    "development_command git network operations require explicit external authority"
+                )
+            if binary in {"sh", "bash", "zsh", "fish", "dash", "ksh"} and "-c" in argv[1:]:
+                raise AuthorityDenied("development_command shell evaluation is not allowed")
+            root = request.project_root.resolve()
+            for value in argv[1:]:
+                if value.startswith("/"):
+                    candidate = Path(value).resolve()
+                    try:
+                        candidate.relative_to(root)
+                    except ValueError as exc:
+                        raise TargetNotRegistered(
+                            "development_command path is outside the registered project"
+                        ) from exc
+            return _Command(argv, request.route.workspace.project_alias, True)
 
         if capability == "LOCAL_HOST_PROCESS":
             commands = {

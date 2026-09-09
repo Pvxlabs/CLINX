@@ -540,6 +540,143 @@ class M13LifecycleRoutingTests(unittest.TestCase):
                 host=task.host, cwd=task.cwd, repository_origin=task.repository_origin,
             ))
 
+    def test_completed_turn_aggregated_provider_result_is_persisted_and_readable(self):
+        result_text = (
+            "CLINX_EXECUTION_RESULT\n"
+            "STATUS=PASS\n"
+            "SUMMARY=provider result\n"
+            "CHANGED_FILES=NONE\n"
+            "VALIDATION=focused regression\n"
+            "BLOCKERS=NONE\n"
+            "NEXT_STATE=COMPLETED"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_result_reconcile")
+            dispatcher = self._dispatcher(root, registry, [])
+            dispatcher.linear = None
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "completed", "items": [{
+                            "type": "agentMessage", "aggregatedOutput": result_text,
+                        }],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_result_reconcile")
+
+            self.assertEqual(reconciled["state"], "COMPLETED")
+            self.assertIsNone(registry.get_task(task.task_id).failure_code)
+            stored = registry.get_execution_result("exec_result_reconcile")
+            self.assertIsNotNone(stored)
+            self.assertEqual(stored.summary, "provider result")
+            status = ClinxIntegration(None, registry, None, None, None).get_status(
+                execution_ref="exec_result_reconcile"
+            )
+            self.assertEqual(status["execution_result"]["summary"], "provider result")
+            self.assertNotEqual(status["failure_code"], "TURN_COMPLETED_WITHOUT_RESULT")
+
+    def test_completed_turn_without_valid_result_keeps_recovery_behavior(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_missing_result")
+            dispatcher = self._dispatcher(root, registry, [])
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "completed", "items": [{
+                            "type": "agentMessage", "text": "not a CLINX result",
+                        }],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_missing_result")
+
+            self.assertEqual(reconciled["state"], "RECOVERY_REQUIRED")
+            self.assertEqual(
+                registry.get_task(task.task_id).failure_code,
+                "TURN_COMPLETED_WITHOUT_RESULT",
+            )
+            self.assertIsNone(registry.get_execution_result("exec_missing_result"))
+
+    def test_previous_pass_is_not_current_result_for_new_execution(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_a")
+            registry.record_execution_result(
+                execution_ref="exec_a", task_id=task.task_id, turn_id="turn-lifecycle",
+                status="PASS", summary="A", changed_files="NONE", validation="A",
+                blockers="NONE", next_state="COMPLETED", raw_result="A",
+            )
+            registry.reconcile_terminal("exec_a", "COMPLETED")
+            with registry.execution(task.task_id, execution_ref="exec_b", retain=True):
+                registry.set_execution_state(
+                    task.task_id, "CODEX_RUNNING", current_stage="turn-b",
+                    turn_id="turn-b", codex_running=True,
+                )
+            integration = ClinxIntegration(
+                None, registry, SimpleNamespace(),
+                SimpleNamespace(resolve_task=lambda **_kwargs: registry.get_task(task.task_id)),
+                None,
+            )
+
+            status = integration.get_status(task_ref=task.task_id)
+
+            self.assertIsNone(status["execution_result"])
+            self.assertEqual(
+                integration.get_status(execution_ref="exec_a")["execution_result"]["status"],
+                "PASS",
+            )
+
+    def test_blocked_provider_result_is_stored_under_current_execution(self):
+        result_text = (
+            "CLINX_EXECUTION_RESULT\nSTATUS=BLOCKED\nSUMMARY=B blocked\n"
+            "CHANGED_FILES=NONE\nVALIDATION=provider\nBLOCKERS=provider blocker\n"
+            "NEXT_STATE=BLOCKED"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_b")
+            dispatcher = self._dispatcher(root, registry, [])
+            dispatcher.linear = None
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "completed", "items": [{
+                            "type": "agentMessage", "text": result_text,
+                        }],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_b")
+
+            self.assertEqual(reconciled["state"], "BLOCKED")
+            stored = registry.get_execution_result("exec_b")
+            self.assertIsNotNone(stored)
+            self.assertEqual(stored.turn_id, "turn-lifecycle")
+            self.assertEqual(stored.status, "BLOCKED")
+
+    def test_late_previous_execution_result_cannot_overwrite_current_turn(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_b")
+            with self.assertRaisesRegex(TaskRegistryError, "does not own task"):
+                registry.record_execution_result(
+                    execution_ref="exec_a", task_id=task.task_id, turn_id="turn-a",
+                    status="PASS", summary="late", changed_files="NONE", validation="late",
+                    blockers="NONE", next_state="COMPLETED", raw_result="late",
+                )
+            self.assertEqual(registry.get_task(task.task_id).turn_id, "turn-lifecycle")
+
     def test_missing_execution_route_fails_closed_without_provider_or_lease_release(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -775,6 +912,17 @@ class M13ProjectionTests(unittest.TestCase):
 
             self.assertEqual(status["execution_ref"], "exec_recovery")
             self.assertEqual(dispatcher.execution_refs, ["exec_recovery"])
+
+    def test_user_marker_example_does_not_set_historical_current_state(self):
+        reader = bridge.TopicStatusReader.__new__(bridge.TopicStatusReader)
+        item = reader._historical_item(
+            {"status": {"type": "idle"}},
+            {"turn-user": "NEXT_STATE=COMPLETED"},
+            page_truncated=False,
+            role_texts={"turn-user": (["NEXT_STATE=COMPLETED"], [], ["item-user"])},
+        )
+
+        self.assertEqual(item.current_state, "UNKNOWN")
 
     def test_mcp_catalog_remains_nine_and_execute_is_absent(self):
         self.assertEqual(len(DEFAULT_TOOL_NAMES), 9)

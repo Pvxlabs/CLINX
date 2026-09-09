@@ -524,6 +524,7 @@ class CodexAppServerClient:
         self.events: list[str] = []
         self.initialize_info: InitializeInfo | None = None
         self._dynamic_tool_handler: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+        self._dynamic_tool_namespace: str | None = None
         self._dynamic_tool_name: str | None = None
         self._dynamic_thread_id: str | None = None
         self._dynamic_turn_id: str | None = None
@@ -550,6 +551,8 @@ class CodexAppServerClient:
             try:
                 if not isinstance(params, dict):
                     raise AppServerProtocolError("dynamic tool params must be an object")
+                if params.get("namespace") != self._dynamic_tool_namespace:
+                    raise AppServerProtocolError("dynamic tool namespace is not registered")
                 if params.get("tool") != self._dynamic_tool_name:
                     raise AppServerProtocolError("dynamic tool name is not registered")
                 if params.get("threadId") != self._dynamic_thread_id:
@@ -594,12 +597,20 @@ class CodexAppServerClient:
     def configure_dynamic_tool(
         self,
         *,
+        namespace: str,
         name: str,
         thread_id: str | None,
         handler: Callable[[dict[str, Any]], dict[str, Any]],
     ) -> None:
-        if not isinstance(name, str) or not name.strip() or not callable(handler):
+        if (
+            not isinstance(namespace, str)
+            or not namespace.strip()
+            or not isinstance(name, str)
+            or not name.strip()
+            or not callable(handler)
+        ):
             raise AppServerProtocolError("dynamic tool configuration is invalid")
+        self._dynamic_tool_namespace = namespace.strip()
         self._dynamic_tool_name = name.strip()
         self._dynamic_thread_id = thread_id
         self._dynamic_tool_handler = handler

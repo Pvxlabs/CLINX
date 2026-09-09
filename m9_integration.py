@@ -18,6 +18,9 @@ from typing import Any
 from app_server import AppServerError
 from execution_semantics import RoutingIdentity, parse_routing_identity
 from execution_policy import (
+    build_development_policy,
+    DEVELOPMENT_CAPABILITIES,
+    DEVELOPMENT_MUTATION,
     HOST_EXECUTOR,
     ExecutionPolicyError,
     build_execution_policy,
@@ -693,6 +696,7 @@ class ClinxIntegration:
         # durable row before selecting reconciliation evidence so a previous
         # self-heal is visible on the next status read.
         if self.registry is not None:
+            self.registry.reclaim_stale_worktree_leases()
             task = self.registry.get_task(task.task_id)
         # A status read is also a bounded recovery point.  The registry is
         # authoritative for identity, while the dispatcher may reconcile one
@@ -747,7 +751,19 @@ class ClinxIntegration:
                 # Status remains useful even when a bounded provider read is
                 # unavailable; the registry keeps the explicit uncertainty.
                 task = self.registry.get_task(task.task_id)
-        result = self.registry.latest_execution_result(task.task_id)
+        result = (
+            self.registry.get_execution_result(execution_ref)
+            if execution_ref else self.registry.latest_execution_result(task.task_id)
+        )
+        if not execution_ref and result is not None:
+            # Historical results remain readable by execution_ref, but a task
+            # status read must expose only evidence for its current exact turn.
+            expected_turn = task.turn_id
+            prepared = self.registry.get_prepared_execution_for_task(task.task_id)
+            if expected_turn is None and prepared is not None:
+                expected_turn = prepared.resulting_turn_id
+            if expected_turn and result.turn_id != expected_turn:
+                result = None
         execution_result = None
         if result is not None:
             execution_result = {
@@ -1100,6 +1116,28 @@ class ClinxIntegration:
                 host=selected_host,
                 project_mode="existing",
             )
+            # Registered writable local projects receive one unified DEVELOPMENT
+            # authority envelope. Explicit policy fields still take precedence,
+            # and read-only/external projects retain the sandbox default.
+            if (
+                execution_surface is None
+                and required_capabilities is None
+                and operation_classes is None
+                and production_mutation_intent in {None, False}
+                and not network_access
+                and descriptor.registered
+                and project_mapping is not None
+                and not project_mapping.read_only
+                and bool(
+                    getattr(
+                        getattr(self.dispatcher, "cfg", None),
+                        "host_executor",
+                        None,
+                    )
+                    and getattr(self.dispatcher.cfg.host_executor, "enabled", False)
+                )
+            ):
+                prepared_policy = build_development_policy()
             route_builder = getattr(self.dispatcher, "_routing_identity", None)
             if callable(route_builder):
                 route = route_builder(
@@ -1138,6 +1176,14 @@ class ClinxIntegration:
                 item for item in prepared_policy.required_capabilities
                 if available.get("capabilities", {}).get(capability_keys[item]) != "AVAILABLE"
             ]
+            # The unified DEVELOPMENT envelope intentionally spans the local
+            # toolchain. Missing optional tools should produce the command's
+            # own result, not block preparation or force a new authority.
+            if (
+                prepared_policy.operation_classes == (DEVELOPMENT_MUTATION,)
+                and prepared_policy.required_capabilities == DEVELOPMENT_CAPABILITIES
+            ):
+                unavailable = []
             if unavailable:
                 raise M9IntegrationError(
                     "CAPABILITY_UNAVAILABLE: " + ", ".join(unavailable)
