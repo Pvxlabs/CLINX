@@ -1822,7 +1822,38 @@ class TaskRegistry:
             raise TaskRegistryError(f"Unsupported terminal reconciliation state: {state}")
         active = self.get_active_execution(execution_ref)
         if active is None:
-            raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
+            with self._connect() as conn:
+                retained = conn.execute(
+                    "SELECT task_id,stage FROM execution_history WHERE execution_ref=?",
+                    (execution_ref,),
+                ).fetchone()
+            if retained is None or retained["stage"] != "RECOVERY_REQUIRED":
+                raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
+            current = self.get_task(retained["task_id"])
+            if (
+                current.execution_state != "RECOVERY_REQUIRED"
+                or not current.retry_required
+                or self.get_latest_execution_for_task(current.task_id) is not None
+            ):
+                raise TaskRegistryError(
+                    f"Retained execution is not eligible for reconciliation: {execution_ref}"
+                )
+            task = self.set_execution_state(
+                current.task_id, state,
+                current_stage=state,
+                current_blocker=(evidence or None) if state != "COMPLETED" else None,
+                codex_running=False,
+                retry_required=(state == "RECOVERY_REQUIRED") if retry_required is None else retry_required,
+                failure_stage=failure_stage,
+                failure_code=failure_code,
+                failure_evidence=evidence,
+            )
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE execution_history SET stage=? WHERE execution_ref=?",
+                    (state, execution_ref),
+                )
+            return task
         task = self.set_execution_state(
             active["task_id"], state,
             current_stage=state,
