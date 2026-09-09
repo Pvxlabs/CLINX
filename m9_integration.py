@@ -456,6 +456,100 @@ class ClinxIntegration:
             "read_only": True,
         }
 
+    def adopt_conversation(
+        self,
+        *,
+        project: str,
+        host: str | None = None,
+        conversation_ref: str | None = None,
+        query: str | None = None,
+        title: str | None = None,
+        summary: str | None = None,
+    ) -> dict[str, Any]:
+        """Adopt one exact historical conversation without starting execution.
+
+        Discovery is bounded and may select one candidate; the registry then
+        performs the atomic binding.  A retry returns the existing task.
+        """
+        if not isinstance(project, str) or not project.strip():
+            raise M9IntegrationError("project is required for adoption")
+        if bool(conversation_ref) == bool(query):
+            raise M9IntegrationError("provide exactly one conversation_ref or query")
+        from bridge import HistoricalConversationDiscovery, LinearTaskIndex
+
+        discovery = HistoricalConversationDiscovery(
+            self.cfg, self.registry, client_factory=getattr(self.dispatcher, "client_factory", None)
+        )
+        candidate = None
+        if conversation_ref:
+            match = re.fullmatch(r"codex://threads/([^/?#]+)", conversation_ref.strip())
+            if match is None:
+                raise M9IntegrationError("conversation_ref must be codex://threads/<exact-ref>")
+            thread_id = match.group(1)
+            adoption_title = (title or "Historical Codex task").strip()
+            adoption_summary = (summary or "Adopted from an existing Codex conversation.").strip()
+        else:
+            result = discovery.discover(project_ref=project, host=host, query=query)
+            candidates = [item for item in result["candidates"] if item.relevance == "HIGH"]
+            if len(candidates) != 1:
+                metadata = [
+                    {"relevance": item.relevance, "matched_terms": item.matched_terms,
+                     "context_range": item.context_range, "status": item.status,
+                     "title": item.title, "updated_at": item.updated_at}
+                    for item in result["candidates"]
+                ]
+                raise M9IntegrationError(
+                    f"AMBIGUOUS historical conversation candidates={json.dumps(metadata, ensure_ascii=False)}"
+                    if len(candidates) > 1
+                    else "No unique historical conversation matched the bounded query"
+                )
+            candidate = candidates[0]
+            thread_id = candidate.thread_id
+            adoption_title = (title or query or "Historical Codex task").strip()
+            adoption_summary = (
+                summary or "Bounded historical Codex evidence: " + ", ".join(candidate.matched_terms)
+            ).strip()
+
+        existing = self.registry.get_binding_by_thread(thread_id)
+        index = None
+        if self.linear is not None:
+            index = LinearTaskIndex(self.linear, self.registry, str(getattr(self.cfg, "team_id", "")))
+        task, binding, _ = self.dispatcher.adopt_or_reuse_existing_conversation(
+            project_ref=project,
+            host=host,
+            thread_id=thread_id,
+            title=adoption_title,
+            summary=adoption_summary,
+            task_key=None,
+            task_index=None,
+            require_direct_input=False,
+            discovery_evidence=("exact conversation reference" if conversation_ref else "bounded query candidate"),
+        )
+        # Linear is an audit mirror and never gates the identity mutation.
+        linear_audit = self._audit_task_index(task.task_id) if index is not None else "NOT_CONFIGURED"
+        return {
+            "adoption_status": "ALREADY_ADOPTED" if existing is not None else "ADOPTED",
+            "task_created": existing is None,
+            "task_ref": task.task_id,
+            "task": self._public(task),
+            "conversation_created": False,
+            "new_codex_conversation_created": False,
+            "linear_audit": linear_audit,
+            "bounded_discovery": True,
+            "candidate": (
+                {
+                    "relevance": candidate.relevance,
+                    "matched_terms": candidate.matched_terms,
+                    "context_range": candidate.context_range,
+                    "status": candidate.status,
+                    "title": candidate.title,
+                    "updated_at": candidate.updated_at,
+                }
+                if candidate is not None else None
+            ),
+            "read_only": False,
+        }
+
     def get_context(
         self,
         *,
@@ -1623,6 +1717,7 @@ class ClinxIntegration:
         }
 
     def _public(self, task: Any) -> dict[str, Any]:
+        adoption = self.registry.get_adoption(task.task_id)
         context_available = bool(
             self.registry.get_binding(task.task_id)
             or self.registry.latest_context_checkpoint(task.task_id)
@@ -1648,6 +1743,10 @@ class ClinxIntegration:
             "failure_code": task.failure_code,
             "failure_evidence": task.failure_evidence,
             "routing_identity": self._public_route(task.routing_identity_json),
+            "adoption_source": adoption.adoption_source if adoption else None,
+            "adopted_at": adoption.adopted_at if adoption else None,
+            "historical_status": adoption.historical_status if adoption else None,
+            "historical_route_evidence": adoption.historical_route_evidence if adoption else None,
         }
 
 
@@ -1657,6 +1756,11 @@ def clinx_find_task(integration: ClinxIntegration, query: str, **kwargs: Any) ->
 
 def clinx_get_context(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
     return integration.get_context(**kwargs)
+
+
+def clinx_adopt_conversation(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
+    """Bounded metadata-only historical conversation adoption entry point."""
+    return integration.adopt_conversation(**kwargs)
 
 
 def clinx_get_topic_status(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:

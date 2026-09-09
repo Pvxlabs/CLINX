@@ -295,6 +295,19 @@ class ConversationBinding:
 
 
 @dataclasses.dataclass(frozen=True)
+class ConversationAdoption:
+    """Bounded provenance for importing an existing Codex conversation."""
+
+    task_id: str
+    thread_id: str
+    adoption_source: str
+    adopted_at: str
+    historical_status: str
+    historical_route_evidence: str
+    discovery_evidence: str
+
+
+@dataclasses.dataclass(frozen=True)
 class TaskRecord:
     task_id: str
     host: str
@@ -505,6 +518,15 @@ class TaskRegistry:
                 CREATE UNIQUE INDEX IF NOT EXISTS
                     idx_conversation_bindings_thread_id
                     ON conversation_bindings(thread_id);
+                CREATE TABLE IF NOT EXISTS conversation_adoptions (
+                    task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+                    thread_id TEXT NOT NULL UNIQUE,
+                    adoption_source TEXT NOT NULL,
+                    adopted_at TEXT NOT NULL,
+                    historical_status TEXT NOT NULL,
+                    historical_route_evidence TEXT NOT NULL,
+                    discovery_evidence TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS executions (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
                     issue_id TEXT,
@@ -1135,6 +1157,20 @@ class TaskRegistry:
             ).fetchone()
         return ConversationBinding(**dict(row)) if row is not None else None
 
+    def get_adoption(self, task_id: str) -> ConversationAdoption | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM conversation_adoptions WHERE task_id = ?", (task_id,)
+            ).fetchone()
+        return ConversationAdoption(**dict(row)) if row is not None else None
+
+    def get_adoption_by_thread(self, thread_id: str) -> ConversationAdoption | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM conversation_adoptions WHERE thread_id = ?", (thread_id,)
+            ).fetchone()
+        return ConversationAdoption(**dict(row)) if row is not None else None
+
     def adopt_task(
         self,
         *,
@@ -1154,6 +1190,9 @@ class TaskRegistry:
         project_id: str | None,
         app_server_version: str | None,
         routing_identity: RoutingIdentity | str | None = None,
+        historical_status: str = "UNKNOWN",
+        historical_route_evidence: str = "UNKNOWN",
+        discovery_evidence: str = "",
     ) -> tuple[TaskRecord, ConversationBinding]:
         """Atomically create an ACTIVE task and bind one verified conversation."""
         if execution_mode not in {"normal", "fast"}:
@@ -1166,6 +1205,18 @@ class TaskRegistry:
         )
         if not thread_id or not session_id:
             raise TaskRegistryError("Adopted conversation requires thread and session IDs")
+        historical_status = str(historical_status or "UNKNOWN").strip().upper()
+        if historical_status not in {
+            "UNKNOWN", "IDLE", "READY", "ACTIVE", "RUNNING", "COMPLETED",
+            "SUCCEEDED", "INTERRUPTED", "SYSTEMERROR", "ERROR", "FAILED",
+        }:
+            historical_status = "UNKNOWN"
+        historical_route_evidence = str(historical_route_evidence or "UNKNOWN").strip().upper()
+        if historical_route_evidence not in {"UNKNOWN", "PARTIAL", "COMPLETE"}:
+            historical_route_evidence = "UNKNOWN"
+        discovery_evidence = self._validate_metadata_value(
+            "discovery_evidence", discovery_evidence or "bounded", 4000
+        ) or "bounded"
         task_id = "task_" + uuid.uuid4().hex
         stamp = _now()
         route_json = self._routing_json(routing_identity)
@@ -1175,6 +1226,22 @@ class TaskRegistry:
                 cwd=cwd, project_identity=project_alias,
                 worktree_key=self.worktree_key(host=host, cwd=cwd, repository_origin=repository_origin),
             ).to_json()
+        # Keep the historical task discoverable/continuation-ready in the
+        # existing ACTIVE projection.  The native state is preserved below;
+        # callers can distinguish completed history via historical_status.
+        status = "ACTIVE"
+        execution_state = (
+            "RECOVERY_REQUIRED"
+            if historical_status in {"INTERRUPTED", "SYSTEMERROR", "ERROR", "FAILED"}
+            # Conversation lifecycle status is not evidence of a running turn.
+            else "COMPLETED"
+            if historical_status in {"COMPLETED", "SUCCEEDED"}
+            else "QUEUED"
+        )
+        current_stage = "RECOVERY_REQUIRED" if execution_state == "RECOVERY_REQUIRED" else execution_state
+        blocker = "historical conversation requires recovery" if execution_state == "RECOVERY_REQUIRED" else None
+        codex_running = 1 if execution_state == "CODEX_RUNNING" else 0
+        retry_required = 1 if execution_state == "RECOVERY_REQUIRED" else 0
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
@@ -1195,8 +1262,8 @@ class TaskRegistry:
                 (
                     task_id, host, workspace_alias, project_alias, project_name, cwd,
                     repository_origin, branch, title, summary, task_key,
-                    execution_mode, "ACTIVE", stamp, stamp, "QUEUED", "queued", None,
-                    stamp, 0, None, 0, route_json,
+                    execution_mode, status, stamp, stamp, execution_state, current_stage, blocker,
+                    stamp, codex_running, None, retry_required, route_json,
                 ),
             )
             conn.execute(
@@ -1204,6 +1271,14 @@ class TaskRegistry:
                 (task_id,thread_id,session_id,project_id,bound_at,last_verified_at,app_server_version)
                 VALUES (?,?,?,?,?,?,?)""",
                 (task_id, thread_id, session_id, project_id, stamp, stamp, app_server_version),
+            )
+            conn.execute(
+                """INSERT INTO conversation_adoptions
+                (task_id,thread_id,adoption_source,adopted_at,historical_status,
+                 historical_route_evidence,discovery_evidence)
+                VALUES (?,?,?,?,?,?,?)""",
+                (task_id, thread_id, "HISTORICAL_CODEX_CONVERSATION", stamp,
+                 historical_status, historical_route_evidence, discovery_evidence),
             )
             fingerprint = self.canonical_work_item_fingerprint(
                 host=host, project_alias=project_alias, cwd=cwd,

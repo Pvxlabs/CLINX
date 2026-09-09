@@ -1195,6 +1195,7 @@ def _task_key(project_alias: str, title: str) -> str:
 
 def _task_public_record(registry: TaskRegistry, task: Any) -> dict[str, Any]:
     index = registry.get_task_index(task.task_id)
+    adoption = registry.get_adoption(task.task_id)
     return {
         "task_ref": task.task_id,
         "task_key": task.task_key,
@@ -1221,6 +1222,10 @@ def _task_public_record(registry: TaskRegistry, task: Any) -> dict[str, Any]:
         "task_index_issue": index.identifier if index is not None else None,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
+        "adoption_source": adoption.adoption_source if adoption else None,
+        "adopted_at": adoption.adopted_at if adoption else None,
+        "historical_status": adoption.historical_status if adoption else None,
+        "historical_route_evidence": adoption.historical_route_evidence if adoption else None,
     }
 
 
@@ -1502,7 +1507,7 @@ def _local_git_identity(cwd: str) -> RepositoryIdentityEvidence:
             ) from exc
         outputs[name] = result.stdout.strip()
 
-    if outputs["top_level"] != cwd:
+    if os.path.realpath(outputs["top_level"]) != os.path.realpath(cwd):
         raise IdentityGuardError(
             "DISPATCH_IDENTITY_GUARD=FAIL\n"
             f"- repository top-level expected={cwd!r} actual={outputs['top_level']!r}"
@@ -1529,7 +1534,7 @@ def _local_git_identity(cwd: str) -> RepositoryIdentityEvidence:
             )
     return RepositoryIdentityEvidence(
         source="local_git",
-        cwd=cwd,
+        cwd=outputs["top_level"],
         origin=origin,
         branch=outputs["branch"],
         head=outputs["head"] or None,
@@ -1594,11 +1599,14 @@ def _identity_mismatches(
         "sessionId": target.session_id,
         "cwd": target.cwd,
     }
-    mismatches = [
-        f"{key} expected={expected[key]!r} actual={actual[key]!r}"
-        for key in expected
-        if actual[key] != expected[key]
-    ]
+    mismatches = []
+    for key in expected:
+        if key == "cwd" and isinstance(actual[key], str) and isinstance(expected[key], str):
+            same_path = os.path.realpath(actual[key]) == os.path.realpath(expected[key])
+        else:
+            same_path = actual[key] == expected[key]
+        if not same_path:
+            mismatches.append(f"{key} expected={expected[key]!r} actual={actual[key]!r}")
     actual_project = actual["projectId"]
     if target.project_id is not None:
         if actual_project != target.project_id:
@@ -1681,7 +1689,7 @@ def project_identity_guard(
     """Validate project authority before any app-server thread creation."""
     mismatches: list[str] = []
     expected_cwd = str(project.repo)
-    if evidence.cwd != expected_cwd:
+    if os.path.realpath(evidence.cwd) != os.path.realpath(expected_cwd):
         mismatches.append(f"cwd expected={expected_cwd!r} actual={evidence.cwd!r}")
     if project.repository_origin is not None and evidence.origin != project.repository_origin:
         mismatches.append(
@@ -2867,6 +2875,7 @@ class TaskDispatcher:
         task_index: "LinearTaskIndex | None" = None,
         task_index_project_id: str | None = None,
         require_direct_input: bool = True,
+        discovery_evidence: str = "bounded exact conversation identity and project guard",
     ) -> tuple[Any, DurableConversationBinding, TaskIndexRecord | None]:
         """Adopt one existing exact conversation without sending a turn."""
         if not thread_id.strip():
@@ -2967,24 +2976,35 @@ class TaskDispatcher:
                 raise TaskRegistryError(
                     f"ADOPTION=FAIL: thread {thread_id} is already bound to task {existing.task_id}"
                 )
-            task, binding = self.tasks.adopt_task(
-                host=host or workspace.alias,
-                workspace_alias=workspace.alias,
-                project_alias=project.project_alias,
-                project_name=project.linear_name,
-                cwd=str(project.repo),
-                repository_origin=project.repository_origin,
-                branch=project.branch,
-                title=title,
-                summary=summary,
-                task_key=task_key or _task_key(project.project_alias, title),
-                execution_mode=execution_mode,
-                thread_id=thread_id,
-                session_id=session_id,
-                project_id=thread.get("projectId"),
-                app_server_version=version,
-                routing_identity=route,
-            )
+            try:
+                task, binding = self.tasks.adopt_task(
+                    host=host or workspace.alias,
+                    workspace_alias=workspace.alias,
+                    project_alias=project.project_alias,
+                    project_name=project.linear_name,
+                    cwd=str(project.repo),
+                    repository_origin=project.repository_origin,
+                    branch=project.branch,
+                    title=title,
+                    summary=summary,
+                    task_key=task_key or _task_key(project.project_alias, title),
+                    execution_mode=execution_mode,
+                    thread_id=thread_id,
+                    session_id=session_id,
+                    project_id=thread.get("projectId"),
+                    app_server_version=version,
+                    routing_identity=route,
+                    historical_status=_status_type(thread) or "UNKNOWN",
+                    historical_route_evidence="UNKNOWN",
+                    discovery_evidence=discovery_evidence,
+                )
+            except TaskRegistryError as exc:
+                # A concurrent adopter may have committed between the
+                # pre-check and this transaction.  Return its canonical task.
+                raced = self.tasks.get_binding_by_thread(thread_id)
+                if raced is None or "already bound" not in str(exc).casefold():
+                    raise
+                task, binding = self.tasks.get_task(raced.task_id), raced
         index = None
         if task_index is not None:
             index = task_index.sync(task.task_id, project_id=task_index_project_id)
@@ -3003,6 +3023,7 @@ class TaskDispatcher:
         task_index: "LinearTaskIndex | None" = None,
         task_index_project_id: str | None = None,
         require_direct_input: bool = True,
+        discovery_evidence: str = "bounded exact conversation identity and project guard",
     ) -> tuple[Any, DurableConversationBinding, TaskIndexRecord | None]:
         """Adopt a thread once, or reuse its canonical existing task binding."""
         existing = self.tasks.get_binding_by_thread(thread_id)
@@ -3017,8 +3038,21 @@ class TaskDispatcher:
                 raise TargetResolutionError(
                     f"Existing binding host mismatch: {task.host!r}"
                 )
-            if task.status != "ACTIVE":
-                task = self.tasks.set_status(task.task_id, "ACTIVE")
+            _workspace, descriptor, mapping = self.resolve_project(
+                project_ref, host=host, project_mode="existing"
+            )
+            if os.path.realpath(task.cwd) != os.path.realpath(str(descriptor.cwd)):
+                raise IdentityGuardError(
+                    "DISPATCH_IDENTITY_GUARD=FAIL\n"
+                    f"- cwd expected={descriptor.cwd!s} actual={task.cwd!r}"
+                )
+            if mapping.repository_origin != task.repository_origin:
+                raise IdentityGuardError(
+                    "DISPATCH_IDENTITY_GUARD=FAIL\n"
+                    f"- repositoryOrigin expected={mapping.repository_origin!r} actual={task.repository_origin!r}"
+                )
+            # A historical binding is authoritative for identity.  Repeated
+            # adoption is an idempotent read/repair, never a new task.
             index = (
                 task_index.sync(task.task_id, project_id=task_index_project_id)
                 if task_index is not None else None
@@ -3035,6 +3069,7 @@ class TaskDispatcher:
             task_index=task_index,
             task_index_project_id=task_index_project_id,
             require_direct_input=require_direct_input,
+            discovery_evidence=discovery_evidence,
         )
 
     def task_action(self, task_id: str, action: str) -> str:
@@ -3191,7 +3226,9 @@ class TaskDispatcher:
             return self.tasks.reconcile_terminal(execution_ref, state, **kwargs)
 
         binding = self.tasks.get_binding(task.task_id)
-        if binding is None or not task.turn_id:
+        if binding is None:
+            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
+        if not task.turn_id and not (orphaned and self.tasks.get_adoption(task.task_id)):
             return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
         workspace = self.workspaces.resolve(task.workspace_alias)
         project_path = self.workspaces.validate_path(workspace, Path(task.cwd))
@@ -3203,7 +3240,13 @@ class TaskDispatcher:
         route: RoutingIdentity | None = None
         bounded_items: list[dict[str, Any]] = []
         try:
-            route = self._execution_route(task, execution_ref, orphaned=orphaned)
+            # An adopted conversation without a turn has no execution route yet.
+            # Its sealed task route is sufficient for this read-only lookup.
+            route = (parse_routing_identity(task.routing_identity_json)
+                     if orphaned and not task.turn_id and self.tasks.get_adoption(task.task_id)
+                     else self._execution_route(task, execution_ref, orphaned=orphaned))
+            if route is None or not route.executable:
+                raise DispatchContractError("reconciliation routing identity is unavailable")
             client = self.client_factory(self._target(workspace, project, binding, route))
             with client:
                 client.initialize(
@@ -3214,6 +3257,23 @@ class TaskDispatcher:
                 page = client.thread_turns_list(
                     binding.thread_id, limit=20, sort_direction="desc", items_view="summary"
                 )
+                if not task.turn_id:
+                    rows = page.get("data")
+                    if not isinstance(rows, list):
+                        return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
+                    running = next((row for row in rows if isinstance(row, dict)
+                                    and self._turn_status(row) in {"inprogress", "running", "active"}), None)
+                    if running is not None:
+                        return {"state": "CODEX_RUNNING", "authoritative": True,
+                                "active_turn_present": True}
+                    terminal = {"completed", "succeeded", "success", "cancelled", "canceled",
+                                "interrupted", "aborted", "failed", "error", "systemerror", "errored"}
+                    if page.get("nextCursor") or any(not isinstance(row, dict)
+                            or self._turn_status(row) not in terminal for row in rows):
+                        return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
+                    terminalize("COMPLETED", retry_required=False)
+                    return {"state": "COMPLETED", "authoritative": True,
+                            "active_turn_present": False}
                 candidate = next(
                     (item for item in page.get("data", ())
                      if isinstance(item, dict) and item.get("id") == task.turn_id),
@@ -3411,6 +3471,9 @@ class HistoricalConversationCandidate:
     context_range: str
     anchor_turn_id: str | None
     context_text: str
+    status: str | None = None
+    title: str | None = None
+    updated_at: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -3421,6 +3484,9 @@ class HistoricalConversationCandidate:
             "relevance": self.relevance,
             "context_range": self.context_range,
             "anchor_turn_id": self.anchor_turn_id,
+            "status": self.status,
+            "title": self.title,
+            "updated_at": self.updated_at,
         }
 
 
@@ -3533,6 +3599,17 @@ class HistoricalConversationDiscovery:
             ),
             anchor_turn_id=anchor,
             context_text="\n".join(all_text),
+            status=_status_type(thread),
+            title=(
+                thread.get("title") or thread.get("name")
+                if isinstance(thread.get("title") or thread.get("name"), str)
+                else None
+            ),
+            updated_at=(
+                thread.get("updatedAt") or thread.get("updated_at")
+                if isinstance(thread.get("updatedAt") or thread.get("updated_at"), str)
+                else None
+            ),
         )
 
     def _turn_summary_texts(
@@ -3602,6 +3679,7 @@ class HistoricalConversationDiscovery:
         *,
         project_ref: str,
         host: str | None = None,
+        query: str | None = None,
     ) -> dict[str, Any]:
         """Return bounded candidates; no Task or Linear mutation occurs."""
         workspace, _descriptor, project = self.dispatcher.resolve_project(
@@ -3627,7 +3705,7 @@ class HistoricalConversationDiscovery:
                 if not isinstance(thread_id, str) or not thread_id:
                     continue
                 thread = client.thread_read(thread_id)
-                if thread.get("cwd") != str(project.repo):
+                if not isinstance(thread.get("cwd"), str) or os.path.realpath(thread["cwd"]) != os.path.realpath(str(project.repo)):
                     continue
                 session_id = thread.get("sessionId")
                 if not isinstance(session_id, str) or not session_id:
@@ -3659,7 +3737,29 @@ class HistoricalConversationDiscovery:
                 preliminary = self._candidate_from_text(thread, turn_texts)
                 if preliminary.relevance == "MEDIUM":
                     turn_texts = self._expand_candidate(client, thread_id, page)
-                candidates.append(self._candidate_from_text(thread, turn_texts))
+                candidate = self._candidate_from_text(thread, turn_texts)
+                if query:
+                    query_terms = tuple(
+                        token for token in re.findall(r"[\w-]+", query.casefold())
+                        if len(token) > 1
+                    )
+                    haystack = candidate.context_text.casefold()
+                    query_hits = tuple(token for token in query_terms if token in haystack)
+                    if not query_hits:
+                        candidate = dataclasses.replace(candidate, relevance="NONE")
+                    elif candidate.relevance != "HIGH":
+                        candidate = dataclasses.replace(
+                            candidate,
+                            matched_terms=query_hits,
+                            relevance="HIGH" if len(query_hits) >= max(1, len(query_terms) // 2) else "MEDIUM",
+                            anchor_turn_id=candidate.anchor_turn_id or next(iter(turn_texts), None),
+                        )
+                    else:
+                        candidate = dataclasses.replace(
+                            candidate,
+                            matched_terms=tuple(dict.fromkeys((*candidate.matched_terms, *query_hits))),
+                        )
+                candidates.append(candidate)
         return {
             "project": project.project_alias,
             "host": workspace.alias,
