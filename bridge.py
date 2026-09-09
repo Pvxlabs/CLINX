@@ -54,6 +54,20 @@ from execution_semantics import (
     parse_routing_identity,
     with_conversation_binding,
 )
+from execution_policy import (
+    HOST_EXECUTOR,
+    ExecutionPolicy,
+    ExecutionPolicyError,
+    build_execution_policy,
+    legacy_policy_for_route,
+    parse_execution_policy,
+)
+from host_executor import (
+    HostExecutionRequest,
+    HostExecutor,
+    HostExecutorConfig,
+    RegisteredTarget,
+)
 from m9_integration import ExecutionResultService
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
@@ -554,6 +568,7 @@ class BridgeConfig:
     workspaces: tuple[WorkspaceConfig, ...] = ()
     task_db_path: Path | None = None
     runtime_host: str = ""
+    host_executor: HostExecutorConfig = dataclasses.field(default_factory=HostExecutorConfig)
 
     @staticmethod
     def load(path: Path) -> "BridgeConfig":
@@ -569,6 +584,7 @@ class BridgeConfig:
         project_tables = raw.get("projects", {})
         target_rows = raw.get("targets", {})
         thread_tables = raw.get("threads", {})
+        host_executor_raw = raw.get("host_executor", {})
 
         required = {
             "linear.team_id": linear.get("team_id"),
@@ -801,6 +817,60 @@ class BridgeConfig:
             str(runtime["runtime_host"]).strip() if runtime.get("runtime_host") else None
         )
 
+        if not isinstance(host_executor_raw, dict):
+            raise BridgeError("[host_executor] must be a table")
+        executor_enabled = bool(host_executor_raw.get("enabled", False))
+        executor_host = str(host_executor_raw.get("host", runtime_host or "p620")).strip()
+        default_host_timeout = float(host_executor_raw.get("default_timeout_seconds", 30))
+        max_host_timeout = float(host_executor_raw.get("max_timeout_seconds", 120))
+        max_output_bytes = int(host_executor_raw.get("max_output_bytes", 65536))
+        if default_host_timeout <= 0 or max_host_timeout < default_host_timeout:
+            raise BridgeError("host executor timeout bounds are invalid")
+        if not 1024 <= max_output_bytes <= 1024 * 1024:
+            raise BridgeError("host executor max_output_bytes must be between 1024 and 1048576")
+        if executor_enabled and canonical_host(executor_host) != canonical_host(runtime_host):
+            raise BridgeError("HOST_EXECUTOR must run on the configured runtime host")
+
+        def target_list(name: str, default_classes: tuple[str, ...]) -> tuple[RegisteredTarget, ...]:
+            values = host_executor_raw.get(name, [])
+            if not isinstance(values, list) or any(
+                not isinstance(item, str) or not item.strip() for item in values
+            ):
+                raise BridgeError(f"[host_executor].{name} must be a string array")
+            return tuple(
+                RegisteredTarget(item.strip(), default_classes) for item in values
+            )
+
+        network_targets: list[RegisteredTarget] = []
+        network_rows = host_executor_raw.get("network_targets", {})
+        if not isinstance(network_rows, dict):
+            raise BridgeError("[host_executor.network_targets] must contain tables")
+        for alias, row in network_rows.items():
+            if not isinstance(row, dict):
+                raise BridgeError(f"host executor network target {alias!r} must be a table")
+            dns_name = str(row.get("dns_name", "")).strip() or None
+            url = str(row.get("url", "")).strip() or None
+            if not dns_name and not url:
+                raise BridgeError(f"host executor network target {alias!r} is empty")
+            if url and not url.startswith("https://"):
+                raise BridgeError("host executor network targets require https URLs")
+            operation_classes = row.get(
+                "operation_classes", ["READ_ONLY_HOST"]
+            )
+            if not isinstance(operation_classes, list) or any(
+                not isinstance(item, str) or not item.strip()
+                for item in operation_classes
+            ):
+                raise BridgeError("network target operation_classes must be a string array")
+            network_targets.append(
+                RegisteredTarget(
+                    str(alias),
+                    tuple(item.strip().upper() for item in operation_classes),
+                    dns_name=dns_name,
+                    url=url,
+                )
+            )
+
         return BridgeConfig(
             team_id=str(linear["team_id"]),
             trigger_label=str(linear["trigger_label"]),
@@ -837,6 +907,18 @@ class BridgeConfig:
             workspaces=tuple(workspaces),
             task_db_path=task_db_path,
             runtime_host=runtime_host,
+            host_executor=HostExecutorConfig(
+                enabled=executor_enabled,
+                host=executor_host,
+                default_timeout_seconds=default_host_timeout,
+                max_timeout_seconds=max_host_timeout,
+                max_output_bytes=max_output_bytes,
+                services=target_list(
+                    "services", ("READ_ONLY_HOST", "DEVELOPMENT_MUTATION")
+                ),
+                ssh_targets=target_list("ssh_targets", ("PRODUCTION_READ_ONLY",)),
+                network_targets=tuple(network_targets),
+            ),
         )
 
     def repo_for_project(self, project_name: str | None) -> Path | None:
@@ -2062,6 +2144,7 @@ class TaskDispatcher:
         self.client_factory = client_factory or (
             lambda target: _default_app_server_client(cfg, target)
         )
+        self.host_executor = HostExecutor(cfg.host_executor, self.tasks)
         self.linear = linear
         self.projects = DynamicProjectResolver(self.workspaces, cfg.projects)
         self.last_task_id: str | None = None
@@ -2191,8 +2274,14 @@ class TaskDispatcher:
         conversation_bound: bool,
         network_access: bool,
         supplied: RoutingIdentity | str | None = None,
+        execution_policy: ExecutionPolicy | str | None = None,
     ) -> RoutingIdentity:
         """Resolve one bounded route, preserving explicit caller identity."""
+        policy = execution_policy
+        if isinstance(policy, str):
+            policy = parse_execution_policy(policy)
+        if policy is None:
+            policy = build_execution_policy(network_access=network_access)
         if supplied is not None:
             route = (
                 supplied if isinstance(supplied, RoutingIdentity)
@@ -2208,6 +2297,7 @@ class TaskDispatcher:
                 )
                 route = build_routing_identity(
                     host=target_host,
+                    surface=policy.route_surface,
                     workspace_alias=workspace.alias,
                     project_alias=project.project_alias,
                     worktree_key=self.tasks.worktree_key(
@@ -2218,6 +2308,7 @@ class TaskDispatcher:
                     conversation_binding="BOUND" if conversation_bound else "UNBOUND",
                     transport="ssh_stdio" if selected_transport == "ssh" else "local_stdio",
                     network_access=network_access,
+                    authority_scopes=policy.authority_scopes,
                     supported_hosts={
                         canonical_host(item.host or item.alias)
                         for item in self.workspaces
@@ -2234,6 +2325,10 @@ class TaskDispatcher:
             raise DispatchContractError("routing identity project does not match dispatch target")
         if route.network_policy.network_access != network_access:
             raise DispatchContractError("routing identity network policy changed")
+        try:
+            policy.validate_route(route)
+        except ExecutionPolicyError as exc:
+            raise DispatchContractError(str(exc)) from exc
         if conversation_bound and route.conversation.status != "BOUND":
             raise DispatchContractError("continuation requires a bound conversation route")
         if not conversation_bound and route.conversation.status not in {"UNBOUND", "UNKNOWN"}:
@@ -2247,6 +2342,71 @@ class TaskDispatcher:
             or getattr(info, "user_agent", None)
             or fallback
         )
+
+    def _configure_host_turn(
+        self,
+        *,
+        client: Any,
+        task_id: str,
+        execution_ref: str | None,
+        route: RoutingIdentity,
+        policy: ExecutionPolicy,
+        project: ProjectMapping,
+        thread_id: str | None,
+    ) -> list[dict[str, Any]] | None:
+        if policy.execution_surface != HOST_EXECUTOR:
+            return None
+        if not execution_ref or not execution_ref.startswith("exec_"):
+            raise DispatchContractError(
+                "HOST_EXECUTOR requires an opaque CLINX execution reference"
+            )
+        executor = getattr(self, "host_executor", None)
+        configure = getattr(client, "configure_dynamic_tool", None)
+        if executor is None or not callable(configure):
+            raise DispatchContractError("HOST_EXECUTOR dynamic tool bridge is unavailable")
+
+        def handle(params: dict[str, Any]) -> dict[str, Any]:
+            values = params.get("arguments")
+            if not isinstance(values, dict):
+                raise DispatchContractError("host operation arguments must be an object")
+            allowed = {
+                "operation_class", "capability", "operation", "arguments",
+                "timeout_seconds",
+            }
+            if set(values).difference(allowed):
+                raise DispatchContractError("host operation contains unsupported fields")
+            request = HostExecutionRequest(
+                task_ref=task_id,
+                execution_ref=execution_ref,
+                route=route,
+                policy=policy,
+                operation_class=str(values.get("operation_class", "")),
+                capability=str(values.get("capability", "")),
+                operation=str(values.get("operation", "")),
+                arguments=values.get("arguments", {}),
+                project_root=project.repo,
+                timeout_seconds=values.get("timeout_seconds"),
+            )
+            return executor.execute(request)
+
+        spec = executor.dynamic_tool_spec()
+        configure(name=spec["name"], thread_id=thread_id, handler=handle)
+        return [spec]
+
+    @staticmethod
+    def _supervise_host_turn(
+        client: Any,
+        *,
+        policy: ExecutionPolicy,
+        thread_id: str,
+        turn_id: str,
+    ) -> None:
+        if policy.execution_surface != HOST_EXECUTOR:
+            return
+        supervise = getattr(client, "supervise_turn", None)
+        if not callable(supervise):
+            raise DispatchContractError("HOST_EXECUTOR turn supervision is unavailable")
+        supervise(thread_id, turn_id)
 
     def _read_and_guard(
         self,
@@ -2297,6 +2457,7 @@ class TaskDispatcher:
         issue_id: str | None = None,
         execution_ref: str | None = None,
         routing_identity: RoutingIdentity | str | None = None,
+        execution_policy: ExecutionPolicy | str | None = None,
     ) -> DispatchResult:
         if task_mode not in {"new", "continue"}:
             raise DispatchContractError(f"Unsupported task mode: {task_mode!r}")
@@ -2329,7 +2490,13 @@ class TaskDispatcher:
             route = self._routing_identity(
                 workspace=workspace, project=project, conversation_bound=False,
                 network_access=network_access, supplied=routing_identity,
+                execution_policy=execution_policy,
             )
+            policy = execution_policy
+            if isinstance(policy, str):
+                policy = parse_execution_policy(policy)
+            if policy is None:
+                policy = build_execution_policy(network_access=network_access)
             task = self.tasks.create_task(
                 host=host or workspace.alias,
                 workspace_alias=workspace.alias,
@@ -2343,6 +2510,7 @@ class TaskDispatcher:
                 task_key=task_key or _task_key(project.project_alias, title),
                 execution_mode=execution_mode,
                 routing_identity=route,
+                execution_policy=policy,
             )
             self.last_task_id = task.task_id
             with self.tasks.execution(
@@ -2373,6 +2541,11 @@ class TaskDispatcher:
                             model=executable_model,
                             sandbox=self.cfg.sandbox,
                             ephemeral=False,
+                            dynamic_tools=(
+                                [self.host_executor.dynamic_tool_spec()]
+                                if policy.execution_surface == HOST_EXECUTOR
+                                else None
+                            ),
                         )
                         new_thread_id = started.get("id")
                         new_session_id = started.get("sessionId")
@@ -2421,6 +2594,15 @@ class TaskDispatcher:
                             routing_identity=route,
                             execution_ref=execution_ref,
                         )
+                        self._configure_host_turn(
+                            client=client,
+                            task_id=leased.task_id,
+                            execution_ref=execution_ref,
+                            route=route,
+                            policy=policy,
+                            project=project,
+                            thread_id=new_thread_id,
+                        )
                         if network_access:
                             turn = client.turn_start(
                                 new_thread_id,
@@ -2441,6 +2623,12 @@ class TaskDispatcher:
                                 reasoning_effort=executable_reasoning,
                                 approval_policy=self.cfg.approval,
                             )
+                        self._supervise_host_turn(
+                            client,
+                            policy=policy,
+                            thread_id=new_thread_id,
+                            turn_id=turn.turn_id,
+                        )
                         self._execution_state(
                             leased.task_id,
                             "CODEX_RUNNING",
@@ -2534,7 +2722,14 @@ class TaskDispatcher:
             workspace=workspace, project=project, conversation_bound=True,
             network_access=network_access,
             supplied=routing_identity or task.routing_identity_json,
+            execution_policy=execution_policy or task.execution_policy_json,
         )
+        policy = execution_policy
+        if isinstance(policy, str):
+            policy = parse_execution_policy(policy)
+        if policy is None:
+            existing = parse_execution_policy(task.execution_policy_json)
+            policy = existing or legacy_policy_for_route(route)
         self.tasks.update_routing_identity(task.task_id, route)
         task = self.tasks.get_task(task.task_id)
         task = self.tasks.update_metadata(
@@ -2575,6 +2770,15 @@ class TaskDispatcher:
                             initialize_info, target.app_server_version
                         ),
                     )
+                    self._configure_host_turn(
+                        client=client,
+                        task_id=leased.task_id,
+                        execution_ref=execution_ref,
+                        route=route,
+                        policy=policy,
+                        project=project,
+                        thread_id=binding.thread_id,
+                    )
                     if network_access:
                         turn = client.turn_start(
                             binding.thread_id,
@@ -2595,6 +2799,12 @@ class TaskDispatcher:
                             reasoning_effort=executable_reasoning,
                             approval_policy=self.cfg.approval,
                         )
+                    self._supervise_host_turn(
+                        client,
+                        policy=policy,
+                        thread_id=binding.thread_id,
+                        turn_id=turn.turn_id,
+                    )
                     self._execution_state(
                         leased.task_id,
                         "CODEX_RUNNING",
@@ -2880,6 +3090,9 @@ class TaskDispatcher:
         if active is None:
             raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
         self.tasks.request_cancellation(execution_ref)
+        executor = getattr(self, "host_executor", None)
+        if executor is not None:
+            executor.cancel_execution(execution_ref)
         task = self.tasks.get_task(active["task_id"])
         binding = self.tasks.get_binding(task.task_id)
         if binding is None or not task.turn_id:

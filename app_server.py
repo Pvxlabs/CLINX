@@ -18,6 +18,7 @@ import re
 import select
 import struct
 import subprocess
+import threading
 import time
 import uuid
 from typing import Any, Callable, Protocol
@@ -522,6 +523,12 @@ class CodexAppServerClient:
         self.timeout_seconds = timeout_seconds
         self.events: list[str] = []
         self.initialize_info: InitializeInfo | None = None
+        self._dynamic_tool_handler: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+        self._dynamic_tool_name: str | None = None
+        self._dynamic_thread_id: str | None = None
+        self._dynamic_turn_id: str | None = None
+        self._detached = False
+        self._supervisor: threading.Thread | None = None
 
     def __enter__(self) -> "CodexAppServerClient":
         connect = getattr(self.transport, "connect", None)
@@ -530,14 +537,50 @@ class CodexAppServerClient:
         return self
 
     def __exit__(self, _exc_type, _exc, _tb) -> None:
-        self.close()
+        if not self._detached:
+            self.close()
 
     def close(self) -> None:
         self.transport.close()
 
     def _send_server_response(self, request: dict[str, Any]) -> None:
-        # M0 intentionally has no approval UI.  Reply explicitly so a server
-        # request cannot leave the connection waiting indefinitely.
+        method = request.get("method")
+        if method == "item/tool/call" and self._dynamic_tool_handler is not None:
+            params = request.get("params")
+            try:
+                if not isinstance(params, dict):
+                    raise AppServerProtocolError("dynamic tool params must be an object")
+                if params.get("tool") != self._dynamic_tool_name:
+                    raise AppServerProtocolError("dynamic tool name is not registered")
+                if params.get("threadId") != self._dynamic_thread_id:
+                    raise AppServerProtocolError("dynamic tool thread identity changed")
+                if self._dynamic_turn_id is not None and params.get("turnId") != self._dynamic_turn_id:
+                    raise AppServerProtocolError("dynamic tool turn identity changed")
+                result = self._dynamic_tool_handler(params)
+                response = {
+                    "success": True,
+                    "contentItems": [{
+                        "type": "inputText",
+                        "text": json.dumps(result, sort_keys=True, separators=(",", ":")),
+                    }],
+                }
+            except Exception as exc:
+                code = getattr(exc, "code", "HOST_EXECUTOR_ERROR")
+                response = {
+                    "success": False,
+                    "contentItems": [{
+                        "type": "inputText",
+                        "text": json.dumps(
+                            {"result_state": str(code), "error": str(exc)[:2000]},
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    }],
+                }
+            self.transport.send({"id": request.get("id"), "result": response})
+            return
+        # Approval and user-input requests remain unsupported. Reply explicitly
+        # so no server request can leave the transport waiting indefinitely.
         self.transport.send(
             {
                 "id": request.get("id"),
@@ -547,6 +590,56 @@ class CodexAppServerClient:
                 },
             }
         )
+
+    def configure_dynamic_tool(
+        self,
+        *,
+        name: str,
+        thread_id: str | None,
+        handler: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> None:
+        if not isinstance(name, str) or not name.strip() or not callable(handler):
+            raise AppServerProtocolError("dynamic tool configuration is invalid")
+        self._dynamic_tool_name = name.strip()
+        self._dynamic_thread_id = thread_id
+        self._dynamic_tool_handler = handler
+
+    def supervise_turn(self, thread_id: str, turn_id: str) -> None:
+        """Keep the initiating client connected for dynamic tool calls."""
+        if self._dynamic_tool_handler is None:
+            raise AppServerProtocolError("dynamic tool handler is not configured")
+        self._dynamic_thread_id = thread_id
+        self._dynamic_turn_id = turn_id
+        self._detached = True
+
+        def supervise() -> None:
+            try:
+                while True:
+                    message = self.transport.receive(max(self.timeout_seconds, 300.0))
+                    if "method" in message and "id" in message:
+                        self._send_server_response(message)
+                        continue
+                    method = message.get("method")
+                    if isinstance(method, str):
+                        self.events.append(method)
+                    params = message.get("params")
+                    if method == "turn/completed" and isinstance(params, dict):
+                        turn = params.get("turn")
+                        observed = turn.get("id") if isinstance(turn, dict) else params.get("turnId")
+                        if observed in {None, turn_id}:
+                            break
+            except AppServerError:
+                pass
+            finally:
+                self._detached = False
+                self.close()
+
+        self._supervisor = threading.Thread(
+            target=supervise,
+            name=f"clinx-app-server-{turn_id[:12]}",
+            daemon=True,
+        )
+        self._supervisor.start()
 
     def _request(self, method: str, params: dict[str, Any] | None = None) -> Any:
         request_id = str(uuid.uuid4())
@@ -708,6 +801,7 @@ class CodexAppServerClient:
         sandbox: str | None = None,
         ephemeral: bool = False,
         thread_source: str | None = None,
+        dynamic_tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Create a durable thread for controlled pilot qualification."""
         params: dict[str, Any] = {"cwd": cwd, "ephemeral": ephemeral}
@@ -719,6 +813,10 @@ class CodexAppServerClient:
             params["sandbox"] = sandbox
         if thread_source is not None:
             params["threadSource"] = thread_source
+        if dynamic_tools is not None:
+            if not isinstance(dynamic_tools, list) or not dynamic_tools:
+                raise AppServerProtocolError("dynamic_tools must be a non-empty array")
+            params["dynamicTools"] = dynamic_tools
         result = self._request("thread/start", params)
         return _thread_result(result, "thread/start")
 

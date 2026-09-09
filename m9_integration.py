@@ -17,6 +17,13 @@ from typing import Any
 
 from app_server import AppServerError
 from execution_semantics import RoutingIdentity, parse_routing_identity
+from execution_policy import (
+    HOST_EXECUTOR,
+    ExecutionPolicyError,
+    build_execution_policy,
+    legacy_policy_for_route,
+    parse_execution_policy,
+)
 from task_registry import (
     TERMINAL_EXECUTION_STAGES,
     TaskRegistry,
@@ -56,6 +63,7 @@ class ExecutionHandoff:
     description: str
     prepared_execution_ref: str
     routing_identity: dict[str, Any] | None = None
+    execution_policy: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -81,6 +89,7 @@ class ExecutionHandoff:
             "prompt": self.prompt,
             "description": self.description,
             "routing_identity": self.routing_identity,
+            "execution_policy": self.execution_policy,
             "next_action": {
                 "provider": "CLINX",
                 "operation": "START_EXECUTION",
@@ -671,6 +680,15 @@ class ClinxIntegration:
         status["execution_routing_identity"] = (
             execution_route.public_dict() if execution_route is not None else None
         )
+        policy = (
+            self.registry.get_execution_policy(execution_ref)
+            if execution_ref else parse_execution_policy(task.execution_policy_json)
+        )
+        status["execution_policy"] = policy.as_dict() if policy is not None else None
+        status["host_executions"] = self.registry.list_host_executions(
+            execution_ref=execution_ref,
+            task_id=None if execution_ref else task.task_id,
+        )
         prepared = (
             self.registry.get_prepared_execution_for_execution(execution_ref)
             if execution_ref
@@ -724,6 +742,14 @@ class ClinxIntegration:
 
     def get_capabilities(self) -> dict[str, Any]:
         """Describe the separated CLINX command, Codex execution, and Linear audit planes."""
+        host_executor = getattr(self.dispatcher, "host_executor", None)
+        host_capabilities = (
+            host_executor.capabilities() if host_executor is not None else {
+                "available": False,
+                "default": False,
+                "capabilities": {},
+            }
+        )
         return {
             "context_plane": {
                 "available": True,
@@ -746,6 +772,21 @@ class ClinxIntegration:
                 "prepare_tool": "clinx_prepare_execution",
                 "start_tool": "clinx_start_execution",
             },
+            "execution_surfaces": {
+                "SANDBOX_WORKSPACE": {
+                    "available": True,
+                    "default": True,
+                    "network_access": False,
+                },
+                "NETWORKED_SANDBOX": {
+                    "available": True,
+                    "default": False,
+                    "network_access": True,
+                },
+                "HOST_EXECUTOR": host_capabilities,
+            },
+            "host_executor_available": bool(host_capabilities.get("available")),
+            "host_executor_default": False,
             "status": {
                 "available": True,
                 "tool": "clinx_get_status",
@@ -804,6 +845,10 @@ class ClinxIntegration:
         reasoning: str | None = None,
         execution_mode: str = "normal",
         network_access: bool = False,
+        execution_surface: str | None = None,
+        required_capabilities: list[str] | None = None,
+        operation_classes: list[str] | None = None,
+        production_mutation_intent: bool | None = None,
     ) -> dict[str, Any]:
         """Prepare an integrity-checked CLINX execution command without dispatching."""
         if approved is not True:
@@ -837,6 +882,7 @@ class ClinxIntegration:
 
         prepared_route = "{}"
         prepared_route_public: dict[str, Any] | None = None
+        prepared_policy = None
         if task_mode == "continue":
             task = self.context_reader.resolve_task(
                 task_ref=task_ref,
@@ -892,6 +938,46 @@ class ClinxIntegration:
             prepared_route = task.routing_identity_json or "{}"
             parsed_route = parse_routing_identity(prepared_route)
             prepared_route_public = parsed_route.public_dict() if parsed_route is not None else None
+            existing_policy = parse_execution_policy(task.execution_policy_json)
+            legacy_unknown_policy = False
+            if existing_policy is None:
+                if parsed_route is None:
+                    raise M9IntegrationError("Task execution policy is unavailable")
+                existing_policy = legacy_policy_for_route(parsed_route)
+                legacy_unknown_policy = parsed_route.surface.status == "UNKNOWN"
+            try:
+                requested_policy = build_execution_policy(
+                    execution_surface=(
+                        execution_surface
+                        if execution_surface is not None
+                        else None if legacy_unknown_policy
+                        else existing_policy.execution_surface
+                    ),
+                    required_capabilities=(
+                        required_capabilities
+                        if required_capabilities is not None
+                        else existing_policy.required_capabilities
+                    ),
+                    operation_classes=(
+                        operation_classes
+                        if operation_classes is not None
+                        else existing_policy.operation_classes
+                    ),
+                    production_mutation_intent=(
+                        production_mutation_intent
+                        if production_mutation_intent is not None
+                        else existing_policy.production_mutation_intent
+                    ),
+                    network_access=network_access,
+                )
+            except ExecutionPolicyError as exc:
+                raise M9IntegrationError(str(exc)) from exc
+            if (
+                not legacy_unknown_policy
+                and requested_policy.as_dict() != existing_policy.as_dict()
+            ):
+                raise M9IntegrationError("continuation cannot override the sealed execution policy")
+            prepared_policy = requested_policy
         else:
             selected_host = self._validated_text("host", host)
             selected_project = self._validated_text("project", project)
@@ -899,6 +985,20 @@ class ClinxIntegration:
             selected_summary = self._validated_text("summary", summary, required=False)
             selected_action = "create"
             selected_ref = None
+            try:
+                prepared_policy = build_execution_policy(
+                    execution_surface=execution_surface,
+                    required_capabilities=required_capabilities,
+                    operation_classes=operation_classes,
+                    production_mutation_intent=(
+                        False
+                        if production_mutation_intent is None
+                        else production_mutation_intent
+                    ),
+                    network_access=network_access,
+                )
+            except ExecutionPolicyError as exc:
+                raise M9IntegrationError(str(exc)) from exc
             if not hasattr(self.dispatcher, "resolve_project"):
                 raise M9IntegrationError("project resolver is not configured")
             workspace, descriptor, project_mapping = self.dispatcher.resolve_project(
@@ -913,9 +1013,41 @@ class ClinxIntegration:
                     project=project_mapping,
                     conversation_bound=False,
                     network_access=network_access,
+                    execution_policy=prepared_policy,
                 )
                 prepared_route = route.to_json()
                 prepared_route_public = route.public_dict()
+
+        assert prepared_policy is not None
+        if prepared_policy.execution_surface == HOST_EXECUTOR:
+            executor = getattr(self.dispatcher, "host_executor", None)
+            if executor is None:
+                raise M9IntegrationError("HOST_EXECUTOR_UNAVAILABLE")
+            available = executor.capabilities()
+            if not available.get("available"):
+                raise M9IntegrationError("HOST_EXECUTOR_UNAVAILABLE")
+            capability_keys = {
+                "LOCAL_HOST_PROCESS": "host_process",
+                "SYSTEMD_USER": "systemd_user",
+                "OUTBOUND_NETWORK": "network",
+                "SSH": "ssh",
+                "HOST_FILESYSTEM": "filesystem",
+                "AWS_CLI": "aws_cli",
+                "CLOUDFLARE_CLI": "cloudflare_cli",
+                "CLOUD_API": "cloud_api",
+                "GIT": "git",
+                "DOCKER": "docker",
+                "POSTGRES": "postgres",
+                "TAILSCALE": "tailscale",
+            }
+            unavailable = [
+                item for item in prepared_policy.required_capabilities
+                if available.get("capabilities", {}).get(capability_keys[item]) != "AVAILABLE"
+            ]
+            if unavailable:
+                raise M9IntegrationError(
+                    "CAPABILITY_UNAVAILABLE: " + ", ".join(unavailable)
+                )
 
         linear_project = self._linear_project_name()
         description_lines = [
@@ -933,6 +1065,9 @@ class ClinxIntegration:
             f"REASONING={selected_reasoning}",
             f"EXECUTION_MODE={execution_mode}",
             f"NETWORK_ACCESS={'ENABLED' if network_access else 'DISABLED'}",
+            f"EXECUTION_SURFACE={prepared_policy.execution_surface}",
+            "REQUIRED_CAPABILITIES=" + ",".join(prepared_policy.required_capabilities),
+            "OPERATION_CLASSES=" + ",".join(prepared_policy.operation_classes),
             f"TASK_TITLE={selected_title}",
             f"TASK_SUMMARY_UPDATE={selected_summary or 'UNKNOWN'}",
             "",
@@ -954,6 +1089,7 @@ class ClinxIntegration:
             execution_mode=execution_mode,
             network_access=network_access,
             routing_identity=prepared_route,
+            execution_policy=prepared_policy,
         )
         return ExecutionHandoff(
             task_action=selected_action,
@@ -974,6 +1110,7 @@ class ClinxIntegration:
             description="\n".join(description_lines),
             prepared_execution_ref=prepared.prepared_execution_ref,
             routing_identity=prepared_route_public,
+            execution_policy=prepared_policy.as_dict(),
         ).as_dict()
 
     def _audit_task_index(self, task_id: str) -> str:
@@ -1096,6 +1233,11 @@ class ClinxIntegration:
             "network_access": bool(prepared.network_access),
             "NETWORK_ACCESS": "ENABLED" if prepared.network_access else "DISABLED",
             "routing_identity": routing_identity,
+            "execution_policy": (
+                parse_execution_policy(prepared.execution_policy_json).as_dict()
+                if parse_execution_policy(prepared.execution_policy_json) is not None
+                else None
+            ),
             "dispatch_status": dispatch_status,
             "linear_audit": linear_audit,
             "read_only": False,
@@ -1243,6 +1385,7 @@ class ClinxIntegration:
                 network_access=bool(prepared.network_access),
                 execution_ref=execution_ref,
                 routing_identity=prepared.routing_identity_json,
+                execution_policy=prepared.execution_policy_json,
             )
             if not getattr(result, "task_id", None) or not getattr(result, "thread_id", None):
                 raise M9IntegrationError("dispatcher returned incomplete execution identity")

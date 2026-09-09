@@ -197,6 +197,8 @@ _SURFACE_ALIASES = {
     "codex-app-server": "codex_app_server",
     "app_server": "codex_app_server",
     "app-server": "codex_app_server",
+    "host_executor": "host_executor",
+    "host-executor": "host_executor",
 }
 _TRANSPORT_ALIASES = {
     "local": "local_stdio",
@@ -233,7 +235,22 @@ def normalize_surface(value: Any) -> SurfaceIdentity:
     stable = _SURFACE_ALIASES.get(raw)
     if stable is None:
         raise SemanticsError(f"unsupported execution surface: {value}")
+    if stable == "host_executor":
+        return SurfaceIdentity(
+            stable,
+            "Trusted Host Executor",
+            "bounded_p620_host_operations",
+        )
     return SurfaceIdentity(stable, "Codex app-server", "bounded_codex_turn")
+
+
+def _surface_provider_compatible(
+    surface: SurfaceIdentity, provider: ProviderIdentity
+) -> bool:
+    return (
+        provider.stable_identifier == "codex_app_server"
+        and surface.stable_identifier in {"codex_app_server", "host_executor"}
+    )
 
 
 def normalize_provider(value: Any = "codex_app_server") -> ProviderIdentity:
@@ -304,8 +321,10 @@ def build_routing_identity(
         )
     provider_id = normalize_provider(provider)
     transport_id = normalize_transport(transport)
-    if surface_id.stable_identifier != provider_id.stable_identifier:
+    if not _surface_provider_compatible(surface_id, provider_id):
         raise SemanticsError("execution surface/provider compatibility is unsupported")
+    if surface_id.stable_identifier == "host_executor" and transport_id.remote:
+        raise SemanticsError("HOST_EXECUTOR requires local provider transport on its host")
     return RoutingIdentity(
         host=host_id,
         surface=surface_id,
@@ -480,8 +499,10 @@ def parse_routing_identity(value: str | None) -> RoutingIdentity | None:
             TransportIdentity(str(transport.get("stable_identifier")), str(transport.get("display")), bool(transport.get("remote")), "UNSUPPORTED")
             if transport_status == "UNSUPPORTED" else normalize_transport(transport.get("stable_identifier"))
         )
-        if surface_status != "UNKNOWN" and surface_id.stable_identifier != provider_id.stable_identifier:
+        if surface_status != "UNKNOWN" and not _surface_provider_compatible(surface_id, provider_id):
             raise SemanticsError("execution surface/provider compatibility is unsupported")
+        if surface_id.stable_identifier == "host_executor" and transport_id.remote:
+            raise SemanticsError("HOST_EXECUTOR requires local provider transport on its host")
         scopes = authority.get("scopes", ())
         if not isinstance(scopes, (list, tuple)):
             raise SemanticsError("authority scopes must be an array")
