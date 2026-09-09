@@ -2377,6 +2377,18 @@ class TaskRegistry:
                        FROM executions WHERE task_id=? AND execution_ref=?""",
                     (_now(), task_id, execution_ref),
                 )
+                # A retained recovery record can later receive exact provider
+                # result evidence. Keep its historical terminal stage aligned
+                # with the durable task projection without recreating a lease.
+                placeholders = ",".join("?" for _ in TERMINAL_EXECUTION_STAGES)
+                conn.execute(
+                    f"""UPDATE execution_history SET stage=(
+                            SELECT execution_state FROM tasks WHERE task_id=?
+                        ) WHERE execution_ref=? AND task_id=? AND (
+                            SELECT execution_state FROM tasks WHERE task_id=?
+                        ) IN ({placeholders})""",
+                    (task_id, execution_ref, task_id, task_id, *TERMINAL_EXECUTION_STAGES),
+                )
             conn.execute(
                 "DELETE FROM executions WHERE task_id=?"
                 + (" AND execution_ref=?" if execution_ref else ""),
