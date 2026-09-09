@@ -38,6 +38,20 @@ runtime_host = "p620"
 log_dir = "~/.local/state/linear-local-codex-bridge"
 task_db_path = "~/.local/state/clinx/tasks.sqlite3"
 
+[host_executor]
+enabled = true
+host = "p620"
+default_timeout_seconds = 30
+max_timeout_seconds = 120
+max_output_bytes = 65536
+services = ["clinx.service", "clinx-tunnel.service"]
+ssh_targets = ["orion-core", "orion-data"]
+
+[host_executor.network_targets.public_https]
+dns_name = "example.com"
+url = "https://example.com"
+operation_classes = ["READ_ONLY_HOST"]
+
 # M5 dynamic project resolution is bounded to this workspace.  The initial
 # qualification target must be a disposable pilot project; real development
 # projects are not selected by M5 automatically.

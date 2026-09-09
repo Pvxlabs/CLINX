@@ -27,6 +27,7 @@ from execution_semantics import (
     legacy_routing_identity,
     parse_routing_identity,
 )
+from execution_policy import ExecutionPolicy, parse_execution_policy
 
 
 class TaskRegistryError(RuntimeError):
@@ -321,6 +322,7 @@ class TaskRecord:
     failure_code: str | None
     failure_evidence: str | None
     routing_identity_json: str = "{}"
+    execution_policy_json: str = "{}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -370,6 +372,7 @@ class PreparedExecutionRecord:
     resulting_turn_id: str | None
     resulting_execution_ref: str | None
     routing_identity_json: str = "{}"
+    execution_policy_json: str = "{}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -487,7 +490,8 @@ class TaskRegistry:
                     failure_stage TEXT,
                     failure_code TEXT,
                     failure_evidence TEXT,
-                    routing_identity_json TEXT NOT NULL DEFAULT '{}'
+                    routing_identity_json TEXT NOT NULL DEFAULT '{}',
+                    execution_policy_json TEXT NOT NULL DEFAULT '{}'
                 );
                 CREATE TABLE IF NOT EXISTS conversation_bindings (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
@@ -510,7 +514,8 @@ class TaskRegistry:
                     resolved_model TEXT,
                     stage TEXT NOT NULL DEFAULT 'CLAIMED',
                     acquired_at TEXT NOT NULL,
-                    routing_identity_json TEXT NOT NULL DEFAULT '{}'
+                    routing_identity_json TEXT NOT NULL DEFAULT '{}',
+                    execution_policy_json TEXT NOT NULL DEFAULT '{}'
                 );
                 CREATE TABLE IF NOT EXISTS execution_history (
                     execution_ref TEXT PRIMARY KEY,
@@ -522,6 +527,7 @@ class TaskRegistry:
                     stage TEXT NOT NULL,
                     acquired_at TEXT NOT NULL,
                     routing_identity_json TEXT NOT NULL DEFAULT '{}',
+                    execution_policy_json TEXT NOT NULL DEFAULT '{}',
                     released_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_execution_history_task
@@ -577,7 +583,8 @@ class TaskRegistry:
                     resulting_thread_id TEXT,
                     resulting_turn_id TEXT,
                     resulting_execution_ref TEXT,
-                    routing_identity_json TEXT NOT NULL DEFAULT '{}'
+                    routing_identity_json TEXT NOT NULL DEFAULT '{}',
+                    execution_policy_json TEXT NOT NULL DEFAULT '{}'
                 );
                 CREATE TABLE IF NOT EXISTS context_checkpoints (
                     checkpoint_id TEXT PRIMARY KEY,
@@ -623,6 +630,40 @@ class TaskRegistry:
                 );
                 CREATE INDEX IF NOT EXISTS idx_execution_results_task
                     ON execution_results(task_id, received_at DESC);
+                CREATE TABLE IF NOT EXISTS host_executions (
+                    host_execution_ref TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    execution_ref TEXT NOT NULL,
+                    routing_identity_json TEXT NOT NULL,
+                    execution_policy_json TEXT NOT NULL,
+                    host TEXT NOT NULL,
+                    surface TEXT NOT NULL,
+                    operation_class TEXT NOT NULL,
+                    capability TEXT NOT NULL,
+                    operation TEXT NOT NULL,
+                    argv_json TEXT NOT NULL,
+                    cwd_identity TEXT NOT NULL,
+                    target_identity TEXT,
+                    started_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    duration_ms INTEGER,
+                    exit_code INTEGER,
+                    stdout TEXT NOT NULL DEFAULT '',
+                    stderr TEXT NOT NULL DEFAULT '',
+                    stdout_bytes INTEGER NOT NULL DEFAULT 0,
+                    stderr_bytes INTEGER NOT NULL DEFAULT 0,
+                    stdout_sha256 TEXT,
+                    stderr_sha256 TEXT,
+                    stdout_truncated INTEGER NOT NULL DEFAULT 0,
+                    stderr_truncated INTEGER NOT NULL DEFAULT 0,
+                    result_state TEXT NOT NULL,
+                    timeout_seconds REAL NOT NULL,
+                    timed_out INTEGER NOT NULL DEFAULT 0,
+                    cancel_requested INTEGER NOT NULL DEFAULT 0,
+                    executor_instance TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_host_executions_parent
+                    ON host_executions(execution_ref, started_at DESC);
                 CREATE TABLE IF NOT EXISTS linear_audit_events (
                     task_id TEXT NOT NULL REFERENCES tasks(task_id),
                     event_key TEXT NOT NULL,
@@ -659,6 +700,8 @@ class TaskRegistry:
                 conn.execute("ALTER TABLE executions ADD COLUMN resolved_model TEXT")
             if "routing_identity_json" not in execution_columns:
                 conn.execute("ALTER TABLE executions ADD COLUMN routing_identity_json TEXT NOT NULL DEFAULT '{}' ")
+            if "execution_policy_json" not in execution_columns:
+                conn.execute("ALTER TABLE executions ADD COLUMN execution_policy_json TEXT NOT NULL DEFAULT '{}' ")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_executions_ref ON executions(execution_ref)")
             migrations = {
                 "execution_state": "ALTER TABLE tasks ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'QUEUED'",
@@ -680,6 +723,8 @@ class TaskRegistry:
             }
             if "routing_identity_json" not in task_columns:
                 conn.execute("ALTER TABLE tasks ADD COLUMN routing_identity_json TEXT NOT NULL DEFAULT '{}' ")
+            if "execution_policy_json" not in task_columns:
+                conn.execute("ALTER TABLE tasks ADD COLUMN execution_policy_json TEXT NOT NULL DEFAULT '{}' ")
             prepared_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(prepared_executions)")
             }
@@ -693,6 +738,13 @@ class TaskRegistry:
                 )
             if "routing_identity_json" not in prepared_columns:
                 conn.execute("ALTER TABLE prepared_executions ADD COLUMN routing_identity_json TEXT NOT NULL DEFAULT '{}' ")
+            if "execution_policy_json" not in prepared_columns:
+                conn.execute("ALTER TABLE prepared_executions ADD COLUMN execution_policy_json TEXT NOT NULL DEFAULT '{}' ")
+            history_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(execution_history)")
+            }
+            if "execution_policy_json" not in history_columns:
+                conn.execute("ALTER TABLE execution_history ADD COLUMN execution_policy_json TEXT NOT NULL DEFAULT '{}' ")
             conn.execute(
                 """UPDATE prepared_executions
                    SET logical_model = CASE WHEN logical_model = '' THEN model ELSE logical_model END,
@@ -769,6 +821,26 @@ class TaskRegistry:
             raise TaskRegistryError("routing identity is empty")
         return route.to_json()
 
+    @staticmethod
+    def _policy_json(value: ExecutionPolicy | str | None) -> str:
+        if value is None:
+            return "{}"
+        if isinstance(value, ExecutionPolicy):
+            return value.to_json()
+        if not isinstance(value, str):
+            raise TaskRegistryError(
+                "execution_policy must be an ExecutionPolicy or JSON string"
+            )
+        if value.strip() in {"", "{}"}:
+            return "{}"
+        try:
+            policy = parse_execution_policy(value)
+        except ValueError as exc:
+            raise TaskRegistryError(str(exc)) from exc
+        if policy is None:
+            raise TaskRegistryError("execution policy is empty")
+        return policy.to_json()
+
     def create_task(
         self,
         *,
@@ -784,6 +856,7 @@ class TaskRegistry:
         task_key: str | None = None,
         execution_mode: str = "normal",
         routing_identity: RoutingIdentity | str | None = None,
+        execution_policy: ExecutionPolicy | str | None = None,
     ) -> TaskRecord:
         if execution_mode not in {"normal", "fast"}:
             raise TaskRegistryError(f"Unsupported execution mode: {execution_mode}")
@@ -796,6 +869,7 @@ class TaskRegistry:
         task_id = "task_" + uuid.uuid4().hex
         stamp = _now()
         route_json = self._routing_json(routing_identity)
+        policy_json = self._policy_json(execution_policy)
         if route_json == "{}":
             route_json = legacy_routing_identity(
                 host=host, workspace_alias=workspace_alias, project_alias=project_alias,
@@ -807,7 +881,7 @@ class TaskRegistry:
             task_id, host, workspace_alias, project_alias, project_name, cwd,
             repository_origin, branch, title, summary, task_key,
             execution_mode, "ACTIVE", stamp, stamp, "QUEUED", "queued", None,
-            stamp, 0, None, 0, route_json,
+            stamp, 0, None, 0, route_json, policy_json,
         )
         with self._connect() as conn:
             conn.execute(
@@ -815,8 +889,9 @@ class TaskRegistry:
                 (task_id,host,workspace_alias,project_alias,project_name,cwd,
                  repository_origin,branch,title,summary,task_key,execution_mode,
                  status,created_at,updated_at,execution_state,current_stage,current_blocker,
-                 last_progress_at,codex_running,turn_id,retry_required,routing_identity_json)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 last_progress_at,codex_running,turn_id,retry_required,routing_identity_json,
+                 execution_policy_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 row,
             )
             fingerprint = self.canonical_work_item_fingerprint(
@@ -1281,6 +1356,7 @@ class TaskRegistry:
         resolved_executable_model: str | None = None,
         network_access: bool = False,
         routing_identity_json: str = "{}",
+        execution_policy_json: str = "{}",
     ) -> dict[str, Any]:
         return {
             "approval_state": "APPROVED",
@@ -1298,6 +1374,7 @@ class TaskRegistry:
             "execution_mode": execution_mode,
             "network_access": network_access,
             "routing_identity_json": routing_identity_json,
+            "execution_policy_json": execution_policy_json,
         }
 
     @staticmethod
@@ -1324,6 +1401,7 @@ class TaskRegistry:
         resolved_executable_model: str | None = None,
         network_access: bool = False,
         routing_identity: RoutingIdentity | str | None = None,
+        execution_policy: ExecutionPolicy | str | None = None,
     ) -> PreparedExecutionRecord:
         if task_action not in {"create", "continue", "reopen"}:
             raise TaskRegistryError(f"Unsupported prepared task action: {task_action}")
@@ -1341,6 +1419,7 @@ class TaskRegistry:
                 raise TaskRegistryError(f"Prepared execution {name} is required")
         summary = self._validate_metadata_value("prepared summary", summary, MAX_TASK_SUMMARY_LENGTH)
         route_json = self._routing_json(routing_identity)
+        policy_json = self._policy_json(execution_policy)
         payload = self._prepared_payload(
             task_action=task_action, task_ref=task_ref, host=host.strip(),
             project=project.strip(), title=title.strip(), summary=summary,
@@ -1350,6 +1429,7 @@ class TaskRegistry:
             reasoning_effort=reasoning_effort.strip(), execution_mode=execution_mode,
             network_access=network_access,
             routing_identity_json=route_json,
+            execution_policy_json=policy_json,
         )
         stamp = _now()
         record = PreparedExecutionRecord(
@@ -1367,7 +1447,7 @@ class TaskRegistry:
                 "task_action", "task_ref", "host", "project", "title", "summary",
                 "prompt", "model", "reasoning_effort", "execution_mode",
                 "logical_model", "resolved_executable_model", "network_access",
-                "routing_identity_json",
+                "routing_identity_json", "execution_policy_json",
             )},
         )
         with self._connect() as conn:
@@ -1377,8 +1457,9 @@ class TaskRegistry:
                  host,project,title,summary,prompt,model,logical_model,resolved_executable_model,reasoning_effort,execution_mode,
                  network_access,
                  status,created_at,updated_at,resulting_task_id,resulting_thread_id,
-                 resulting_turn_id,resulting_execution_ref,routing_identity_json)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 resulting_turn_id,resulting_execution_ref,routing_identity_json,
+                 execution_policy_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 tuple(getattr(record, field.name) for field in dataclasses.fields(record)),
             )
         return record
@@ -1429,6 +1510,7 @@ class TaskRegistry:
             execution_mode=record.execution_mode,
             network_access=bool(record.network_access),
             routing_identity_json=record.routing_identity_json,
+            execution_policy_json=record.execution_policy_json,
         )
         valid_hash = self._prepared_hash(payload) == record.integrity_hash
         if not valid_hash and not bool(record.network_access):
@@ -1437,6 +1519,11 @@ class TaskRegistry:
             legacy_payload = dict(payload)
             legacy_payload.pop("network_access", None)
             legacy_payload.pop("routing_identity_json", None)
+            legacy_payload.pop("execution_policy_json", None)
+            valid_hash = self._prepared_hash(legacy_payload) == record.integrity_hash
+        if not valid_hash and record.execution_policy_json == "{}":
+            legacy_payload = dict(payload)
+            legacy_payload.pop("execution_policy_json", None)
             valid_hash = self._prepared_hash(legacy_payload) == record.integrity_hash
         if record.approval_state != "APPROVED" or not valid_hash:
             raise TaskRegistryError(
@@ -2274,6 +2361,147 @@ class TaskRegistry:
             ).fetchone()
         return parse_routing_identity(row["routing_identity_json"] if row else None)
 
+    def get_execution_policy(self, execution_ref: str) -> ExecutionPolicy | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT execution_policy_json FROM executions WHERE execution_ref=?",
+                (execution_ref,),
+            ).fetchone()
+            if row is None:
+                row = conn.execute(
+                    "SELECT execution_policy_json FROM execution_history WHERE execution_ref=?",
+                    (execution_ref,),
+                ).fetchone()
+        return parse_execution_policy(row["execution_policy_json"] if row else None)
+
+    def validate_host_operation_binding(
+        self,
+        *,
+        task_id: str,
+        execution_ref: str,
+        routing_identity: RoutingIdentity,
+        execution_policy: ExecutionPolicy,
+        mutating: bool,
+    ) -> None:
+        """Prove a host operation belongs to the exact active route and lease."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM executions WHERE task_id=? AND execution_ref=?",
+                (task_id, execution_ref),
+            ).fetchone()
+            if row is None or row["stage"] in TERMINAL_EXECUTION_STAGES:
+                raise TaskRegistryError("host operation has no active parent execution")
+            stored_route = parse_routing_identity(row["routing_identity_json"])
+            stored_policy = parse_execution_policy(row["execution_policy_json"])
+            if stored_route is None or stored_route.as_dict() != routing_identity.as_dict():
+                raise TaskRegistryError("host operation routing identity changed")
+            if stored_policy is None or stored_policy.as_dict() != execution_policy.as_dict():
+                raise TaskRegistryError("host operation execution policy changed")
+            if routing_identity.workspace.worktree_key != row["worktree_key"]:
+                raise TaskRegistryError("host operation worktree identity changed")
+            if mutating:
+                lease = conn.execute(
+                    """SELECT 1 FROM worktree_leases
+                       WHERE worktree_key=? AND task_id=? AND execution_ref=?""",
+                    (row["worktree_key"], task_id, execution_ref),
+                ).fetchone()
+                if lease is None:
+                    raise TaskRegistryError(
+                        "mutating host operation does not own the canonical worktree lease"
+                    )
+
+    def begin_host_execution(self, **values: Any) -> None:
+        required = {
+            "host_execution_ref", "task_id", "execution_ref",
+            "routing_identity_json", "execution_policy_json", "host", "surface",
+            "operation_class", "capability", "operation", "argv_json",
+            "cwd_identity", "started_at", "result_state", "timeout_seconds",
+            "executor_instance",
+        }
+        missing = sorted(required.difference(values))
+        if missing:
+            raise TaskRegistryError("missing host execution fields: " + ", ".join(missing))
+        columns = tuple(values)
+        placeholders = ",".join("?" for _ in columns)
+        with self._connect() as conn:
+            conn.execute(
+                f"INSERT INTO host_executions({','.join(columns)}) VALUES ({placeholders})",
+                tuple(values[column] for column in columns),
+            )
+
+    def complete_host_execution(self, host_execution_ref: str, **values: Any) -> None:
+        allowed = {
+            "completed_at", "duration_ms", "exit_code", "stdout", "stderr",
+            "stdout_bytes", "stderr_bytes", "stdout_sha256", "stderr_sha256",
+            "stdout_truncated", "stderr_truncated", "result_state", "timed_out",
+            "cancel_requested",
+        }
+        if not values or not set(values).issubset(allowed):
+            raise TaskRegistryError("invalid host execution completion fields")
+        assignments = ",".join(f"{column}=?" for column in values)
+        with self._connect() as conn:
+            updated = conn.execute(
+                f"UPDATE host_executions SET {assignments} WHERE host_execution_ref=?",
+                (*values.values(), host_execution_ref),
+            ).rowcount
+        if updated != 1:
+            raise TaskRegistryError(f"Unknown host execution: {host_execution_ref}")
+
+    def request_host_execution_cancellation(self, execution_ref: str) -> int:
+        with self._connect() as conn:
+            return conn.execute(
+                """UPDATE host_executions SET cancel_requested=1
+                   WHERE execution_ref=? AND result_state='RUNNING'""",
+                (execution_ref,),
+            ).rowcount
+
+    def reconcile_stale_host_executions(self, executor_instance: str) -> int:
+        stamp = _now()
+        with self._connect() as conn:
+            return conn.execute(
+                """UPDATE host_executions
+                   SET result_state='TRANSPORT_FAILED', completed_at=?,
+                       stderr=CASE WHEN stderr='' THEN
+                           'executor owner exited before terminal evidence' ELSE stderr END
+                   WHERE result_state='RUNNING' AND executor_instance != ?""",
+                (stamp, executor_instance),
+            ).rowcount
+
+    def list_host_executions(
+        self,
+        *,
+        task_id: str | None = None,
+        execution_ref: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        if task_id is None and execution_ref is None:
+            raise TaskRegistryError("host execution lookup requires task or execution identity")
+        limit = max(1, min(int(limit), 100))
+        where = "execution_ref=?" if execution_ref else "task_id=?"
+        value = execution_ref or task_id
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""SELECT host_execution_ref,task_id,execution_ref,host,surface,
+                            operation_class,capability,operation,argv_json,cwd_identity,
+                            target_identity,started_at,completed_at,duration_ms,exit_code,
+                            stdout,stderr,stdout_bytes,stderr_bytes,stdout_sha256,
+                            stderr_sha256,stdout_truncated,stderr_truncated,result_state,
+                            timeout_seconds,timed_out,cancel_requested
+                     FROM host_executions WHERE {where}
+                     ORDER BY started_at DESC LIMIT ?""",
+                (value, limit),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["argv"] = json.loads(item.pop("argv_json"))
+            for key in (
+                "stdout_truncated", "stderr_truncated", "timed_out", "cancel_requested"
+            ):
+                item[key] = bool(item[key])
+            result.append(item)
+        return result
+
     def get_execution_models(self, execution_ref: str) -> tuple[str | None, str | None]:
         with self._connect() as conn:
             row = conn.execute(
@@ -2371,9 +2599,11 @@ class TaskRegistry:
                 conn.execute(
                     """INSERT OR IGNORE INTO execution_history
                        (execution_ref,task_id,issue_id,worktree_key,logical_model,
-                        resolved_model,stage,acquired_at,routing_identity_json,released_at)
+                        resolved_model,stage,acquired_at,routing_identity_json,
+                        execution_policy_json,released_at)
                        SELECT execution_ref,task_id,issue_id,worktree_key,logical_model,
-                              resolved_model,stage,acquired_at,routing_identity_json,?
+                              resolved_model,stage,acquired_at,routing_identity_json,
+                              execution_policy_json,?
                        FROM executions WHERE task_id=? AND execution_ref=?""",
                     (_now(), task_id, execution_ref),
                 )
@@ -2457,8 +2687,8 @@ class TaskRegistry:
                     )
                     try:
                         conn.execute(
-                            "INSERT INTO executions(task_id,issue_id,execution_ref,worktree_key,logical_model,resolved_model,stage,acquired_at,routing_identity_json) VALUES (?,?,?,?,?,?,?,?,?)",
-                            (task_id, issue_id, execution_ref, worktree_key, None, None, "CLAIMED", _now(), task.routing_identity_json or "{}"),
+                            "INSERT INTO executions(task_id,issue_id,execution_ref,worktree_key,logical_model,resolved_model,stage,acquired_at,routing_identity_json,execution_policy_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                            (task_id, issue_id, execution_ref, worktree_key, None, None, "CLAIMED", _now(), task.routing_identity_json or "{}", task.execution_policy_json or "{}"),
                         )
                         conn.execute(
                             "INSERT INTO worktree_leases(worktree_key,task_id,execution_ref,stage,acquired_at) VALUES (?,?,?,?,?)",

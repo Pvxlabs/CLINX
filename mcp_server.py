@@ -115,6 +115,21 @@ def _routing_identity_schema() -> dict[str, Any]:
     })
 
 
+def _execution_policy_schema() -> dict[str, Any]:
+    return _json_schema({
+        "contract": {"type": "string", "const": "CLINX_EXECUTION_POLICY_V1"},
+        "execution_surface": {
+            "type": "string",
+            "enum": ["SANDBOX_WORKSPACE", "NETWORKED_SANDBOX", "HOST_EXECUTOR"],
+        },
+        "required_capabilities": {"type": "array", "items": {"type": "string"}},
+        "operation_classes": {"type": "array", "items": {"type": "string"}},
+        "production_mutation_intent": {"type": "boolean"},
+        "host_executor_default": {"type": "boolean", "const": False},
+        "business_action_authority": {"type": "boolean", "const": False},
+    })
+
+
 def _public_task_schema() -> dict[str, Any]:
     """Describe the public task projection without exposing private identity."""
     return _json_schema({
@@ -232,6 +247,8 @@ def _status_output_schema() -> dict[str, Any]:
         "execution_result": {"anyOf": [execution_result, {"type": "null"}]},
         "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
         "execution_routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
+        "host_executions": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "EXECUTION_STATE": {"type": "string"},
         "CODEX_RUNNING": {"type": "boolean"},
         "CURRENT_STAGE": {"type": "string"},
@@ -283,6 +300,9 @@ def _capabilities_output_schema() -> dict[str, Any]:
             ],
             "additionalProperties": False,
         },
+        "execution_surfaces": {"type": "object", "additionalProperties": True},
+        "host_executor_available": {"type": "boolean"},
+        "host_executor_default": {"type": "boolean", "const": False},
         "status": {"type": "object", "additionalProperties": True},
         "linear": {"type": "object", "additionalProperties": True},
         "instructions": {"type": "string"},
@@ -310,6 +330,7 @@ def _prepare_output_schema() -> dict[str, Any]:
         "prompt": {"type": "string"},
         "description": {"type": "string"},
         "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
     })
     return _json_schema({
         "execution_available": {"type": "boolean", "const": True},
@@ -332,6 +353,7 @@ def _prepare_output_schema() -> dict[str, Any]:
         "prompt": {"type": "string"},
         "description": {"type": "string"},
         "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
         "linear_handoff": handoff,
         "next_action": {
             "type": "object",
@@ -496,6 +518,19 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                     "reasoning": {"type": "string"},
                     "execution_mode": {"type": "string", "enum": ["normal", "fast"]},
                     "network_access": {"type": "boolean", "default": False},
+                    "execution_surface": {
+                        "type": "string",
+                        "enum": ["SANDBOX_WORKSPACE", "NETWORKED_SANDBOX", "HOST_EXECUTOR"],
+                    },
+                    "required_capabilities": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "operation_classes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "production_mutation_intent": {"type": "boolean", "default": False},
                 },
                 "required": ["approved", "prompt"],
                 "additionalProperties": False,
@@ -539,6 +574,7 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 "active_execution_ref": {"type": ["string", "null"]},
                 "active_stage": {"type": "string"},
                 "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+                "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
                 "read_only": {"type": "boolean", "const": False},
             }),
             "annotations": {"readOnlyHint": False, "destructiveHint": True},
