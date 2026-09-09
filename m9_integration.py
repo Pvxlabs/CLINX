@@ -565,15 +565,20 @@ class ClinxIntegration:
         project: str | None = None,
         host: str | None = None,
     ) -> dict[str, Any]:
+        retained_recovery: dict[str, Any] | None = None
         if execution_ref:
             execution = self.registry.get_execution_result(execution_ref)
             if execution is not None:
                 task = self.registry.get_task(execution.task_id)
             else:
                 active = self.registry.get_active_execution(execution_ref)
-                if active is None:
-                    raise M9IntegrationError(f"Unknown execution ref: {execution_ref}")
-                task = self.registry.get_task(active["task_id"])
+                if active is not None:
+                    task = self.registry.get_task(active["task_id"])
+                else:
+                    retained_recovery = self.registry.get_execution_record(execution_ref)
+                    if retained_recovery is None:
+                        raise M9IntegrationError(f"Unknown execution ref: {execution_ref}")
+                    task = self.registry.get_task(retained_recovery["task_id"])
         else:
             task = self.context_reader.resolve_task(
                 task_ref=task_ref,
@@ -593,6 +598,16 @@ class ClinxIntegration:
             self.registry.get_active_execution(execution_ref)
             if execution_ref else self.registry.get_latest_execution_for_task(task.task_id)
         )
+        if (
+            active_for_reconcile is None
+            and retained_recovery is not None
+            and task.execution_state == "RECOVERY_REQUIRED"
+            and task.retry_required
+            and retained_recovery.get("stage") == "RECOVERY_REQUIRED"
+        ):
+            # A retained exact execution can still gain result evidence on a
+            # later bounded provider read.  It is never treated as active.
+            active_for_reconcile = retained_recovery
         if (
             active_for_reconcile is None
             and not execution_ref
