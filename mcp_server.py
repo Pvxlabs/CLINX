@@ -153,6 +153,10 @@ def _public_task_schema() -> dict[str, Any]:
         "failure_code": {"type": ["string", "null"]},
         "failure_evidence": {"type": ["string", "null"]},
         "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "adoption_source": {"type": ["string", "null"]},
+        "adopted_at": {"type": ["string", "null"]},
+        "historical_status": {"type": ["string", "null"]},
+        "historical_route_evidence": {"type": ["string", "null"]},
     })
 
 
