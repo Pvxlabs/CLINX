@@ -16,7 +16,14 @@ import re
 from typing import Any
 
 from app_server import AppServerError
-from task_registry import TaskRegistry, TaskRegistryError, TaskExecutionBusy, WorktreeExecutionBusy
+from execution_semantics import RoutingIdentity, parse_routing_identity
+from task_registry import (
+    TERMINAL_EXECUTION_STAGES,
+    TaskRegistry,
+    TaskRegistryError,
+    TaskExecutionBusy,
+    WorktreeExecutionBusy,
+)
 
 
 class M9IntegrationError(RuntimeError):
@@ -48,6 +55,7 @@ class ExecutionHandoff:
     todo_state: str
     description: str
     prepared_execution_ref: str
+    routing_identity: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -72,6 +80,7 @@ class ExecutionHandoff:
             "summary": self.summary,
             "prompt": self.prompt,
             "description": self.description,
+            "routing_identity": self.routing_identity,
             "next_action": {
                 "provider": "CLINX",
                 "operation": "START_EXECUTION",
@@ -381,7 +390,7 @@ class ExecutionResultService:
             turn_id=turn_id,
             retry_required=final_state == "BLOCKED",
         )
-        self.registry.release_execution(task_id, execution_ref)
+        self.registry.release_execution(task_id, execution_ref, retain_history=True)
         return result
 
 
@@ -408,6 +417,14 @@ class ClinxIntegration:
 
     def _resolve(self, task_ref: str | None = None, query: str | None = None, project: str | None = None) -> Any:
         return self.context_reader.resolve_task(task_ref=task_ref, query=query, project=project)
+
+    @staticmethod
+    def _public_route(value: str | None) -> dict[str, Any] | None:
+        try:
+            route = parse_routing_identity(value)
+        except (TypeError, ValueError):
+            return None
+        return route.public_dict() if route is not None else None
 
     def find_task(
         self,
@@ -630,6 +647,15 @@ class ClinxIntegration:
             "execution_result": execution_result,
             "read_only": True,
         }
+        execution_route = (
+            self.registry.get_execution_routing_identity(execution_ref)
+            if execution_ref
+            else self.registry.get_latest_execution_routing_identity(task.task_id)
+        )
+        status["routing_identity"] = self._public_route(task.routing_identity_json)
+        status["execution_routing_identity"] = (
+            execution_route.public_dict() if execution_route is not None else None
+        )
         prepared = (
             self.registry.get_prepared_execution_for_execution(execution_ref)
             if execution_ref
@@ -647,8 +673,10 @@ class ClinxIntegration:
         active_execution = None
         with self.registry._connect() as conn:
             row = conn.execute(
-                "SELECT execution_ref, stage FROM executions WHERE task_id=? ORDER BY acquired_at DESC LIMIT 1",
-                (task.task_id,),
+                "SELECT execution_ref, stage FROM executions WHERE task_id=? "
+                "AND stage NOT IN (?,?,?,?,?,?) "
+                "ORDER BY acquired_at DESC, rowid DESC LIMIT 1",
+                (task.task_id, *TERMINAL_EXECUTION_STAGES),
             ).fetchone()
         if row is not None and row["execution_ref"]:
             active_execution = {"execution_ref": row["execution_ref"], "stage": row["stage"]}
@@ -792,6 +820,8 @@ class ClinxIntegration:
             or "high"
         )
 
+        prepared_route = "{}"
+        prepared_route_public: dict[str, Any] | None = None
         if task_mode == "continue":
             task = self.context_reader.resolve_task(
                 task_ref=task_ref,
@@ -844,6 +874,9 @@ class ClinxIntegration:
                 if summary is not None else (task.summary or "")
             )
             selected_ref = task.task_id
+            prepared_route = task.routing_identity_json or "{}"
+            parsed_route = parse_routing_identity(prepared_route)
+            prepared_route_public = parsed_route.public_dict() if parsed_route is not None else None
         else:
             selected_host = self._validated_text("host", host)
             selected_project = self._validated_text("project", project)
@@ -853,11 +886,21 @@ class ClinxIntegration:
             selected_ref = None
             if not hasattr(self.dispatcher, "resolve_project"):
                 raise M9IntegrationError("project resolver is not configured")
-            self.dispatcher.resolve_project(
+            workspace, descriptor, project_mapping = self.dispatcher.resolve_project(
                 selected_project,
                 host=selected_host,
                 project_mode="existing",
             )
+            route_builder = getattr(self.dispatcher, "_routing_identity", None)
+            if callable(route_builder):
+                route = route_builder(
+                    workspace=workspace,
+                    project=project_mapping,
+                    conversation_bound=False,
+                    network_access=network_access,
+                )
+                prepared_route = route.to_json()
+                prepared_route_public = route.public_dict()
 
         linear_project = self._linear_project_name()
         description_lines = [
@@ -895,6 +938,7 @@ class ClinxIntegration:
             reasoning_effort=selected_reasoning,
             execution_mode=execution_mode,
             network_access=network_access,
+            routing_identity=prepared_route,
         )
         return ExecutionHandoff(
             task_action=selected_action,
@@ -914,6 +958,7 @@ class ClinxIntegration:
             todo_state=str(getattr(self.cfg, "todo_state", "Todo")),
             description="\n".join(description_lines),
             prepared_execution_ref=prepared.prepared_execution_ref,
+            routing_identity=prepared_route_public,
         ).as_dict()
 
     def _audit_task_index(self, task_id: str) -> str:
@@ -1022,6 +1067,7 @@ class ClinxIntegration:
         task_ref: str,
         dispatch_status: str,
         linear_audit: str,
+        routing_identity: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
             "execution_started": True,
@@ -1034,6 +1080,7 @@ class ClinxIntegration:
             "execution_mode": prepared.execution_mode,
             "network_access": bool(prepared.network_access),
             "NETWORK_ACCESS": "ENABLED" if prepared.network_access else "DISABLED",
+            "routing_identity": routing_identity,
             "dispatch_status": dispatch_status,
             "linear_audit": linear_audit,
             "read_only": False,
@@ -1060,6 +1107,15 @@ class ClinxIntegration:
                 task_ref=prepared.resulting_task_id,
                 dispatch_status="DISPATCHED_REPLAY",
                 linear_audit="NOT_REPEATED",
+                routing_identity=(
+                    self.registry.get_execution_routing_identity(
+                        prepared.resulting_execution_ref
+                    ).public_dict()
+                    if prepared.resulting_execution_ref
+                    and self.registry.get_execution_routing_identity(
+                        prepared.resulting_execution_ref
+                    ) is not None else None
+                ),
             )
         self.registry.mark_prepared_execution_running(prepared_execution_ref)
         execution_ref = "exec_" + prepared_execution_ref.removeprefix("prepared_")
@@ -1171,6 +1227,7 @@ class ClinxIntegration:
                 execution_mode=prepared.execution_mode,
                 network_access=bool(prepared.network_access),
                 execution_ref=execution_ref,
+                routing_identity=prepared.routing_identity_json,
             )
             if not getattr(result, "task_id", None) or not getattr(result, "thread_id", None):
                 raise M9IntegrationError("dispatcher returned incomplete execution identity")
@@ -1246,6 +1303,11 @@ class ClinxIntegration:
             task_ref=result.task_id,
             dispatch_status=result.dispatch_status,
             linear_audit=audit,
+            routing_identity=(
+                self.registry.get_execution_routing_identity(execution_ref).public_dict()
+                if self.registry.get_execution_routing_identity(execution_ref) is not None
+                else None
+            ),
         )
 
     def cancel_execution(self, *, execution_ref: str) -> dict[str, Any]:
@@ -1330,6 +1392,11 @@ class ClinxIntegration:
             "cancel_confirmed": bool(result.get("cancel_confirmed", False)),
             "retry_required": bool(result.get("retry_required", False)),
             "idempotent": active.get("stage") in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"},
+            "routing_identity": (
+                self.registry.get_execution_routing_identity(execution_ref).public_dict()
+                if self.registry.get_execution_routing_identity(execution_ref) is not None
+                else None
+            ),
             "read_only": False,
         }
 
@@ -1422,6 +1489,7 @@ class ClinxIntegration:
             "failure_stage": task.failure_stage,
             "failure_code": task.failure_code,
             "failure_evidence": task.failure_evidence,
+            "routing_identity": self._public_route(task.routing_identity_json),
         }
 
 

@@ -141,6 +141,69 @@ The public surface intentionally accepts task and project references rather
 than Codex thread, session, turn, cwd, repository-origin, or credential fields.
 Those identities remain inside the CLINX registry and dispatcher.
 
+## M13-A host and execution-surface semantics
+
+M13-A makes execution location and routing explicit without adding an execution
+capability. The canonical model is:
+
+```text
+Execution
+  -> Host
+  -> Execution Surface
+  -> Provider
+  -> Transport
+  -> Workspace / Worktree
+```
+
+The layers have different meanings:
+
+- **Host** is a normalized computation-environment identity. Its stable
+  identifier, display name, machine ID, and alias are separate fields. A
+  hostname or IP address is identity data only; it is never an authority, an
+  SSH target, a permission, or a worktree.
+- **Execution Surface** is the bounded interface exposed by the host, currently
+  the Codex app-server turn surface. It is a capability boundary, not a
+  physical machine and not a generic executor.
+- **Provider** is the backend that performs the bounded task, currently the
+  Codex app-server provider. **Transport** is only the communication path to
+  that provider, currently local stdio or explicitly configured SSH stdio.
+  Transport failure is not proof that a turn reached a terminal state.
+- **Workspace / Worktree** binds the execution to the configured workspace,
+  project, repository identity, branch, and deterministic worktree lease.
+- **Conversation** identifies the exact verified provider conversation. Its
+  private thread/session/turn values remain internal; public projections expose
+  only bound/unbound status.
+- **Authority** is explicit and bounded (`clinx_task_bounded` with bounded
+  scopes). Host, surface, provider, transport, capability, identity, and
+  network permission never become authority by implication.
+- **Network Policy** defaults to `network_access=false`. `true` is an explicit
+  provider-turn network opt-in; it does not mean remote execution and does not
+  change the host or transport.
+
+Every Task, prepared execution, and opaque Execution persists the canonical
+routing identity. The execution row is the authoritative routing claim for
+cancel, status reconciliation, and continuation. Continuation therefore
+reuses the creation-time host, surface, provider, transport, workspace, and
+authority instead of selecting the current default route. Cancellation and
+reconciliation use the same exact route; if it is missing, unknown, or
+non-executable they fail closed and preserve the active lease for recovery.
+
+Pre-M13 rows are normalized deterministically and bounded. Legacy tasks and
+prepared executions receive an explicit incomplete/unknown route where the old
+data cannot prove a value. Historical execution rows are not backfilled from a
+task route or the current machine, because doing so would rewrite historical
+identity. A legacy null-reference lease may be released only after bounded
+terminal provider evidence; an unavailable route remains recovery required. No
+normalization silently guesses a remote target or falls back to the current
+transport.
+
+The public MCP catalog remains nine tools and still excludes `clinx_execute`.
+Task, context, topic, preparation, status, and execution outputs may expose a
+redacted routing projection containing stable semantic identities, separation
+flags, and network mode, but never credentials, raw shell capability, cwd,
+repository origin, or provider thread/session/turn identifiers. Linear remains
+an audit projection and is not a command plane.
+
 ## Requirements
 
 - macOS or Linux
