@@ -22,6 +22,12 @@ import unicodedata
 import uuid
 from typing import Any, Iterator
 
+from execution_semantics import (
+    RoutingIdentity,
+    legacy_routing_identity,
+    parse_routing_identity,
+)
+
 
 class TaskRegistryError(RuntimeError):
     pass
@@ -58,6 +64,9 @@ class ProjectResolutionError(TaskRegistryError):
 MAX_TASK_TITLE_LENGTH = 240
 MAX_TASK_SUMMARY_LENGTH = 2000
 _UNSET = object()
+TERMINAL_EXECUTION_STAGES = frozenset({
+    "CANCELLED", "COMPLETED", "IN_REVIEW", "BLOCKED", "RECOVERY_REQUIRED", "STOPPED",
+})
 
 
 @dataclasses.dataclass(frozen=True)
@@ -311,6 +320,7 @@ class TaskRecord:
     failure_stage: str | None
     failure_code: str | None
     failure_evidence: str | None
+    routing_identity_json: str = "{}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -359,6 +369,7 @@ class PreparedExecutionRecord:
     resulting_thread_id: str | None
     resulting_turn_id: str | None
     resulting_execution_ref: str | None
+    routing_identity_json: str = "{}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -475,7 +486,8 @@ class TaskRegistry:
                     retry_required INTEGER NOT NULL DEFAULT 0,
                     failure_stage TEXT,
                     failure_code TEXT,
-                    failure_evidence TEXT
+                    failure_evidence TEXT,
+                    routing_identity_json TEXT NOT NULL DEFAULT '{}'
                 );
                 CREATE TABLE IF NOT EXISTS conversation_bindings (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
@@ -497,8 +509,23 @@ class TaskRegistry:
                     logical_model TEXT,
                     resolved_model TEXT,
                     stage TEXT NOT NULL DEFAULT 'CLAIMED',
-                    acquired_at TEXT NOT NULL
+                    acquired_at TEXT NOT NULL,
+                    routing_identity_json TEXT NOT NULL DEFAULT '{}'
                 );
+                CREATE TABLE IF NOT EXISTS execution_history (
+                    execution_ref TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    issue_id TEXT,
+                    worktree_key TEXT,
+                    logical_model TEXT,
+                    resolved_model TEXT,
+                    stage TEXT NOT NULL,
+                    acquired_at TEXT NOT NULL,
+                    routing_identity_json TEXT NOT NULL DEFAULT '{}',
+                    released_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_execution_history_task
+                    ON execution_history(task_id, acquired_at DESC);
                 CREATE TABLE IF NOT EXISTS work_item_fingerprints (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
                     fingerprint TEXT NOT NULL,
@@ -549,7 +576,8 @@ class TaskRegistry:
                     resulting_task_id TEXT,
                     resulting_thread_id TEXT,
                     resulting_turn_id TEXT,
-                    resulting_execution_ref TEXT
+                    resulting_execution_ref TEXT,
+                    routing_identity_json TEXT NOT NULL DEFAULT '{}'
                 );
                 CREATE TABLE IF NOT EXISTS context_checkpoints (
                     checkpoint_id TEXT PRIMARY KEY,
@@ -629,6 +657,8 @@ class TaskRegistry:
                 conn.execute("ALTER TABLE executions ADD COLUMN logical_model TEXT")
             if "resolved_model" not in execution_columns:
                 conn.execute("ALTER TABLE executions ADD COLUMN resolved_model TEXT")
+            if "routing_identity_json" not in execution_columns:
+                conn.execute("ALTER TABLE executions ADD COLUMN routing_identity_json TEXT NOT NULL DEFAULT '{}' ")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_executions_ref ON executions(execution_ref)")
             migrations = {
                 "execution_state": "ALTER TABLE tasks ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'QUEUED'",
@@ -645,6 +675,11 @@ class TaskRegistry:
             for column, statement in migrations.items():
                 if column not in columns:
                     conn.execute(statement)
+            task_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(tasks)")
+            }
+            if "routing_identity_json" not in task_columns:
+                conn.execute("ALTER TABLE tasks ADD COLUMN routing_identity_json TEXT NOT NULL DEFAULT '{}' ")
             prepared_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(prepared_executions)")
             }
@@ -656,6 +691,8 @@ class TaskRegistry:
                 conn.execute(
                     "ALTER TABLE prepared_executions ADD COLUMN network_access INTEGER NOT NULL DEFAULT 0"
                 )
+            if "routing_identity_json" not in prepared_columns:
+                conn.execute("ALTER TABLE prepared_executions ADD COLUMN routing_identity_json TEXT NOT NULL DEFAULT '{}' ")
             conn.execute(
                 """UPDATE prepared_executions
                    SET logical_model = CASE WHEN logical_model = '' THEN model ELSE logical_model END,
@@ -666,6 +703,24 @@ class TaskRegistry:
                 "UPDATE tasks SET last_progress_at = COALESCE(NULLIF(last_progress_at, ''), updated_at)"
             )
             for task in conn.execute("SELECT * FROM tasks").fetchall():
+                if not task["routing_identity_json"] or task["routing_identity_json"] == "{}":
+                    legacy = legacy_routing_identity(
+                        host=task["host"], workspace_alias=task["workspace_alias"],
+                        project_alias=task["project_alias"], cwd=task["cwd"],
+                        project_identity=task["project_alias"],
+                        worktree_key=self.worktree_key(
+                            host=task["host"], cwd=task["cwd"],
+                            repository_origin=task["repository_origin"],
+                        ),
+                        conversation_bound=conn.execute(
+                            "SELECT 1 FROM conversation_bindings WHERE task_id=?",
+                            (task["task_id"],),
+                        ).fetchone() is not None,
+                    ).to_json()
+                    conn.execute(
+                        "UPDATE tasks SET routing_identity_json=? WHERE task_id=?",
+                        (legacy, task["task_id"]),
+                    )
                 fingerprint = self.canonical_work_item_fingerprint(
                     host=task["host"], project_alias=task["project_alias"],
                     cwd=task["cwd"], repository_origin=task["repository_origin"],
@@ -675,6 +730,44 @@ class TaskRegistry:
                     "INSERT OR IGNORE INTO work_item_fingerprints(task_id,fingerprint,created_at) VALUES (?,?,?)",
                     (task["task_id"], fingerprint, task["created_at"]),
                 )
+            for prepared in conn.execute("SELECT * FROM prepared_executions").fetchall():
+                if not prepared["routing_identity_json"] or prepared["routing_identity_json"] == "{}":
+                    legacy = legacy_routing_identity(
+                        host=prepared["host"], workspace_alias=prepared["host"],
+                        project_alias=prepared["project"], cwd=prepared["project"],
+                        project_identity=prepared["project"], worktree_key="",
+                    ).to_json()
+                    conn.execute(
+                        "UPDATE prepared_executions SET routing_identity_json=? WHERE prepared_execution_ref=?",
+                        (legacy, prepared["prepared_execution_ref"]),
+                    )
+            # Do not backfill historical execution routing from the task row.
+            # An execution is an independently durable routing claim; using a
+            # current task route here would silently rewrite where an old
+            # execution was created.  Legacy execution rows remain `{}` and
+            # are read back as unknown/non-executable until native evidence
+            # exists.
+
+    @staticmethod
+    def _routing_json(value: RoutingIdentity | str | None) -> str:
+        """Return canonical route JSON without inventing legacy identity."""
+        if value is None:
+            return "{}"
+        if isinstance(value, RoutingIdentity):
+            return value.to_json()
+        if not isinstance(value, str):
+            raise TaskRegistryError(
+                "routing_identity must be a RoutingIdentity or JSON string"
+            )
+        if value.strip() in {"", "{}"}:
+            return "{}"
+        try:
+            route = parse_routing_identity(value)
+        except ValueError as exc:
+            raise TaskRegistryError(str(exc)) from exc
+        if route is None:
+            raise TaskRegistryError("routing identity is empty")
+        return route.to_json()
 
     def create_task(
         self,
@@ -690,6 +783,7 @@ class TaskRegistry:
         summary: str | None = None,
         task_key: str | None = None,
         execution_mode: str = "normal",
+        routing_identity: RoutingIdentity | str | None = None,
     ) -> TaskRecord:
         if execution_mode not in {"normal", "fast"}:
             raise TaskRegistryError(f"Unsupported execution mode: {execution_mode}")
@@ -701,11 +795,19 @@ class TaskRegistry:
         )
         task_id = "task_" + uuid.uuid4().hex
         stamp = _now()
+        route_json = self._routing_json(routing_identity)
+        if route_json == "{}":
+            route_json = legacy_routing_identity(
+                host=host, workspace_alias=workspace_alias, project_alias=project_alias,
+                cwd=cwd, project_identity=project_alias, worktree_key=self.worktree_key(
+                    host=host, cwd=cwd, repository_origin=repository_origin
+                ),
+            ).to_json()
         row = (
             task_id, host, workspace_alias, project_alias, project_name, cwd,
             repository_origin, branch, title, summary, task_key,
             execution_mode, "ACTIVE", stamp, stamp, "QUEUED", "queued", None,
-            stamp, 0, None, 0,
+            stamp, 0, None, 0, route_json,
         )
         with self._connect() as conn:
             conn.execute(
@@ -713,8 +815,8 @@ class TaskRegistry:
                 (task_id,host,workspace_alias,project_alias,project_name,cwd,
                  repository_origin,branch,title,summary,task_key,execution_mode,
                  status,created_at,updated_at,execution_state,current_stage,current_blocker,
-                 last_progress_at,codex_running,turn_id,retry_required)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 last_progress_at,codex_running,turn_id,retry_required,routing_identity_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 row,
             )
             fingerprint = self.canonical_work_item_fingerprint(
@@ -976,6 +1078,7 @@ class TaskRegistry:
         session_id: str,
         project_id: str | None,
         app_server_version: str | None,
+        routing_identity: RoutingIdentity | str | None = None,
     ) -> tuple[TaskRecord, ConversationBinding]:
         """Atomically create an ACTIVE task and bind one verified conversation."""
         if execution_mode not in {"normal", "fast"}:
@@ -990,6 +1093,13 @@ class TaskRegistry:
             raise TaskRegistryError("Adopted conversation requires thread and session IDs")
         task_id = "task_" + uuid.uuid4().hex
         stamp = _now()
+        route_json = self._routing_json(routing_identity)
+        if route_json == "{}":
+            route_json = legacy_routing_identity(
+                host=host, workspace_alias=workspace_alias, project_alias=project_alias,
+                cwd=cwd, project_identity=project_alias,
+                worktree_key=self.worktree_key(host=host, cwd=cwd, repository_origin=repository_origin),
+            ).to_json()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
@@ -1005,13 +1115,13 @@ class TaskRegistry:
                 (task_id,host,workspace_alias,project_alias,project_name,cwd,
                  repository_origin,branch,title,summary,task_key,execution_mode,
                  status,created_at,updated_at,execution_state,current_stage,current_blocker,
-                 last_progress_at,codex_running,turn_id,retry_required)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 last_progress_at,codex_running,turn_id,retry_required,routing_identity_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     task_id, host, workspace_alias, project_alias, project_name, cwd,
                     repository_origin, branch, title, summary, task_key,
                     execution_mode, "ACTIVE", stamp, stamp, "QUEUED", "queued", None,
-                    stamp, 0, None, 0,
+                    stamp, 0, None, 0, route_json,
                 ),
             )
             conn.execute(
@@ -1170,6 +1280,7 @@ class TaskRegistry:
         logical_model: str | None = None,
         resolved_executable_model: str | None = None,
         network_access: bool = False,
+        routing_identity_json: str = "{}",
     ) -> dict[str, Any]:
         return {
             "approval_state": "APPROVED",
@@ -1186,6 +1297,7 @@ class TaskRegistry:
             "reasoning_effort": reasoning_effort,
             "execution_mode": execution_mode,
             "network_access": network_access,
+            "routing_identity_json": routing_identity_json,
         }
 
     @staticmethod
@@ -1211,6 +1323,7 @@ class TaskRegistry:
         logical_model: str | None = None,
         resolved_executable_model: str | None = None,
         network_access: bool = False,
+        routing_identity: RoutingIdentity | str | None = None,
     ) -> PreparedExecutionRecord:
         if task_action not in {"create", "continue", "reopen"}:
             raise TaskRegistryError(f"Unsupported prepared task action: {task_action}")
@@ -1227,6 +1340,7 @@ class TaskRegistry:
             if not isinstance(value, str) or not value.strip():
                 raise TaskRegistryError(f"Prepared execution {name} is required")
         summary = self._validate_metadata_value("prepared summary", summary, MAX_TASK_SUMMARY_LENGTH)
+        route_json = self._routing_json(routing_identity)
         payload = self._prepared_payload(
             task_action=task_action, task_ref=task_ref, host=host.strip(),
             project=project.strip(), title=title.strip(), summary=summary,
@@ -1235,6 +1349,7 @@ class TaskRegistry:
             resolved_executable_model=(resolved_executable_model or model).strip(),
             reasoning_effort=reasoning_effort.strip(), execution_mode=execution_mode,
             network_access=network_access,
+            routing_identity_json=route_json,
         )
         stamp = _now()
         record = PreparedExecutionRecord(
@@ -1252,6 +1367,7 @@ class TaskRegistry:
                 "task_action", "task_ref", "host", "project", "title", "summary",
                 "prompt", "model", "reasoning_effort", "execution_mode",
                 "logical_model", "resolved_executable_model", "network_access",
+                "routing_identity_json",
             )},
         )
         with self._connect() as conn:
@@ -1259,10 +1375,10 @@ class TaskRegistry:
                 """INSERT INTO prepared_executions
                 (prepared_execution_ref,integrity_hash,approval_state,task_action,task_ref,
                  host,project,title,summary,prompt,model,logical_model,resolved_executable_model,reasoning_effort,execution_mode,
-                network_access,
+                 network_access,
                  status,created_at,updated_at,resulting_task_id,resulting_thread_id,
-                 resulting_turn_id,resulting_execution_ref)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 resulting_turn_id,resulting_execution_ref,routing_identity_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 tuple(getattr(record, field.name) for field in dataclasses.fields(record)),
             )
         return record
@@ -1312,6 +1428,7 @@ class TaskRegistry:
             reasoning_effort=record.reasoning_effort,
             execution_mode=record.execution_mode,
             network_access=bool(record.network_access),
+            routing_identity_json=record.routing_identity_json,
         )
         valid_hash = self._prepared_hash(payload) == record.integrity_hash
         if not valid_hash and not bool(record.network_access):
@@ -1319,6 +1436,7 @@ class TaskRegistry:
             # them safely disabled while allowing their original sealed hash.
             legacy_payload = dict(payload)
             legacy_payload.pop("network_access", None)
+            legacy_payload.pop("routing_identity_json", None)
             valid_hash = self._prepared_hash(legacy_payload) == record.integrity_hash
         if record.approval_state != "APPROVED" or not valid_hash:
             raise TaskRegistryError(
@@ -1618,8 +1736,9 @@ class TaskRegistry:
                  _now() if changed else task.updated_at, task_id),
             )
             conn.execute(
-                "UPDATE executions SET stage=? WHERE task_id=?",
-                (str(stage or state), task_id),
+                "UPDATE executions SET stage=? WHERE task_id=? "
+                "AND stage NOT IN (?,?,?,?,?,?)",
+                (str(stage or state), task_id, *TERMINAL_EXECUTION_STAGES),
             )
         return self.get_task(task_id)
 
@@ -1683,17 +1802,9 @@ class TaskRegistry:
             failure_code=None,
             failure_evidence=None,
         )
-        # Keep the terminal identity for idempotent repeated cancellation,
-        # while releasing only the mutating worktree lease.
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE executions SET stage='CANCELLED' WHERE task_id=? AND execution_ref=?",
-                (task.task_id, execution_ref),
-            )
-            conn.execute(
-                "DELETE FROM worktree_leases WHERE task_id=? AND execution_ref=?",
-                (task.task_id, execution_ref),
-            )
+        # Archive the terminal identity for idempotent repeated cancellation,
+        # then release the active execution and its mutating worktree lease.
+        self.release_execution(task.task_id, execution_ref, retain_history=True)
         return task
 
     def reconcile_terminal(
@@ -1722,7 +1833,10 @@ class TaskRegistry:
             failure_code=failure_code,
             failure_evidence=evidence,
         )
-        self.release_execution(task.task_id, execution_ref)
+        # Keep the terminal execution row so its creation-time routing
+        # identity remains available for status/readback.  Only the mutable
+        # worktree lease is released here.
+        self.release_execution(task.task_id, execution_ref, retain_history=True)
         return task
 
     def reconcile_orphaned_terminal(
@@ -1900,7 +2014,7 @@ class TaskRegistry:
         return dict(row) if row is not None else None
 
     def get_execution_record(self, execution_ref: str) -> dict[str, Any] | None:
-        """Read one execution identity, including a retained terminal cancel."""
+        """Read one active or retained execution identity."""
         if not isinstance(execution_ref, str) or not execution_ref.strip():
             return None
         with self._connect() as conn:
@@ -1911,13 +2025,23 @@ class TaskRegistry:
                    WHERE e.execution_ref=?""",
                 (execution_ref,),
             ).fetchone()
+            if row is None:
+                row = conn.execute(
+                    """SELECT h.*, t.host, t.cwd, t.repository_origin, t.execution_state,
+                              t.current_stage, t.codex_running
+                       FROM execution_history h JOIN tasks t ON t.task_id=h.task_id
+                       WHERE h.execution_ref=?""",
+                    (execution_ref,),
+                ).fetchone()
         return dict(row) if row is not None else None
 
     def get_latest_execution_for_task(self, task_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM executions WHERE task_id=? ORDER BY acquired_at DESC LIMIT 1",
-                (task_id,),
+                "SELECT * FROM executions WHERE task_id=? "
+                "AND stage NOT IN (?,?,?,?,?,?) "
+                "ORDER BY acquired_at DESC, rowid DESC LIMIT 1",
+                (task_id, *TERMINAL_EXECUTION_STAGES),
             ).fetchone()
         return dict(row) if row is not None else None
 
@@ -1929,12 +2053,207 @@ class TaskRegistry:
                 (logical_model, resolved_model, execution_ref),
             )
 
+    def update_routing_identity(
+        self, task_id: str, routing_identity: RoutingIdentity | str
+    ) -> TaskRecord:
+        """Fill a task route without allowing its routing chain to drift.
+
+        This operation never updates executions.  Execution routing is copied
+        at lease creation and can only be checked against its own ref.
+        """
+        task = self.get_task(task_id)
+        route_json = self._routing_json(routing_identity)
+        if route_json == "{}":
+            raise TaskRegistryError("routing identity cannot be cleared")
+        old = parse_routing_identity(task.routing_identity_json)
+        new = parse_routing_identity(route_json)
+        if new is None:
+            raise TaskRegistryError("routing identity is required")
+        if old is not None and old.surface.status != "UNKNOWN":
+            immutable_pairs = (
+                (old.host.stable_identifier, new.host.stable_identifier, "host"),
+                (old.surface.stable_identifier, new.surface.stable_identifier, "surface"),
+                (old.provider.stable_identifier, new.provider.stable_identifier, "provider"),
+                (old.transport.stable_identifier, new.transport.stable_identifier, "transport"),
+                (old.workspace, new.workspace, "workspace"),
+                (old.authority, new.authority, "authority"),
+                (old.project_identity, new.project_identity, "project"),
+            )
+            for before, after, name in immutable_pairs:
+                if before != after:
+                    raise TaskRegistryError(f"routing identity {name} changed")
+            if (
+                old.conversation.status == "BOUND"
+                and old.conversation.binding != new.conversation.binding
+            ):
+                raise TaskRegistryError("routing identity conversation changed")
+        elif old is not None and old.host.status == "KNOWN":
+            # A legacy route may be incomplete, but its known host/workspace
+            # identity is still historical data and cannot drift.
+            if old.host.stable_identifier != new.host.stable_identifier:
+                raise TaskRegistryError("routing identity host changed")
+            if old.workspace != new.workspace:
+                raise TaskRegistryError("routing identity workspace changed")
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE tasks SET routing_identity_json=?, updated_at=? WHERE task_id=?",
+                (route_json, _now(), task_id),
+            )
+        return self.get_task(task_id)
+
+    def bind_routing_identity(
+        self,
+        *,
+        task_id: str,
+        routing_identity: RoutingIdentity | str,
+        execution_ref: str | None = None,
+    ) -> TaskRecord:
+        """Persist the verified task route and this execution route together.
+
+        The only permitted task-route transition here is an existing route
+        with an unbound conversation becoming bound to the exact provider
+        thread that passed the identity guard.  Host, surface, provider,
+        transport, workspace, project, authority, and network policy remain
+        immutable.  A null execution reference addresses only the newest
+        lease for this task, which preserves legacy compatibility without
+        rewriting historical executions.
+        """
+        route_json = self._routing_json(routing_identity)
+        route = parse_routing_identity(route_json)
+        if route is None or not route.executable or route.conversation.status != "BOUND":
+            raise TaskRegistryError("bound routing identity is not executable")
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            task_row = conn.execute(
+                "SELECT * FROM tasks WHERE task_id=?", (task_id,)
+            ).fetchone()
+            if task_row is None:
+                raise UnknownTaskError(f"Unknown task: {task_id}")
+            old = parse_routing_identity(task_row["routing_identity_json"] or "{}")
+            if old is None:
+                raise TaskRegistryError("task routing identity is unavailable")
+            immutable_pairs = (
+                (old.host.stable_identifier, route.host.stable_identifier, "host"),
+                (old.surface.stable_identifier, route.surface.stable_identifier, "surface"),
+                (old.provider.stable_identifier, route.provider.stable_identifier, "provider"),
+                (old.transport.stable_identifier, route.transport.stable_identifier, "transport"),
+                (old.workspace, route.workspace, "workspace"),
+                (old.authority, route.authority, "authority"),
+                (old.project_identity, route.project_identity, "project"),
+                (old.network_policy, route.network_policy, "network policy"),
+            )
+            for before, after, name in immutable_pairs:
+                if before != after:
+                    raise TaskRegistryError(f"routing identity {name} changed")
+            if old.conversation.status == "BOUND":
+                if old.conversation.binding != route.conversation.binding:
+                    raise TaskRegistryError("routing identity conversation changed")
+            elif old.conversation.status != "UNBOUND":
+                raise TaskRegistryError("task routing identity is not bindable")
+            execution = None
+            if execution_ref:
+                execution = conn.execute(
+                    "SELECT * FROM executions WHERE execution_ref=? AND task_id=?",
+                    (execution_ref, task_id),
+                ).fetchone()
+            else:
+                execution = conn.execute(
+                    "SELECT * FROM executions WHERE task_id=? ORDER BY acquired_at DESC LIMIT 1",
+                    (task_id,),
+                ).fetchone()
+            if execution is None:
+                raise TaskRegistryError("current execution lease is unavailable")
+            execution_old = parse_routing_identity(execution["routing_identity_json"] or "{}")
+            if execution_old is not None and execution_old.as_dict() != old.as_dict():
+                raise TaskRegistryError("execution routing identity does not match task route")
+            conn.execute(
+                "UPDATE tasks SET routing_identity_json=?, updated_at=? WHERE task_id=?",
+                (route_json, _now(), task_id),
+            )
+            if execution_ref:
+                conn.execute(
+                    "UPDATE executions SET routing_identity_json=? "
+                    "WHERE task_id=? AND execution_ref=?",
+                    (route_json, task_id, execution_ref),
+                )
+            else:
+                conn.execute(
+                    "UPDATE executions SET routing_identity_json=? "
+                    "WHERE task_id=? AND rowid=(SELECT rowid FROM executions "
+                    "WHERE task_id=? ORDER BY acquired_at DESC LIMIT 1)",
+                    (route_json, task_id, task_id),
+                )
+            conn.execute("COMMIT")
+        return self.get_task(task_id)
+
+    def update_execution_routing_identity(
+        self, execution_ref: str, routing_identity: RoutingIdentity | str
+    ) -> dict[str, Any]:
+        """Bind or validate one execution's immutable routing identity."""
+        route_json = self._routing_json(routing_identity)
+        if route_json == "{}":
+            raise TaskRegistryError("execution routing identity cannot be empty")
+        new = parse_routing_identity(route_json)
+        if new is None or not new.executable:
+            raise TaskRegistryError("execution routing identity is not executable")
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT routing_identity_json FROM executions WHERE execution_ref=?",
+                (execution_ref,),
+            ).fetchone()
+            if row is None:
+                raise TaskRegistryError(f"Unknown execution: {execution_ref}")
+            old_json = row["routing_identity_json"] or "{}"
+            old = parse_routing_identity(old_json)
+            if old is not None:
+                if old.as_dict() != new.as_dict():
+                    raise TaskRegistryError("execution routing identity changed")
+                return new.as_dict()
+            conn.execute(
+                "UPDATE executions SET routing_identity_json=? WHERE execution_ref=?",
+                (route_json, execution_ref),
+            )
+        return new.as_dict()
+
+    def get_execution_routing_identity(self, execution_ref: str) -> RoutingIdentity | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT routing_identity_json FROM executions WHERE execution_ref=?",
+                (execution_ref,),
+            ).fetchone()
+            if row is None:
+                row = conn.execute(
+                    "SELECT routing_identity_json FROM execution_history WHERE execution_ref=?",
+                    (execution_ref,),
+                ).fetchone()
+        return parse_routing_identity(row["routing_identity_json"] if row else None)
+
+    def get_latest_execution_routing_identity(self, task_id: str) -> RoutingIdentity | None:
+        """Read the newest active or retained execution routing identity."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT routing_identity_json FROM (
+                       SELECT routing_identity_json, acquired_at FROM executions
+                       WHERE task_id=?
+                       UNION ALL
+                       SELECT routing_identity_json, acquired_at FROM execution_history
+                       WHERE task_id=?
+                   ) ORDER BY acquired_at DESC LIMIT 1""",
+                (task_id, task_id),
+            ).fetchone()
+        return parse_routing_identity(row["routing_identity_json"] if row else None)
+
     def get_execution_models(self, execution_ref: str) -> tuple[str | None, str | None]:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT logical_model,resolved_model FROM executions WHERE execution_ref=?",
                 (execution_ref,),
             ).fetchone()
+            if row is None:
+                row = conn.execute(
+                    "SELECT logical_model,resolved_model FROM execution_history WHERE execution_ref=?",
+                    (execution_ref,),
+                ).fetchone()
         return (row["logical_model"], row["resolved_model"]) if row is not None else (None, None)
 
     def active_worktree_conflict(
@@ -1991,7 +2310,20 @@ class TaskRegistry:
         self.request_cancellation(execution_ref)
         return self.finalize_cancellation(execution_ref)
 
-    def release_execution(self, task_id: str, execution_ref: str | None = None) -> None:
+    def release_execution(
+        self,
+        task_id: str,
+        execution_ref: str | None = None,
+        *,
+        retain_history: bool = False,
+    ) -> None:
+        """Release the mutable lease, optionally archiving execution history.
+
+        ``executions`` remains the one-row-per-task active lease projection.
+        Valid opaque terminal executions move to ``execution_history`` before
+        the active row is deleted. Legacy/null-ref cleanup still deletes its
+        row because there is no stable execution identity to retain.
+        """
         with self._connect() as conn:
             if execution_ref:
                 row = conn.execute(
@@ -2002,12 +2334,23 @@ class TaskRegistry:
                 row = conn.execute(
                     "SELECT worktree_key FROM executions WHERE task_id=?", (task_id,)
                 ).fetchone()
-            conn.execute(
-                "DELETE FROM executions WHERE task_id=?" + (" AND execution_ref=?" if execution_ref else ""),
-                (task_id, execution_ref) if execution_ref else (task_id,),
-            )
             if row is not None:
                 conn.execute("DELETE FROM worktree_leases WHERE worktree_key=?", (row["worktree_key"],))
+            if retain_history and execution_ref:
+                conn.execute(
+                    """INSERT OR IGNORE INTO execution_history
+                       (execution_ref,task_id,issue_id,worktree_key,logical_model,
+                        resolved_model,stage,acquired_at,routing_identity_json,released_at)
+                       SELECT execution_ref,task_id,issue_id,worktree_key,logical_model,
+                              resolved_model,stage,acquired_at,routing_identity_json,?
+                       FROM executions WHERE task_id=? AND execution_ref=?""",
+                    (_now(), task_id, execution_ref),
+                )
+            conn.execute(
+                "DELETE FROM executions WHERE task_id=?"
+                + (" AND execution_ref=?" if execution_ref else ""),
+                (task_id, execution_ref) if execution_ref else (task_id,),
+            )
 
     def get_linear_audit(self, task_id: str) -> LinearAuditRecord | None:
         self.get_task(task_id)
@@ -2071,8 +2414,8 @@ class TaskRegistry:
                     )
                     try:
                         conn.execute(
-                            "INSERT INTO executions(task_id,issue_id,execution_ref,worktree_key,logical_model,resolved_model,stage,acquired_at) VALUES (?,?,?,?,?,?,?,?)",
-                            (task_id, issue_id, execution_ref, worktree_key, None, None, "CLAIMED", _now()),
+                            "INSERT INTO executions(task_id,issue_id,execution_ref,worktree_key,logical_model,resolved_model,stage,acquired_at,routing_identity_json) VALUES (?,?,?,?,?,?,?,?,?)",
+                            (task_id, issue_id, execution_ref, worktree_key, None, None, "CLAIMED", _now(), task.routing_identity_json or "{}"),
                         )
                         conn.execute(
                             "INSERT INTO worktree_leases(worktree_key,task_id,execution_ref,stage,acquired_at) VALUES (?,?,?,?,?)",
@@ -2109,4 +2452,8 @@ class TaskRegistry:
             except UnknownTaskError:
                 terminal = True
             if not retain or not completed or terminal:
-                self.release_execution(task_id, execution_ref)
+                self.release_execution(
+                    task_id,
+                    execution_ref,
+                    retain_history=bool(execution_ref and execution_ref.startswith("exec_")),
+                )

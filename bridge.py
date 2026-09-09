@@ -47,6 +47,13 @@ from task_registry import (
     WorkspaceConfig,
     WorkspaceRegistry,
 )
+from execution_semantics import (
+    RoutingIdentity,
+    SemanticsError,
+    build_routing_identity,
+    parse_routing_identity,
+    with_conversation_binding,
+)
 from m9_integration import ExecutionResultService
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
@@ -146,6 +153,7 @@ class TaskContext:
     current_state: str
     ready_for_continuation: bool
     provenance: dict[str, tuple[str, ...]]
+    routing_identity: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -167,6 +175,7 @@ class TaskContext:
             "current_state": self.current_state,
             "ready_for_continuation": self.ready_for_continuation,
             "provenance": self.provenance,
+            "routing_identity": self.routing_identity,
             "read_only": True,
         }
 
@@ -219,6 +228,7 @@ class TargetConfig:
     branch: str
     app_server_version: str
     target_host: str = ""
+    transport: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1290,6 +1300,7 @@ class DispatchResult:
     task_id: str | None = None
     execution_mode: str = "normal"
     network_access: bool = False
+    routing_identity: dict[str, Any] | None = None
 
 
 def write_dispatch_record(
@@ -1321,6 +1332,7 @@ def write_dispatch_record(
         "execution_mode": result.execution_mode,
         "network_access": result.network_access,
         "NETWORK_ACCESS": "ENABLED" if result.network_access else "DISABLED",
+        "routing_identity": result.routing_identity,
     }
     (run_dir / "dispatch.json").write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n",
@@ -1999,11 +2011,13 @@ def _default_app_server_client(
         raise BridgeError(
             f"Target {target.alias!r} has no target_host for transport selection"
         )
-    selected_transport = resolve_transport(
-        cfg.runtime_host,
-        target.target_host,
-        cfg.app_server.transport,
+    selected_transport = target.transport or resolve_transport(
+        cfg.runtime_host, target.target_host, cfg.app_server.transport
     )
+    if selected_transport == "local_stdio":
+        selected_transport = "local"
+    elif selected_transport == "ssh_stdio":
+        selected_transport = "ssh"
     if selected_transport == "local":
         transport = LocalStdioTransport(
             cfg.app_server.command,
@@ -2123,6 +2137,7 @@ class TaskDispatcher:
         workspace: WorkspaceConfig,
         project: ProjectMapping,
         binding: DurableConversationBinding,
+        routing_identity: RoutingIdentity | None = None,
     ) -> TargetConfig:
         return TargetConfig(
             alias=f"{workspace.alias}.{project.project_alias}.{binding.task_id}",
@@ -2135,12 +2150,17 @@ class TaskDispatcher:
             branch=project.branch or "",
             app_server_version=binding.app_server_version or self.cfg.app_server.client_version,
             target_host=canonical_host(workspace.host or workspace.alias),
+            transport=(
+                "local" if routing_identity is None or routing_identity.transport.stable_identifier == "local_stdio"
+                else "ssh"
+            ),
         )
 
     def _new_target(
         self,
         workspace: WorkspaceConfig,
         project: ProjectMapping,
+        routing_identity: RoutingIdentity | None = None,
     ) -> TargetConfig:
         return TargetConfig(
             alias=f"{workspace.alias}.{project.project_alias}.new",
@@ -2153,7 +2173,68 @@ class TaskDispatcher:
             branch=project.branch or "",
             app_server_version=self.cfg.app_server.client_version,
             target_host=canonical_host(workspace.host or workspace.alias),
+            transport=(
+                "local" if routing_identity is None or routing_identity.transport.stable_identifier == "local_stdio"
+                else "ssh"
+            ),
         )
+
+    def _routing_identity(
+        self,
+        *,
+        workspace: WorkspaceConfig,
+        project: ProjectMapping,
+        conversation_bound: bool,
+        network_access: bool,
+        supplied: RoutingIdentity | str | None = None,
+    ) -> RoutingIdentity:
+        """Resolve one bounded route, preserving explicit caller identity."""
+        if supplied is not None:
+            route = (
+                supplied if isinstance(supplied, RoutingIdentity)
+                else parse_routing_identity(supplied)
+            )
+            if route is None or not route.executable:
+                raise DispatchContractError("routing identity is unknown or not executable")
+        else:
+            target_host = canonical_host(workspace.host or workspace.alias)
+            try:
+                selected_transport = resolve_transport(
+                    self.cfg.runtime_host, target_host, self.cfg.app_server.transport
+                )
+                route = build_routing_identity(
+                    host=target_host,
+                    workspace_alias=workspace.alias,
+                    project_alias=project.project_alias,
+                    worktree_key=self.tasks.worktree_key(
+                        host=target_host, cwd=str(project.repo),
+                        repository_origin=project.repository_origin,
+                    ),
+                    project_identity=project.project_alias,
+                    conversation_binding="BOUND" if conversation_bound else "UNBOUND",
+                    transport="ssh_stdio" if selected_transport == "ssh" else "local_stdio",
+                    network_access=network_access,
+                    supported_hosts={
+                        canonical_host(item.host or item.alias)
+                        for item in self.workspaces
+                    } or None,
+                )
+            except (SemanticsError, BridgeError) as exc:
+                raise DispatchContractError(str(exc)) from exc
+        expected_host = canonical_host(workspace.host or workspace.alias)
+        if route.host.stable_identifier != expected_host:
+            raise DispatchContractError("routing identity host does not match dispatch target")
+        if route.workspace.workspace_alias.casefold() != workspace.alias.casefold():
+            raise DispatchContractError("routing identity workspace does not match dispatch target")
+        if route.workspace.project_alias.casefold() != project.project_alias.casefold():
+            raise DispatchContractError("routing identity project does not match dispatch target")
+        if route.network_policy.network_access != network_access:
+            raise DispatchContractError("routing identity network policy changed")
+        if conversation_bound and route.conversation.status != "BOUND":
+            raise DispatchContractError("continuation requires a bound conversation route")
+        if not conversation_bound and route.conversation.status not in {"UNBOUND", "UNKNOWN"}:
+            raise DispatchContractError("new execution requires an unbound conversation route")
+        return route
 
     @staticmethod
     def _initialize_version(info: Any, fallback: str) -> str:
@@ -2211,6 +2292,7 @@ class TaskDispatcher:
         network_access: bool = False,
         issue_id: str | None = None,
         execution_ref: str | None = None,
+        routing_identity: RoutingIdentity | str | None = None,
     ) -> DispatchResult:
         if task_mode not in {"new", "continue"}:
             raise DispatchContractError(f"Unsupported task mode: {task_mode!r}")
@@ -2240,6 +2322,10 @@ class TaskDispatcher:
                     stage=conflict.get("stage") or "ACTIVE",
                     worktree_key=conflict["worktree_key"],
                 )
+            route = self._routing_identity(
+                workspace=workspace, project=project, conversation_bound=False,
+                network_access=network_access, supplied=routing_identity,
+            )
             task = self.tasks.create_task(
                 host=host or workspace.alias,
                 workspace_alias=workspace.alias,
@@ -2252,6 +2338,7 @@ class TaskDispatcher:
                 summary=summary,
                 task_key=task_key or _task_key(project.project_alias, title),
                 execution_mode=execution_mode,
+                routing_identity=route,
             )
             self.last_task_id = task.task_id
             with self.tasks.execution(
@@ -2259,7 +2346,7 @@ class TaskDispatcher:
                 retain=bool(execution_ref and execution_ref.startswith("exec_"))
             ) as leased:
                 self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
-                target = self._new_target(workspace, project)
+                target = self._new_target(workspace, project, route)
                 client = self.client_factory(target)
                 try:
                     self._execution_state(leased.task_id, "DISPATCHING", current_stage="identity guard")
@@ -2314,7 +2401,7 @@ class TaskDispatcher:
                             last_verified_at="",
                             app_server_version=version,
                         )
-                        target = self._target(workspace, project, binding)
+                        target = self._target(workspace, project, binding, route)
                         thread = self._read_and_guard(client, target, initialize_info)
                         turn_start_guard(thread)
                         binding = self.tasks.bind_conversation(
@@ -2323,6 +2410,12 @@ class TaskDispatcher:
                             session_id=new_session_id,
                             project_id=actual_project_id,
                             app_server_version=version,
+                        )
+                        route = with_conversation_binding(route, binding.thread_id)
+                        self.tasks.bind_routing_identity(
+                            task_id=leased.task_id,
+                            routing_identity=route,
+                            execution_ref=execution_ref,
                         )
                         if network_access:
                             turn = client.turn_start(
@@ -2401,6 +2494,7 @@ class TaskDispatcher:
                 task_id=leased.task_id,
                 execution_mode=execution_mode,
                 network_access=network_access,
+                routing_identity=route.public_dict(),
             )
 
         if not task_id:
@@ -2432,6 +2526,13 @@ class TaskDispatcher:
             branch=task.branch,
             workspace_alias=task.workspace_alias,
         )
+        route = self._routing_identity(
+            workspace=workspace, project=project, conversation_bound=True,
+            network_access=network_access,
+            supplied=routing_identity or task.routing_identity_json,
+        )
+        self.tasks.update_routing_identity(task.task_id, route)
+        task = self.tasks.get_task(task.task_id)
         task = self.tasks.update_metadata(
             task.task_id,
             title=title if update_title else None,
@@ -2444,7 +2545,7 @@ class TaskDispatcher:
         ) as leased:
             self.last_task_id = leased.task_id
             self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
-            target = self._target(workspace, project, binding)
+            target = self._target(workspace, project, binding, route)
             client = self.client_factory(target)
             try:
                 self._execution_state(leased.task_id, "DISPATCHING", current_stage="identity guard")
@@ -2536,6 +2637,7 @@ class TaskDispatcher:
             task_id=leased.task_id,
             execution_mode=execution_mode,
             network_access=network_access,
+            routing_identity=route.public_dict(),
         )
 
     def adopt_existing_conversation(
@@ -2612,6 +2714,40 @@ class TaskDispatcher:
             version = self._initialize_version(
                 initialize_info, target.app_server_version
             )
+            try:
+                selected_transport = target.transport or resolve_transport(
+                    self.cfg.runtime_host,
+                    target.target_host,
+                    self.cfg.app_server.transport,
+                )
+                route = build_routing_identity(
+                    host=target.target_host,
+                    surface="codex_app_server",
+                    provider="codex_app_server",
+                    transport=(
+                        "ssh_stdio"
+                        if selected_transport == "ssh"
+                        else "local_stdio"
+                    ),
+                    workspace_alias=workspace.alias,
+                    project_alias=project.project_alias,
+                    worktree_key=self.tasks.worktree_key(
+                        host=target.target_host,
+                        cwd=str(project.repo),
+                        repository_origin=project.repository_origin,
+                    ),
+                    project_identity=project.project_alias,
+                    conversation_binding=thread_id,
+                    network_access=False,
+                    supported_hosts={
+                        canonical_host(item.host or item.alias)
+                        for item in self.workspaces
+                    } or None,
+                )
+            except (SemanticsError, BridgeError) as exc:
+                raise DispatchContractError(
+                    f"ADOPTION=FAIL: routing identity is unavailable: {exc}"
+                ) from exc
             existing = self.tasks.get_binding_by_thread(thread_id)
             if existing is not None:
                 raise TaskRegistryError(
@@ -2633,6 +2769,7 @@ class TaskDispatcher:
                 session_id=session_id,
                 project_id=thread.get("projectId"),
                 app_server_version=version,
+                routing_identity=route,
             )
         index = None
         if task_index is not None:
@@ -2699,6 +2836,40 @@ class TaskDispatcher:
             return self.tasks.set_status(task_id, "ACTIVE").status
         raise DispatchContractError(f"Unsupported TASK_ACTION={action!r}")
 
+    def _execution_route(
+        self,
+        task: Any,
+        execution_ref: str | None,
+        *,
+        orphaned: bool = False,
+    ) -> RoutingIdentity:
+        """Load the route captured by this execution, never current defaults."""
+        route = (
+            self.tasks.get_latest_execution_routing_identity(task.task_id)
+            if orphaned
+            else self.tasks.get_execution_routing_identity(execution_ref or "")
+        )
+        if route is None or not route.executable:
+            raise DispatchContractError(
+                "execution routing identity is unavailable or not executable"
+            )
+        expected_host = canonical_host(task.host)
+        if route.host.stable_identifier != expected_host:
+            raise DispatchContractError("execution routing identity host does not match task")
+        if route.workspace.workspace_alias.casefold() != task.workspace_alias.casefold():
+            raise DispatchContractError(
+                "execution routing identity workspace does not match task"
+            )
+        if route.workspace.project_alias.casefold() != task.project_alias.casefold():
+            raise DispatchContractError(
+                "execution routing identity project does not match task"
+            )
+        if route.conversation.status != "BOUND":
+            raise DispatchContractError(
+                "execution routing identity conversation is not bound"
+            )
+        return route
+
     def cancel_execution(self, execution_ref: str) -> dict[str, Any]:
         """Durably request cancellation, then confirm it with the provider."""
         active = self.tasks.get_active_execution(execution_ref)
@@ -2716,9 +2887,11 @@ class TaskDispatcher:
             repository_origin=task.repository_origin, branch=task.branch,
             workspace_alias=task.workspace_alias,
         )
-        client = self.client_factory(self._target(workspace, project, binding))
+        route: RoutingIdentity | None = None
         bounded_items: list[dict[str, Any]] = []
         try:
+            route = self._execution_route(task, execution_ref)
+            client = self.client_factory(self._target(workspace, project, binding, route))
             with client:
                 client.initialize(
                     client_name=self.cfg.app_server.client_name,
@@ -2737,6 +2910,7 @@ class TaskDispatcher:
                 "cancel_requested": True,
                 "cancel_confirmed": False,
                 "retry_required": True,
+                "routing_identity": route.public_dict() if route is not None else None,
             }
         cancelled = self.tasks.finalize_cancellation(execution_ref)
         return {
@@ -2746,6 +2920,7 @@ class TaskDispatcher:
             "cancel_requested": True,
             "cancel_confirmed": True,
             "retry_required": False,
+            "routing_identity": route.public_dict() if route is not None else None,
         }
 
     @staticmethod
@@ -2801,9 +2976,11 @@ class TaskDispatcher:
             repository_origin=task.repository_origin, branch=task.branch,
             workspace_alias=task.workspace_alias,
         )
-        client = self.client_factory(self._target(workspace, project, binding))
+        route: RoutingIdentity | None = None
         bounded_items: list[dict[str, Any]] = []
         try:
+            route = self._execution_route(task, execution_ref, orphaned=orphaned)
+            client = self.client_factory(self._target(workspace, project, binding, route))
             with client:
                 client.initialize(
                     client_name=self.cfg.app_server.client_name,
@@ -2824,6 +3001,39 @@ class TaskDispatcher:
                         sort_direction="desc",
                     )
                     bounded_items = [item for item in item_page.get("data", ()) if isinstance(item, dict)]
+        except DispatchContractError as exc:
+            evidence = str(exc)
+            if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
+                if orphaned:
+                    self.tasks.set_execution_state(
+                        task.task_id, "CANCELLATION_PENDING",
+                        current_stage="CANCELLATION_PENDING",
+                        current_blocker=evidence[:2000], codex_running=True,
+                        retry_required=True, failure_stage="routing",
+                        failure_code="ROUTING_IDENTITY_UNAVAILABLE",
+                        failure_evidence=evidence[:4000],
+                    )
+                else:
+                    self.tasks.mark_cancellation_pending(execution_ref, evidence=evidence)
+                return {
+                    "state": "CANCELLATION_PENDING",
+                    "authoritative": False,
+                    "failure_code": "ROUTING_IDENTITY_UNAVAILABLE",
+                    "evidence": evidence,
+                }
+            self.tasks.set_execution_state(
+                task.task_id, "RECOVERY_REQUIRED",
+                current_stage="routing", current_blocker=evidence[:2000],
+                codex_running=bool(task.codex_running), retry_required=True,
+                failure_stage="routing", failure_code="ROUTING_IDENTITY_UNAVAILABLE",
+                failure_evidence=evidence[:4000],
+            )
+            return {
+                "state": "RECOVERY_REQUIRED",
+                "authoritative": False,
+                "failure_code": "ROUTING_IDENTITY_UNAVAILABLE",
+                "evidence": evidence,
+            }
         except AppServerError as exc:
             evidence = str(exc)
             # A child exit/closed byte channel is terminal evidence for this
@@ -3456,6 +3666,11 @@ class TaskContextReader:
             branch=task.branch or "",
             app_server_version=binding.app_server_version or self.cfg.app_server.client_version,
             target_host=canonical_host(task.host),
+            transport=(
+                "local" if parse_routing_identity(task.routing_identity_json) is None
+                or parse_routing_identity(task.routing_identity_json).transport.stable_identifier == "local_stdio"
+                else "ssh"
+            ),
         )
 
     def _workspace_ssh_alias(
@@ -3876,6 +4091,10 @@ class TaskContextReader:
             current_state=_context_text(selected.get("state"), 4000) or _context_text(selected.get("status"), 4000) or "UNKNOWN",
             ready_for_continuation=task.status == "ACTIVE",
             provenance=provenance,
+            routing_identity=(
+                parse_routing_identity(task.routing_identity_json).public_dict()
+                if parse_routing_identity(task.routing_identity_json) is not None else None
+            ),
         )
 
     def read_exact_turn_result(self, task_ref: str, turn_id: str) -> str:
@@ -3931,6 +4150,7 @@ class TopicWorkItem:
     task_ref: str | None = None
     thread_id: str | None = None
     provenance: dict[str, tuple[str, ...]] = dataclasses.field(default_factory=dict)
+    routing_identity: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -3950,6 +4170,7 @@ class TopicWorkItem:
             "task_ref": self.task_ref,
             "thread_id": self.thread_id,
             "provenance": self.provenance,
+            "routing_identity": self.routing_identity,
         }
 
 
@@ -4125,6 +4346,10 @@ class TopicStatusReader:
                 context_range="none",
                 context_truncated=False,
                 task_ref=task.task_id,
+                routing_identity=(
+                    parse_routing_identity(task.routing_identity_json).public_dict()
+                    if parse_routing_identity(task.routing_identity_json) is not None else None
+                ),
             )
         try:
             context = self.context_reader.read_task_context(
@@ -4158,6 +4383,7 @@ class TopicStatusReader:
                 task_ref=task.task_id,
                 thread_id=binding.thread_id,
                 provenance=context.provenance,
+                routing_identity=context.routing_identity,
             )
         except (ContextReadError, AppServerError):
             return TopicWorkItem(
@@ -4176,6 +4402,10 @@ class TopicStatusReader:
                 context_truncated=False,
                 task_ref=task.task_id,
                 thread_id=binding.thread_id,
+                routing_identity=(
+                    parse_routing_identity(task.routing_identity_json).public_dict()
+                    if parse_routing_identity(task.routing_identity_json) is not None else None
+                ),
             )
 
     def _historical_item(

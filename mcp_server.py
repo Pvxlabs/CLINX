@@ -59,6 +59,62 @@ def _json_schema(properties: dict[str, Any], required: list[str] | None = None) 
     }
 
 
+def _routing_identity_schema() -> dict[str, Any]:
+    """Public route shape; conversation bindings are intentionally redacted."""
+    identity = lambda properties: _json_schema(properties)
+    return _json_schema({
+        "host": identity({
+            "stable_identifier": {"type": "string"},
+            "display": {"type": "string"},
+            "machine_id": {"type": ["string", "null"]},
+            "alias": {"type": "string"},
+            "status": {"type": "string", "enum": ["KNOWN", "UNKNOWN"]},
+        }),
+        "surface": identity({
+            "stable_identifier": {"type": "string"},
+            "display": {"type": "string"},
+            "capability_boundary": {"type": "string"},
+            "status": {"type": "string"},
+        }),
+        "provider": identity({
+            "stable_identifier": {"type": "string"},
+            "display": {"type": "string"},
+            "bounded_task_backend": {"type": "boolean"},
+            "status": {"type": "string"},
+        }),
+        "transport": identity({
+            "stable_identifier": {"type": "string"},
+            "display": {"type": "string"},
+            "remote": {"type": "boolean"},
+            "status": {"type": "string"},
+        }),
+        "workspace": identity({
+            "workspace_alias": {"type": "string"},
+            "project_alias": {"type": "string"},
+            "worktree_key": {"type": "string"},
+        }),
+        "conversation": identity({
+            "status": {"type": "string"},
+            "binding": {"type": "string", "const": "REDACTED"},
+        }),
+        "authority": identity({
+            "stable_identifier": {"type": "string"},
+            "scopes": {"type": "array", "items": {"type": "string"}},
+            "status": {"type": "string"},
+            "identity_is_authority": {"type": "boolean", "const": False},
+        }),
+        "network_policy": identity({
+            "stable_identifier": {"type": "string"},
+            "network_access": {"type": "boolean"},
+            "mode": {"type": "string", "enum": ["ENABLED", "DISABLED"]},
+            "remote_execution": {"type": "boolean", "const": False},
+        }),
+        "project_identity": {"type": "string"},
+        "routing_contract": {"type": "string", "const": "execution -> host -> surface -> provider -> transport"},
+        "separation": {"type": "object", "additionalProperties": {"type": "boolean"}},
+    })
+
+
 def _public_task_schema() -> dict[str, Any]:
     """Describe the public task projection without exposing private identity."""
     return _json_schema({
@@ -81,6 +137,7 @@ def _public_task_schema() -> dict[str, Any]:
         "failure_stage": {"type": ["string", "null"]},
         "failure_code": {"type": ["string", "null"]},
         "failure_evidence": {"type": ["string", "null"]},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
     })
 
 
@@ -104,6 +161,7 @@ def _context_output_schema() -> dict[str, Any]:
         "current_state": {"type": "string"},
         "ready_for_continuation": {"type": "boolean"},
         "provenance": {"type": "object", "additionalProperties": True},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
         "read_only": {"type": "boolean", "const": True},
     })
 
@@ -125,6 +183,7 @@ def _topic_work_item_schema() -> dict[str, Any]:
         "context_truncated": {"type": "boolean"},
         "task_ref": {"type": ["string", "null"]},
         "provenance": {"type": "object", "additionalProperties": True},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
     })
 
 
@@ -171,6 +230,8 @@ def _status_output_schema() -> dict[str, Any]:
     return _json_schema({
         **_public_task_schema()["properties"],
         "execution_result": {"anyOf": [execution_result, {"type": "null"}]},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "execution_routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
         "EXECUTION_STATE": {"type": "string"},
         "CODEX_RUNNING": {"type": "boolean"},
         "CURRENT_STAGE": {"type": "string"},
@@ -248,6 +309,7 @@ def _prepare_output_schema() -> dict[str, Any]:
         "summary": {"type": "string"},
         "prompt": {"type": "string"},
         "description": {"type": "string"},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
     })
     return _json_schema({
         "execution_available": {"type": "boolean", "const": True},
@@ -269,6 +331,7 @@ def _prepare_output_schema() -> dict[str, Any]:
         "summary": {"type": "string"},
         "prompt": {"type": "string"},
         "description": {"type": "string"},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
         "linear_handoff": handoff,
         "next_action": {
             "type": "object",
@@ -475,6 +538,7 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 "active_task_ref": {"type": "string"},
                 "active_execution_ref": {"type": ["string", "null"]},
                 "active_stage": {"type": "string"},
+                "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
                 "read_only": {"type": "boolean", "const": False},
             }),
             "annotations": {"readOnlyHint": False, "destructiveHint": True},
@@ -498,6 +562,7 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                 "cancel_confirmed": {"type": "boolean"},
                 "retry_required": {"type": "boolean"},
                 "idempotent": {"type": "boolean"},
+                "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
                 "read_only": {"type": "boolean", "const": False},
             }),
             "annotations": {"readOnlyHint": False, "destructiveHint": True},
