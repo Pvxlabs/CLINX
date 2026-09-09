@@ -329,6 +329,12 @@ class M13PersistenceTests(unittest.TestCase):
             self.assertIsNone(registry.active_worktree_conflict(
                 host=task.host, cwd=task.cwd, repository_origin=task.repository_origin,
             ))
+            registry.set_execution_state(
+                task.task_id, "IN_REVIEW", current_stage="IN_REVIEW",
+                codex_running=False, retry_required=False,
+            )
+            registry.release_execution(task.task_id, "exec_retry", retain_history=True)
+            self.assertEqual(registry.get_execution_record("exec_retry")["stage"], "IN_REVIEW")
 
     def test_cancellation_retains_execution_route_and_legacy_orphan_cleanup_still_deletes_row(self):
         with tempfile.TemporaryDirectory() as td:
