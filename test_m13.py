@@ -309,6 +309,27 @@ class M13PersistenceTests(unittest.TestCase):
                 route().as_dict(),
             )
 
+    def test_retained_recovery_can_reconcile_only_its_exact_terminal_turn(self):
+        with tempfile.TemporaryDirectory() as td:
+            registry = TaskRegistry(Path(td) / "tasks.sqlite3")
+            task = make_task(registry)
+            with registry.execution(task.task_id, execution_ref="exec_retry", retain=True):
+                registry.set_execution_state(
+                    task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
+                    turn_id="turn-retry", codex_running=True,
+                )
+            registry.reconcile_terminal(
+                "exec_retry", "RECOVERY_REQUIRED", retry_required=True,
+            )
+
+            reconciled = registry.reconcile_terminal("exec_retry", "COMPLETED")
+
+            self.assertEqual(reconciled.execution_state, "COMPLETED")
+            self.assertEqual(registry.get_execution_record("exec_retry")["stage"], "COMPLETED")
+            self.assertIsNone(registry.active_worktree_conflict(
+                host=task.host, cwd=task.cwd, repository_origin=task.repository_origin,
+            ))
+
     def test_cancellation_retains_execution_route_and_legacy_orphan_cleanup_still_deletes_row(self):
         with tempfile.TemporaryDirectory() as td:
             registry = TaskRegistry(Path(td) / "tasks.sqlite3")

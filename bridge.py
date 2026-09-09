@@ -2947,6 +2947,7 @@ class TaskDispatcher:
         """
         active = self.tasks.get_active_execution(execution_ref) if execution_ref else None
         orphaned = False
+        retained_recovery = False
         if active is None and task_id is not None and not execution_ref:
             task = self.tasks.get_task(task_id)
             latest = self.tasks.get_latest_execution_for_task(task_id)
@@ -2961,7 +2962,13 @@ class TaskDispatcher:
             if not orphaned:
                 return {"state": "UNKNOWN", "authoritative": False}
         elif active is None:
-            return {"state": "UNKNOWN", "authoritative": False}
+            retained = self.tasks.get_execution_record(execution_ref or "")
+            if retained is None or retained.get("stage") != "RECOVERY_REQUIRED":
+                return {"state": "UNKNOWN", "authoritative": False}
+            task = self.tasks.get_task(retained["task_id"])
+            if task.execution_state != "RECOVERY_REQUIRED" or not task.retry_required:
+                return {"state": "UNKNOWN", "authoritative": False}
+            retained_recovery = True
         else:
             task = self.tasks.get_task(active["task_id"])
 
