@@ -12,7 +12,7 @@ class Migration:
     statements: tuple[str, ...]
 
 
-LATEST_SCHEMA_VERSION = 2
+LATEST_SCHEMA_VERSION = 3
 
 MIGRATIONS = (
     Migration(
@@ -219,6 +219,21 @@ MIGRATIONS = (
                 BEFORE DELETE ON runtime_event_positions BEGIN
                     SELECT RAISE(ABORT, 'runtime event positions are append-only');
                 END""",
+        ),
+    ),
+    Migration(
+        3,
+        "runtime_safety_handoff_guard",
+        (
+            """CREATE TABLE runtime_safety_handoffs (
+                handoff_key TEXT PRIMARY KEY,
+                handoff_token TEXT NOT NULL UNIQUE,
+                observed_at TEXT NOT NULL,
+                blocked_until TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                CHECK(length(handoff_key) > 0),
+                CHECK(length(handoff_token) > 0)
+            )""",
         ),
     ),
 )

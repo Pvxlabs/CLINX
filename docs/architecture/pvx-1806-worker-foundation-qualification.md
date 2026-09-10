@@ -362,19 +362,26 @@ PYTHONPATH=/home/pvxlabs/dev/clinx python3 -m pytest -q \
 ### 10.2 RC-01 safety observation boundary
 
 Trusted coordinator time is committed in its own short `BEGIN IMMEDIATE`
-transaction before a business transaction starts. The business transaction
-then reacquires the write lock and rejects if another coordinator persisted a
-newer watermark in between. Therefore a rejected exact-expiry renewal or
-protected mutation, a stale owner, a semantic conflict, or an injected
-business rollback cannot erase the observation. No business row, event,
-receipt, or outbox record is included in the safety transaction.
+transaction before an authorization transaction starts. Protected mutation and
+renewal then commit a per-assignment `runtime_safety_handoffs` row before
+waiting for the ownership write lock. The guard records the preflight
+observation and lease bound and makes an unresolved handoff fail closed. After
+the lock is acquired, the coordinator samples time again; this post-lock sample
+is the authorization linearization point and `now >= expires_at` rejects.
 
-Accepted ownership/state changes still commit state, event, append position,
-receipt, and outbox atomically in the second transaction. Tests cover a
-successful command followed by clock rollback, an exact-expiry rejection
-followed by reopen at an older time, a pre-commit protected-write fault,
-independent connections, no prior reconciliation, renew, and the actual
-protected resource value/version.
+Accepted state/event/receipt/outbox changes, the post-lock watermark, and guard
+deletion commit atomically. A rejected or failed business transaction rolls
+back all business rows, then a separate safety transaction commits the fresh
+observation before removing the guard. If that safety transaction is busy or
+fails, or the process exits first, the guard remains durable and subsequent
+authorization returns `SafetyDecisionPending`; no old watermark can
+reauthorize the assignment. `recover_safety_handoff()` requires explicit stop
+and side-effect-fence evidence and will not clear a guard before its recorded
+lease bound. Tests cover both lock positions, valid/exact/expired boundaries,
+renew and protected mutation, independent connections, rejection, rollback,
+busy and commit-failure injection, response loss, reopen, and a real child
+process exit. The safety transaction contains no business state, event, receipt,
+or outbox record.
 
 ### 10.3 RC-02 scoped identity and migration
 
@@ -403,8 +410,10 @@ The upgrade fixture constructs the preserved migration-1 schema and real old
 task/event/outbox/receipt rows, then runs `initialize()`. The old event bytes
 and hash remain identical, the old receipt becomes
 `receipt_id=legacy command_id`, a new scope can reuse that client key, and
-migration versions are exactly `(1, 2)`. The reviewed migration-1 schema at the
-baseline had Git blob `de2e2d6414dac5266b59346bee0484bbcc844dda`.
+migration versions are exactly `(1, 2, 3)`. Migration 3 adds only the
+`runtime_safety_handoffs` guard table; it does not rewrite events or receipts.
+The reviewed migration-1 schema at the baseline had Git blob
+`de2e2d6414dac5266b59346bee0484bbcc844dda`.
 
 ### 10.4 RC-03 event/reducer coverage
 
@@ -568,16 +577,18 @@ PYTHONPATH=/home/pvxlabs/dev/clinx python3 -m pytest -q \
 5 passed in 0.14s
 ```
 
-#### Authorization lock matrix
+#### Authorization lock matrix (pre-handoff historical run)
 
 `_transaction()` keeps the initial durable preflight observation, acquires the
 business `BEGIN IMMEDIATE` lock, and samples the injected coordinator clock
 after that lock is acquired. `now >= expires_at` is rejected by the shared
 owner validator for protected mutation and renew. The post-lock sample is
 updated in the business transaction on success; on any validation or injected
-business rollback it is persisted by an independent safety transaction after
-rollback. Thus the failed business write leaves no state/event/receipt/outbox,
-while the safety watermark survives reopen and clock rollback.
+business rollback it was persisted by an independent safety transaction after
+rollback. This historical run established the lock-time boundary; the durable
+guard and fail-closed handoff that close its rollback window are recorded in
+10.8. The failed business write leaves no state/event/receipt/outbox, while the
+safety watermark survives reopen and clock rollback.
 
 The repository matrix covers both lock positions, all three boundaries, and
 both protected operations:
@@ -646,3 +657,81 @@ PHYSICAL_PROCESS_FENCING=NOT_QUALIFIED
 CANONICAL_PROVIDER_E2E=NOT_RUN
 NEXT_PHASE_STARTED=NO
 ```
+
+### 10.8 Safety handoff corrective run (46862ba)
+
+This run addressed the remaining RC-01 handoff invariant only. The supplied
+candidate harness was first executed against the pinned checkout with real
+temporary SQLite databases and deterministic barriers:
+
+```ini
+BASE_COMMIT=46862ba2207330a7bf30f4abd6ef8f26626d4987
+FINAL_COMMIT=WORKTREE_PENDING
+BRANCH=main
+```
+
+```text
+PYTHONPATH=/home/pvxlabs/dev/clinx python3 -m pytest -q \
+  /tmp/pvx1806-handoff-YZEMQn/test_pvx1806_safety_handoff_candidates.py
+1 passed, 3 failed in 0.14s
+```
+
+The three red cases showed a competing coordinator writing protected version
+`0 -> 1` after business rollback, a real SQLite busy failure leaving the old
+watermark usable, and a child exiting before the independent safety write. The
+normal completion control persisted `T11` and rejected a `T9.5` writer with
+`ClockAnomaly`.
+
+After the fix the same four assertions are green:
+
+```text
+PYTHONPATH=/home/pvxlabs/dev/clinx python3 -m pytest -q \
+  /tmp/pvx1806-handoff-YZEMQn/test_pvx1806_safety_handoff_candidates.py
+4 passed in 0.13s
+```
+
+The durable protocol is a v3 additive `runtime_safety_handoffs` table keyed by
+assignment. It is committed before the protected business lock and records the
+preflight observation plus `blocked_until=lease_expires_at`. Success commits
+business state/event/receipt/outbox, the post-lock watermark, and guard deletion
+in one transaction. Failure rolls back every business row, then commits the
+fresh safety observation before deleting the guard. Busy, commit failure, or
+process exit leaves the guard present; subsequent authorization returns
+`SafetyDecisionPending` (or a preserved safety failure) and cannot use the old
+watermark. Explicit `recover_safety_handoff()` requires stop/fence evidence and
+the recorded lease bound, so a clock rollback cannot clear protection.
+
+The finite repository matrix covers both original lock positions, valid/exact/
+expired boundaries, protected mutation and renewal (12 cases), plus normal
+rejection, business rollback, response loss, real safety busy and commit
+failure, reopen, and one forked child exit. Assertions inspect protected
+value/version, assignment and epoch, clock watermark, guard, receipt/event/
+outbox rows, and follow-up write eligibility. Registration, evidence, resource
+admission, and V1 paths do not share this guard and retain their existing
+concurrency/idempotency contracts.
+
+Safety handoff gates:
+
+```ini
+AUTHORIZATION_TIME_FRESH_AFTER_LOCK=PASS
+NO_REAUTHORIZATION_DURING_SAFETY_HANDOFF=PASS
+SAFETY_PERSIST_FAILURE_FAILS_CLOSED=PASS
+UNRESOLVED_SAFETY_DECISION_SURVIVES_PROCESS_EXIT=PASS
+FAILED_BUSINESS_STATE_ROLLED_BACK=PASS
+VALID_COMMAND_PROGRESS=PASS
+RESPONSE_LOSS_IDEMPOTENCY=PASS
+RUNTIME_SCHEMA_COMPATIBILITY=PASS
+RC02_RC03_RC04_REGRESSION=PASS
+PVX1805_REGRESSION=PASS
+FULL_SUITE=PASS
+```
+
+The final local package run was `432 passed, 66 subtests passed`; the bounded
+qualification CLI remained `PASS` with `200 attempted`, `63 effective`, and
+`137 no-op` operations. The adapted RC-04 candidate (`scan_events(cursor=...)`)
+and the follow-up/hand-off candidates all passed; the unadapted RC-04 probe
+continues to be rejected because a cross-stream `after_sequence` is ambiguous.
+
+The guard is an internal runtime-control mechanism only. Physical process
+fencing, power-loss durability, provider takeover, production migration, and
+V2 authority cutover remain outside this qualification.

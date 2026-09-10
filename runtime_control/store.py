@@ -29,6 +29,7 @@ from .errors import (
     RuntimeNotFound,
     RuntimeSchemaError,
     RuntimeVersionConflict,
+    SafetyDecisionPending,
     StaleMutation,
 )
 from .models import (
@@ -226,39 +227,81 @@ class RuntimeControlStore:
             self.fault_injector(stage)
 
     @contextlib.contextmanager
-    def _transaction(self) -> Iterator[tuple[sqlite3.Connection, str]]:
+    def _transaction(
+        self,
+        *,
+        safety_key: str | None = None,
+    ) -> Iterator[tuple[sqlite3.Connection, str]]:
+        """Run one business transaction with an optional durable safety handoff.
+
+        Authorization operations create a durable guard before taking the
+        business lock.  That guard is the fail-closed barrier if the process
+        exits after business rollback but before the fresh clock observation is
+        committed.  Non-authorization writes retain the original short
+        transaction behavior and do not serialize unrelated runtime work.
+        """
         self._observe_coordinator_time()
-        conn = self._connect()
+        handoff_token: str | None = None
+        handoff_at: str | None = None
+        if safety_key is not None:
+            handoff_token, handoff_at = self._begin_safety_handoff(safety_key)
+        conn: sqlite3.Connection | None = None
         fresh_at: str | None = None
+        committed = False
         try:
+            conn = self._connect()
             self._require_schema(conn)
             conn.execute("BEGIN IMMEDIATE")
-            # The first observation serializes admission, but authorization must
-            # use a clock sample taken after this transaction owns the write lock.
-            # Persist that sample in this transaction on success, or independently
-            # after rollback so a rejected mutation cannot erase a safety decision.
+            # Authorization must use a clock sample taken after this
+            # transaction owns the protected write lock.
             fresh_at = encode_time(self.clock.now())
             now = self._coordinator_now(conn, fresh_at)
             yield conn, now
+            if handoff_token is not None:
+                self._clear_safety_handoff_in_transaction(conn, safety_key, handoff_token)
             self._fault("before_commit")
             conn.execute("COMMIT")
+            committed = True
             self._fault("after_commit")
         except sqlite3.OperationalError as exc:
-            if conn.in_transaction:
+            if conn is not None and conn.in_transaction:
                 conn.execute("ROLLBACK")
-            if fresh_at is not None:
-                self._persist_coordinator_time(fresh_at)
+            if not committed:
+                if handoff_token is not None:
+                    safety_error = self._complete_safety_handoff(
+                        safety_key,
+                        handoff_token,
+                        fresh_at or handoff_at,
+                    )
+                    if safety_error is not None:
+                        if hasattr(exc, "add_note"):
+                            exc.add_note(f"safety handoff incomplete: {safety_error}")
+                        raise safety_error from exc
+                elif fresh_at is not None:
+                    self._persist_coordinator_time(fresh_at)
             if "locked" in str(exc).casefold() or "busy" in str(exc).casefold():
                 raise RuntimeBusy(str(exc)) from exc
             raise
-        except Exception:
-            if conn.in_transaction:
+        except Exception as exc:
+            if conn is not None and conn.in_transaction:
                 conn.execute("ROLLBACK")
-            if fresh_at is not None:
-                self._persist_coordinator_time(fresh_at)
+            if not committed:
+                if handoff_token is not None:
+                    safety_error = self._complete_safety_handoff(
+                        safety_key,
+                        handoff_token,
+                        fresh_at or handoff_at,
+                    )
+                    if safety_error is not None:
+                        if hasattr(exc, "add_note"):
+                            exc.add_note(f"safety handoff incomplete: {safety_error}")
+                        raise safety_error from exc
+                elif fresh_at is not None:
+                    self._persist_coordinator_time(fresh_at)
             raise
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
 
     def _observe_coordinator_time(self) -> str:
         """Persist trusted time before a business transaction can be rejected."""
@@ -286,6 +329,190 @@ class RuntimeControlStore:
                 (now,),
             )
             conn.execute("COMMIT")
+        except sqlite3.OperationalError as exc:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            if "locked" in str(exc).casefold() or "busy" in str(exc).casefold():
+                raise RuntimeBusy(str(exc)) from exc
+            raise
+        except Exception:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    def _begin_safety_handoff(self, handoff_key: str) -> tuple[str, str]:
+        """Durably block one assignment before its authorization transaction."""
+        handoff_key = _text("handoff_key", handoff_key)
+        now = encode_time(self.clock.now())
+        token = _new_id("safety")
+        conn = self._connect()
+        try:
+            self._require_schema(conn)
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT handoff_token FROM runtime_safety_handoffs WHERE handoff_key=?",
+                (handoff_key,),
+            ).fetchone()
+            if existing is not None:
+                conn.execute("ROLLBACK")
+                raise SafetyDecisionPending(
+                    f"safety handoff is pending for assignment {handoff_key}"
+                )
+            row = conn.execute(
+                "SELECT lease_expires_at FROM runtime_assignments WHERE assignment_id=?",
+                (handoff_key,),
+            ).fetchone()
+            # An unknown assignment still gets a guard for the duration of this
+            # failed attempt; the value is only a conservative recovery bound.
+            blocked_until = row["lease_expires_at"] if row is not None else now
+            conn.execute(
+                """INSERT INTO runtime_safety_handoffs(
+                    handoff_key,handoff_token,observed_at,blocked_until,created_at
+                ) VALUES(?,?,?,?,?)""",
+                (handoff_key, token, now, blocked_until, now),
+            )
+            conn.execute("COMMIT")
+            return token, now
+        except sqlite3.OperationalError as exc:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            if "locked" in str(exc).casefold() or "busy" in str(exc).casefold():
+                raise RuntimeBusy(str(exc)) from exc
+            raise
+        except Exception:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _clear_safety_handoff_in_transaction(
+        conn: sqlite3.Connection,
+        handoff_key: str | None,
+        handoff_token: str,
+    ) -> None:
+        if handoff_key is None:
+            raise RuntimeConflict("safety handoff key is missing")
+        deleted = conn.execute(
+            "DELETE FROM runtime_safety_handoffs WHERE handoff_key=? AND handoff_token=?",
+            (handoff_key, handoff_token),
+        ).rowcount
+        if deleted != 1:
+            raise SafetyDecisionPending("safety handoff is no longer owned by this transaction")
+
+    def _clear_safety_handoff(self, handoff_key: str, handoff_token: str) -> None:
+        conn = self._connect()
+        try:
+            self._require_schema(conn)
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                "DELETE FROM runtime_safety_handoffs WHERE handoff_key=? AND handoff_token=?",
+                (handoff_key, handoff_token),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.OperationalError as exc:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            if "locked" in str(exc).casefold() or "busy" in str(exc).casefold():
+                raise RuntimeBusy(str(exc)) from exc
+            raise
+        except Exception:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    def _complete_safety_handoff(
+        self,
+        handoff_key: str | None,
+        handoff_token: str,
+        observed_at: str | None,
+    ) -> Exception | None:
+        """Publish the post-lock observation, then remove the durable guard."""
+        if handoff_key is None or observed_at is None:
+            return RuntimeConflict("safety handoff has no durable observation")
+        try:
+            # The watermark is committed before the guard is removed.  During
+            # this short two-transaction handoff, new authorization still sees
+            # the guard and fails closed.
+            self._fault("safety_before_commit")
+            self._persist_coordinator_time(observed_at)
+            self._fault("safety_after_commit")
+            self._clear_safety_handoff(handoff_key, handoff_token)
+        except Exception as exc:
+            return exc
+        return None
+
+    def get_safety_handoff(self, handoff_key: str) -> dict[str, str] | None:
+        """Read a pending safety guard for qualification and recovery tooling."""
+        handoff_key = _text("handoff_key", handoff_key)
+        with self._read_connection() as conn:
+            row = conn.execute(
+                """SELECT handoff_key,handoff_token,observed_at,blocked_until,created_at
+                   FROM runtime_safety_handoffs WHERE handoff_key=?""",
+                (handoff_key,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def recover_safety_handoff(
+        self,
+        handoff_key: str,
+        *,
+        old_process_stopped: bool,
+        side_effect_fence_verified: bool,
+    ) -> bool:
+        """Clear an orphaned guard only after explicit fencing evidence.
+
+        Recovery is intentionally conservative: the current coordinator time
+        must be at or beyond the lease bound recorded with the guard.  A clock
+        rollback therefore cannot turn an unresolved handoff into authority.
+        """
+        handoff_key = _text("handoff_key", handoff_key)
+        if not old_process_stopped or not side_effect_fence_verified:
+            raise RecoveryBlocked(
+                "old process stop and side-effect fence evidence are required"
+            )
+        self._observe_coordinator_time()
+        now = encode_time(self.clock.now())
+        conn = self._connect()
+        try:
+            self._require_schema(conn)
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT blocked_until FROM runtime_safety_handoffs WHERE handoff_key=?",
+                (handoff_key,),
+            ).fetchone()
+            if row is None:
+                conn.execute("COMMIT")
+                return False
+            if decode_time(now) < decode_time(row["blocked_until"]):
+                conn.execute("ROLLBACK")
+                raise RecoveryBlocked(
+                    "safety handoff remains inside its recorded lease bound"
+                )
+            watermark = conn.execute(
+                "SELECT last_coordinator_time FROM runtime_clock_state WHERE state_id=1"
+            ).fetchone()
+            if watermark is None:
+                raise RuntimeSchemaError("runtime clock state is not initialized")
+            if decode_time(now) < decode_time(watermark["last_coordinator_time"]):
+                raise ClockAnomaly(
+                    f"coordinator clock moved backwards from {watermark['last_coordinator_time']} to {now}"
+                )
+            conn.execute(
+                "UPDATE runtime_clock_state SET last_coordinator_time=? WHERE state_id=1",
+                (now,),
+            )
+            conn.execute(
+                "DELETE FROM runtime_safety_handoffs WHERE handoff_key=?",
+                (handoff_key,),
+            )
+            conn.execute("COMMIT")
+            return True
         except sqlite3.OperationalError as exc:
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
@@ -1216,7 +1443,7 @@ class RuntimeControlStore:
             "resource_epoch": resource_epoch, "lease_seconds": lease_seconds, "expected_version": expected_version,
         }
         fingerprint = _hash(semantic)
-        with self._transaction() as (conn, now):
+        with self._transaction(safety_key=assignment_id) as (conn, now):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
@@ -1318,7 +1545,7 @@ class RuntimeControlStore:
             "resource_epoch": resource_epoch, "reason": reason, "expected_version": expected_version,
         }
         fingerprint = _hash(semantic)
-        with self._transaction() as (conn, now):
+        with self._transaction(safety_key=assignment_id) as (conn, now):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
@@ -1562,7 +1789,7 @@ class RuntimeControlStore:
             "expected_version": expected_version, "value": value,
         }
         fingerprint = _hash(semantic)
-        with self._transaction() as (conn, now):
+        with self._transaction(safety_key=assignment_id) as (conn, now):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
