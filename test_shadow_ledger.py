@@ -1543,23 +1543,184 @@ class TaskRegistryShadowIntegrationTests(unittest.TestCase):
         self.assertEqual(replayed.turn_id, "turn_existing")
         self.assertIsNone(replayed.exact_result_ref)
         self.assertEqual(replayed.result_status, "UNKNOWN")
-
         event = shadow.shadow_event_store.read_events(
             aggregate_type="execution", aggregate_id=execution_id
         )[0].event
         provenance = event.payload.to_dict()["field_provenance"]
-        self.assertEqual(
-            provenance["execution_state"],
-            "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
+        self.assertEqual(provenance["execution_state"], "V1_EXECUTION_ROW_STATE")
+        self.assertEqual(provenance["current_stage"], "V1_EXECUTION_ROW_STAGE")
+        self.assertEqual(provenance["turn_id"], "V1_EXECUTION_ROW_TURN")
+
+    def _prepare_finished_execution_for_claim_window(self, *, shadow_events=False):
+        registry = TaskRegistry(self.db, shadow_events=shadow_events)
+        task = self.create_task(registry, title="Claim window fixture")
+        with registry.execution(task.task_id, execution_ref="exec_old", retain=True):
+            registry.set_execution_state(
+                task.task_id,
+                "CODEX_RUNNING",
+                current_stage="old_provider_wait",
+                codex_running=True,
+                turn_id="turn_old",
+            )
+            registry.record_execution_result(
+                execution_ref="exec_old",
+                task_id=task.task_id,
+                turn_id="turn_old",
+                status="PASS",
+                summary="old complete",
+                changed_files="NONE",
+                validation="PASS",
+                blockers="NONE",
+                next_state="IN_REVIEW",
+                raw_result="old complete fixture",
+            )
+            registry.reconcile_terminal("exec_old", "COMPLETED")
+        return registry, task
+
+    def test_claim_window_baseline_does_not_borrow_retained_projection(self):
+        registry, task = self._prepare_finished_execution_for_claim_window()
+        with registry.execution(task.task_id, execution_ref="exec_new", retain=True):
+            # Re-open through a separate registry after the claim transaction;
+            # ownership must come from durable rows, not process-local state.
+            reopened = TaskRegistry(self.db, shadow_events=True)
+            reopened.import_shadow_baseline(
+                task_id=task.task_id, execution_ref="exec_new"
+            )
+            shadow = reopened
+        execution_id = shadow.shadow_event_store.map_legacy_identity(
+            source_system="clinx_v1",
+            source_type="execution_ref",
+            source_identity="exec_new",
+            target_type="execution",
+        ).target_id
+        payload = shadow.shadow_event_store.read_events(
+            aggregate_type="execution", aggregate_id=execution_id
+        )[0].event.payload.to_dict()
+        self.assertEqual(payload["source_execution_ref"], "exec_new")
+        self.assertNotEqual(payload.get("execution_state"), "COMPLETED")
+        self.assertNotEqual(payload.get("current_stage"), "COMPLETED")
+        self.assertNotEqual(payload.get("turn_id"), "turn_old")
+
+    def test_exact_result_turn_is_retained_and_conflict_is_explicit(self):
+        v1 = TaskRegistry(self.db)
+        task = self.create_task(v1)
+        with v1.execution(task.task_id, execution_ref="exec_result", retain=True):
+            v1.set_execution_state(
+                task.task_id,
+                "CODEX_RUNNING",
+                current_stage="provider_wait",
+                codex_running=True,
+                turn_id="turn_result",
+            )
+            v1.record_execution_result(
+                execution_ref="exec_result",
+                task_id=task.task_id,
+                turn_id="turn_result",
+                status="PASS",
+                summary="result fixture",
+                changed_files="NONE",
+                validation="PASS",
+                blockers="NONE",
+                next_state="IN_REVIEW",
+                raw_result="result fixture",
+            )
+
+        shadow = TaskRegistry(self.db, shadow_events=True)
+        shadow.import_shadow_baseline(
+            task_id=task.task_id, execution_ref="exec_result"
         )
-        self.assertEqual(
-            provenance["current_stage"],
-            "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
+        execution_id = shadow.shadow_event_store.map_legacy_identity(
+            source_system="clinx_v1",
+            source_type="execution_ref",
+            source_identity="exec_result",
+            target_type="execution",
+        ).target_id
+        replayed = ReplayService(shadow.shadow_event_store).replay_stream(
+            "execution", execution_id
         )
-        self.assertEqual(
-            provenance["turn_id"],
-            "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
+        self.assertEqual(replayed.turn_id, "turn_result")
+        self.assertEqual(replayed.exact_result_ref, "exec_result")
+        self.assertEqual(replayed.result_status, "PASS")
+
+        # A result turn that conflicts with the execution-owned turn is not
+        # silently selected as truth.
+        conflict_db = Path(self.temp.name) / "conflict.sqlite3"
+        conflict = TaskRegistry(conflict_db)
+        conflict_task = self.create_task(conflict, title="Conflict fixture")
+        with conflict.execution(
+            conflict_task.task_id, execution_ref="exec_conflict", retain=True
+        ):
+            conflict.set_execution_state(
+                conflict_task.task_id,
+                "CODEX_RUNNING",
+                current_stage="provider_wait",
+                codex_running=True,
+                turn_id="turn_execution",
+            )
+            conflict.record_execution_result(
+                execution_ref="exec_conflict",
+                task_id=conflict_task.task_id,
+                turn_id="turn_execution",
+                status="PASS",
+                summary="conflict fixture",
+                changed_files="NONE",
+                validation="PASS",
+                blockers="NONE",
+                next_state="IN_REVIEW",
+                raw_result="conflict fixture",
+            )
+        # Simulate a pre-existing contradictory row without weakening the V1
+        # result ownership guard above.
+        with sqlite3.connect(conflict_db) as conn:
+            conn.execute(
+                "UPDATE execution_results SET turn_id=? WHERE execution_ref=?",
+                ("turn_result", "exec_conflict"),
+            )
+        conflict_shadow = TaskRegistry(conflict_db, shadow_events=True)
+        conflict_shadow.import_shadow_baseline(
+            task_id=conflict_task.task_id, execution_ref="exec_conflict"
         )
+        conflict_id = conflict_shadow.shadow_event_store.map_legacy_identity(
+            source_system="clinx_v1",
+            source_type="execution_ref",
+            source_identity="exec_conflict",
+            target_type="execution",
+        ).target_id
+        conflict_event = conflict_shadow.shadow_event_store.read_events(
+            aggregate_type="execution", aggregate_id=conflict_id
+        )[0].event.payload.to_dict()
+        self.assertEqual(conflict_event["turn_id"], "UNKNOWN")
+        self.assertEqual(
+            conflict_event["field_provenance"]["turn_id"],
+            "CONFLICT:EXECUTION_ROW_RESULT_TURN",
+        )
+
+    def test_claim_observation_does_not_inherit_retained_turn(self):
+        registry, task = self._prepare_finished_execution_for_claim_window(
+            shadow_events=True
+        )
+        with registry.execution(task.task_id, execution_ref="exec_new", retain=True):
+            # Mirror the dispatcher claim-state write, which does not yet
+            # have a provider turn for the new execution.
+            registry.set_execution_state(
+                task.task_id, "CLAIMED", current_stage="claim"
+            )
+            claims = [
+                item.event.payload.to_dict()
+                for item in registry.shadow_event_store.read_events()
+                if item.event.event_type == "V1ExecutionClaimObserved"
+                and item.event.payload.to_dict().get("source_execution_ref") == "exec_new"
+            ]
+        self.assertEqual(len(claims), 1)
+        self.assertNotEqual(claims[0].get("turn_id"), "turn_old")
+        progress = [
+            item.event.payload.to_dict()
+            for item in registry.shadow_event_store.read_events()
+            if item.event.event_type == "V1ExecutionProgressObserved"
+            and item.event.payload.to_dict().get("source_execution_ref") == "exec_new"
+        ]
+        self.assertEqual(len(progress), 1)
+        self.assertNotEqual(progress[0].get("turn_id"), "turn_old")
 
     def test_retained_old_execution_does_not_borrow_new_task_projection(self):
         v1 = TaskRegistry(self.db)
@@ -1606,7 +1767,7 @@ class TaskRegistryShadowIntegrationTests(unittest.TestCase):
         replayed = ReplayService(shadow.shadow_event_store).replay_stream(
             "execution", old_id
         )
-        self.assertEqual(replayed.execution_state, "UNKNOWN")
+        self.assertEqual(replayed.execution_state, "COMPLETED")
         self.assertEqual(replayed.current_stage, "COMPLETED")
         self.assertEqual(replayed.turn_id, "turn_old")
         self.assertEqual(replayed.result_status, "PASS")
