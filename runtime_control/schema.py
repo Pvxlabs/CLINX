@@ -12,7 +12,7 @@ class Migration:
     statements: tuple[str, ...]
 
 
-LATEST_SCHEMA_VERSION = 1
+LATEST_SCHEMA_VERSION = 2
 
 MIGRATIONS = (
     Migration(
@@ -176,6 +176,48 @@ MIGRATIONS = (
             """CREATE TRIGGER IF NOT EXISTS runtime_events_no_delete
                 BEFORE DELETE ON runtime_events BEGIN
                     SELECT RAISE(ABORT, 'runtime event history is append-only');
+                END""",
+        ),
+    ),
+    Migration(
+        2,
+        "runtime_contract_remediation",
+        (
+            """CREATE TABLE runtime_command_receipts_v2 (
+                receipt_id TEXT PRIMARY KEY,
+                command_id TEXT NOT NULL,
+                idempotency_scope TEXT NOT NULL,
+                idempotency_key TEXT NOT NULL,
+                semantic_fingerprint TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                committed_at TEXT NOT NULL,
+                UNIQUE(idempotency_scope, idempotency_key)
+            )""",
+            """INSERT INTO runtime_command_receipts_v2(
+                receipt_id,command_id,idempotency_scope,idempotency_key,
+                semantic_fingerprint,result_json,committed_at
+            ) SELECT command_id,command_id,idempotency_scope,idempotency_key,
+                     semantic_fingerprint,result_json,committed_at
+                FROM runtime_command_receipts""",
+            "DROP TABLE runtime_command_receipts",
+            "ALTER TABLE runtime_command_receipts_v2 RENAME TO runtime_command_receipts",
+            """CREATE TABLE runtime_event_positions (
+                global_position INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL UNIQUE REFERENCES runtime_events(event_id)
+            )""",
+            """INSERT INTO runtime_event_positions(event_id)
+                SELECT event_id FROM runtime_events ORDER BY rowid""",
+            """CREATE TRIGGER runtime_events_assign_position
+                AFTER INSERT ON runtime_events BEGIN
+                    INSERT INTO runtime_event_positions(event_id) VALUES(NEW.event_id);
+                END""",
+            """CREATE TRIGGER runtime_event_positions_no_update
+                BEFORE UPDATE ON runtime_event_positions BEGIN
+                    SELECT RAISE(ABORT, 'runtime event positions are append-only');
+                END""",
+            """CREATE TRIGGER runtime_event_positions_no_delete
+                BEFORE DELETE ON runtime_event_positions BEGIN
+                    SELECT RAISE(ABORT, 'runtime event positions are append-only');
                 END""",
         ),
     ),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import datetime as _datetime
 import hashlib
@@ -39,9 +40,11 @@ from .models import (
     IncarnationRecord,
     ProtectedResourceRecord,
     RecoveryRecord,
+    RuntimeEventPage,
     RuntimeEventRecord,
     WorkerRecord,
 )
+from .replay import replay_runtime_events
 from .schema import LATEST_SCHEMA_VERSION, MIGRATIONS
 
 
@@ -89,6 +92,7 @@ class RuntimeControlStore:
     """A default-off, explicitly initialized runtime ownership store."""
 
     EVENT_FAMILY = "RUNTIME_WORKER_V1"
+    CURSOR_VERSION = 1
 
     def __init__(
         self,
@@ -223,11 +227,12 @@ class RuntimeControlStore:
 
     @contextlib.contextmanager
     def _transaction(self) -> Iterator[tuple[sqlite3.Connection, str]]:
+        observed_at = self._observe_coordinator_time()
         conn = self._connect()
         try:
             self._require_schema(conn)
             conn.execute("BEGIN IMMEDIATE")
-            now = self._coordinator_now(conn)
+            now = self._coordinator_now(conn, observed_at)
             yield conn, now
             self._fault("before_commit")
             conn.execute("COMMIT")
@@ -245,22 +250,54 @@ class RuntimeControlStore:
         finally:
             conn.close()
 
-    def _coordinator_now(self, conn: sqlite3.Connection) -> str:
+    def _observe_coordinator_time(self) -> str:
+        """Persist trusted time before a business transaction can be rejected."""
         now = encode_time(self.clock.now())
+        conn = self._connect()
+        try:
+            self._require_schema(conn)
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT last_coordinator_time FROM runtime_clock_state WHERE state_id=1"
+            ).fetchone()
+            if row is None:
+                raise RuntimeSchemaError("runtime clock state is not initialized")
+            if decode_time(now) < decode_time(row["last_coordinator_time"]):
+                raise ClockAnomaly(
+                    f"coordinator clock moved backwards from {row['last_coordinator_time']} to {now}"
+                )
+            conn.execute(
+                "UPDATE runtime_clock_state SET last_coordinator_time=? WHERE state_id=1",
+                (now,),
+            )
+            conn.execute("COMMIT")
+            return now
+        except sqlite3.OperationalError as exc:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            if "locked" in str(exc).casefold() or "busy" in str(exc).casefold():
+                raise RuntimeBusy(str(exc)) from exc
+            raise
+        except Exception:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _coordinator_now(conn: sqlite3.Connection, observed_at: str) -> str:
         row = conn.execute(
             "SELECT last_coordinator_time FROM runtime_clock_state WHERE state_id=1"
         ).fetchone()
         if row is None:
             raise RuntimeSchemaError("runtime clock state is not initialized")
-        if decode_time(now) < decode_time(row["last_coordinator_time"]):
+        if decode_time(observed_at) < decode_time(row["last_coordinator_time"]):
             raise ClockAnomaly(
-                f"coordinator clock moved backwards from {row['last_coordinator_time']} to {now}"
+                "a newer coordinator time was observed before the business transaction "
+                f"({observed_at} < {row['last_coordinator_time']})"
             )
-        conn.execute(
-            "UPDATE runtime_clock_state SET last_coordinator_time=? WHERE state_id=1",
-            (now,),
-        )
-        return now
+        return observed_at
 
     @staticmethod
     def _command_args(
@@ -326,6 +363,7 @@ class RuntimeControlStore:
             original_committed_result=result,
             current_authority_valid=authority,
             duplicate=duplicate,
+            receipt_id=row["receipt_id"],
         )
 
     def _save_receipt(
@@ -339,14 +377,16 @@ class RuntimeControlStore:
         result: Mapping[str, Any],
         now: str,
     ) -> CommandReceipt:
+        receipt_id = _new_id("rcr")
         conn.execute(
             """INSERT INTO runtime_command_receipts(
-                command_id,idempotency_scope,idempotency_key,semantic_fingerprint,result_json,committed_at
-            ) VALUES(?,?,?,?,?,?)""",
-            (command_id, scope, key, fingerprint, _canonical(result), now),
+                receipt_id,command_id,idempotency_scope,idempotency_key,
+                semantic_fingerprint,result_json,committed_at
+            ) VALUES(?,?,?,?,?,?,?)""",
+            (receipt_id, command_id, scope, key, fingerprint, _canonical(result), now),
         )
         row = conn.execute(
-            "SELECT * FROM runtime_command_receipts WHERE command_id=?", (command_id,)
+            "SELECT * FROM runtime_command_receipts WHERE receipt_id=?", (receipt_id,)
         ).fetchone()
         assert row is not None
         self._fault("after_receipt")
@@ -405,6 +445,13 @@ class RuntimeControlStore:
                 f"{key}:event",
             ),
         )
+        position_row = conn.execute(
+            "SELECT global_position FROM runtime_event_positions WHERE event_id=?",
+            (event_id,),
+        ).fetchone()
+        if position_row is None:
+            raise RuntimeSchemaError("runtime event position trigger did not run")
+        position = int(position_row["global_position"])
         self._fault("after_event")
         outbox_id = _new_id("rto")
         conn.execute(
@@ -432,6 +479,7 @@ class RuntimeControlStore:
             recorded_at=now,
             payload=payload,
             payload_hash=payload_hash,
+            global_position=position,
         )
 
     @staticmethod
@@ -516,6 +564,64 @@ class RuntimeControlStore:
             expires_at=row["expires_at"],
             release_reason=row["release_reason"],
         )
+
+    @staticmethod
+    def _assignment_event_payload(
+        conn: sqlite3.Connection,
+        assignment_id: str,
+        **metadata: Any,
+    ) -> dict[str, Any]:
+        assignment = conn.execute(
+            "SELECT * FROM runtime_assignments WHERE assignment_id=?",
+            (assignment_id,),
+        ).fetchone()
+        allocation = conn.execute(
+            "SELECT * FROM runtime_allocations WHERE assignment_id=?",
+            (assignment_id,),
+        ).fetchone()
+        if assignment is None or allocation is None:
+            raise RuntimeNotFound(f"incomplete assignment event state: {assignment_id}")
+        attempt = conn.execute(
+            "SELECT attempt_id,lifecycle,version FROM runtime_attempts WHERE attempt_id=?",
+            (assignment["attempt_id"],),
+        ).fetchone()
+        if attempt is None:
+            raise RuntimeNotFound(f"unknown assignment attempt: {assignment['attempt_id']}")
+        recovery = conn.execute(
+            "SELECT assignment_id,state,reason,attempts FROM runtime_recovery_work WHERE assignment_id=?",
+            (assignment_id,),
+        ).fetchone()
+        state = {
+            "state_version": 1,
+            "assignment": {
+                key: assignment[key]
+                for key in (
+                    "assignment_id", "attempt_id", "worker_id", "incarnation_id",
+                    "resource_key", "resource_epoch", "lifecycle", "version",
+                    "lease_expires_at", "created_at", "released_at",
+                )
+            },
+            "allocation": {
+                key: allocation[key]
+                for key in (
+                    "allocation_id", "assignment_id", "attempt_id", "worker_id",
+                    "incarnation_id", "resource_key", "resource_epoch", "lifecycle",
+                    "version", "expires_at", "release_reason",
+                )
+            },
+            "attempt": {key: attempt[key] for key in ("attempt_id", "lifecycle", "version")},
+            "recovery": (
+                {key: recovery[key] for key in ("assignment_id", "state", "reason", "attempts")}
+                if recovery is not None
+                else None
+            ),
+        }
+        return {
+            "assignment_id": assignment_id,
+            "lifecycle": assignment["lifecycle"],
+            "state": state,
+            **metadata,
+        }
 
     def register_task_reference(
         self,
@@ -791,7 +897,8 @@ class RuntimeControlStore:
                         (assignment["assignment_id"],),
                     )
                     conn.execute(
-                        """UPDATE runtime_allocations SET lifecycle='QUARANTINED',release_reason=?
+                        """UPDATE runtime_allocations
+                           SET lifecycle='QUARANTINED',release_reason=?,version=version+1
                            WHERE assignment_id=? AND lifecycle='ACTIVE'""",
                         ("worker_incarnation_superseded", assignment["assignment_id"]),
                     )
@@ -804,7 +911,11 @@ class RuntimeControlStore:
                     self._append_event(
                         conn, stream_type="assignment", stream_id=assignment["assignment_id"],
                         event_type="AssignmentOrphaned",
-                        payload={"assignment_id": assignment["assignment_id"], "reason": "worker_incarnation_superseded"},
+                        payload=self._assignment_event_payload(
+                            conn,
+                            assignment["assignment_id"],
+                            reason="worker_incarnation_superseded",
+                        ),
                         scope=scope, key=f"{key}:{assignment['assignment_id']}", now=now,
                     )
             conn.execute(
@@ -974,12 +1085,7 @@ class RuntimeControlStore:
             self._append_event(
                 conn, stream_type="assignment", stream_id=assignment_id,
                 event_type="AssignmentGranted",
-                payload={
-                    "assignment_id": assignment_id, "attempt_id": attempt_id, "worker_id": worker_id,
-                    "incarnation_id": incarnation_id, "resource_key": resource_key,
-                    "resource_epoch": epoch, "lease_expires_at": expires, "allocation_id": allocation_id,
-                    "lifecycle": "ACTIVE",
-                },
+                payload=self._assignment_event_payload(conn, assignment_id),
                 scope=scope, key=key, now=now,
             )
             return self._save_receipt(
@@ -1086,7 +1192,7 @@ class RuntimeControlStore:
             self._append_event(
                 conn, stream_type="assignment", stream_id=assignment_id,
                 event_type="AssignmentRenewed",
-                payload={"assignment_id": assignment_id, "resource_epoch": resource_epoch, "lease_expires_at": expires, "lifecycle": "ACTIVE"},
+                payload=self._assignment_event_payload(conn, assignment_id),
                 scope=scope, key=key, now=now,
             )
             return self._save_receipt(
@@ -1188,7 +1294,7 @@ class RuntimeControlStore:
             self._append_event(
                 conn, stream_type="assignment", stream_id=assignment_id,
                 event_type=event_type,
-                payload={"assignment_id": assignment_id, "attempt_id": attempt_id, "resource_key": resource_key, "resource_epoch": resource_epoch, "reason": reason, "lifecycle": lifecycle},
+                payload=self._assignment_event_payload(conn, assignment_id, reason=reason),
                 scope=scope, key=key, now=now,
             )
             return self._save_receipt(
@@ -1199,7 +1305,20 @@ class RuntimeControlStore:
     def reconcile_expired_once(self, *, limit: int = 100, command_id: str | None = None) -> tuple[str, ...]:
         if limit < 1:
             raise ValueError("limit must be positive")
+        command_prefix = _text("command_id", command_id) if command_id is not None else "expiry"
         with self._transaction() as (conn, now):
+            batch_scope = "runtime:expiry-reconciliation"
+            batch_fingerprint = _hash({"operation": "reconcile_expired_once", "limit": limit})
+            if command_id is not None:
+                existing_batch = self._existing_command(
+                    conn,
+                    scope=batch_scope,
+                    key=command_prefix,
+                    fingerprint=batch_fingerprint,
+                    now=now,
+                )
+                if existing_batch:
+                    return tuple(existing_batch.result["assignment_ids"])
             rows = conn.execute(
                 """SELECT * FROM runtime_assignments
                    WHERE lifecycle='ACTIVE' AND lease_expires_at<=?
@@ -1209,7 +1328,7 @@ class RuntimeControlStore:
             expired: list[str] = []
             for row in rows:
                 assignment_id = row["assignment_id"]
-                key = f"expiry:{assignment_id}:{row['lease_expires_at']}"
+                key = f"{command_prefix}:{assignment_id}:{row['lease_expires_at']}"
                 scope = f"assignment:{assignment_id}"
                 semantic = {"operation": "reconcile_expiry", "assignment_id": assignment_id, "lease_expires_at": row["lease_expires_at"]}
                 fingerprint = _hash(semantic)
@@ -1234,7 +1353,7 @@ class RuntimeControlStore:
                 self._append_event(
                     conn, stream_type="assignment", stream_id=assignment_id,
                     event_type="AssignmentExpired",
-                    payload={"assignment_id": assignment_id, "resource_key": row["resource_key"], "resource_epoch": row["resource_epoch"], "lifecycle": "EXPIRED"},
+                    payload=self._assignment_event_payload(conn, assignment_id),
                     scope=scope, key=key, now=now,
                 )
                 self._save_receipt(
@@ -1242,6 +1361,16 @@ class RuntimeControlStore:
                     result={"assignment_id": assignment_id, "lifecycle": "EXPIRED"}, now=now,
                 )
                 expired.append(assignment_id)
+            if command_id is not None:
+                self._save_receipt(
+                    conn,
+                    command_id=command_prefix,
+                    scope=batch_scope,
+                    key=command_prefix,
+                    fingerprint=batch_fingerprint,
+                    result={"assignment_ids": expired},
+                    now=now,
+                )
             return tuple(expired)
 
     def recover_assignment(
@@ -1291,7 +1420,7 @@ class RuntimeControlStore:
             self._append_event(
                 conn, stream_type="assignment", stream_id=assignment_id,
                 event_type="AssignmentRecovered",
-                payload={"assignment_id": assignment_id, "attempt_id": row["attempt_id"], "resource_key": row["resource_key"], "resource_epoch": row["resource_epoch"], "lifecycle": "RECOVERED"},
+                payload=self._assignment_event_payload(conn, assignment_id),
                 scope=scope, key=key, now=now,
             )
             return self._save_receipt(
@@ -1313,22 +1442,35 @@ class RuntimeControlStore:
         command_id: str | None = None,
         idempotency_key: str | None = None,
     ) -> CommandReceipt:
-        evidence_id = evidence_id or _new_id("evidence")
-        evidence_id = _text("evidence_id", evidence_id)
         evidence = _mapping(evidence)
         encoded = _canonical(evidence)
         if len(encoded.encode("utf-8")) > self.max_evidence_payload_bytes:
             raise PayloadSizeExceeded("attempt evidence exceeds configured byte limit")
-        command, key = self._command_args(command_id, idempotency_key, f"evidence:{evidence_id}")
         scope = f"attempt:{attempt_id}"
-        semantic = {
-            "operation": "record_attempt_evidence", "evidence_id": evidence_id,
+        request_semantic = {
+            "operation": "record_attempt_evidence",
             "assignment_id": assignment_id, "worker_id": worker_id, "incarnation_id": incarnation_id,
             "attempt_id": attempt_id, "resource_key": resource_key, "resource_epoch": resource_epoch,
             "evidence": evidence,
         }
-        fingerprint = _hash(semantic)
+        if evidence_id is not None:
+            evidence_id = _text("evidence_id", evidence_id)
+            default_key = f"evidence:{evidence_id}"
+        else:
+            default_key = f"evidence:auto:{_hash(request_semantic)}"
+        command, key = self._command_args(command_id, idempotency_key, default_key)
         with self._transaction() as (conn, now):
+            stored = conn.execute(
+                "SELECT * FROM runtime_command_receipts WHERE idempotency_scope=? AND idempotency_key=?",
+                (scope, key),
+            ).fetchone()
+            if evidence_id is None and stored is not None:
+                stored_result = json.loads(stored["result_json"])
+                evidence_id = _text("evidence_id", stored_result.get("evidence_id"))
+            if evidence_id is None:
+                evidence_id = _new_id("evidence")
+            semantic = {**request_semantic, "evidence_id": evidence_id}
+            fingerprint = _hash(semantic)
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
@@ -1475,6 +1617,95 @@ class RuntimeControlStore:
         finally:
             conn.close()
 
+    @classmethod
+    def _encode_event_cursor(cls, global_position: int) -> str:
+        raw = f"runtime-events:v{cls.CURSOR_VERSION}:{global_position}".encode("ascii")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    @classmethod
+    def _decode_event_cursor(cls, cursor: str | None) -> int:
+        if cursor is None:
+            return 0
+        cursor = _text("cursor", cursor)
+        try:
+            padded = cursor + "=" * (-len(cursor) % 4)
+            raw = base64.b64decode(padded, altchars=b"-_", validate=True).decode("ascii")
+            prefix, version, position = raw.split(":", 2)
+            if prefix != "runtime-events" or version != f"v{cls.CURSOR_VERSION}":
+                raise ValueError
+            decoded = int(position)
+            if decoded < 0 or cls._encode_event_cursor(decoded) != cursor:
+                raise ValueError
+            return decoded
+        except (UnicodeError, ValueError) as exc:
+            raise RuntimeConflict("invalid runtime event cursor") from exc
+
+    @staticmethod
+    def _event_from_row(row: sqlite3.Row) -> RuntimeEventRecord:
+        return RuntimeEventRecord(
+            event_id=row["event_id"],
+            stream_type=row["stream_type"],
+            stream_id=row["stream_id"],
+            sequence=int(row["sequence"]),
+            event_family=row["event_family"],
+            event_type=row["event_type"],
+            schema_version=int(row["schema_version"]),
+            occurred_at=row["occurred_at"],
+            recorded_at=row["recorded_at"],
+            payload=json.loads(row["payload_json"]),
+            payload_hash=row["payload_hash"],
+            global_position=int(row["global_position"]),
+        )
+
+    def _read_event_rows(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        where_sql: str,
+        args: tuple[Any, ...],
+        order_sql: str,
+        limit: int,
+        max_payload_bytes: int,
+    ) -> tuple[RuntimeEventRecord, ...]:
+        metadata_cursor = conn.execute(
+            f"""SELECT p.global_position,e.event_id,e.stream_type,e.stream_id,e.sequence,
+                       e.event_family,e.event_type,e.schema_version,e.occurred_at,e.recorded_at,
+                       e.payload_hash,LENGTH(CAST(e.payload_json AS BLOB)) AS payload_bytes
+                  FROM runtime_event_positions p
+                  JOIN runtime_events e ON e.event_id=p.event_id
+                 WHERE {where_sql} ORDER BY {order_sql} LIMIT ?""",
+            (*args, limit),
+        )
+        metadata: list[sqlite3.Row] = []
+        total = 0
+        try:
+            for row in metadata_cursor:
+                size = int(row["payload_bytes"])
+                if size > max_payload_bytes:
+                    raise PayloadSizeExceeded(
+                        f"runtime event {row['event_id']} exceeds read budget"
+                    )
+                total += size
+                if total > max_payload_bytes:
+                    raise PayloadSizeExceeded("runtime event page exceeds read budget")
+                metadata.append(row)
+        finally:
+            metadata_cursor.close()
+        if not metadata:
+            return ()
+        positions = tuple(int(row["global_position"]) for row in metadata)
+        placeholders = ",".join("?" for _ in positions)
+        body_cursor = conn.execute(
+            f"""SELECT p.global_position,e.* FROM runtime_event_positions p
+                  JOIN runtime_events e ON e.event_id=p.event_id
+                 WHERE p.global_position IN ({placeholders}) ORDER BY {order_sql}""",
+            positions,
+        )
+        try:
+            return tuple(self._event_from_row(row) for row in body_cursor)
+        finally:
+            body_cursor.close()
+
     def read_events(
         self,
         *,
@@ -1484,62 +1715,58 @@ class RuntimeControlStore:
         limit: int = 100,
         max_payload_bytes: int = 2_000_000,
     ) -> tuple[RuntimeEventRecord, ...]:
+        """Read one aggregate stream by sequence, or the first global page.
+
+        Cross-stream continuation must use :meth:`scan_events`; a stream sequence
+        is never accepted as a global storage checkpoint.
+        """
         if limit < 1 or max_payload_bytes < 1:
             raise ValueError("limit and max_payload_bytes must be positive")
+        if (stream_type is None) != (stream_id is None):
+            raise ValueError("stream_type and stream_id must be provided together")
+        if stream_type is None:
+            if after_sequence != 0:
+                raise ValueError("cross-stream continuation requires scan_events cursor")
+            return self.scan_events(
+                limit=limit,
+                max_payload_bytes=max_payload_bytes,
+            ).events
         with self._read_connection() as conn:
-            where = ["sequence > ?"]
-            args: list[Any] = [after_sequence]
-            if stream_type is not None:
-                where.append("stream_type=?")
-                args.append(stream_type)
-            if stream_id is not None:
-                where.append("stream_id=?")
-                args.append(stream_id)
-            where_sql = " AND ".join(where)
-            metadata_cursor = conn.execute(
-                f"""SELECT event_id,stream_type,stream_id,sequence,event_family,event_type,
-                           schema_version,occurred_at,recorded_at,payload_hash,
-                           LENGTH(CAST(payload_json AS BLOB)) AS payload_bytes
-                    FROM runtime_events WHERE {where_sql}
-                    ORDER BY rowid LIMIT ?""",
-                (*args, limit),
+            return self._read_event_rows(
+                conn,
+                where_sql="e.stream_type=? AND e.stream_id=? AND e.sequence>?",
+                args=(stream_type, stream_id, after_sequence),
+                order_sql="e.sequence",
+                limit=limit,
+                max_payload_bytes=max_payload_bytes,
             )
-            metadata = []
-            total = 0
-            try:
-                for row in metadata_cursor:
-                    size = int(row["payload_bytes"])
-                    if size > max_payload_bytes:
-                        raise PayloadSizeExceeded(
-                            f"runtime event {row['event_id']} exceeds read budget"
-                        )
-                    total += size
-                    if total > max_payload_bytes:
-                        raise PayloadSizeExceeded("runtime event page exceeds read budget")
-                    metadata.append(row)
-            finally:
-                metadata_cursor.close()
-            if not metadata:
-                return ()
-            ids = [row["event_id"] for row in metadata]
-            placeholders = ",".join("?" for _ in ids)
-            body_cursor = conn.execute(
-                f"SELECT * FROM runtime_events WHERE event_id IN ({placeholders}) ORDER BY rowid",
-                ids,
+
+    def scan_events(
+        self,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+        max_payload_bytes: int = 2_000_000,
+    ) -> RuntimeEventPage:
+        """Read a lossless bounded page across streams by opaque storage cursor."""
+        if limit < 1 or max_payload_bytes < 1:
+            raise ValueError("limit and max_payload_bytes must be positive")
+        after_position = self._decode_event_cursor(cursor)
+        with self._read_connection() as conn:
+            events = self._read_event_rows(
+                conn,
+                where_sql="p.global_position>?",
+                args=(after_position,),
+                order_sql="p.global_position",
+                limit=limit,
+                max_payload_bytes=max_payload_bytes,
             )
-            try:
-                rows = list(body_cursor)
-            finally:
-                body_cursor.close()
-            return tuple(
-                RuntimeEventRecord(
-                    event_id=row["event_id"], stream_type=row["stream_type"], stream_id=row["stream_id"],
-                    sequence=int(row["sequence"]), event_family=row["event_family"], event_type=row["event_type"],
-                    schema_version=int(row["schema_version"]), occurred_at=row["occurred_at"], recorded_at=row["recorded_at"],
-                    payload=json.loads(row["payload_json"]), payload_hash=row["payload_hash"],
-                )
-                for row in rows
-            )
+        checkpoint = events[-1].global_position if events else after_position
+        assert checkpoint is not None
+        return RuntimeEventPage(
+            events=events,
+            next_cursor=self._encode_event_cursor(checkpoint),
+        )
 
     def count_events(self) -> int:
         with self._read_connection() as conn:
@@ -1555,29 +1782,4 @@ class RuntimeControlStore:
             return tuple(dict(row) for row in rows)
 
     def replay_events(self, events: tuple[RuntimeEventRecord, ...] | list[RuntimeEventRecord]) -> dict[str, Any]:
-        """Replay a runtime stream using only immutable event data."""
-        ordered = tuple(events)
-        if not ordered:
-            return {"event_family": self.EVENT_FAMILY, "stream_version": 0, "event_types": (), "states": {}}
-        first = ordered[0]
-        expected = 1
-        states: dict[str, str] = {}
-        for event in ordered:
-            if event.event_family != self.EVENT_FAMILY or event.schema_version != 1:
-                raise RuntimeConflict("unknown runtime event family or schema")
-            if event.stream_type != first.stream_type or event.stream_id != first.stream_id:
-                raise RuntimeConflict("runtime replay contains multiple streams")
-            if event.sequence != expected:
-                raise RuntimeConflict("runtime event stream has a version gap")
-            expected += 1
-            payload = event.payload.to_dict()
-            if "assignment_id" in payload and "lifecycle" in payload:
-                states[payload["assignment_id"]] = payload["lifecycle"]
-        return {
-            "event_family": self.EVENT_FAMILY,
-            "stream_type": first.stream_type,
-            "stream_id": first.stream_id,
-            "stream_version": expected - 1,
-            "event_types": tuple(event.event_type for event in ordered),
-            "states": states,
-        }
+        return replay_runtime_events(events)

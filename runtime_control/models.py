@@ -21,6 +21,7 @@ class CommandReceipt(DomainModel):
     original_committed_result: JsonDocument | Mapping[str, Any]
     current_authority_valid: bool | None = None
     duplicate: bool = False
+    receipt_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "command_id", require_text("command_id", self.command_id))
@@ -138,9 +139,16 @@ class RuntimeEventRecord(DomainModel):
     recorded_at: str
     payload: JsonDocument | Mapping[str, Any]
     payload_hash: str
+    global_position: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "payload", _doc(self.payload))
+
+
+@dataclasses.dataclass(frozen=True)
+class RuntimeEventPage(DomainModel):
+    events: tuple[RuntimeEventRecord, ...]
+    next_cursor: str
 
 
 @dataclasses.dataclass(frozen=True)

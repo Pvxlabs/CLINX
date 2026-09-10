@@ -53,8 +53,8 @@ container, or filesystem client has stopped.
 | Incarnation | Names one process generation for a stable worker. | Coordinator registration; worker heartbeat cannot create or revive it. | Durable generation, lease/heartbeat telemetry, and status. |
 | Assignment | Grants one attempt to one worker incarnation for a bounded lease. | Coordinator assignment, renew, revoke, expiry, and recovery commands. | Durable owner tuple, lease, version, state, and immutable assignment identity. |
 | ResourceAllocation | Grants a resource key at a monotonic fencing epoch. | Coordinator/resource authority. | Durable allocation, owner tuple, epoch, expiry, release/quarantine state. |
-| Event | Records versioned runtime lifecycle facts. | Append-only transaction participant. | Durable event family/type, stream sequence, payload, and integrity metadata. |
-| Command receipt | Records scoped idempotency and original committed result. | The command transaction. | Durable semantic fingerprint and original result; current authority is rechecked on retry. |
+| Event | Records versioned runtime lifecycle facts. | Append-only transaction participant. | Durable event family/type, per-stream sequence, non-causal global storage position, payload, and integrity metadata. |
+| Command receipt | Records scoped idempotency and original committed result. | The command transaction. | Globally unique `receipt_id`, client-compatible `command_id`, scoped key, semantic fingerprint, and original result; current authority is rechecked on retry. |
 | Recovery work | Records that an expired/orphaned owner needs explicit reconciliation. | Explicit reconciliation and recovery commands. | Durable state; no status read triggers recovery. |
 
 The package deliberately does not create a `ProviderSession` record. A
@@ -107,6 +107,21 @@ conflict. A historical receipt includes `original_committed_result`, but its
 `current_authority_valid` value is recomputed from current rows; replaying a
 receipt cannot restore an expired or revoked permission.
 
+`command_id` remains the caller-facing compatibility parameter and is returned
+unchanged in `CommandReceipt`. It is not a globally unique storage key. Receipt
+lookup and conflict detection use `(idempotency_scope, idempotency_key)`;
+`receipt_id` is the separate global storage identity. Supplying both
+`command_id` and `idempotency_key` still requires equal values. This lets two
+scopes use the same client key without weakening conflicts inside one scope.
+
+`record_attempt_evidence()` keeps `evidence_id` optional. With an existing
+scoped receipt, a retry first restores the committed generated ID from that
+receipt and then verifies the complete semantic fingerprint. With no receipt,
+the ID is generated inside the serialized business transaction. If neither a
+client key nor an explicit evidence ID is supplied, the default scoped key is
+derived from the request semantics. Explicit IDs remain part of the semantic
+fingerprint. Payload or owner changes under the same scoped key still conflict.
+
 Assignment, allocation, state changes, runtime event, command receipt, and
 outbox row are one local transaction. Faults before commit roll back all of
 them. A response lost after commit is recovered by the exact command retry.
@@ -114,10 +129,20 @@ them. A response lost after commit is recovered by the exact command retry.
 ## 5. Time and Recovery
 
 The coordinator clock supplies lease decisions and absolute `expires_at`.
-Worker-reported timestamps are telemetry only. Tests use an injected clock;
-the system rejects a coordinator clock moving backwards relative to its last
-persisted decision instead of revalidating old leases. A forward jump makes
-leases eligible for expiry, but still does not prove physical process death.
+Worker-reported timestamps are telemetry only. Tests use an injected clock.
+Every command first commits trusted time to `runtime_clock_state` in a small
+safety-observation transaction. The subsequent business transaction acquires
+its own write lock and rechecks that no newer observation raced ahead. A
+backwards clock raises `ClockAnomaly` instead of revalidating old leases.
+
+These are deliberately separate atomic boundaries. A rejected lease, stale
+owner, semantic conflict, injected pre-commit failure, or process exit may roll
+back business state, events, receipts, and outbox rows, but it cannot roll back
+the already committed safety observation. Conversely, committing the safety
+watermark never commits a failed protected mutation or partial ownership
+change. An accepted ownership change, event, receipt, and outbox remain one
+business transaction. A forward jump makes leases ineligible at the exact
+`now >= expires_at` boundary, but still does not prove physical process death.
 
 Expiry reconciliation is explicit and bounded. It persists recovery work and
 quarantines the resource. A reopened coordinator can continue reconciliation
@@ -140,15 +165,43 @@ initializing runtime control never edits or deletes PVX-1805 history. Existing
 `v2_` shadow schema, append-only triggers, replay, bounded reads, and MCP
 behavior remain unchanged.
 
-Runtime event streams are append-only and sequence-checked. Payloads are
-canonical UTF-8 JSON with a bounded write size. Event reads preflight byte
-lengths before materializing bodies and are bounded by page size and byte
-budget. Unknown runtime schema versions, gaps, wrong stream identity, and
-conflicting idempotency are rejected.
+Runtime event streams are append-only and sequence-checked. Assignment events
+now carry a validated state snapshot for assignment, allocation, attempt, and
+recovery fields. The reducer selects transitions by `(event_type,
+schema_version)`, verifies the payload hash, identity, sequence, required
+fields, dependent lifecycles, and exact version advances, and never consults
+current database rows. Legal foundation events without the state snapshot are
+handled by explicit v1 upcasts. Unknown types/schemas and illegal transitions
+fail; unknown extension fields are reported as `NOT_COVERED` and are not copied
+into authoritative projected state.
 
-Closing runtime control leaves its rows and events intact. Reinitialization is
-idempotent and additive. No production database migration is performed by
-this decision.
+| Assignment event | Legal prior lifecycle | Result | Allocation | Attempt | Recovery |
+|---|---|---|---|---|---|
+| `AssignmentGranted` | none | `ACTIVE` | `ACTIVE` | `ASSIGNED` | none |
+| `AssignmentRenewed` | `ACTIVE` | `ACTIVE`, new lease/version | `ACTIVE`, new lease/version | unchanged | none |
+| `AssignmentReleased` | `ACTIVE` | `RELEASED` | `RELEASED` | `RELEASED` | none |
+| `AssignmentRevoked` | `ACTIVE` | `REVOKED` | `RELEASED` | `PENDING` | none |
+| `AssignmentExpired` | `ACTIVE` | `EXPIRED` | `QUARANTINED` | `ASSIGNED` | `PENDING` |
+| `AssignmentOrphaned` | `ACTIVE` | `ORPHANED` | `QUARANTINED` | `ASSIGNED` | `PENDING` |
+| `AssignmentRecovered` | `EXPIRED` or `ORPHANED` | `RECOVERED` | `RELEASED` | `PENDING` | `DONE` |
+
+Per-stream continuation and cross-stream scanning are different contracts.
+`read_events(stream_type=..., stream_id=..., after_sequence=...)` uses only the
+aggregate sequence and requires both stream identifiers. Cross-stream callers
+use `scan_events(cursor=...)`, whose opaque token represents an append-only
+`runtime_event_positions.global_position`. That position is storage order, not
+business causality. An unfiltered non-zero `after_sequence` is rejected.
+Payload byte preflight occurs before body materialization; rejection returns no
+advanced token, so the same cursor can be retried with an adequate budget.
+
+Runtime schema migration 2 rebuilds only the receipt table, copying every old
+row with `receipt_id=old command_id` while preserving client-visible
+`command_id`, scope, fingerprint, result, and timestamp. New receipts use an
+independent generated `receipt_id`. It also backfills event positions in
+existing `runtime_events.rowid` order without rewriting the event rows, then
+assigns future positions with an `AFTER INSERT` trigger in the event
+transaction. Closing runtime control leaves all rows intact; reinitialization
+is idempotent. No production database migration is performed by this decision.
 
 ## 7. Migration and Non-Goals
 
@@ -175,7 +228,7 @@ The qualification must keep these boundaries explicit:
 
 ```ini
 V1_LIVE_AUTHORITY=ON
-V2_LIVE_AUTHORITY_CUTOVER=OFF
+V2_LIVE_AUTHORITY_CUTOVER=NOT_PERFORMED
 WORKER_RUNTIME_DEFAULT=OFF
 SHADOW_DEFAULT=OFF
 PUBLIC_MCP_CONTRACT=UNCHANGED

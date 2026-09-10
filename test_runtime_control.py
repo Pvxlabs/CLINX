@@ -60,7 +60,7 @@ def test_runtime_schema_is_explicit_and_does_not_appear_on_construction(tmp_path
     assert not db.exists()
     store.initialize()
     store.initialize()
-    assert store.schema_version() == 1
+    assert store.schema_version() == 2
 
 
 def test_v1_registry_default_path_does_not_initialize_runtime_control(tmp_path):
@@ -126,6 +126,15 @@ def test_bounded_fixed_seed_sequence_uses_independent_reference(tmp_path):
     assert result["workers"] == 8
     assert result["attempts"] == 32
     assert result["operations"] == 200
+    assert result["attempted_operations"] == (
+        result["effective_state_changes"] + result["no_op_operations"]
+    )
+    matrix = result["transition_matrix"]
+    assert matrix["attempted_operations"] == (
+        matrix["effective_state_changes"]
+        + matrix["no_op_operations"]
+        + matrix["rejected_operations"]
+    )
 
 
 def test_durable_identity_chain_and_reopen(tmp_path):
@@ -290,6 +299,10 @@ def test_fault_before_commit_rolls_back_and_after_commit_retry_is_safe(tmp_path)
         assert store.count_events() == 0
         with sqlite3.connect(store.path) as conn:
             assert conn.execute("SELECT COUNT(*) FROM runtime_tasks").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM runtime_events").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM runtime_event_positions").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM runtime_outbox").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM runtime_command_receipts").fetchone()[0] == 0
 
     fired = {"value": False}
     def after_commit(stage):
