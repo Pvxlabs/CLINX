@@ -130,19 +130,24 @@ them. A response lost after commit is recovered by the exact command retry.
 
 The coordinator clock supplies lease decisions and absolute `expires_at`.
 Worker-reported timestamps are telemetry only. Tests use an injected clock.
-Every command first commits trusted time to `runtime_clock_state` in a small
-safety-observation transaction. The subsequent business transaction acquires
-its own write lock and rechecks that no newer observation raced ahead. A
-backwards clock raises `ClockAnomaly` instead of revalidating old leases.
+Every command first commits a trusted preflight observation to
+`runtime_clock_state`. It then acquires the ownership write lock and samples the
+clock again; that post-lock sample is the authorization linearization point and
+must satisfy `now < expires_at`. The sample is written into the business
+transaction on success. If validation or a business fault rolls that
+transaction back, the same trusted sample is committed by a short independent
+safety transaction, so a rejected decision cannot be forgotten. A backwards
+clock raises `ClockAnomaly` instead of revalidating old leases.
 
-These are deliberately separate atomic boundaries. A rejected lease, stale
-owner, semantic conflict, injected pre-commit failure, or process exit may roll
-back business state, events, receipts, and outbox rows, but it cannot roll back
-the already committed safety observation. Conversely, committing the safety
-watermark never commits a failed protected mutation or partial ownership
-change. An accepted ownership change, event, receipt, and outbox remain one
-business transaction. A forward jump makes leases ineligible at the exact
-`now >= expires_at` boundary, but still does not prove physical process death.
+The safety and business boundaries are explicit. A rejected lease, stale owner,
+semantic conflict, injected pre-commit failure, or process exit may roll back
+business state, events, receipts, and outbox rows, but it cannot roll back the
+latest trusted observation. Conversely, persisting that observation never
+commits a failed protected mutation or partial ownership change. An accepted
+ownership change, event, receipt, outbox, and watermark remain one business
+transaction. Lock contention therefore cannot authorize with a pre-lock time,
+and a forward jump makes leases ineligible at the exact `now >= expires_at`
+boundary without proving physical process death.
 
 Expiry reconciliation is explicit and bounded. It persists recovery work and
 quarantines the resource. A reopened coordinator can continue reconciliation
@@ -167,13 +172,36 @@ behavior remain unchanged.
 
 Runtime event streams are append-only and sequence-checked. Assignment events
 now carry a validated state snapshot for assignment, allocation, attempt, and
-recovery fields. The reducer selects transitions by `(event_type,
-schema_version)`, verifies the payload hash, identity, sequence, required
-fields, dependent lifecycles, and exact version advances, and never consults
-current database rows. Legal foundation events without the state snapshot are
-handled by explicit v1 upcasts. Unknown types/schemas and illegal transitions
-fail; unknown extension fields are reported as `NOT_COVERED` and are not copied
-into authoritative projected state.
+recovery fields. Worker registration and incarnation events carry their
+post-mutation aggregate versions; `WorkerHeartbeatRecorded` carries the
+post-mutation Worker and incarnation versions and remains in the incarnation
+stream. The reducer selects transitions by `(event_type, schema_version)`,
+verifies the payload hash, identity, sequence, required fields, dependent
+lifecycles, and exact version advances, and never consults current database
+rows. A worker replay therefore accepts a worker registration stream plus its
+immutable related incarnation streams, merged by durable event position. A
+worker stream by itself is explicitly a `registration_only` partial view, not
+an aggregate-version claim. Legacy worker events without version fields return
+`UNKNOWN`/`NOT_COVERED` provenance rather than inferring versions from
+registration counts. Legal foundation events without the assignment snapshot
+are handled by explicit v1 upcasts. Unknown types/schemas and illegal
+transitions fail; unknown extension fields are reported as `NOT_COVERED` and
+are not copied into authoritative projected state.
+
+The worker replay coverage is intentionally field-specific:
+
+| Mutation | Immutable evidence | Replay comparison |
+|---|---|---|
+| Worker registration | `worker_version=0`, identity, capacity | Worker identity/lifecycle/version |
+| Incarnation registration | worker/incarnation identity, generation, new version, superseded identity/version | Current incarnation, generation, Worker version, superseded lifecycle/version |
+| Heartbeat | incarnation stream sequence, heartbeat time, post-mutation Worker and incarnation versions | Heartbeat time and both aggregate versions |
+| Legacy worker event | registration fields only | Registration-only view; missing versions are `UNKNOWN`/`NOT_COVERED` |
+
+Stream sequence is a per-stream append order. Aggregate version is a durable
+post-mutation counter and is never derived from the number of registration
+events. The composite replay validates every related stream independently and
+merges only by immutable storage position; that position is not a business
+causal order.
 
 | Assignment event | Legal prior lifecycle | Result | Allocation | Attempt | Recovery |
 |---|---|---|---|---|---|

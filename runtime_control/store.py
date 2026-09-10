@@ -44,7 +44,7 @@ from .models import (
     RuntimeEventRecord,
     WorkerRecord,
 )
-from .replay import replay_runtime_events
+from .replay import replay_runtime_events, replay_worker_events
 from .schema import LATEST_SCHEMA_VERSION, MIGRATIONS
 
 
@@ -227,12 +227,18 @@ class RuntimeControlStore:
 
     @contextlib.contextmanager
     def _transaction(self) -> Iterator[tuple[sqlite3.Connection, str]]:
-        observed_at = self._observe_coordinator_time()
+        self._observe_coordinator_time()
         conn = self._connect()
+        fresh_at: str | None = None
         try:
             self._require_schema(conn)
             conn.execute("BEGIN IMMEDIATE")
-            now = self._coordinator_now(conn, observed_at)
+            # The first observation serializes admission, but authorization must
+            # use a clock sample taken after this transaction owns the write lock.
+            # Persist that sample in this transaction on success, or independently
+            # after rollback so a rejected mutation cannot erase a safety decision.
+            fresh_at = encode_time(self.clock.now())
+            now = self._coordinator_now(conn, fresh_at)
             yield conn, now
             self._fault("before_commit")
             conn.execute("COMMIT")
@@ -240,12 +246,16 @@ class RuntimeControlStore:
         except sqlite3.OperationalError as exc:
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
+            if fresh_at is not None:
+                self._persist_coordinator_time(fresh_at)
             if "locked" in str(exc).casefold() or "busy" in str(exc).casefold():
                 raise RuntimeBusy(str(exc)) from exc
             raise
         except Exception:
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
+            if fresh_at is not None:
+                self._persist_coordinator_time(fresh_at)
             raise
         finally:
             conn.close()
@@ -253,6 +263,11 @@ class RuntimeControlStore:
     def _observe_coordinator_time(self) -> str:
         """Persist trusted time before a business transaction can be rejected."""
         now = encode_time(self.clock.now())
+        self._persist_coordinator_time(now)
+        return now
+
+    def _persist_coordinator_time(self, now: str) -> None:
+        """Commit a monotonic trusted-time observation in its own transaction."""
         conn = self._connect()
         try:
             self._require_schema(conn)
@@ -271,7 +286,6 @@ class RuntimeControlStore:
                 (now,),
             )
             conn.execute("COMMIT")
-            return now
         except sqlite3.OperationalError as exc:
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
@@ -296,6 +310,11 @@ class RuntimeControlStore:
             raise ClockAnomaly(
                 "a newer coordinator time was observed before the business transaction "
                 f"({observed_at} < {row['last_coordinator_time']})"
+            )
+        if decode_time(observed_at) > decode_time(row["last_coordinator_time"]):
+            conn.execute(
+                "UPDATE runtime_clock_state SET last_coordinator_time=? WHERE state_id=1",
+                (observed_at,),
             )
         return observed_at
 
@@ -827,7 +846,7 @@ class RuntimeControlStore:
             self._append_event(
                 conn, stream_type="worker", stream_id=worker_id,
                 event_type="WorkerRegistered",
-                payload={"worker_id": worker_id, "capacity": capacity},
+                payload={"worker_id": worker_id, "capacity": capacity, "worker_version": 0},
                 scope=scope, key=key, now=now,
             )
             return self._save_receipt(
@@ -879,7 +898,7 @@ class RuntimeControlStore:
             if conn.execute("SELECT 1 FROM runtime_worker_incarnations WHERE incarnation_id=?", (incarnation_id,)).fetchone() is not None:
                 raise RuntimeConflict(f"incarnation already exists: {incarnation_id}")
             old = conn.execute(
-                "SELECT incarnation_id FROM runtime_worker_incarnations WHERE worker_id=? AND lifecycle='ACTIVE'",
+                "SELECT incarnation_id,version FROM runtime_worker_incarnations WHERE worker_id=? AND lifecycle='ACTIVE'",
                 (worker_id,),
             ).fetchone()
             if old is not None:
@@ -932,7 +951,19 @@ class RuntimeControlStore:
             self._append_event(
                 conn, stream_type="worker", stream_id=worker_id,
                 event_type="WorkerIncarnationRegistered",
-                payload={"worker_id": worker_id, "incarnation_id": incarnation_id, "generation": generation},
+                payload={
+                    "worker_id": worker_id,
+                    "incarnation_id": incarnation_id,
+                    "generation": generation,
+                    "worker_version": int(conn.execute(
+                        "SELECT version FROM runtime_workers WHERE worker_id=?", (worker_id,)
+                    ).fetchone()["version"]),
+                    "incarnation_version": 0,
+                    "superseded_incarnation_id": old["incarnation_id"] if old is not None else None,
+                    "superseded_incarnation_version": (
+                        int(old["version"]) + 1 if old is not None else None
+                    ),
+                },
                 scope=scope, key=key, now=now,
             )
             return self._save_receipt(
@@ -979,10 +1010,25 @@ class RuntimeControlStore:
                 "UPDATE runtime_workers SET last_heartbeat_at=?,version=version+1 WHERE worker_id=?",
                 (now, worker_id),
             )
+            versions = conn.execute(
+                """SELECT w.version AS worker_version,i.version AS incarnation_version
+                   FROM runtime_workers w
+                   JOIN runtime_worker_incarnations i ON i.worker_id=w.worker_id
+                  WHERE w.worker_id=? AND i.incarnation_id=?""",
+                (worker_id, incarnation_id),
+            ).fetchone()
+            assert versions is not None
             self._append_event(
                 conn, stream_type="incarnation", stream_id=incarnation_id,
                 event_type="WorkerHeartbeatRecorded",
-                payload={"worker_id": worker_id, "incarnation_id": incarnation_id, "worker_reported_at": worker_reported_at},
+                payload={
+                    "worker_id": worker_id,
+                    "incarnation_id": incarnation_id,
+                    "worker_reported_at": worker_reported_at,
+                    "heartbeat_at": now,
+                    "worker_version": int(versions["worker_version"]),
+                    "incarnation_version": int(versions["incarnation_version"]),
+                },
                 scope=scope, key=key, now=now,
             )
             return self._save_receipt(
@@ -1782,4 +1828,26 @@ class RuntimeControlStore:
             return tuple(dict(row) for row in rows)
 
     def replay_events(self, events: tuple[RuntimeEventRecord, ...] | list[RuntimeEventRecord]) -> dict[str, Any]:
+        if events and events[0].stream_type == "worker":
+            worker_id = events[0].stream_id
+            incarnation_ids = {
+                event.payload.to_dict().get("incarnation_id")
+                for event in events
+                if isinstance(event.payload.to_dict().get("incarnation_id"), str)
+            }
+            related: list[RuntimeEventRecord] = []
+            if incarnation_ids:
+                placeholders = ",".join("?" for _ in incarnation_ids)
+                with self._read_connection() as conn:
+                    rows = conn.execute(
+                        f"""SELECT p.global_position,e.*
+                              FROM runtime_event_positions p
+                              JOIN runtime_events e ON e.event_id=p.event_id
+                             WHERE e.stream_type='incarnation'
+                               AND e.stream_id IN ({placeholders})
+                             ORDER BY p.global_position""",
+                        tuple(sorted(incarnation_ids)),
+                    ).fetchall()
+                    related = [self._event_from_row(row) for row in rows]
+            return replay_worker_events(events, tuple(related))
         return replay_runtime_events(events)

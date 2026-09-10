@@ -355,6 +355,28 @@ def run_qualification(*, seed: int = 1806, operations: int = 200) -> dict[str, o
         )["state"]
         if worker_replay["worker"]["current_incarnation_id"] != "matrix-incarnation-2":
             raise AssertionError("worker incarnation projection diverged")
+        # Heartbeats mutate both worker aggregates.  Their immutable post-write
+        # versions live on the incarnation stream and are replayed through the
+        # worker + related-stream entry point.
+        matrix_clock.advance(1)
+        matrix.heartbeat_worker(
+            "matrix-worker", "matrix-incarnation-2", command_id="matrix-heartbeat-1"
+        )
+        matrix_clock.advance(1)
+        matrix.heartbeat_worker(
+            "matrix-worker", "matrix-incarnation-2", command_id="matrix-heartbeat-2"
+        )
+        worker_snapshot = matrix.get_worker("matrix-worker")
+        incarnation_snapshot = matrix.get_incarnation("matrix-incarnation-2")
+        worker_replay_after_heartbeat = matrix.replay_events(
+            matrix.read_events(stream_type="worker", stream_id="matrix-worker", limit=100)
+        )["state"]
+        if (
+            worker_replay_after_heartbeat["worker"]["version"] != worker_snapshot.version
+            or worker_replay_after_heartbeat["incarnations"]["matrix-incarnation-2"]["version"]
+            != incarnation_snapshot.version
+        ):
+            raise AssertionError("heartbeat aggregate version replay diverged")
         if matrix_attempted != matrix_effective + matrix_no_op + matrix_rejected:
             raise AssertionError("matrix operation accounting diverged")
         return {
@@ -378,6 +400,13 @@ def run_qualification(*, seed: int = 1806, operations: int = 200) -> dict[str, o
                 "assignment_streams_compared": 2,
                 "incarnation_replacement_compared": True,
                 "response_loss_retry_compared": True,
+            },
+            "worker_version_matrix": {
+                "heartbeats_attempted": 2,
+                "worker_version_replayed": worker_replay_after_heartbeat["worker"]["version"],
+                "incarnation_version_replayed": worker_replay_after_heartbeat["incarnations"]["matrix-incarnation-2"]["version"],
+                "aggregate_streams_compared": 2,
+                "legacy_missing_versions": "UNKNOWN_NOT_COVERED",
             },
             "production_load_claim": "NOT_CLAIMED",
         }

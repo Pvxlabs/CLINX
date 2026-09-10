@@ -5,7 +5,7 @@
 ```ini
 ISSUE=PVX-1806
 REPOSITORY=/home/pvxlabs/dev/clinx
-BASE_COMMIT=5360ad5ea5f8b0ae4291ca1b46ef077dc4cf5b34
+BASE_COMMIT=73351028002f5dd4249c3b67f90f38a906cd88b0
 BRANCH=main
 PYTHON_VERSION=3.12.3
 SQLITE_RUNTIME_VERSION=3.45.1
@@ -512,3 +512,113 @@ NEXT_PHASE_STARTED=NO
 
 The final Git commit, push, remote readback, and post-commit worktree state are
 reported by the enclosing task because a commit cannot contain its own SHA.
+
+### 10.7 Follow-up corrective run (7335102)
+
+This follow-up is limited to the two residual contracts from the independent
+7335102 review: authorization time after a contended ownership lock, and
+heartbeat-aware Worker/incarnation replay. RC-02, RC-04, AssignmentOrphaned,
+and the v1-to-v2 receipt migration remain unchanged.
+
+The supplied candidate file was first run against this checkout with its
+unmodified barriers and real temporary SQLite fixtures:
+
+```text
+PYTHONPATH=/home/pvxlabs/dev/clinx python3 -m pytest -q \
+  /tmp/pvx1806-followup-UnHYbt/test_pvx1806_followup_candidates.py
+4 failed, 1 passed in 0.16s
+```
+
+The two red RC-01 cases held the observation lock and the business lock on
+independent connections, advanced the injected clock from T9 to T11 while the
+writer was blocked, and observed the protected row incorrectly change from
+version 0 to 1. The two red RC-03 cases used the real registration and
+heartbeat APIs: the database changed Worker/incarnation versions from `1/0` to
+`2/1`, while the registration-only reducer returned `1/0`.
+
+After the corrective changes, the same candidate assertions were green:
+
+```text
+PYTHONPATH=/home/pvxlabs/dev/clinx python3 -m pytest -q \
+  /tmp/pvx1806-followup-UnHYbt/test_pvx1806_followup_candidates.py
+5 passed in 0.14s
+```
+
+#### Authorization lock matrix
+
+`_transaction()` keeps the initial durable preflight observation, acquires the
+business `BEGIN IMMEDIATE` lock, and samples the injected coordinator clock
+after that lock is acquired. `now >= expires_at` is rejected by the shared
+owner validator for protected mutation and renew. The post-lock sample is
+updated in the business transaction on success; on any validation or injected
+business rollback it is persisted by an independent safety transaction after
+rollback. Thus the failed business write leaves no state/event/receipt/outbox,
+while the safety watermark survives reopen and clock rollback.
+
+The repository matrix covers both lock positions, all three boundaries, and
+both protected operations:
+
+```text
+2 lock positions x (valid, exact, expired) x (mutation, renew) = 12 cases
+valid waits commit; exact/expired waits reject; protected version remains 0
+for every rejected case; watermark is retained on an independent connection
+```
+
+#### Worker/incarnation replay matrix
+
+Worker registration and replacement events now carry their post-mutation
+versions. Heartbeat events carry both post-mutation versions and heartbeat
+time in the immutable incarnation stream. `replay_worker_events()` validates
+each stream independently, merges related streams by durable global position,
+and checks identity, sequence, event type, and exact version increments. The
+store convenience method loads only those immutable related event rows; it
+does not query current runtime tables to fill a projection.
+
+| Scenario | Durable Worker/incarnation | Replay result |
+|---|---:|---:|
+| Registration, no heartbeat | `1 / 0` | `1 / 0` exact |
+| One heartbeat | `2 / 1` | `2 / 1` exact |
+| Three heartbeats | `4 / 3` | `4 / 3` exact |
+| Heartbeat then replacement | current `3 / 0`, old `2` superseded | exact current and superseded versions |
+| Legacy events without version fields | unavailable | `UNKNOWN` with `NOT_COVERED` provenance |
+
+Single worker-stream input is reported as `view=registration_only`; only the
+worker-plus-incarnation entry point claims aggregate equivalence. Unknown or
+malformed version evidence fails replay rather than copying a lifecycle or
+registration count.
+
+The bounded qualification's original sample remains `200 attempted / 63
+effective / 137 no-op`; its transition matrix remains separately accounted as
+`10 attempted / 7 effective / 2 no-op / 1 rejected`. The worker follow-up is
+reported in a separate `worker_version_matrix` and does not inflate those
+historical operation counts.
+
+Follow-up gates:
+
+```ini
+AUTHORIZATION_TIME_FRESH_AFTER_LOCK=PASS
+EXPIRY_BOUNDARY_UNDER_LOCK_CONTENTION=PASS
+REJECTED_FRESH_TIME_SURVIVES_ROLLBACK=PASS
+MULTI_COORDINATOR_TIME_ORDERING=PASS
+WORKER_VERSION_AFTER_HEARTBEAT=PASS
+INCARNATION_VERSION_AFTER_HEARTBEAT=PASS
+HEARTBEAT_REPLACEMENT_REPLAY=PASS
+LEGACY_REPLAY_UNKNOWN_HONESTY=PASS
+RC02_RC04_REGRESSION=PASS
+ASSIGNMENT_REPLAY_REGRESSION=PASS
+RUNTIME_SCHEMA_COMPATIBILITY=PASS
+PVX1805_REGRESSION=PASS
+FULL_SUITE=PASS
+
+V1_LIVE_AUTHORITY=ON
+V2_LIVE_AUTHORITY_CUTOVER=NOT_PERFORMED
+WORKER_RUNTIME_DEFAULT=OFF
+SHADOW_DEFAULT=OFF
+PUBLIC_MCP_CONTRACT=UNCHANGED
+PRODUCTION_DB_MIGRATION=NOT_PERFORMED
+PRODUCTION_DEPLOY=NOT_PERFORMED
+REAL_PROVIDER_TAKEOVER=NOT_RUN
+PHYSICAL_PROCESS_FENCING=NOT_QUALIFIED
+CANONICAL_PROVIDER_E2E=NOT_RUN
+NEXT_PHASE_STARTED=NO
+```
