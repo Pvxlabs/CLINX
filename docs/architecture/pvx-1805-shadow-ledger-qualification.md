@@ -457,10 +457,10 @@ python3 -m pytest -q test_domain.py
 10 passed, 10 subtests passed in 0.05s
 
 python3 -m pytest -q test_shadow_ledger.py
-47 passed, 8 subtests passed in 0.66s
+50 passed, 8 subtests passed in 0.73s
 
 python3 -m pytest -q
-354 passed, 66 subtests passed in 5.69s
+357 passed, 66 subtests passed in 5.99s
 
 python3 -m compileall -q domain shadow_ledger task_registry.py test_domain.py test_shadow_ledger.py
 PASS
@@ -474,3 +474,83 @@ idempotency conflict, crash-before/after-commit, rollback, inbox/outbox,
 default-off, ON-to-OFF, append-only, CLI replay/compare, and real-registry
 fixtures. These remain local temporary-database tests; canonical provider E2E,
 production database migration, deployment, and authority cutover were not run.
+
+## 15. Claim-window ownership correction
+
+This section records the follow-up correction against `fd948f0`. It addresses
+only the remaining SL-01 ownership gap; SL-02, SL-03, and SL-04 are retained
+unchanged.
+
+### Field ownership rule
+
+An active `executions` row and matching worktree lease prove that an execution
+owns a resource. They do not prove that the mutable `tasks` projection has
+already been rebound to that execution. Exact baseline fields therefore use
+these sources:
+
+| Field | Exact source | Proof | Behavior without proof |
+|---|---|---|---|
+| `execution_state` | `executions.execution_state` / retained history | V1 state transition persisted beside the exact execution | `UNKNOWN`, provenance `NOT_PERSISTED_FOR_EXACT_EXECUTION` |
+| `current_stage` | `executions.stage` / retained history | Execution-owned stage written at claim or progress | `UNKNOWN`; never copy Task stage |
+| `turn_id` | execution-owned turn, then exact result turn | Exact execution/result correlation; both are checked for conflict | `UNKNOWN`; conflict is recorded as `CONFLICT` |
+| `lease_state`, `resource_key` | matching lease/history row | Resource row matches task and exact execution | `UNKNOWN`; does not establish other field ownership |
+| `result_status` | exact result row | Result references the exact task and execution | `UNKNOWN` when absent |
+
+The claim event starts a new execution with `turn_id=NULL`. A provider thread or
+session may be continued by a future adapter, but that continuity is not the
+new execution's exact provider turn.
+
+### Red/green evidence
+
+Before the correction, the two real-registry temporary SQLite candidates failed:
+
+```text
+test_new_claim_snapshot_cannot_borrow_old_task_projection: FAIL
+  execution_state/current_stage/turn_id = COMPLETED/COMPLETED/turn_old
+test_shadow_new_claim_does_not_inherit_previous_execution_turn: FAIL
+  claim turn_id = turn_old
+```
+
+The review probe independently observed the same values after the new execution
+row and lease were committed. After the correction, the tests pass and the new
+execution baseline is `CLAIMED / CLAIMED / NULL` (with execution-row
+provenance), while its claim event contains no prior turn.
+
+The reopened-registry case passes: a separate `TaskRegistry` imports the
+baseline after claim commit and reads durable execution-owned columns, not
+process-local state. A valid active execution with no result also retains its
+persisted state/stage/turn. An exact result retains its own result status and
+turn; a deliberately contradictory result row produces `UNKNOWN` plus explicit
+turn-conflict provenance. Retained A and active B remain isolated in both
+directions.
+
+### Implementation and compatibility boundary
+
+`task_registry.py` adds nullable ownership columns to active and retained V1
+execution rows. New claims initialize `execution_state=CLAIMED`,
+`stage=CLAIMED`, and `turn_id=NULL`; `set_execution_state()` updates the exact
+active row in the same transaction as the Task projection and shadow event.
+Release/reclaim copies those columns into retained history. Existing rows are
+not rewritten from the Task projection: on databases that predate these
+columns, missing state or turn remains `UNKNOWN`. Existing immutable shadow
+events are not edited or deleted. This is an internal compatibility migration
+path only; no production database migration was executed.
+
+The correction does not change V1 scheduling, Finalizer decisions, lease
+authority, provider calls, public MCP contracts, or shadow default-off behavior.
+It does not implement RuntimeWorker, Scheduler, Rust runtime, or an Execution/
+Attempt storage migration.
+
+### Follow-up test mapping
+
+- `test_claim_window_baseline_does_not_borrow_retained_projection`
+- `test_claim_observation_does_not_inherit_retained_turn`
+- `test_snapshot_baseline_preserves_active_state_stage_and_turn_without_result`
+- `test_exact_result_turn_is_retained_and_conflict_is_explicit`
+- `test_retained_old_execution_does_not_borrow_new_task_projection`
+
+The first two are the red/green core cases. The remaining tests cover durable
+reopen, active no-result fidelity, exact result ownership/conflict, and retained
+execution isolation. All use temporary SQLite fixtures and deterministic
+context-manager boundaries; no provider, management service, or production
+database was started.

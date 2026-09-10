@@ -211,6 +211,23 @@ Existing history may be imported only through
 known fields, attribution, and `history_before_baseline=UNKNOWN`. It does not
 claim to reconstruct preceding transitions.
 
+For exact execution baselines, field ownership is evaluated independently:
+
+| Field | Source | Ownership proof | Insufficient evidence |
+|---|---|---|---|
+| `execution_state` | `executions.execution_state` or retained `execution_history.execution_state` | The value was persisted by the V1 state transition while that exact execution row was active | `UNKNOWN` with `NOT_PERSISTED_FOR_EXACT_EXECUTION`; never use `tasks.execution_state` |
+| `current_stage` | exact execution `stage` column | The stage is stored on the exact execution row/history, including the claim stage | `UNKNOWN` if the exact row/history has no stage; a lease alone is not stage evidence |
+| `turn_id` | exact execution `turn_id`, then exact result row when no execution turn exists | The turn is correlated to the requested execution; a result turn is accepted only for that exact result | `UNKNOWN` with field provenance; conflicting execution/result turns are explicit `CONFLICT`, never resolved from the Task projection |
+| `lease_state` / `resource_key` | exact `worktree_leases` row or execution history | The lease key and execution reference match the requested execution | `UNKNOWN`; resource ownership does not authorize state/stage/turn ownership |
+| `result_status` | exact `execution_results` row | Result row has both the requested execution reference and task identity | `UNKNOWN` when no exact result exists |
+
+The claim hook follows the same boundary. A newly inserted execution starts with
+`CLAIMED / CLAIMED / NULL`; it does not copy `tasks.turn_id`. Provider session or
+thread continuity is not an exact execution turn. Persisted progress later
+updates the execution-owned columns in the same V1/shadow transaction. These
+columns are nullable so rows created before this ownership contract remain
+historically `UNKNOWN` rather than being retroactively attributed.
+
 Replay comparison is fixed before execution to these fields:
 
 ```text

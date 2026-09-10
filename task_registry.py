@@ -647,26 +647,39 @@ class TaskRegistry:
                     (task_id, execution_ref),
                 ).fetchone()
                 if retained:
-                    # execution_history has an execution-owned stage and
-                    # worktree identity, but it does not persist a separate
-                    # lifecycle state or provider turn.  Do not borrow the
-                    # task's current projection, which may belong to a newer
-                    # execution.
-                    state = "UNKNOWN"
+                    # Retained history is the only source for this exact
+                    # execution.  Older rows have NULL ownership columns and
+                    # remain explicitly unknown; the task projection may
+                    # already belong to a newer execution.
+                    state = execution["execution_state"] or "UNKNOWN"
                     stage = execution["stage"] or "UNKNOWN"
-                    turn_id = (
+                    execution_turn = execution["turn_id"]
+                    result_turn = (
                         exact_result["turn_id"]
                         if exact_result is not None else None
                     )
+                    if execution_turn and result_turn and execution_turn != result_turn:
+                        turn_id = "UNKNOWN"
+                        turn_provenance = "CONFLICT:EXECUTION_HISTORY_RESULT_TURN"
+                    else:
+                        turn_id = execution_turn or result_turn
+                        turn_provenance = (
+                            "V1_EXECUTION_HISTORY_TURN"
+                            if execution_turn else (
+                                "V1_EXECUTION_RESULT"
+                                if result_turn else
+                                "UNKNOWN:NOT_PERSISTED_FOR_EXACT_EXECUTION"
+                            )
+                        )
                     lease_state = "RELEASED"
                     provenance = {
-                        "execution_state": "UNKNOWN:NOT_PERSISTED_FOR_EXACT_EXECUTION",
-                        "current_stage": "V1_EXECUTION_HISTORY_STAGE",
-                        "turn_id": (
-                            "V1_EXECUTION_RESULT"
-                            if exact_result is not None
+                        "execution_state": (
+                            "V1_EXECUTION_HISTORY_STATE"
+                            if execution["execution_state"]
                             else "UNKNOWN:NOT_PERSISTED_FOR_EXACT_EXECUTION"
                         ),
+                        "current_stage": "V1_EXECUTION_HISTORY_STAGE",
+                        "turn_id": turn_provenance,
                         "lease_state": "V1_EXECUTION_HISTORY_RETAINED",
                         "resource_key": "V1_EXECUTION_HISTORY_WORKTREE_KEY",
                         "result_status": (
@@ -676,16 +689,39 @@ class TaskRegistry:
                         ),
                     }
                 else:
-                    # The active executions row and matching lease establish
-                    # that the task projection belongs to this exact ref.
-                    state = task["execution_state"]
-                    stage = task["current_stage"]
-                    turn_id = task["turn_id"]
+                    # The active row stores the last state transition made
+                    # for this exact execution.  Its existence and lease
+                    # prove resource ownership only, so never use the task
+                    # projection to fill these fields.
+                    state = execution["execution_state"] or "UNKNOWN"
+                    stage = execution["stage"] or "UNKNOWN"
+                    execution_turn = execution["turn_id"]
+                    result_turn = (
+                        exact_result["turn_id"]
+                        if exact_result is not None else None
+                    )
+                    if execution_turn and result_turn and execution_turn != result_turn:
+                        turn_id = "UNKNOWN"
+                        turn_provenance = "CONFLICT:EXECUTION_ROW_RESULT_TURN"
+                    else:
+                        turn_id = execution_turn or result_turn
+                        turn_provenance = (
+                            "V1_EXECUTION_ROW_TURN"
+                            if execution_turn else (
+                                "V1_EXECUTION_RESULT"
+                                if result_turn else
+                                "UNKNOWN:NOT_PERSISTED_FOR_EXACT_EXECUTION"
+                            )
+                        )
                     lease_state = "HELD" if lease is not None else "UNKNOWN"
                     provenance = {
-                        "execution_state": "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
-                        "current_stage": "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
-                        "turn_id": "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
+                        "execution_state": (
+                            "V1_EXECUTION_ROW_STATE"
+                            if execution["execution_state"]
+                            else "UNKNOWN:NOT_PERSISTED_FOR_EXACT_EXECUTION"
+                        ),
+                        "current_stage": "V1_EXECUTION_ROW_STAGE",
+                        "turn_id": turn_provenance,
                         "lease_state": (
                             "V1_WORKTREE_LEASE_EXACT_EXECUTION"
                             if lease is not None
@@ -834,6 +870,8 @@ class TaskRegistry:
                     logical_model TEXT,
                     resolved_model TEXT,
                     stage TEXT NOT NULL DEFAULT 'CLAIMED',
+                    execution_state TEXT,
+                    turn_id TEXT,
                     acquired_at TEXT NOT NULL,
                     routing_identity_json TEXT NOT NULL DEFAULT '{}',
                     execution_policy_json TEXT NOT NULL DEFAULT '{}'
@@ -846,6 +884,8 @@ class TaskRegistry:
                     logical_model TEXT,
                     resolved_model TEXT,
                     stage TEXT NOT NULL,
+                    execution_state TEXT,
+                    turn_id TEXT,
                     acquired_at TEXT NOT NULL,
                     routing_identity_json TEXT NOT NULL DEFAULT '{}',
                     execution_policy_json TEXT NOT NULL DEFAULT '{}',
@@ -1023,6 +1063,10 @@ class TaskRegistry:
                 conn.execute("ALTER TABLE executions ADD COLUMN routing_identity_json TEXT NOT NULL DEFAULT '{}' ")
             if "execution_policy_json" not in execution_columns:
                 conn.execute("ALTER TABLE executions ADD COLUMN execution_policy_json TEXT NOT NULL DEFAULT '{}' ")
+            if "execution_state" not in execution_columns:
+                conn.execute("ALTER TABLE executions ADD COLUMN execution_state TEXT")
+            if "turn_id" not in execution_columns:
+                conn.execute("ALTER TABLE executions ADD COLUMN turn_id TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_executions_ref ON executions(execution_ref)")
             migrations = {
                 "execution_state": "ALTER TABLE tasks ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'QUEUED'",
@@ -1066,6 +1110,10 @@ class TaskRegistry:
             }
             if "execution_policy_json" not in history_columns:
                 conn.execute("ALTER TABLE execution_history ADD COLUMN execution_policy_json TEXT NOT NULL DEFAULT '{}' ")
+            if "execution_state" not in history_columns:
+                conn.execute("ALTER TABLE execution_history ADD COLUMN execution_state TEXT")
+            if "turn_id" not in history_columns:
+                conn.execute("ALTER TABLE execution_history ADD COLUMN turn_id TEXT")
             conn.execute(
                 """UPDATE prepared_executions
                    SET logical_model = CASE WHEN logical_model = '' THEN model ELSE logical_model END,
@@ -1129,6 +1177,7 @@ class TaskRegistry:
             rows = conn.execute(
                 """SELECT l.worktree_key, l.task_id, l.execution_ref AS lease_execution_ref,
                           e.execution_ref, e.stage AS execution_stage,
+                          e.execution_state, e.turn_id,
                           e.issue_id, e.logical_model, e.resolved_model,
                           e.acquired_at, e.routing_identity_json,
                           e.execution_policy_json,
@@ -1156,15 +1205,16 @@ class TaskRegistry:
                     conn.execute(
                         """INSERT OR IGNORE INTO execution_history
                            (execution_ref,task_id,issue_id,worktree_key,logical_model,
-                            resolved_model,stage,acquired_at,routing_identity_json,
-                            execution_policy_json,released_at)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                            resolved_model,stage,execution_state,turn_id,acquired_at,
+                            routing_identity_json,execution_policy_json,released_at)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             execution_ref, row["task_id"], row["issue_id"],
                             row["worktree_key"], row["logical_model"],
                             row["resolved_model"],
                             row["execution_stage"] or row["execution_state"],
-                            row["acquired_at"], row["routing_identity_json"] or "{}",
+                            row["execution_state"], row["turn_id"], row["acquired_at"],
+                            row["routing_identity_json"] or "{}",
                             row["execution_policy_json"] or "{}", _now(),
                         ),
                     )
@@ -2252,10 +2302,26 @@ class TaskRegistry:
         if state not in allowed:
             raise TaskRegistryError(f"Unsupported execution state: {state}")
         task = self.get_task(task_id)
+        with self._connect() as conn:
+            active_hint = conn.execute(
+                "SELECT execution_ref,turn_id FROM executions WHERE task_id=?",
+                (task_id,),
+            ).fetchone()
+        active_hint_owned = (
+            active_hint is not None
+            and (
+                _shadow_execution_ref is _UNSET
+                or _shadow_execution_ref == active_hint["execution_ref"]
+            )
+        )
         running = task.codex_running if codex_running is _UNSET else bool(codex_running)
         if state == "CODEX_RUNNING":
             running = True
-            candidate_turn = task.turn_id if turn_id is _UNSET else turn_id
+            candidate_turn = (
+                active_hint["turn_id"]
+                if turn_id is _UNSET and active_hint_owned
+                else task.turn_id if turn_id is _UNSET else turn_id
+            )
             if not isinstance(candidate_turn, str) or not candidate_turn.strip():
                 raise TaskRegistryError("CODEX_RUNNING requires an exact turn_id")
         if state in {
@@ -2307,11 +2373,40 @@ class TaskRegistry:
                  effective_failure_stage, effective_failure_code, effective_failure_evidence,
                  _now() if changed else task.updated_at, task_id),
             )
-            conn.execute(
-                "UPDATE executions SET stage=? WHERE task_id=? "
-                "AND stage NOT IN (?,?,?,?,?,?,?)",
-                (str(stage or state), task_id, *TERMINAL_EXECUTION_STAGES),
+            active_execution = conn.execute(
+                "SELECT execution_ref,stage,turn_id FROM executions WHERE task_id=?",
+                (task_id,),
+            ).fetchone()
+            requested_execution_ref = (
+                _shadow_execution_ref if _shadow_execution_ref is not _UNSET else _UNSET
             )
+            owns_active_row = (
+                active_execution is not None
+                and (
+                    requested_execution_ref is _UNSET
+                    or requested_execution_ref == active_execution["execution_ref"]
+                )
+            )
+            execution_owned_turn = effective_turn
+            if owns_active_row:
+                # Persist field ownership beside the exact active execution.
+                # This is deliberately nullable for pre-existing rows: an old
+                # row has no evidence that its task projection belonged to it.
+                execution_owned_turn = (
+                    effective_turn
+                    if turn_id is not _UNSET
+                    else active_execution["turn_id"]
+                )
+                execution_owned_stage = (
+                    active_execution["stage"]
+                    if active_execution["stage"] in TERMINAL_EXECUTION_STAGES
+                    else str(stage or state)
+                )
+                conn.execute(
+                    "UPDATE executions SET execution_state=?, stage=?, turn_id=? "
+                    "WHERE task_id=?",
+                    (state, execution_owned_stage, execution_owned_turn, task_id),
+                )
             if changed and self._shadow_store is not None:
                 if _shadow_execution_ref is _UNSET:
                     execution = conn.execute(
@@ -2346,7 +2441,7 @@ class TaskRegistry:
                         "current_stage": str(stage or state),
                         "current_blocker": blocker,
                         "codex_running": running,
-                        "turn_id": effective_turn,
+                        "turn_id": execution_owned_turn,
                         "retry_required": retry,
                         "failure_stage": effective_failure_stage,
                         "failure_code": effective_failure_code,
@@ -3187,13 +3282,14 @@ class TaskRegistry:
         with self._shadow_write_connection() as conn:
             if execution_ref:
                 row = conn.execute(
-                    "SELECT worktree_key,execution_ref FROM executions "
+                    "SELECT worktree_key,execution_ref,execution_state,stage,turn_id FROM executions "
                     "WHERE task_id=? AND execution_ref=?",
                     (task_id, execution_ref),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "SELECT worktree_key,execution_ref FROM executions WHERE task_id=?",
+                    "SELECT worktree_key,execution_ref,execution_state,stage,turn_id "
+                    "FROM executions WHERE task_id=?",
                     (task_id,),
                 ).fetchone()
             lease = None
@@ -3211,11 +3307,11 @@ class TaskRegistry:
                 conn.execute(
                     """INSERT OR IGNORE INTO execution_history
                        (execution_ref,task_id,issue_id,worktree_key,logical_model,
-                        resolved_model,stage,acquired_at,routing_identity_json,
-                        execution_policy_json,released_at)
+                        resolved_model,stage,execution_state,turn_id,acquired_at,
+                        routing_identity_json,execution_policy_json,released_at)
                        SELECT execution_ref,task_id,issue_id,worktree_key,logical_model,
-                              resolved_model,stage,acquired_at,routing_identity_json,
-                              execution_policy_json,?
+                              resolved_model,stage,execution_state,turn_id,acquired_at,
+                              routing_identity_json,execution_policy_json,?
                        FROM executions WHERE task_id=? AND execution_ref=?""",
                     (released_at, task_id, execution_ref),
                 )
@@ -3226,10 +3322,12 @@ class TaskRegistry:
                 conn.execute(
                     f"""UPDATE execution_history SET stage=(
                             SELECT execution_state FROM tasks WHERE task_id=?
+                        ), execution_state=(
+                            SELECT execution_state FROM tasks WHERE task_id=?
                         ) WHERE execution_ref=? AND task_id=? AND (
                             SELECT execution_state FROM tasks WHERE task_id=?
                         ) IN ({placeholders})""",
-                    (task_id, execution_ref, task_id, task_id, *TERMINAL_EXECUTION_STAGES),
+                    (task_id, task_id, execution_ref, task_id, task_id, *TERMINAL_EXECUTION_STAGES),
                 )
             conn.execute(
                 "DELETE FROM executions WHERE task_id=?"
@@ -3319,8 +3417,8 @@ class TaskRegistry:
                     )
                     try:
                         conn.execute(
-                            "INSERT INTO executions(task_id,issue_id,execution_ref,worktree_key,logical_model,resolved_model,stage,acquired_at,routing_identity_json,execution_policy_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                            (task_id, issue_id, execution_ref, worktree_key, None, None, "CLAIMED", _now(), task.routing_identity_json or "{}", task.execution_policy_json or "{}"),
+                            "INSERT INTO executions(task_id,issue_id,execution_ref,worktree_key,logical_model,resolved_model,stage,execution_state,turn_id,acquired_at,routing_identity_json,execution_policy_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (task_id, issue_id, execution_ref, worktree_key, None, None, "CLAIMED", "CLAIMED", None, _now(), task.routing_identity_json or "{}", task.execution_policy_json or "{}"),
                         )
                         conn.execute(
                             "INSERT INTO worktree_leases(worktree_key,task_id,execution_ref,stage,acquired_at) VALUES (?,?,?,?,?)",
@@ -3341,7 +3439,7 @@ class TaskRegistry:
                 except sqlite3.IntegrityError as exc:
                     raise TaskExecutionBusy(f"Task already has an active execution: {task_id}") from exc
                 execution_row = conn.execute(
-                    "SELECT acquired_at FROM executions WHERE task_id=?",
+                    "SELECT acquired_at,execution_state,stage,turn_id FROM executions WHERE task_id=?",
                     (task_id,),
                 ).fetchone()
                 lease_row = conn.execute(
@@ -3368,7 +3466,9 @@ class TaskRegistry:
                         "resource_key": worktree_key,
                         "lease_acquired_at": lease_row["acquired_at"],
                         "history_before_baseline": "UNKNOWN",
-                        "turn_id": task.turn_id,
+                        # A claim starts a new exact execution.  Provider
+                        # session continuity, if any, is not an exact turn.
+                        "turn_id": execution_row["turn_id"],
                     },
                 )
                 conn.execute("COMMIT")
