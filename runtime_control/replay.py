@@ -367,6 +367,29 @@ def _replay_worker(
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     worker: dict[str, Any] | None = None
     incarnations: dict[str, dict[str, Any]] = {}
+    unknown: set[str] = set()
+
+    def version_or_unknown(payload: Mapping[str, Any], field: str, context: str) -> int | str:
+        if field not in payload:
+            unknown.add(context)
+            return "UNKNOWN"
+        value = payload.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise RuntimeConflict(f"{context} must be a non-negative integer")
+        return value
+
+    def advance_version(
+        current: int | str,
+        supplied: int | str,
+        field: str,
+    ) -> int | str:
+        if supplied == "UNKNOWN":
+            unknown.add(field)
+            return "UNKNOWN"
+        if isinstance(current, int) and supplied != current + 1:
+            raise RuntimeConflict(f"{field} did not advance exactly once")
+        return supplied
+
     for event, payload in zip(events, payloads, strict=True):
         if event.event_type == "WorkerRegistered":
             if worker is not None:
@@ -379,11 +402,43 @@ def _replay_worker(
                 "capabilities": "NOT_COVERED",
                 "capacity": _integer(payload, "capacity", event.event_type),
                 "lifecycle": "REGISTERED",
-                "version": 0,
+                "version": version_or_unknown(payload, "worker_version", "worker.version"),
                 "current_incarnation_id": None,
                 "last_heartbeat_at": "NOT_COVERED",
             }
             continue
+        if event.event_type == "WorkerHeartbeatRecorded":
+            if worker is None:
+                raise RuntimeConflict("worker heartbeat precedes worker registration")
+            _required(payload, ("worker_id", "incarnation_id"), event.event_type)
+            if payload["worker_id"] != worker["worker_id"]:
+                raise RuntimeConflict("worker heartbeat identity changed")
+            incarnation_id = _text(payload, "incarnation_id", event.event_type)
+            incarnation = incarnations.get(incarnation_id)
+            if incarnation is None or worker["current_incarnation_id"] != incarnation_id:
+                raise RuntimeConflict("worker heartbeat is not for the current incarnation")
+            worker_version = version_or_unknown(payload, "worker_version", "worker.version")
+            incarnation_version = version_or_unknown(
+                payload, "incarnation_version", f"incarnation[{incarnation_id}].version"
+            )
+            worker["version"] = advance_version(worker["version"], worker_version, "worker.version")
+            incarnation["version"] = advance_version(
+                incarnation["version"], incarnation_version, f"incarnation[{incarnation_id}].version"
+            )
+            heartbeat_at = payload.get("heartbeat_at")
+            if not isinstance(heartbeat_at, str):
+                unknown.add("worker.last_heartbeat_at")
+                unknown.add(f"incarnation[{incarnation_id}].last_heartbeat_at")
+            else:
+                try:
+                    decode_time(heartbeat_at)
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeConflict("WorkerHeartbeatRecorded.heartbeat_at is invalid") from exc
+                worker["last_heartbeat_at"] = heartbeat_at
+                incarnation["last_heartbeat_at"] = heartbeat_at
+            continue
+        if event.event_type != "WorkerIncarnationRegistered":
+            raise RuntimeConflict(f"unknown worker event type: {event.event_type}")
         if worker is None:
             raise RuntimeConflict("worker incarnation precedes worker registration")
         _required(payload, ("worker_id", "incarnation_id", "generation"), event.event_type)
@@ -399,27 +454,45 @@ def _replay_worker(
             raise RuntimeConflict("worker incarnation identity or generation is invalid")
         previous = worker["current_incarnation_id"]
         if previous is not None:
+            supplied_previous = payload.get("superseded_incarnation_id", previous)
+            if supplied_previous != previous:
+                raise RuntimeConflict("superseded incarnation identity changed")
             incarnations[previous]["lifecycle"] = "SUPERSEDED"
-            incarnations[previous]["version"] += 1
+            previous_version = payload.get("superseded_incarnation_version")
+            if "superseded_incarnation_version" not in payload:
+                unknown.add(f"incarnation[{previous}].version")
+                incarnations[previous]["version"] = "UNKNOWN"
+            elif isinstance(previous_version, int) and not isinstance(previous_version, bool):
+                if isinstance(incarnations[previous]["version"], int) and previous_version != incarnations[previous]["version"] + 1:
+                    raise RuntimeConflict("superseded incarnation version did not advance exactly once")
+                incarnations[previous]["version"] = previous_version
+            else:
+                raise RuntimeConflict(
+                    f"incarnation[{previous}].version must be a non-negative integer"
+                )
+        worker_version = version_or_unknown(payload, "worker_version", "worker.version")
+        incarnation_version = version_or_unknown(
+            payload, "incarnation_version", f"incarnation[{incarnation_id}].version"
+        )
+        worker["version"] = advance_version(worker["version"], worker_version, "worker.version")
         incarnations[incarnation_id] = {
             "incarnation_id": incarnation_id,
             "worker_id": worker["worker_id"],
             "generation": generation,
             "lifecycle": "ACTIVE",
-            "version": 0,
+            "version": incarnation_version,
             "started_at": event.occurred_at,
             "last_heartbeat_at": "NOT_COVERED",
         }
         worker["current_incarnation_id"] = incarnation_id
-        worker["version"] += 1
     assert worker is not None
-    return {"worker": worker, "incarnations": incarnations}, (
-        "worker.worker_kind",
-        "worker.host_reference",
-        "worker.capabilities",
-        "worker.last_heartbeat_at",
-        "incarnation.last_heartbeat_at",
-    )
+    unknown.update(("worker.worker_kind", "worker.host_reference", "worker.capabilities"))
+    if worker["last_heartbeat_at"] == "NOT_COVERED":
+        unknown.add("worker.last_heartbeat_at")
+    for incarnation_id, incarnation in incarnations.items():
+        if incarnation["last_heartbeat_at"] == "NOT_COVERED":
+            unknown.add(f"incarnation[{incarnation_id}].last_heartbeat_at")
+    return {"worker": worker, "incarnations": incarnations}, tuple(sorted(unknown))
 
 
 def _replay_simple(
@@ -450,21 +523,20 @@ def _replay_simple(
     }, ("aggregate_fields",)
 
 
-def replay_runtime_events(
+def _validate_stream(
     events: tuple[RuntimeEventRecord, ...] | list[RuntimeEventRecord],
-) -> dict[str, Any]:
-    """Replay exactly one complete stream without consulting mutable tables."""
+    *,
+    expected_type: str | None = None,
+    expected_id: str | None = None,
+) -> tuple[tuple[RuntimeEventRecord, ...], tuple[dict[str, Any], ...]]:
     ordered = tuple(events)
     if not ordered:
-        return {
-            "event_family": EVENT_FAMILY,
-            "stream_version": 0,
-            "event_types": (),
-            "states": {},
-            "state": None,
-            "not_covered_fields": (),
-        }
+        return (), ()
     first = ordered[0]
+    if expected_type is not None and first.stream_type != expected_type:
+        raise RuntimeConflict(f"expected {expected_type} stream, got {first.stream_type}")
+    if expected_id is not None and first.stream_id != expected_id:
+        raise RuntimeConflict("runtime event stream identity changed")
     if first.stream_type not in _STREAM_EVENTS:
         raise RuntimeConflict(f"unknown runtime stream type: {first.stream_type}")
     payloads: list[dict[str, Any]] = []
@@ -487,7 +559,73 @@ def replay_runtime_events(
         if recorded_at < occurred_at:
             raise RuntimeConflict("runtime event was recorded before it occurred")
         payloads.append(_payload(event))
-    payload_tuple = tuple(payloads)
+    return ordered, tuple(payloads)
+
+
+def replay_worker_events(
+    worker_events: tuple[RuntimeEventRecord, ...] | list[RuntimeEventRecord],
+    incarnation_events: tuple[RuntimeEventRecord, ...] | list[RuntimeEventRecord] | None = None,
+) -> dict[str, Any]:
+    """Replay a worker stream with its immutable heartbeat streams.
+
+    A worker stream alone is a registration-only view.  Passing the related
+    incarnation streams makes heartbeat version changes replayable without
+    consulting mutable tables.
+    """
+    workers, worker_payloads = _validate_stream(worker_events, expected_type="worker")
+    if not workers:
+        return replay_runtime_events([])
+    related = tuple(incarnation_events or ())
+    streams: dict[tuple[str, str], list[RuntimeEventRecord]] = {}
+    for event in related:
+        streams.setdefault((event.stream_type, event.stream_id), []).append(event)
+    validated_related: list[tuple[RuntimeEventRecord, dict[str, Any]]] = []
+    for (stream_type, stream_id), stream_events in streams.items():
+        if stream_type != "incarnation":
+            raise RuntimeConflict("worker replay related input must be incarnation streams")
+        valid_events, valid_payloads = _validate_stream(
+            stream_events, expected_type="incarnation", expected_id=stream_id
+        )
+        validated_related.extend(zip(valid_events, valid_payloads, strict=True))
+    merged = list(zip(workers, worker_payloads, strict=True)) + validated_related
+    if all(event.global_position is not None for event, _ in merged):
+        merged.sort(key=lambda item: int(item[0].global_position))
+        positions = [int(event.global_position) for event, _ in merged]
+        if len(positions) != len(set(positions)):
+            raise RuntimeConflict("worker replay related streams contain duplicate positions")
+    events = tuple(event for event, _ in merged)
+    payloads = tuple(payload for _, payload in merged)
+    state, unknown = _replay_worker(events, payloads)
+    return {
+        "event_family": EVENT_FAMILY,
+        "stream_type": "worker",
+        "stream_id": workers[0].stream_id,
+        "stream_version": len(workers),
+        "event_types": tuple(event.event_type for event in events),
+        "states": {workers[0].stream_id: state["worker"]["lifecycle"]},
+        "state": state,
+        "not_covered_fields": unknown,
+        "view": "aggregate" if incarnation_events is not None else "registration_only",
+        "related_streams": tuple(sorted(streams)),
+    }
+
+
+def replay_runtime_events(
+    events: tuple[RuntimeEventRecord, ...] | list[RuntimeEventRecord],
+) -> dict[str, Any]:
+    """Replay exactly one complete stream without consulting mutable tables."""
+    ordered = tuple(events)
+    if not ordered:
+        return {
+            "event_family": EVENT_FAMILY,
+            "stream_version": 0,
+            "event_types": (),
+            "states": {},
+            "state": None,
+            "not_covered_fields": (),
+        }
+    first = ordered[0]
+    ordered, payload_tuple = _validate_stream(ordered)
     if first.stream_type == "assignment":
         state, unknown = _replay_assignment(ordered, payload_tuple)
         states = {first.stream_id: state["assignment"]["lifecycle"]}
@@ -511,4 +649,5 @@ def replay_runtime_events(
         "states": states,
         "state": state,
         "not_covered_fields": unknown,
+        **({"view": "registration_only"} if first.stream_type == "worker" else {}),
     }

@@ -4,6 +4,7 @@ import hashlib
 import json
 import multiprocessing
 import sqlite3
+import threading
 from contextlib import closing
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from runtime_control import (
     StaleMutation,
 )
 from runtime_control.schema import MIGRATIONS
+from runtime_control.replay import replay_runtime_events
 
 
 BASE = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
@@ -76,6 +78,138 @@ def _assigned(path: Path, *, lease_seconds=10):
         receipt.resource_epoch,
     )
     return store, clock, receipt, owner
+
+
+class _ConnectionObserver:
+    def __init__(self, connection, store, index):
+        self.connection, self.store, self.index = connection, store, index
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
+    def execute(self, sql, *args, **kwargs):
+        if (
+            self.store.armed
+            and sql.strip().upper() == "BEGIN IMMEDIATE"
+            and self.index == self.store.target_index
+        ):
+            self.store.begin_entered.set()
+        return self.connection.execute(sql, *args, **kwargs)
+
+    def __enter__(self):
+        self.connection.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self.connection.__exit__(*args)
+
+
+class _LockInterleavingStore(RuntimeControlStore):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.armed = False
+        self.connect_count = 0
+        self.target_index = 2
+        self.pause_after_observation = False
+        self.observation_done = threading.Event()
+        self.resume_business = threading.Event()
+        self.begin_entered = threading.Event()
+
+    def _connect(self, *, read_only=False):
+        connection = super()._connect(read_only=read_only)
+        if self.armed and not read_only:
+            self.connect_count += 1
+            return _ConnectionObserver(connection, self, self.connect_count)
+        return connection
+
+    def _observe_coordinator_time(self):
+        result = super()._observe_coordinator_time()
+        if self.armed and self.pause_after_observation:
+            self.observation_done.set()
+            assert self.resume_business.wait(5), "business barrier timeout"
+        return result
+
+
+def _interleaving_fixture(path: Path, lease_seconds: int):
+    clock = ManualClock(BASE)
+    store = _LockInterleavingStore(path / "runtime.sqlite3", clock=clock, busy_timeout_ms=5_000)
+    store.initialize()
+    store.register_task_reference("task", command_id="register-task")
+    store.register_execution("task", "execution", command_id="register-execution")
+    store.register_attempt("execution", "attempt", 0, command_id="register-attempt")
+    store.register_worker("worker", capacity=2, command_id="register-worker")
+    store.register_incarnation("worker", incarnation_id="incarnation", generation=1, command_id="register-incarnation")
+    assigned = store.assign_attempt(
+        "attempt", "worker", "incarnation", "resource", lease_seconds=lease_seconds, command_id="assign"
+    )
+    owner = (
+        assigned.assignment_id, "worker", "incarnation", "attempt", "resource", assigned.resource_epoch
+    )
+    return store, clock, assigned, owner
+
+
+@pytest.mark.parametrize("phase", ["observation_lock", "business_lock"])
+@pytest.mark.parametrize("operation", ["mutation", "renew"])
+@pytest.mark.parametrize("outcome", ["valid", "exact", "expired"])
+def test_lock_wait_authorization_uses_post_lock_clock(tmp_path, phase, operation, outcome):
+    lease_seconds = 20 if outcome == "valid" else 10
+    store, clock, assignment, owner = _interleaving_fixture(tmp_path, lease_seconds)
+    store.armed = True
+    store.target_index = 1 if phase == "observation_lock" else 2
+    store.pause_after_observation = phase == "business_lock"
+    blocker = sqlite3.connect(store.path, isolation_level=None, timeout=5)
+    if phase == "observation_lock":
+        blocker.execute("BEGIN IMMEDIATE")
+    result = {}
+
+    def write():
+        try:
+            if operation == "mutation":
+                result["receipt"] = store.mutate_protected_resource(
+                    *owner, 0, {"phase": phase, "outcome": outcome}, command_id="delayed-mutation"
+                )
+            else:
+                result["receipt"] = store.renew_assignment(
+                    *owner, lease_seconds=5, command_id="delayed-renew"
+                )
+        except BaseException as exc:
+            result["exception"] = exc
+
+    thread = threading.Thread(target=write)
+    thread.start()
+    try:
+        if phase == "business_lock":
+            assert store.observation_done.wait(5), "observation barrier timeout"
+            blocker.execute("BEGIN IMMEDIATE")
+            store.resume_business.set()
+        assert store.begin_entered.wait(5), "lock acquisition barrier timeout"
+        clock.set(BASE + dt.timedelta(seconds=11 if outcome == "expired" else (10 if outcome == "exact" else 11)))
+        blocker.execute("COMMIT")
+    finally:
+        if blocker.in_transaction:
+            blocker.execute("ROLLBACK")
+        blocker.close()
+        store.resume_business.set()
+        thread.join(5)
+    assert not thread.is_alive()
+    store.armed = False
+    if outcome == "valid":
+        assert "exception" not in result
+        if operation == "mutation":
+            protected = store.get_protected_resource("resource")
+            assert protected.version == 1
+            assert protected.value.to_dict()["outcome"] == "valid"
+        else:
+            assert store.get_assignment(assignment.assignment_id).version == 1
+    else:
+        assert isinstance(result.get("exception"), (LeaseExpired, ClockAnomaly)), result
+        assert store.get_assignment(assignment.assignment_id).version == 0
+        assert store.get_protected_resource("resource").version == 0
+        with closing(store.connect()) as independent:
+            watermark = independent.execute(
+                "SELECT last_coordinator_time FROM runtime_clock_state WHERE state_id=1"
+            ).fetchone()[0]
+        assert watermark.endswith("00:00:11.000000+00:00") or watermark.endswith("00:00:10.000000+00:00")
 
 
 def test_expiry_rejection_persists_clock_before_business_rollback(tmp_path):
@@ -543,6 +677,87 @@ def test_worker_incarnation_replay_tracks_current_and_superseded_generations(tmp
             actual.version,
         )
     assert "worker.capabilities" in replay["not_covered_fields"]
+
+
+@pytest.mark.parametrize("heartbeats", [0, 1, 3])
+def test_worker_and_incarnation_replay_versions_follow_heartbeat_events(tmp_path, heartbeats):
+    store, clock = _blank(tmp_path)
+    store.register_worker("worker-1", capacity=2, command_id="worker")
+    store.register_incarnation(
+        "worker-1", incarnation_id="incarnation-1", generation=1, command_id="incarnation-1"
+    )
+    for index in range(heartbeats):
+        clock.advance(1)
+        first = store.heartbeat_worker("worker-1", "incarnation-1", command_id=f"heartbeat-{index}")
+        assert first.duplicate is False
+    replay = store.replay_events(
+        store.read_events(stream_type="worker", stream_id="worker-1", limit=100)
+    )
+    actual_worker = store.get_worker("worker-1")
+    actual_incarnation = store.get_incarnation("incarnation-1")
+    projected_worker = replay["state"]["worker"]
+    projected_incarnation = replay["state"]["incarnations"]["incarnation-1"]
+    assert replay["view"] == "aggregate"
+    assert projected_worker["version"] == actual_worker.version == 1 + heartbeats
+    assert projected_incarnation["version"] == actual_incarnation.version == heartbeats
+    if heartbeats:
+        assert projected_worker["last_heartbeat_at"] == actual_worker.last_heartbeat_at
+        assert projected_incarnation["last_heartbeat_at"] == actual_incarnation.last_heartbeat_at
+
+
+def test_worker_replay_tracks_heartbeat_then_replacement_and_reopen(tmp_path):
+    store, clock = _blank(tmp_path)
+    store.register_worker("worker-1", capacity=2, command_id="worker")
+    store.register_incarnation(
+        "worker-1", incarnation_id="incarnation-1", generation=1, command_id="incarnation-1"
+    )
+    clock.advance(1)
+    store.heartbeat_worker("worker-1", "incarnation-1", command_id="heartbeat-1")
+    clock.advance(1)
+    store.register_incarnation(
+        "worker-1", incarnation_id="incarnation-2", generation=2, command_id="incarnation-2"
+    )
+    replay = store.replay_events(
+        store.read_events(stream_type="worker", stream_id="worker-1", limit=100)
+    )
+    assert replay["state"]["worker"]["version"] == store.get_worker("worker-1").version == 3
+    for incarnation_id in ("incarnation-1", "incarnation-2"):
+        actual = store.get_incarnation(incarnation_id)
+        projected = replay["state"]["incarnations"][incarnation_id]
+        assert (projected["lifecycle"], projected["version"]) == (actual.lifecycle, actual.version)
+    reopened = RuntimeControlStore(store.path, clock=clock)
+    replay_after_reopen = reopened.replay_events(
+        reopened.read_events(stream_type="worker", stream_id="worker-1", limit=100)
+    )
+    assert replay_after_reopen["state"] == replay["state"]
+
+
+def test_legacy_worker_events_report_unknown_versions_instead_of_inference(tmp_path):
+    del tmp_path
+    registered = {"worker_id": "legacy-worker", "capacity": 1}
+    incarnation = {
+        "worker_id": "legacy-worker", "incarnation_id": "legacy-incarnation", "generation": 1
+    }
+    events = [
+        RuntimeEventRecord(
+            event_id="legacy-worker-1", stream_type="worker", stream_id="legacy-worker", sequence=1,
+            event_family="RUNTIME_WORKER_V1", event_type="WorkerRegistered", schema_version=1,
+            occurred_at=BASE.isoformat(), recorded_at=BASE.isoformat(), payload=registered,
+            payload_hash=_digest(registered),
+        ),
+        RuntimeEventRecord(
+            event_id="legacy-worker-2", stream_type="worker", stream_id="legacy-worker", sequence=2,
+            event_family="RUNTIME_WORKER_V1", event_type="WorkerIncarnationRegistered", schema_version=1,
+            occurred_at=BASE.isoformat(), recorded_at=BASE.isoformat(), payload=incarnation,
+            payload_hash=_digest(incarnation),
+        ),
+    ]
+    replay = replay_runtime_events(events)
+    assert replay["view"] == "registration_only"
+    assert replay["state"]["worker"]["version"] == "UNKNOWN"
+    assert replay["state"]["incarnations"]["legacy-incarnation"]["version"] == "UNKNOWN"
+    assert "worker.version" in replay["not_covered_fields"]
+    assert "incarnation[legacy-incarnation].version" in replay["not_covered_fields"]
 
 
 def test_legacy_assignment_events_are_upcast_and_bad_events_are_rejected(tmp_path):
