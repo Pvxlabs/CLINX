@@ -231,7 +231,7 @@ class RuntimeControlStore:
         self,
         *,
         safety_key: str | None = None,
-    ) -> Iterator[tuple[sqlite3.Connection, str]]:
+    ) -> Iterator[tuple[sqlite3.Connection, str, str | None]]:
         """Run one business transaction with an optional durable safety handoff.
 
         Authorization operations create a durable guard before taking the
@@ -256,7 +256,7 @@ class RuntimeControlStore:
             # transaction owns the protected write lock.
             fresh_at = encode_time(self.clock.now())
             now = self._coordinator_now(conn, fresh_at)
-            yield conn, now
+            yield conn, now, handoff_token
             if handoff_token is not None:
                 self._clear_safety_handoff_in_transaction(conn, safety_key, handoff_token)
             self._fault("before_commit")
@@ -408,10 +408,12 @@ class RuntimeControlStore:
         try:
             self._require_schema(conn)
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute(
+            deleted = conn.execute(
                 "DELETE FROM runtime_safety_handoffs WHERE handoff_key=? AND handoff_token=?",
                 (handoff_key, handoff_token),
-            )
+            ).rowcount
+            if deleted != 1:
+                raise SafetyDecisionPending("safety handoff is no longer owned by this transaction")
             conn.execute("COMMIT")
         except sqlite3.OperationalError as exc:
             if conn.in_transaction:
@@ -883,7 +885,7 @@ class RuntimeControlStore:
         scope = f"task:{task_id}"
         semantic = {"operation": "register_task", "task_id": task_id, "source_system": source_system}
         fingerprint = _hash(semantic)
-        with self._transaction() as (conn, now):
+        with self._transaction() as (conn, now, handoff_token):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
@@ -948,7 +950,7 @@ class RuntimeControlStore:
             "request_snapshot": request, "execution_policy": policy, "route_constraints": route,
         }
         fingerprint = _hash(semantic)
-        with self._transaction() as (conn, now):
+        with self._transaction() as (conn, now, handoff_token):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
@@ -996,7 +998,7 @@ class RuntimeControlStore:
             "provider_session_id": provider_session_id,
         }
         fingerprint = _hash(semantic)
-        with self._transaction() as (conn, now):
+        with self._transaction() as (conn, now, handoff_token):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
@@ -1057,7 +1059,7 @@ class RuntimeControlStore:
             "capabilities": list(capabilities), "capacity": capacity,
         }
         fingerprint = _hash(semantic)
-        with self._transaction() as (conn, now):
+        with self._transaction() as (conn, now, handoff_token):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
@@ -1098,7 +1100,7 @@ class RuntimeControlStore:
             incarnation_id = _text("incarnation_id", incarnation_id) if incarnation_id else _new_id("inc")
             command, key = self._command_args(command_id, idempotency_key, f"incarnation:{incarnation_id}")
         scope = f"incarnation:{incarnation_id}"
-        with self._transaction() as (conn, now):
+        with self._transaction() as (conn, now, handoff_token):
             worker = conn.execute("SELECT * FROM runtime_workers WHERE worker_id=?", (worker_id,)).fetchone()
             if worker is None:
                 raise RuntimeNotFound(f"unknown runtime worker: {worker_id}")
@@ -1224,7 +1226,7 @@ class RuntimeControlStore:
         scope = f"worker-incarnation:{incarnation_id}"
         semantic = {"operation": "heartbeat", "worker_id": worker_id, "incarnation_id": incarnation_id, "worker_reported_at": worker_reported_at}
         fingerprint = _hash(semantic)
-        with self._transaction() as (conn, now):
+        with self._transaction() as (conn, now, handoff_token):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
@@ -1288,7 +1290,7 @@ class RuntimeControlStore:
             "lease_seconds": lease_seconds, "assignment_id": assignment_id,
         }
         fingerprint = _hash(semantic)
-        with self._transaction() as (conn, now):
+        with self._transaction() as (conn, now, handoff_token):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
@@ -1381,7 +1383,25 @@ class RuntimeControlStore:
         resource_key: str,
         resource_epoch: int,
         now: str,
+        *,
+        handoff_token: str | None,
     ) -> tuple[sqlite3.Row, sqlite3.Row]:
+        if handoff_token is None:
+            raise RuntimeAuthorizationError(
+                "assignment owner authorization requires a durable handoff"
+            )
+        handoff = conn.execute(
+            "SELECT handoff_token FROM runtime_safety_handoffs WHERE handoff_key=?",
+            (assignment_id,),
+        ).fetchone()
+        if handoff is None:
+            raise SafetyDecisionPending(
+                f"safety handoff is missing for assignment {assignment_id}"
+            )
+        if handoff["handoff_token"] != handoff_token:
+            raise SafetyDecisionPending(
+                f"safety handoff is owned by another transaction for assignment {assignment_id}"
+            )
         row = conn.execute(
             "SELECT * FROM runtime_assignments WHERE assignment_id=?", (assignment_id,)
         ).fetchone()
@@ -1443,11 +1463,21 @@ class RuntimeControlStore:
             "resource_epoch": resource_epoch, "lease_seconds": lease_seconds, "expected_version": expected_version,
         }
         fingerprint = _hash(semantic)
-        with self._transaction(safety_key=assignment_id) as (conn, now):
+        with self._transaction(safety_key=assignment_id) as (conn, now, handoff_token):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
-            row, _ = self._owner_rows(conn, assignment_id, worker_id, incarnation_id, attempt_id, resource_key, resource_epoch, now)
+            row, _ = self._owner_rows(
+                conn,
+                assignment_id,
+                worker_id,
+                incarnation_id,
+                attempt_id,
+                resource_key,
+                resource_epoch,
+                now,
+                handoff_token=handoff_token,
+            )
             if expected_version is not None and int(row["version"]) != expected_version:
                 raise RuntimeVersionConflict(f"expected assignment version {expected_version}, actual {row['version']}")
             expires = encode_time(decode_time(now) + _datetime.timedelta(seconds=lease_seconds))
@@ -1545,11 +1575,21 @@ class RuntimeControlStore:
             "resource_epoch": resource_epoch, "reason": reason, "expected_version": expected_version,
         }
         fingerprint = _hash(semantic)
-        with self._transaction(safety_key=assignment_id) as (conn, now):
+        with self._transaction(safety_key=assignment_id) as (conn, now, handoff_token):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
-            row, _ = self._owner_rows(conn, assignment_id, worker_id, incarnation_id, attempt_id, resource_key, resource_epoch, now)
+            row, _ = self._owner_rows(
+                conn,
+                assignment_id,
+                worker_id,
+                incarnation_id,
+                attempt_id,
+                resource_key,
+                resource_epoch,
+                now,
+                handoff_token=handoff_token,
+            )
             if expected_version is not None and int(row["version"]) != expected_version:
                 raise RuntimeVersionConflict(f"expected assignment version {expected_version}, actual {row['version']}")
             conn.execute(
@@ -1579,7 +1619,7 @@ class RuntimeControlStore:
         if limit < 1:
             raise ValueError("limit must be positive")
         command_prefix = _text("command_id", command_id) if command_id is not None else "expiry"
-        with self._transaction() as (conn, now):
+        with self._transaction() as (conn, now, handoff_token):
             batch_scope = "runtime:expiry-reconciliation"
             batch_fingerprint = _hash({"operation": "reconcile_expired_once", "limit": limit})
             if command_id is not None:
@@ -1662,7 +1702,7 @@ class RuntimeControlStore:
         scope = f"assignment:{assignment_id}"
         semantic = {"operation": "recover_assignment", "assignment_id": assignment_id, "old_process_stopped": True, "side_effect_fence_verified": True}
         fingerprint = _hash(semantic)
-        with self._transaction() as (conn, now):
+        with self._transaction() as (conn, now, handoff_token):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
@@ -1732,7 +1772,7 @@ class RuntimeControlStore:
         else:
             default_key = f"evidence:auto:{_hash(request_semantic)}"
         command, key = self._command_args(command_id, idempotency_key, default_key)
-        with self._transaction() as (conn, now):
+        with self._transaction(safety_key=assignment_id) as (conn, now, handoff_token):
             stored = conn.execute(
                 "SELECT * FROM runtime_command_receipts WHERE idempotency_scope=? AND idempotency_key=?",
                 (scope, key),
@@ -1747,7 +1787,17 @@ class RuntimeControlStore:
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
-            self._owner_rows(conn, assignment_id, worker_id, incarnation_id, attempt_id, resource_key, resource_epoch, now)
+            self._owner_rows(
+                conn,
+                assignment_id,
+                worker_id,
+                incarnation_id,
+                attempt_id,
+                resource_key,
+                resource_epoch,
+                now,
+                handoff_token=handoff_token,
+            )
             if conn.execute("SELECT 1 FROM runtime_evidence WHERE evidence_id=?", (evidence_id,)).fetchone() is not None:
                 raise RuntimeConflict(f"evidence already exists: {evidence_id}")
             conn.execute(
@@ -1789,11 +1839,21 @@ class RuntimeControlStore:
             "expected_version": expected_version, "value": value,
         }
         fingerprint = _hash(semantic)
-        with self._transaction(safety_key=assignment_id) as (conn, now):
+        with self._transaction(safety_key=assignment_id) as (conn, now, handoff_token):
             existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
             if existing:
                 return existing
-            self._owner_rows(conn, assignment_id, worker_id, incarnation_id, attempt_id, resource_key, resource_epoch, now)
+            self._owner_rows(
+                conn,
+                assignment_id,
+                worker_id,
+                incarnation_id,
+                attempt_id,
+                resource_key,
+                resource_epoch,
+                now,
+                handoff_token=handoff_token,
+            )
             updated = conn.execute(
                 """UPDATE runtime_protected_resources SET value_json=?,version=version+1
                    WHERE resource_key=? AND fencing_epoch=? AND version=?""",
