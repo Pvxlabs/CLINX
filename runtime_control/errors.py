@@ -39,6 +39,10 @@ class StaleMutation(RuntimeAuthorizationError):
     """A revoked, expired, or superseded owner attempted a mutation."""
 
 
+class SafetyDecisionPending(StaleMutation):
+    """A durable safety handoff is unresolved; authorization fails closed."""
+
+
 class LeaseExpired(StaleMutation):
     """The coordinator clock is at or beyond the assignment expiry."""
 

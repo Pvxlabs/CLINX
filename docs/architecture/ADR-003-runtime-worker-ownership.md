@@ -131,23 +131,31 @@ them. A response lost after commit is recovered by the exact command retry.
 The coordinator clock supplies lease decisions and absolute `expires_at`.
 Worker-reported timestamps are telemetry only. Tests use an injected clock.
 Every command first commits a trusted preflight observation to
-`runtime_clock_state`. It then acquires the ownership write lock and samples the
-clock again; that post-lock sample is the authorization linearization point and
-must satisfy `now < expires_at`. The sample is written into the business
-transaction on success. If validation or a business fault rolls that
-transaction back, the same trusted sample is committed by a short independent
-safety transaction, so a rejected decision cannot be forgotten. A backwards
-clock raises `ClockAnomaly` instead of revalidating old leases.
+`runtime_clock_state`. Protected mutation and renewal then create a durable,
+per-assignment `runtime_safety_handoffs` row in a short safety transaction
+before acquiring the ownership write lock. The row is a fail-closed guard, not
+a business event; it records the observation and the lease expiry bound that
+must be crossed before orphan recovery is allowed. The business transaction
+acquires its lock and samples the clock again. That post-lock sample is the
+authorization linearization point and must satisfy `now < expires_at`.
 
-The safety and business boundaries are explicit. A rejected lease, stale owner,
-semantic conflict, injected pre-commit failure, or process exit may roll back
-business state, events, receipts, and outbox rows, but it cannot roll back the
-latest trusted observation. Conversely, persisting that observation never
-commits a failed protected mutation or partial ownership change. An accepted
-ownership change, event, receipt, outbox, and watermark remain one business
-transaction. Lock contention therefore cannot authorize with a pre-lock time,
-and a forward jump makes leases ineligible at the exact `now >= expires_at`
-boundary without proving physical process death.
+On success, state, event, receipt, outbox, the newest watermark, and deletion of
+the matching handoff guard commit together. On a rejected decision or business
+fault, the business transaction rolls back completely; a separate safety
+transaction first commits the post-lock observation and only then removes the
+guard. During that two-transaction handoff, a new call sees the durable guard
+and cannot use the old watermark. If safety persistence is busy, fails, or the
+process exits, the guard remains and `SafetyDecisionPending` (or the original
+safety failure) fails authorization closed. The original business reason is
+retained as exception context; no failed mutation state, event, receipt, or
+outbox row is committed.
+
+`recover_safety_handoff()` is an explicit, evidence-gated recovery path. It
+requires old-process stop and side-effect-fence evidence and refuses to clear a
+guard before its recorded lease bound. A clock rollback raises `ClockAnomaly`
+instead of revalidating old leases. Thus lock contention cannot authorize with
+a pre-lock time, and a forward jump makes leases ineligible at the exact
+`now >= expires_at` boundary without proving physical process death.
 
 Expiry reconciliation is explicit and bounded. It persists recovery work and
 quarantines the resource. A reopened coordinator can continue reconciliation
@@ -228,8 +236,10 @@ row with `receipt_id=old command_id` while preserving client-visible
 independent generated `receipt_id`. It also backfills event positions in
 existing `runtime_events.rowid` order without rewriting the event rows, then
 assigns future positions with an `AFTER INSERT` trigger in the event
-transaction. Closing runtime control leaves all rows intact; reinitialization
-is idempotent. No production database migration is performed by this decision.
+transaction. Migration 3 adds the assignment-scoped
+`runtime_safety_handoffs` guard table without touching historical events or
+receipts. Closing runtime control leaves all rows intact; reinitialization is
+idempotent. No production database migration is performed by this decision.
 
 ## 7. Migration and Non-Goals
 

@@ -60,7 +60,7 @@ def test_runtime_schema_is_explicit_and_does_not_appear_on_construction(tmp_path
     assert not db.exists()
     store.initialize()
     store.initialize()
-    assert store.schema_version() == 2
+    assert store.schema_version() == 3
 
 
 def test_v1_registry_default_path_does_not_initialize_runtime_control(tmp_path):

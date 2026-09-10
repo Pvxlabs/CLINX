@@ -19,6 +19,8 @@ from runtime_control import (
     RuntimeControlStore,
     RuntimeEventRecord,
     RuntimeIdempotencyConflict,
+    RecoveryBlocked,
+    SafetyDecisionPending,
     StaleMutation,
 )
 from runtime_control.schema import MIGRATIONS
@@ -228,6 +230,134 @@ def test_expiry_rejection_persists_clock_before_business_rollback(tmp_path):
             "SELECT last_coordinator_time FROM runtime_clock_state WHERE state_id=1"
         ).fetchone()[0]
     assert observed == "2026-01-01T00:00:10.000000+00:00"
+
+
+def test_authorized_business_commit_removes_safety_guard_atomically(tmp_path):
+    store, clock, _, owner = _assigned(tmp_path, lease_seconds=20)
+    clock.advance(1)
+    receipt = store.mutate_protected_resource(
+        *owner,
+        0,
+        {"value": "accepted"},
+        command_id="guard-success",
+    )
+    assert receipt.version == 1
+    assert store.get_safety_handoff(owner[0]) is None
+    with closing(store.connect()) as conn:
+        assert conn.execute(
+            "SELECT last_coordinator_time FROM runtime_clock_state WHERE state_id=1"
+        ).fetchone()[0] == "2026-01-01T00:00:01.000000+00:00"
+        assert tuple(conn.execute(
+            "SELECT version,value_json FROM runtime_protected_resources WHERE resource_key='resource-1'"
+        ).fetchone()) == (1, '{"value":"accepted"}')
+        assert conn.execute(
+            "SELECT COUNT(*) FROM runtime_command_receipts WHERE command_id='guard-success'"
+        ).fetchone()[0] == 1
+
+
+def test_safety_operation_response_loss_retries_without_duplicate_commit(tmp_path):
+    store, _, _, owner = _assigned(tmp_path, lease_seconds=20)
+    fired = {"value": False}
+
+    def lose_response(stage):
+        if stage == "after_commit" and not fired["value"]:
+            fired["value"] = True
+            raise RuntimeError("mutation response lost")
+
+    store.fault_injector = lose_response
+    with pytest.raises(RuntimeError, match="mutation response lost"):
+        store.mutate_protected_resource(
+            *owner,
+            0,
+            {"value": "once"},
+            command_id="guard-response-loss",
+        )
+    store.fault_injector = None
+    retry = store.mutate_protected_resource(
+        *owner,
+        0,
+        {"value": "once"},
+        command_id="guard-response-loss",
+    )
+    assert retry.duplicate is True
+    assert store.get_safety_handoff(owner[0]) is None
+    assert store.get_protected_resource("resource-1").version == 1
+    with closing(store.connect()) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM runtime_events WHERE stream_type='resource'"
+        ).fetchone()[0] == 1
+
+
+def test_safety_persist_failure_leaves_guard_and_fails_closed(tmp_path):
+    store, clock, _, owner = _assigned(tmp_path)
+    clock.set(BASE + dt.timedelta(seconds=11))
+
+    def fail_safety_commit(stage):
+        if stage == "safety_before_commit":
+            raise RuntimeError("safety commit failed")
+
+    store.fault_injector = fail_safety_commit
+    with pytest.raises(RuntimeError, match="safety commit failed"):
+        store.mutate_protected_resource(
+            *owner,
+            0,
+            {"value": "must-not-commit"},
+            command_id="guard-failure",
+        )
+    store.fault_injector = None
+    assert store.get_protected_resource("resource-1").version == 0
+    assert store.get_safety_handoff(owner[0]) is not None
+    with closing(store.connect()) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM runtime_command_receipts WHERE command_id='guard-failure'"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM runtime_events WHERE stream_type='resource'"
+        ).fetchone()[0] == 0
+    rollback_clock = RuntimeControlStore(
+        store.path,
+        clock=ManualClock(BASE + dt.timedelta(seconds=9.5)),
+    )
+    with pytest.raises(ClockAnomaly):
+        rollback_clock.mutate_protected_resource(
+            *owner,
+            0,
+            {"value": "old-authority"},
+            command_id="guard-blocked",
+        )
+    current_clock = RuntimeControlStore(store.path, clock=ManualClock(BASE + dt.timedelta(seconds=11)))
+    with pytest.raises(SafetyDecisionPending):
+        current_clock.mutate_protected_resource(
+            *owner,
+            0,
+            {"value": "pending-authority"},
+            command_id="guard-blocked-current",
+        )
+
+
+def test_safety_handoff_recovery_waits_for_recorded_lease_bound(tmp_path):
+    store, clock, _, owner = _assigned(tmp_path)
+    clock.set(BASE + dt.timedelta(seconds=9))
+    store._observe_coordinator_time()
+    store._begin_safety_handoff(owner[0])
+    reopened = RuntimeControlStore(store.path, clock=ManualClock(BASE + dt.timedelta(seconds=9.5)))
+    with pytest.raises(RecoveryBlocked):
+        reopened.recover_safety_handoff(
+            owner[0], old_process_stopped=True, side_effect_fence_verified=True
+        )
+    reopened.clock.set(BASE + dt.timedelta(seconds=10))
+    assert reopened.recover_safety_handoff(
+        owner[0], old_process_stopped=True, side_effect_fence_verified=True
+    ) is True
+    with pytest.raises(LeaseExpired):
+        reopened.mutate_protected_resource(
+            *owner,
+            0,
+            {"value": "still-expired"},
+            command_id="after-guard-recovery",
+        )
+    assert reopened.get_safety_handoff(owner[0]) is None
+    assert reopened.get_protected_resource("resource-1").version == 0
     reopened = RuntimeControlStore(
         store.path,
         clock=ManualClock(BASE + dt.timedelta(seconds=5)),
@@ -953,7 +1083,7 @@ def test_fca699e9_schema_receipt_and_event_upgrade_is_additive(tmp_path):
         ).fetchone()
     store = RuntimeControlStore(path, clock=ManualClock(BASE))
     store.initialize()
-    assert store.schema_version() == 2
+    assert store.schema_version() == 3
     duplicate = store.register_task_reference("old-task", command_id="legacy-create")
     assert duplicate.duplicate is True
     assert duplicate.command_id == "legacy-create"
@@ -975,5 +1105,5 @@ def test_fca699e9_schema_receipt_and_event_upgrade_is_additive(tmp_path):
             "SELECT COUNT(*) FROM runtime_command_receipts WHERE command_id='legacy-create'"
         ).fetchone()[0]
     assert after_event == before_event
-    assert versions == [(1,), (2,)]
+    assert versions == [(1,), (2,), (3,)]
     assert receipt_count == 2
