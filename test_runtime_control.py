@@ -208,6 +208,13 @@ def test_expiry_requires_explicit_recovery_and_rejects_renewal_at_boundary(tmp_p
         reopened.assign_attempt("attempt-1", "worker-1", "inc-1", "resource-a", command_id="still-blocked")
     recovered = reopened.recover_assignment(first.assignment_id, old_process_stopped=True, side_effect_fence_verified=True, command_id="recover-1")
     assert recovered.lifecycle == "RECOVERED"
+    recovered_retry = reopened.recover_assignment(first.assignment_id, old_process_stopped=True, side_effect_fence_verified=True, command_id="recover-1")
+    assert recovered_retry.duplicate is True
+    event_types = tuple(
+        event.event_type
+        for event in reopened.read_events(stream_type="assignment", stream_id=first.assignment_id, limit=10)
+    )
+    assert event_types == ("AssignmentGranted", "AssignmentExpired", "AssignmentRecovered")
     second = reopened.assign_attempt("attempt-1", "worker-1", "inc-1", "resource-a", command_id="assign-2")
     assert second.resource_epoch == first.resource_epoch + 1
 
