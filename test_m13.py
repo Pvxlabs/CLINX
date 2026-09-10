@@ -16,7 +16,7 @@ from execution_semantics import (
     normalize_transport,
     parse_routing_identity,
 )
-from m9_integration import ClinxIntegration
+from m9_integration import ClinxIntegration, ExecutionFinalizer
 from mcp_server import ClinxMCPServer, DEFAULT_TOOL_NAMES, tool_definitions
 from task_registry import TaskRegistry, TaskRegistryError
 from test_m6 import FakeClient, dispatcher_fixture
@@ -74,6 +74,28 @@ class M13SemanticsTests(unittest.TestCase):
         self.assertNotIn("prompt copy", text)
         from m9_integration import parse_codex_result
         self.assertEqual(parse_codex_result(text).summary, "provider response")
+
+    def test_result_parser_ignores_echoed_example_before_actual_result(self):
+        from m9_integration import parse_execution_result
+        text = (
+            "Example contract:\n"
+            "CLINX_EXECUTION_RESULT\n"
+            "STATUS=PASS\n"
+            "SUMMARY=prompt example\n"
+            "CHANGED_FILES=NONE\n"
+            "VALIDATION=example\n"
+            "BLOCKERS=NONE\n"
+            "NEXT_STATE=COMPLETED\n\n"
+            "Actual result:\n"
+            "CLINX_EXECUTION_RESULT\n"
+            "STATUS=PASS\n"
+            "SUMMARY=actual provider result\n"
+            "CHANGED_FILES=NONE\n"
+            "VALIDATION=managed host mutation\n"
+            "BLOCKERS=NONE\n"
+            "NEXT_STATE=COMPLETED"
+        )
+        self.assertEqual(parse_execution_result(text).summary, "actual provider result")
 
     def test_host_identity_separates_stable_display_machine_and_alias(self):
         identity = normalize_host(
@@ -579,7 +601,7 @@ class M13LifecycleRoutingTests(unittest.TestCase):
             self.assertEqual(status["execution_result"]["summary"], "provider result")
             self.assertNotEqual(status["failure_code"], "TURN_COMPLETED_WITHOUT_RESULT")
 
-    def test_completed_turn_without_valid_result_keeps_recovery_behavior(self):
+    def test_completed_turn_without_valid_result_finalizes_blocked(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             registry = TaskRegistry(root / "tasks.sqlite3")
@@ -597,12 +619,419 @@ class M13LifecycleRoutingTests(unittest.TestCase):
             dispatcher.client_factory = lambda target: Provider(target)
             reconciled = dispatcher.reconcile_execution("exec_missing_result")
 
-            self.assertEqual(reconciled["state"], "RECOVERY_REQUIRED")
-            self.assertEqual(
-                registry.get_task(task.task_id).failure_code,
-                "TURN_COMPLETED_WITHOUT_RESULT",
+            self.assertEqual(reconciled["state"], "BLOCKED")
+            stored = registry.get_execution_result("exec_missing_result")
+            self.assertIsNotNone(stored)
+            self.assertEqual(stored.status, "BLOCKED")
+            self.assertEqual(stored.next_state, "BLOCKED")
+            self.assertEqual(registry.get_task(task.task_id).execution_state, "BLOCKED")
+
+    def test_completed_turn_without_marker_uses_exact_host_success_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_host_success")
+            registry.begin_host_execution(
+                host_execution_ref="hostexec_success",
+                task_id=task.task_id,
+                execution_ref="exec_host_success",
+                routing_identity_json=task.routing_identity_json,
+                execution_policy_json="{}",
+                host="p620", surface="host_executor",
+                operation_class="DEVELOPMENT_MUTATION", capability="HOST_FILESYSTEM",
+                operation="development_command", argv_json='["git","status","--short"]',
+                cwd_identity="clinx", started_at="2026-01-01T00:00:00+00:00",
+                result_state="RUNNING", timeout_seconds=30,
+                executor_instance="test",
             )
-            self.assertIsNone(registry.get_execution_result("exec_missing_result"))
+            registry.complete_host_execution(
+                "hostexec_success", completed_at="2026-01-01T00:00:01+00:00",
+                duration_ms=1, exit_code=0, result_state="SUCCEEDED",
+            )
+            dispatcher = self._dispatcher(root, registry, [])
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "completed",
+                        "items": [{"type": "agentMessage", "text": "audit finished"}],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_host_success")
+
+            self.assertEqual(reconciled["state"], "COMPLETED")
+            stored = registry.get_execution_result("exec_host_success")
+            self.assertIsNotNone(stored)
+            self.assertEqual(stored.status, "PASS")
+            self.assertEqual(stored.next_state, "COMPLETED")
+            self.assertIn("exit_code=0", stored.validation)
+
+    def test_finalizer_orders_result_terminal_release_then_projection(self):
+        result_text = (
+            "CLINX_EXECUTION_RESULT\nSTATUS=PASS\nSUMMARY=ordered finalization\n"
+            "CHANGED_FILES=NONE\nVALIDATION=recording registry\n"
+            "BLOCKERS=NONE\nNEXT_STATE=COMPLETED"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_ordered")
+            events = []
+            original_set_state = registry.set_execution_state
+            original_record = registry.record_execution_result
+            original_terminal = registry.reconcile_terminal
+
+            def set_state(task_id, state, **kwargs):
+                if state == "FINALIZING":
+                    events.append("FINALIZING")
+                return original_set_state(task_id, state, **kwargs)
+
+            def record_result(**kwargs):
+                events.append("PERSIST_RESULT")
+                return original_record(**kwargs)
+
+            def reconcile_terminal(execution_ref, state, **kwargs):
+                events.append("TERMINAL_AND_RELEASE")
+                return original_terminal(execution_ref, state, **kwargs)
+
+            registry.set_execution_state = set_state
+            registry.record_execution_result = record_result
+            registry.reconcile_terminal = reconcile_terminal
+
+            class Linear:
+                def add_comment(self, _issue_id, _body):
+                    self_outer.assertIsNone(registry.get_active_execution("exec_ordered"))
+                    events.append("PROJECTION")
+
+                def update_issue_state(self, _issue_id, _state_id):
+                    pass
+
+            self_outer = self
+            finalized = ExecutionFinalizer(registry, Linear()).finalize(
+                execution_ref="exec_ordered",
+                task_id=task.task_id,
+                turn_id="turn-lifecycle",
+                raw_result=result_text,
+                issue_id="linear-order",
+                review_state_id="review",
+            )
+
+            self.assertEqual(finalized.status, "PASS")
+            self.assertEqual(events, [
+                "FINALIZING", "PERSIST_RESULT", "TERMINAL_AND_RELEASE", "PROJECTION",
+            ])
+            self.assertEqual(registry.get_task(task.task_id).execution_state, "COMPLETED")
+
+    def test_projection_failure_does_not_revoke_terminal_decision(self):
+        result_text = (
+            "CLINX_EXECUTION_RESULT\nSTATUS=PASS\nSUMMARY=projection independent\n"
+            "CHANGED_FILES=NONE\nVALIDATION=terminal before projection\n"
+            "BLOCKERS=NONE\nNEXT_STATE=COMPLETED"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_projection_failure")
+
+            class Linear:
+                def add_comment(self, _issue_id, _body):
+                    raise RuntimeError("projection unavailable")
+
+                def update_issue_state(self, _issue_id, _state_id):
+                    raise AssertionError("state update must not follow failed comment")
+
+            finalized = ExecutionFinalizer(registry, Linear()).finalize(
+                execution_ref="exec_projection_failure",
+                task_id=task.task_id,
+                turn_id="turn-lifecycle",
+                raw_result=result_text,
+                issue_id="linear-projection",
+                review_state_id="review",
+            )
+
+            self.assertEqual(finalized.status, "PASS")
+            self.assertEqual(registry.get_task(task.task_id).execution_state, "COMPLETED")
+            self.assertIsNone(registry.get_active_execution("exec_projection_failure"))
+            self.assertEqual(
+                registry.get_execution_result("exec_projection_failure").writeback_state,
+                "FAILED",
+            )
+
+    def test_existing_exact_result_is_finalized_idempotently(self):
+        result_text = (
+            "CLINX_EXECUTION_RESULT\nSTATUS=PASS\nSUMMARY=already persisted\n"
+            "CHANGED_FILES=NONE\nVALIDATION=exact result\n"
+            "BLOCKERS=NONE\nNEXT_STATE=COMPLETED"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_existing_result")
+            parsed = bridge.parse_codex_result(result_text)
+            registry.record_execution_result(
+                execution_ref="exec_existing_result", task_id=task.task_id,
+                turn_id="turn-lifecycle", status=parsed.status,
+                summary=parsed.summary, changed_files=parsed.changed_files,
+                validation=parsed.validation, blockers=parsed.blockers,
+                next_state=parsed.next_state, raw_result=result_text,
+            )
+
+            finalizer = ExecutionFinalizer(registry)
+            first = finalizer.finalize(
+                execution_ref="exec_existing_result", task_id=task.task_id,
+                turn_id="turn-lifecycle", raw_result=None,
+            )
+            second = finalizer.finalize(
+                execution_ref="exec_existing_result", task_id=task.task_id,
+                turn_id="turn-lifecycle", raw_result=None,
+            )
+
+            self.assertEqual(first.status, "PASS")
+            self.assertEqual(second.status, "PASS")
+            self.assertEqual(registry.get_task(task.task_id).execution_state, "COMPLETED")
+            self.assertIsNone(registry.get_active_execution("exec_existing_result"))
+
+    def test_late_finalizer_result_cannot_mutate_newer_execution(self):
+        result_text = (
+            "CLINX_EXECUTION_RESULT\nSTATUS=PASS\nSUMMARY=execution A\n"
+            "CHANGED_FILES=NONE\nVALIDATION=execution A\n"
+            "BLOCKERS=NONE\nNEXT_STATE=COMPLETED"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_late_a")
+            finalizer = ExecutionFinalizer(registry)
+            finalizer.finalize(
+                execution_ref="exec_late_a", task_id=task.task_id,
+                turn_id="turn-lifecycle", raw_result=result_text,
+            )
+            with registry.execution(task.task_id, execution_ref="exec_late_b", retain=True):
+                registry.set_execution_state(
+                    task.task_id, "CODEX_RUNNING", current_stage="turn-b",
+                    turn_id="turn-b", codex_running=True,
+                )
+
+            with self.assertRaisesRegex(TaskRegistryError, "does not own task"):
+                finalizer.finalize(
+                    execution_ref="exec_late_a", task_id=task.task_id,
+                    turn_id="turn-lifecycle", raw_result=result_text,
+                )
+
+            self.assertEqual(
+                registry.get_active_execution("exec_late_b")["execution_ref"], "exec_late_b"
+            )
+            self.assertIsNone(registry.get_execution_result("exec_late_b"))
+
+    def test_failed_provider_turn_without_host_success_finalizes_failed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_provider_failed")
+            dispatcher = self._dispatcher(root, registry, [])
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "failed",
+                        "items": [{"type": "agentMessage", "text": "provider failed"}],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_provider_failed")
+
+            self.assertEqual(reconciled["state"], "FAILED")
+            current = registry.get_task(task.task_id)
+            self.assertEqual(current.execution_state, "FAILED")
+            self.assertEqual(current.failure_code, "PROVIDER_TURN_FAILED")
+            self.assertEqual(
+                registry.get_execution_record("exec_provider_failed")["stage"], "FAILED"
+            )
+            self.assertEqual(
+                registry.get_execution_result("exec_provider_failed").status, "BLOCKED"
+            )
+            self.assertIsNone(registry.get_active_execution("exec_provider_failed"))
+
+    def test_provider_timeout_finalizes_blocked_without_recovery_required(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_provider_timeout")
+            dispatcher = self._dispatcher(root, registry, [])
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "timed_out",
+                        "items": [{"type": "agentMessage", "text": "provider timeout"}],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_provider_timeout")
+
+            self.assertEqual(reconciled["state"], "BLOCKED")
+            current = registry.get_task(task.task_id)
+            self.assertEqual(current.execution_state, "BLOCKED")
+            self.assertEqual(current.failure_code, "PROVIDER_TIMEOUT")
+            self.assertNotEqual(current.execution_state, "RECOVERY_REQUIRED")
+
+    def test_provider_failure_with_host_success_finalizes_evidence_conflict(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_provider_conflict")
+            registry.begin_host_execution(
+                host_execution_ref="hostexec_provider_conflict",
+                task_id=task.task_id,
+                execution_ref="exec_provider_conflict",
+                routing_identity_json=task.routing_identity_json,
+                execution_policy_json="{}",
+                host="p620", surface="host_executor",
+                operation_class="DEVELOPMENT_MUTATION", capability="HOST_FILESYSTEM",
+                operation="development_command", argv_json='["git","status","--short"]',
+                cwd_identity="clinx", started_at="2026-01-01T00:00:00+00:00",
+                result_state="RUNNING", timeout_seconds=30,
+                executor_instance="test",
+            )
+            registry.complete_host_execution(
+                "hostexec_provider_conflict",
+                completed_at="2026-01-01T00:00:01+00:00",
+                duration_ms=1, exit_code=0, result_state="SUCCEEDED",
+            )
+            dispatcher = self._dispatcher(root, registry, [])
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "failed",
+                        "items": [{"type": "agentMessage", "text": "provider failed"}],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_provider_conflict")
+
+            self.assertEqual(reconciled["state"], "BLOCKED")
+            current = registry.get_task(task.task_id)
+            self.assertEqual(current.failure_code, "PROVIDER_HOST_EVIDENCE_CONFLICT")
+            stored = registry.get_execution_result("exec_provider_conflict")
+            self.assertEqual(stored.status, "BLOCKED")
+            self.assertIn("hostexec_provider_conflict=SUCCEEDED/exit_code=0", stored.validation)
+            self.assertIn("conflict", stored.blockers.casefold())
+
+    def test_provider_disconnect_finalizes_blocked_without_recovery_required(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_provider_disconnected")
+            dispatcher = self._dispatcher(root, registry, [])
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "disconnected",
+                        "items": [],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_provider_disconnected")
+
+            self.assertEqual(reconciled["state"], "BLOCKED")
+            current = registry.get_task(task.task_id)
+            self.assertEqual(current.execution_state, "BLOCKED")
+            self.assertEqual(current.failure_code, "PROVIDER_DISCONNECTED")
+            self.assertIsNone(registry.get_active_execution("exec_provider_disconnected"))
+
+    def test_closed_provider_transport_enters_disconnected_finalizer_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_transport_closed")
+            dispatcher = self._dispatcher(root, registry, [])
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    raise bridge.AppServerError("app-server byte transport closed (exit 1)")
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_transport_closed")
+
+            self.assertEqual(reconciled["state"], "BLOCKED")
+            current = registry.get_task(task.task_id)
+            self.assertEqual(current.execution_state, "BLOCKED")
+            self.assertEqual(current.failure_code, "PROVIDER_DISCONNECTED")
+            self.assertNotEqual(current.execution_state, "RECOVERY_REQUIRED")
+            self.assertIn("byte transport closed", current.failure_evidence)
+
+    def test_retained_recovery_provider_failure_enters_finalizer_and_leaves_recovery(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_recovered_failure")
+            registry.reconcile_terminal(
+                "exec_recovered_failure",
+                "RECOVERY_REQUIRED",
+                failure_stage="transport",
+                failure_code="PROVIDER_UNAVAILABLE",
+                evidence="provider read was previously unavailable",
+                retry_required=True,
+            )
+            dispatcher = self._dispatcher(root, registry, [])
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "failed", "items": [],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_recovered_failure")
+
+            self.assertEqual(reconciled["state"], "FAILED")
+            current = registry.get_task(task.task_id)
+            self.assertEqual(current.execution_state, "FAILED")
+            self.assertEqual(current.failure_code, "PROVIDER_TURN_FAILED")
+            self.assertEqual(
+                registry.get_execution_record("exec_recovered_failure")["stage"], "FAILED"
+            )
+            self.assertIsNotNone(registry.get_execution_result("exec_recovered_failure"))
+
+    def test_late_provider_pass_cannot_overwrite_failed_terminal_execution(self):
+        pass_result = (
+            "CLINX_EXECUTION_RESULT\nSTATUS=PASS\nSUMMARY=late provider result\n"
+            "CHANGED_FILES=NONE\nVALIDATION=late\nBLOCKERS=NONE\nNEXT_STATE=COMPLETED"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_terminal_failure")
+            finalizer = ExecutionFinalizer(registry)
+            failed = finalizer.finalize(
+                execution_ref="exec_terminal_failure",
+                task_id=task.task_id,
+                turn_id="turn-lifecycle",
+                raw_result=None,
+                provider_outcome="PROVIDER_FAILED",
+                provider_status="failed",
+            )
+            original = registry.get_execution_result("exec_terminal_failure")
+
+            late = finalizer.finalize(
+                execution_ref="exec_terminal_failure",
+                task_id=task.task_id,
+                turn_id="turn-lifecycle",
+                raw_result=pass_result,
+                provider_outcome="PROVIDER_TERMINAL",
+                provider_status="completed",
+            )
+
+            self.assertEqual(failed.terminal_state, "FAILED")
+            self.assertEqual(late.terminal_state, "FAILED")
+            self.assertEqual(registry.get_task(task.task_id).execution_state, "FAILED")
+            self.assertEqual(
+                registry.get_execution_result("exec_terminal_failure").raw_result,
+                original.raw_result,
+            )
 
     def test_previous_pass_is_not_current_result_for_new_execution(self):
         with tempfile.TemporaryDirectory() as td:

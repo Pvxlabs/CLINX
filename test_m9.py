@@ -78,10 +78,11 @@ class M9ResultTests(unittest.TestCase):
             task_id=task.task_id, thread_id="thread-m9", session_id="session-m9",
             project_id=None, app_server_version="0.152.1",
         )
-        store.set_execution_state(
-            task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
-            turn_id="turn-m9", codex_running=True,
-        )
+        with store.execution(task.task_id, execution_ref="PVX-1783", retain=True):
+            store.set_execution_state(
+                task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
+                turn_id="turn-m9", codex_running=True,
+            )
         return store, task
 
     def test_parser_is_strict_and_normalized(self):
@@ -125,19 +126,21 @@ class M9ResultTests(unittest.TestCase):
             store, task = self._store(root)
             linear = FakeLinear()
             service = ExecutionResultService(store, linear)
-            with self.assertRaisesRegex(RuntimeError, "approval policy"):
-                service.receive_and_writeback(
-                    execution_ref="PVX-1783",
-                    task_id=task.task_id,
-                    turn_id="turn-m9",
-                    raw_result=RESULT,
-                    issue_id="linear-m9",
-                    review_state_id="review-state",
-                )
-            blocked = store.get_task(task.task_id)
-            self.assertEqual(blocked.execution_state, "LINEAR_WRITEBACK")
-            self.assertFalse(blocked.codex_running)
-            self.assertTrue(blocked.retry_required)
+            service.receive_and_writeback(
+                execution_ref="PVX-1783",
+                task_id=task.task_id,
+                turn_id="turn-m9",
+                raw_result=RESULT,
+                issue_id="linear-m9",
+                review_state_id="review-state",
+            )
+            completed = store.get_task(task.task_id)
+            self.assertEqual(completed.execution_state, "COMPLETED")
+            self.assertFalse(completed.codex_running)
+            self.assertFalse(completed.retry_required)
+            self.assertEqual(
+                store.get_execution_result("PVX-1783").writeback_state, "FAILED"
+            )
             restarted = TaskRegistry(root / "tasks.sqlite3")
             retry = ExecutionResultService(restarted, linear)
             retry.receive_and_writeback(
@@ -152,7 +155,7 @@ class M9ResultTests(unittest.TestCase):
             self.assertEqual(linear.states, [("linear-m9", "review-state")])
             record = restarted.get_execution_result("PVX-1783")
             self.assertEqual(record.writeback_state, "WRITTEN")
-            self.assertEqual(restarted.get_task(task.task_id).execution_state, "IN_REVIEW")
+            self.assertEqual(restarted.get_task(task.task_id).execution_state, "COMPLETED")
 
     def test_exact_execution_ref_cannot_change_task_or_turn_owner(self):
         with tempfile.TemporaryDirectory() as td:

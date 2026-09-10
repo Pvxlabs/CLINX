@@ -113,6 +113,18 @@ class ExecutionResult:
     blockers: str
     next_state: str
     raw_result: str
+    # The public result contract remains PASS/BLOCKED. The execution lifecycle
+    # can additionally terminate as FAILED when provider evidence is definitive.
+    terminal_state: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class _FinalizationDecision:
+    result: ExecutionResult
+    terminal_state: str
+    retry_required: bool
+    failure_code: str | None = None
+    failure_evidence: str | None = None
 
 
 _RESULT_KEYS = (
@@ -125,53 +137,57 @@ def parse_execution_result(text: str) -> ExecutionResult:
     if not isinstance(text, str) or "CLINX_EXECUTION_RESULT" not in text:
         raise ResultParseError("missing CLINX_EXECUTION_RESULT header")
     lines = [line.strip() for line in text.splitlines()]
-    try:
-        start = lines.index("CLINX_EXECUTION_RESULT")
-    except ValueError as exc:
+    starts = [index for index, line in enumerate(lines)
+              if line == "CLINX_EXECUTION_RESULT"]
+    if not starts:
         # Some app-server summary views collapse line breaks.  Preserve the
         # strict field contract while accepting that bounded representation.
         compact = " ".join(text.split())
-        header_offset = compact.find("CLINX_EXECUTION_RESULT")
-        if header_offset < 0:
-            raise ResultParseError("missing exact CLINX_EXECUTION_RESULT header") from exc
-        compact = compact[header_offset:]
         keys = "STATUS|SUMMARY|CHANGED_FILES|VALIDATION|BLOCKERS|NEXT_STATE"
-        values = {
-            key: value.strip()
-            for key, value in re.findall(
-                rf"(?:^|\s)({keys})=(.*?)(?=\s+(?:{keys})=|$)", compact
-            )
-        }
-        missing = [key for key in _RESULT_KEYS if not values.get(key)]
-        if missing:
-            raise ResultParseError("missing result fields: " + ", ".join(missing)) from exc
-        if values["STATUS"] not in {"PASS", "BLOCKED"}:
-            raise ResultParseError("STATUS must be PASS or BLOCKED") from exc
-        if values["NEXT_STATE"] not in {"IN_REVIEW", "BLOCKED", "COMPLETED"}:
-            raise ResultParseError("NEXT_STATE is invalid") from exc
-        if values["STATUS"] == "BLOCKED" and values["NEXT_STATE"] != "BLOCKED":
-            raise ResultParseError("BLOCKED results must use NEXT_STATE=BLOCKED") from exc
-        if values["STATUS"] == "PASS" and values["BLOCKERS"].upper() != "NONE":
-            raise ResultParseError("PASS results must use BLOCKERS=NONE") from exc
-        return ExecutionResult(
-            status=values["STATUS"], summary=values["SUMMARY"],
-            changed_files=values["CHANGED_FILES"], validation=values["VALIDATION"],
-            blockers=values["BLOCKERS"], next_state=values["NEXT_STATE"], raw_result=text,
+        headers = [match.start() for match in re.finditer(
+            r"(?:^|\s)CLINX_EXECUTION_RESULT(?:\s|$)", compact
+        )]
+        candidates = []
+        for offset in headers:
+            candidate = compact[offset:]
+            values = {
+                key: value.strip()
+                for key, value in re.findall(
+                    rf"(?:^|\s)({keys})=(.*?)(?=\s+(?:{keys})=|$)", candidate
+                )
+            }
+            if all(values.get(key) for key in _RESULT_KEYS):
+                candidates.append(values)
+        if not candidates:
+            raise ResultParseError("missing or incomplete CLINX result block")
+        values = candidates[-1]
+    else:
+        # A provider may echo an example contract before emitting its actual
+        # result.  Validate each complete block and use the last valid one.
+        pattern = re.compile(
+            r"^(STATUS|SUMMARY|CHANGED_FILES|VALIDATION|BLOCKERS|NEXT_STATE)=(.*)$"
         )
-    values: dict[str, str] = {}
-    pattern = re.compile(r"^(STATUS|SUMMARY|CHANGED_FILES|VALIDATION|BLOCKERS|NEXT_STATE)=(.*)$")
-    for line in lines[start + 1:]:
-        if not line:
-            continue
-        match = pattern.match(line)
-        if match:
-            key, value = match.groups()
-            if key in values:
-                raise ResultParseError(f"duplicate result field: {key}")
-            values[key] = value.strip()
-    missing = [key for key in _RESULT_KEYS if not values.get(key)]
-    if missing:
-        raise ResultParseError("missing result fields: " + ", ".join(missing))
+        candidates: list[dict[str, str]] = []
+        for start in starts:
+            values: dict[str, str] = {}
+            duplicate = False
+            for line in lines[start + 1:]:
+                if line == "CLINX_EXECUTION_RESULT":
+                    break
+                if not line:
+                    continue
+                match = pattern.match(line)
+                if match:
+                    key, value = match.groups()
+                    if key in values:
+                        duplicate = True
+                        break
+                    values[key] = value.strip()
+            if not duplicate and all(values.get(key) for key in _RESULT_KEYS):
+                candidates.append(values)
+        if not candidates:
+            raise ResultParseError("missing or incomplete CLINX result block")
+        values = candidates[-1]
     if values["STATUS"] not in {"PASS", "BLOCKED"}:
         raise ResultParseError("STATUS must be PASS or BLOCKED")
     if values["NEXT_STATE"] not in {"IN_REVIEW", "BLOCKED", "COMPLETED"}:
@@ -181,13 +197,9 @@ def parse_execution_result(text: str) -> ExecutionResult:
     if values["STATUS"] == "PASS" and values["BLOCKERS"].upper() != "NONE":
         raise ResultParseError("PASS results must use BLOCKERS=NONE")
     return ExecutionResult(
-        status=values["STATUS"],
-        summary=values["SUMMARY"],
-        changed_files=values["CHANGED_FILES"],
-        validation=values["VALIDATION"],
-        blockers=values["BLOCKERS"],
-        next_state=values["NEXT_STATE"],
-        raw_result=text,
+        status=values["STATUS"], summary=values["SUMMARY"],
+        changed_files=values["CHANGED_FILES"], validation=values["VALIDATION"],
+        blockers=values["BLOCKERS"], next_state=values["NEXT_STATE"], raw_result=text,
     )
 
 
@@ -269,7 +281,7 @@ def parse_codex_result(text: str) -> ExecutionResult:
 
 
 class ExecutionResultService:
-    """Receive one exact turn result and own its idempotent Linear writeback."""
+    """Project one already-finalized execution result to Linear idempotently."""
 
     def __init__(self, registry: TaskRegistry, linear: Any):
         self.registry = registry
@@ -308,101 +320,451 @@ class ExecutionResultService:
         review_state_id: str | None = None,
         blocked_state_id: str | None = None,
     ) -> ExecutionResult:
-        result = parse_codex_result(raw_result)
-        record = self.registry.record_execution_result(
+        """Compatibility facade: finalization owns truth, this service projects it."""
+        return ExecutionFinalizer(self.registry, self.linear).finalize(
             execution_ref=execution_ref,
             task_id=task_id,
             turn_id=turn_id,
-            status=result.status,
-            summary=result.summary,
-            changed_files=result.changed_files,
-            validation=result.validation,
-            blockers=result.blockers,
-            next_state=result.next_state,
-            raw_result=result.raw_result,
+            raw_result=raw_result,
+            issue_id=issue_id,
+            review_state_id=review_state_id,
+            blocked_state_id=blocked_state_id,
         )
-        self.registry.set_execution_state(
-            task_id,
-            "RESULT_RECEIVED",
-            current_stage="CODEX_RESULT_RECEIVED",
-            current_blocker=None,
-            codex_running=False,
-            turn_id=turn_id,
-            retry_required=False,
-        )
-        self.registry.set_execution_state(
-            task_id,
-            "RESULT_PARSE",
-            current_stage="RESULT_PARSE",
-            current_blocker=None,
-            codex_running=False,
-            turn_id=turn_id,
-            retry_required=False,
-        )
+
+    def project(
+        self,
+        *,
+        execution_ref: str,
+        task_id: str,
+        turn_id: str,
+        result: ExecutionResult,
+        issue_id: str,
+        review_state_id: str | None = None,
+        blocked_state_id: str | None = None,
+    ) -> bool:
+        """Write the terminal result projection without owning execution state."""
+        record = self.registry.get_execution_result(execution_ref)
+        if record is None or record.task_id != task_id or record.turn_id != turn_id:
+            raise TaskRegistryError(
+                f"Execution result {execution_ref} is not finalized for {task_id}/{turn_id}"
+            )
         index = self.registry.get_task_index(task_id)
         target_issue_id = index.issue_id if index is not None else issue_id
         if not target_issue_id:
-            raise TaskRegistryError(f"Task {task_id} has no Linear mirror issue")
+            return False
         logical_model, resolved_model = self.registry.get_execution_models(execution_ref)
         body = self._body(
             execution_ref, task_id, turn_id, result,
             logical_model=logical_model, resolved_model=resolved_model,
         )
         body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
-        if record.writeback_state != "WRITTEN":
+        if record.writeback_state == "WRITTEN":
+            return True
+        event_key = f"completion:{execution_ref}"
+        event = self.registry.get_linear_event(task_id, event_key)
+        if event is not None and event["state"] == "WRITTEN" and event["body_hash"] == body_hash:
+            self.registry.mark_execution_result_writeback(
+                execution_ref, state="WRITTEN", body_hash=body_hash
+            )
+            return True
+        self.registry.record_linear_event(task_id, event_key, body_hash, state="PENDING")
+        try:
+            self.linear.add_comment(target_issue_id, body)
+            if result.status == "PASS" and review_state_id:
+                self.linear.update_issue_state(target_issue_id, review_state_id)
+            elif result.status == "BLOCKED" and blocked_state_id:
+                self.linear.update_issue_state(target_issue_id, blocked_state_id)
+        except Exception as exc:
+            self.registry.record_linear_event(
+                task_id, event_key, body_hash, state="FAILED",
+                retry_required=True, last_error=str(exc)[:2000],
+            )
+            self.registry.mark_execution_result_writeback(
+                execution_ref, state="FAILED", body_hash=body_hash
+            )
+            return False
+        self.registry.record_linear_event(task_id, event_key, body_hash, state="WRITTEN")
+        self.registry.mark_execution_result_writeback(
+            execution_ref, state="WRITTEN", body_hash=body_hash
+        )
+        return True
+
+
+class ExecutionFinalizer:
+    """The sole terminal decision maker for one exact managed execution."""
+
+    def __init__(self, registry: TaskRegistry, linear: Any = None):
+        self.registry = registry
+        self.linear = linear
+
+    @staticmethod
+    def _from_record(record: Any, *, terminal_state: str | None = None) -> ExecutionResult:
+        return ExecutionResult(
+            status=record.status,
+            summary=record.summary,
+            changed_files=record.changed_files,
+            validation=record.validation,
+            blockers=record.blockers,
+            next_state=record.next_state,
+            raw_result=record.raw_result,
+            terminal_state=terminal_state,
+        )
+
+    def _validate_owner(self, execution_ref: str, task_id: str, turn_id: str) -> dict[str, Any]:
+        execution = self.registry.get_execution_record(execution_ref)
+        if execution is None or execution.get("task_id") != task_id:
+            raise TaskRegistryError(
+                f"Execution ref {execution_ref} is not owned by task {task_id}"
+            )
+        prepared = self.registry.get_prepared_execution_for_execution(execution_ref)
+        if prepared is not None and prepared.resulting_turn_id not in {None, turn_id}:
+            raise TaskRegistryError(
+                f"Execution ref {execution_ref} is bound to turn {prepared.resulting_turn_id}"
+            )
+        task = self.registry.get_task(task_id)
+        if task.turn_id not in {None, turn_id}:
+            raise TaskRegistryError(
+                f"Execution turn {turn_id} does not own task {task_id}; expected {task.turn_id}"
+            )
+        return execution
+
+    def finalize_orphaned(
+        self,
+        *,
+        task_id: str,
+        state: str,
+        failure_stage: str | None = None,
+        failure_code: str | None = None,
+        evidence: str | None = None,
+        retry_required: bool | None = None,
+    ) -> Any:
+        """Own the bounded legacy null-ref terminal path.
+
+        Legacy executions have no exact result identity, so they cannot enter
+        the modern result contract. They still use this finalizer-owned
+        persistence boundary rather than writing a terminal task state in the
+        dispatcher.
+        """
+        return self.registry.reconcile_orphaned_terminal(
+            task_id,
+            state,
+            failure_stage=failure_stage,
+            failure_code=failure_code,
+            evidence=evidence,
+            retry_required=retry_required,
+        )
+
+    def finalize_pre_turn(
+        self,
+        *,
+        task_id: str,
+        execution_ref: str | None,
+        state: str,
+        evidence: str,
+        failure_stage: str = "dispatch",
+        failure_code: str = "PRE_TURN_FAILURE",
+    ) -> Any:
+        """Own a definitive pre-turn failure without inventing a provider turn."""
+        if execution_ref:
+            return self.registry.reconcile_terminal(
+                execution_ref,
+                state,
+                failure_stage=failure_stage,
+                failure_code=failure_code,
+                evidence=evidence,
+                retry_required=True,
+            )
+        return self.finalize_orphaned(
+            task_id=task_id,
+            state=state,
+            failure_stage=failure_stage,
+            failure_code=failure_code,
+            evidence=evidence,
+            retry_required=True,
+        )
+
+    def finalize_cancellation(self, execution_ref: str) -> Any:
+        """Own the cancellation terminal transition and lease release."""
+        return self.registry.finalize_cancellation(execution_ref)
+
+    @staticmethod
+    def _canonical_blocked(
+        *, summary: str, validation: str, blockers: str, terminal_state: str
+    ) -> ExecutionResult:
+        raw_result = (
+            "CLINX_EXECUTION_RESULT\n"
+            "STATUS=BLOCKED\n"
+            f"SUMMARY={summary}\n"
+            "CHANGED_FILES=UNKNOWN\n"
+            f"VALIDATION={validation}\n"
+            f"BLOCKERS={blockers}\n"
+            "NEXT_STATE=BLOCKED"
+        )
+        return dataclasses.replace(
+            parse_execution_result(raw_result), terminal_state=terminal_state
+        )
+
+    def _decision(
+        self,
+        execution_ref: str,
+        raw_result: str | None,
+        *,
+        provider_outcome: str,
+        provider_status: str | None,
+    ) -> _FinalizationDecision:
+        parsed: ExecutionResult | None = None
+        if raw_result:
+            try:
+                parsed = parse_codex_result(raw_result)
+            except ResultParseError:
+                pass
+        host_evidence = self.registry.list_host_executions(execution_ref=execution_ref)
+        successful_host_evidence = [
+            item for item in host_evidence
+            if item.get("result_state") == "SUCCEEDED" and item.get("exit_code") == 0
+        ]
+        host_succeeded = bool(host_evidence) and all(
+            item.get("result_state") == "SUCCEEDED" and item.get("exit_code") == 0
+            for item in host_evidence
+        )
+        host_summary = ", ".join(
+            f"{item.get('host_execution_ref', 'UNKNOWN')}="
+            f"{item.get('result_state', 'UNKNOWN')}/exit_code={item.get('exit_code')}"
+            for item in host_evidence
+        ) or "NONE"
+        status = " ".join((provider_status or provider_outcome.casefold()).split())[:1000]
+
+        if provider_outcome == "PROVIDER_FAILED":
+            if successful_host_evidence:
+                result = self._canonical_blocked(
+                    summary="Provider failure conflicts with successful exact host evidence.",
+                    validation=f"Provider status={status}; exact host evidence={host_summary}.",
+                    blockers=(
+                        "Provider and host terminal evidence conflict; automatic success is forbidden."
+                    ),
+                    terminal_state="BLOCKED",
+                )
+                return _FinalizationDecision(
+                    result=result,
+                    terminal_state="BLOCKED",
+                    retry_required=True,
+                    failure_code="PROVIDER_HOST_EVIDENCE_CONFLICT",
+                    failure_evidence=result.validation,
+                )
+            if parsed is None:
+                parsed = self._canonical_blocked(
+                    summary="Provider reported a definitive failed terminal state.",
+                    validation=f"Provider status={status}; exact host evidence={host_summary}.",
+                    blockers="Provider execution failed without successful exact host evidence.",
+                    terminal_state="FAILED",
+                )
+            else:
+                parsed = dataclasses.replace(parsed, terminal_state="FAILED")
+            return _FinalizationDecision(
+                result=parsed,
+                terminal_state="FAILED",
+                retry_required=False,
+                failure_code="PROVIDER_TURN_FAILED",
+                failure_evidence=(
+                    f"provider status={status}; exact host evidence={host_summary}"
+                ),
+            )
+
+        if provider_outcome in {"PROVIDER_TIMEOUT", "PROVIDER_DISCONNECTED"}:
+            label = "timeout" if provider_outcome == "PROVIDER_TIMEOUT" else "disconnect"
+            if parsed is None or parsed.status == "PASS":
+                parsed = self._canonical_blocked(
+                    summary=f"Provider {label} was finalized deterministically.",
+                    validation=f"Provider status={status}; exact host evidence={host_summary}.",
+                    blockers=f"Provider {label} prevented a reliable successful terminal result.",
+                    terminal_state="BLOCKED",
+                )
+            else:
+                parsed = dataclasses.replace(parsed, terminal_state="BLOCKED")
+            return _FinalizationDecision(
+                result=parsed,
+                terminal_state="BLOCKED",
+                retry_required=True,
+                failure_code=provider_outcome,
+                failure_evidence=(
+                    f"provider status={status}; exact host evidence={host_summary}"
+                ),
+            )
+
+        if parsed is not None:
+            terminal_state = "BLOCKED" if parsed.status == "BLOCKED" else "COMPLETED"
+            return _FinalizationDecision(
+                result=dataclasses.replace(parsed, terminal_state=terminal_state),
+                terminal_state=terminal_state,
+                retry_required=terminal_state == "BLOCKED",
+            )
+        if host_succeeded:
+            canonical_raw = (
+                "CLINX_EXECUTION_RESULT\n"
+                "STATUS=PASS\n"
+                "SUMMARY=Host execution evidence succeeded; provider terminal output omitted the result marker.\n"
+                "CHANGED_FILES=UNKNOWN (provider marker absent)\n"
+                "VALIDATION=Exact host execution evidence for this execution completed with exit_code=0.\n"
+                "BLOCKERS=NONE\n"
+                "NEXT_STATE=COMPLETED"
+            )
+            result = dataclasses.replace(
+                parse_execution_result(canonical_raw), terminal_state="COMPLETED"
+            )
+            return _FinalizationDecision(
+                result=result, terminal_state="COMPLETED", retry_required=False
+            )
+        else:
+            result = self._canonical_blocked(
+                summary=(
+                    "Provider terminal output omitted the result marker and no successful "
+                    "host execution evidence was recorded."
+                ),
+                validation=(
+                    "Provider turn was terminal; exact execution has no successful host evidence."
+                ),
+                blockers=(
+                    "Managed execution finalized without a provider result marker or host "
+                    "success evidence."
+                ),
+                terminal_state="BLOCKED",
+            )
+            return _FinalizationDecision(
+                result=result, terminal_state="BLOCKED", retry_required=True
+            )
+
+    def finalize(
+        self,
+        *,
+        execution_ref: str,
+        task_id: str,
+        turn_id: str,
+        raw_result: str | None,
+        issue_id: str = "",
+        review_state_id: str | None = None,
+        blocked_state_id: str | None = None,
+        team_id: str | None = None,
+        review_state: str | None = None,
+        blocked_state: str | None = None,
+        provider_outcome: str = "PROVIDER_TERMINAL",
+        provider_status: str | None = None,
+    ) -> ExecutionResult:
+        """Persist result, terminate/release, then update the external projection."""
+        if provider_outcome not in {
+            "PROVIDER_TERMINAL", "PROVIDER_FAILED", "PROVIDER_TIMEOUT",
+            "PROVIDER_DISCONNECTED",
+        }:
+            raise TaskRegistryError(f"Unsupported provider terminal outcome: {provider_outcome}")
+        execution = self._validate_owner(execution_ref, task_id, turn_id)
+        existing = self.registry.get_execution_result(execution_ref)
+        active = self.registry.get_active_execution(execution_ref)
+        retained_recovery = active is None and execution.get("stage") == "RECOVERY_REQUIRED"
+        if existing is not None:
+            if existing.task_id != task_id or existing.turn_id != turn_id:
+                raise TaskRegistryError(
+                    f"Execution ref {execution_ref} is owned by another task or turn"
+                )
+            terminal_state = execution.get("stage") if active is None else None
+            result = self._from_record(existing, terminal_state=terminal_state)
+            if active is not None or retained_recovery:
+                decision = self._decision(
+                    execution_ref,
+                    raw_result or existing.raw_result,
+                    provider_outcome=provider_outcome,
+                    provider_status=provider_status,
+                )
+                terminal_state = decision.terminal_state
+                result = dataclasses.replace(result, terminal_state=terminal_state)
+                self.registry.set_execution_state(
+                    task_id,
+                    "FINALIZING",
+                    current_stage="FINALIZING",
+                    current_blocker=None,
+                    codex_running=False,
+                    turn_id=turn_id,
+                    retry_required=False,
+                    failure_stage=None,
+                    failure_code=None,
+                    failure_evidence=None,
+                )
+                self.registry.reconcile_terminal(
+                    execution_ref,
+                    terminal_state,
+                    retry_required=decision.retry_required,
+                    failure_stage="provider" if decision.failure_code else None,
+                    failure_code=decision.failure_code,
+                    evidence=decision.failure_evidence,
+                )
+        else:
+            if active is None and not retained_recovery:
+                raise TaskRegistryError(
+                    f"Inactive execution {execution_ref} has no persisted final result"
+                )
             self.registry.set_execution_state(
                 task_id,
-                "LINEAR_WRITEBACK",
-                current_stage="LINEAR_WRITEBACK",
+                "FINALIZING",
+                current_stage="FINALIZING",
                 current_blocker=None,
                 codex_running=False,
                 turn_id=turn_id,
                 retry_required=False,
+                failure_stage=None,
+                failure_code=None,
+                failure_evidence=None,
             )
-            event_key = f"completion:{execution_ref}"
-            event = self.registry.get_linear_event(task_id, event_key)
-            if event is not None and event["state"] == "WRITTEN" and event["body_hash"] == body_hash:
-                record = self.registry.mark_execution_result_writeback(
-                    execution_ref, state="WRITTEN", body_hash=body_hash
+            decision = self._decision(
+                execution_ref,
+                raw_result,
+                provider_outcome=provider_outcome,
+                provider_status=provider_status,
+            )
+            result = decision.result
+            self.registry.record_execution_result(
+                execution_ref=execution_ref,
+                task_id=task_id,
+                turn_id=turn_id,
+                status=result.status,
+                summary=result.summary,
+                changed_files=result.changed_files,
+                validation=result.validation,
+                blockers=result.blockers,
+                next_state=result.next_state,
+                raw_result=result.raw_result,
+            )
+            self.registry.reconcile_terminal(
+                execution_ref,
+                decision.terminal_state,
+                retry_required=decision.retry_required,
+                failure_stage="provider" if decision.failure_code else None,
+                failure_code=decision.failure_code,
+                evidence=decision.failure_evidence,
+            )
+
+        # Linear is an audit projection.  It runs only after durable result,
+        # terminal transition, and lease release have succeeded.
+        if self.linear is not None:
+            try:
+                if team_id and (review_state_id is None or blocked_state_id is None):
+                    states = self.linear.team_states(team_id)
+                    if review_state_id is None and review_state:
+                        review_state_id = states.get(review_state)
+                    if blocked_state_id is None and blocked_state:
+                        blocked_state_id = states.get(blocked_state)
+                ExecutionResultService(self.registry, self.linear).project(
+                    execution_ref=execution_ref,
+                    task_id=task_id,
+                    turn_id=turn_id,
+                    result=result,
+                    issue_id=issue_id,
+                    review_state_id=review_state_id,
+                    blocked_state_id=blocked_state_id,
                 )
-            else:
-                self.registry.record_linear_event(task_id, event_key, body_hash, state="PENDING")
-                try:
-                    self.linear.add_comment(target_issue_id, body)
-                    self.registry.record_linear_event(task_id, event_key, body_hash, state="WRITTEN")
-                except Exception as exc:
-                    self.registry.record_linear_event(
-                        task_id, event_key, body_hash, state="FAILED",
-                        retry_required=True, last_error=str(exc)[:2000],
-                    )
-                    self.registry.mark_execution_result_writeback(
-                        execution_ref, state="FAILED", body_hash=body_hash
-                    )
-                    self.registry.set_execution_state(
-                        task_id, "LINEAR_WRITEBACK", current_stage="LINEAR_WRITEBACK",
-                        current_blocker=str(exc)[:2000], codex_running=False,
-                        turn_id=turn_id, retry_required=True,
-                    )
-                    self.registry.release_execution(task_id, execution_ref)
-                    raise
-                if result.status == "PASS" and review_state_id:
-                    self.linear.update_issue_state(target_issue_id, review_state_id)
-                elif result.status == "BLOCKED" and blocked_state_id:
-                    self.linear.update_issue_state(target_issue_id, blocked_state_id)
+            except Exception:
+                # Projection is observable and retryable, but it cannot revoke
+                # the finalizer's already-persisted terminal decision.
                 self.registry.mark_execution_result_writeback(
-                    execution_ref, state="WRITTEN", body_hash=body_hash
+                    execution_ref, state="FAILED"
                 )
-        final_state = "BLOCKED" if result.status == "BLOCKED" else "IN_REVIEW"
-        self.registry.set_execution_state(
-            task_id,
-            final_state,
-            current_stage=final_state,
-            current_blocker=result.blockers if final_state == "BLOCKED" else None,
-            codex_running=False,
-            turn_id=turn_id,
-            retry_required=final_state == "BLOCKED",
-        )
-        self.registry.release_execution(task_id, execution_ref, retain_history=True)
         return result
 
 
@@ -817,7 +1179,7 @@ class ClinxIntegration:
         with self.registry._connect() as conn:
             row = conn.execute(
                 "SELECT execution_ref, stage FROM executions WHERE task_id=? "
-                "AND stage NOT IN (?,?,?,?,?,?) "
+                "AND stage NOT IN (?,?,?,?,?,?,?) "
                 "ORDER BY acquired_at DESC, rowid DESC LIMIT 1",
                 (task.task_id, *TERMINAL_EXECUTION_STAGES),
             ).fetchone()
@@ -1657,7 +2019,9 @@ class ClinxIntegration:
             if callable(cancel):
                 result = cancel(execution_ref)
             else:
-                task = self.registry.finalize_cancellation(execution_ref)
+                task = ExecutionFinalizer(self.registry, self.linear).finalize_cancellation(
+                    execution_ref
+                )
                 result = {
                     "execution_ref": execution_ref,
                     "task_ref": task.task_id,

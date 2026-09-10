@@ -389,7 +389,7 @@ class ProviderThreadMigrationTests(unittest.TestCase):
     def test_managed_continuation_attaches_dynamic_tool_listener_before_turn(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            dispatcher, _registry, task, provider = self.fixture(
+            dispatcher, registry, task, provider = self.fixture(
                 root, thread_id="successor-thread"
             )
             result = dispatcher.dispatch(
@@ -405,6 +405,35 @@ class ProviderThreadMigrationTests(unittest.TestCase):
             self.assertLess(methods.index("thread/resume"), methods.index("configure_dynamic_tool"))
             configured = next(call[1] for call in provider.calls if call[0] == "configure_dynamic_tool")
             self.assertEqual(configured["namespace"], HostExecutor.DYNAMIC_TOOL_NAMESPACE)
+
+    def test_multiple_managed_turns_keep_dynamic_tool_namespace_stable(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dispatcher, registry, task, provider = self.fixture(
+                root, thread_id="successor-thread"
+            )
+            for index in range(2):
+                dispatcher.dispatch(
+                    project_ref="pilot", host="p620", project_mode="existing",
+                    task_mode="continue", task_id=task.task_id,
+                    prompt=f"managed smoke {index}", title=task.title,
+                    summary=task.summary, model="model", reasoning_effort=None,
+                    execution_mode="normal", execution_ref=f"exec_stable_{index}",
+                )
+                registry.reconcile_terminal(f"exec_stable_{index}", "COMPLETED")
+            configured = [
+                call[1] for call in provider.calls
+                if call[0] == "configure_dynamic_tool"
+            ]
+            self.assertEqual(len(configured), 2)
+            self.assertEqual(
+                [item["namespace"] for item in configured],
+                [HostExecutor.DYNAMIC_TOOL_NAMESPACE] * 2,
+            )
+            self.assertEqual(
+                [item["name"] for item in configured],
+                [HostExecutor.DYNAMIC_TOOL_NAME] * 2,
+            )
 
     def test_active_successor_does_not_start_or_retain_lease(self):
         with tempfile.TemporaryDirectory() as td:
