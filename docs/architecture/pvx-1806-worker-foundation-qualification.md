@@ -746,8 +746,10 @@ product files. The review harness was not added to the repository.
 
 ```ini
 REVIEW_BASE=fad9679719da9a37412c2d3161e886cfd3c97bd8
-FINAL_COMMIT=WORKTREE_PENDING
+FINAL_COMMIT=f022ebcd51f4b272b4f7a78cee6a178e7be59107
 BRANCH=main
+REMOTE_MAIN=f022ebcd51f4b272b4f7a78cee6a178e7be59107
+WORKTREE=CLEAN
 CLINX_EXECUTION=BLOCKED_EXISTING_PVX1800_WORKTREE_LEASE
 ```
 
@@ -846,7 +848,7 @@ PVX1805_REGRESSION=PASS
 FULL_SUITE=PASS
 ```
 
-The final commit SHA, ordinary push, remote readback, and clean-worktree
-state are reported by the enclosing task after documentation and verification
-are complete. No production database, provider, manager service, physical
-worktree, deployment, or next-phase work was started.
+The final commit SHA is `f022ebcd51f4b272b4f7a78cee6a178e7be59107`; it was
+pushed to `origin/main` and read back at the same SHA with a clean worktree.
+No production database, provider, manager service, physical worktree,
+deployment, or next-phase work was started.
