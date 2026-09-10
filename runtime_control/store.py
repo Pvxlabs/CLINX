@@ -1,0 +1,1583 @@
+"""Transactional SQLite implementation of the PVX-1806 foundation."""
+
+from __future__ import annotations
+
+import contextlib
+import datetime as _datetime
+import hashlib
+import json
+from collections.abc import Iterator, Mapping
+from pathlib import Path
+import sqlite3
+from typing import Any, Callable
+import uuid
+
+from .clock import Clock, SystemClock, decode_time, encode_time
+from .errors import (
+    CapacityExceeded,
+    ClockAnomaly,
+    InvalidTransition,
+    LeaseExpired,
+    PayloadSizeExceeded,
+    RecoveryBlocked,
+    ResourceBusy,
+    RuntimeAuthorizationError,
+    RuntimeBusy,
+    RuntimeConflict,
+    RuntimeIdempotencyConflict,
+    RuntimeNotFound,
+    RuntimeSchemaError,
+    RuntimeVersionConflict,
+    StaleMutation,
+)
+from .models import (
+    AllocationRecord,
+    AssignmentRecord,
+    AttemptRecord,
+    CommandReceipt,
+    ExecutionRecord,
+    IncarnationRecord,
+    ProtectedResourceRecord,
+    RecoveryRecord,
+    RuntimeEventRecord,
+    WorkerRecord,
+)
+from .schema import LATEST_SCHEMA_VERSION, MIGRATIONS
+
+
+FaultInjector = Callable[[str], None]
+
+
+def _canonical(value: Any) -> str:
+    if hasattr(value, "to_json"):
+        value = value.to_dict()
+    try:
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeConflict("value must contain finite JSON data") from exc
+
+
+def _mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise TypeError("value must be a mapping")
+    return dict(value)
+
+
+def _hash(value: Any) -> str:
+    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex}"
+
+
+def _text(name: str, value: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be a non-empty string")
+    return value.strip()
+
+
+class RuntimeControlStore:
+    """A default-off, explicitly initialized runtime ownership store."""
+
+    EVENT_FAMILY = "RUNTIME_WORKER_V1"
+
+    def __init__(
+        self,
+        path: Path | str,
+        *,
+        clock: Clock | None = None,
+        busy_timeout_ms: int = 30_000,
+        max_event_payload_bytes: int = 1_048_576,
+        max_evidence_payload_bytes: int = 262_144,
+        max_lease_seconds: int = 3_600,
+        fault_injector: FaultInjector | None = None,
+    ):
+        self.path = Path(path).expanduser()
+        self.clock = clock or SystemClock()
+        self.busy_timeout_ms = max(0, int(busy_timeout_ms))
+        self.max_event_payload_bytes = max(1, int(max_event_payload_bytes))
+        self.max_evidence_payload_bytes = max(1, int(max_evidence_payload_bytes))
+        self.max_lease_seconds = max(1, int(max_lease_seconds))
+        self.fault_injector = fault_injector
+
+    def _connect(self, *, read_only: bool = False) -> sqlite3.Connection:
+        target: str | Path = self.path
+        kwargs: dict[str, Any] = {}
+        if read_only:
+            target = self.path.resolve().as_uri() + "?mode=ro"
+            kwargs["uri"] = True
+        conn = sqlite3.connect(
+            target,
+            timeout=self.busy_timeout_ms / 1000,
+            isolation_level=None,
+            **kwargs,
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout={self.busy_timeout_ms}")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
+    def connect(self) -> sqlite3.Connection:
+        """Return an independent configured connection for controlled fixtures."""
+        self._require_schema_path()
+        return self._connect()
+
+    def _require_schema_path(self) -> None:
+        if not self.path.exists():
+            raise RuntimeSchemaError("runtime-control schema is not initialized")
+
+    def initialize(self) -> None:
+        """Create or upgrade only the additive runtime-control schema."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        conn = self._connect()
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS runtime_schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    applied_at TEXT NOT NULL
+                )"""
+            )
+            applied = {
+                int(row["version"])
+                for row in conn.execute("SELECT version FROM runtime_schema_migrations")
+            }
+            unknown = sorted(version for version in applied if version > LATEST_SCHEMA_VERSION)
+            if unknown:
+                raise RuntimeSchemaError(
+                    f"unsupported runtime schema versions: {unknown}"
+                )
+            now = encode_time(self.clock.now())
+            for migration in MIGRATIONS:
+                if migration.version in applied:
+                    continue
+                for statement in migration.statements:
+                    conn.execute(statement)
+                conn.execute(
+                    "INSERT INTO runtime_schema_migrations(version,name,applied_at) VALUES (?,?,?)",
+                    (migration.version, migration.name, now),
+                )
+            conn.execute(
+                "INSERT OR IGNORE INTO runtime_clock_state(state_id,last_coordinator_time) VALUES(1,?)",
+                (now,),
+            )
+            conn.execute("COMMIT")
+        except sqlite3.OperationalError as exc:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            if "locked" in str(exc).casefold() or "busy" in str(exc).casefold():
+                raise RuntimeBusy(str(exc)) from exc
+            raise
+        except Exception:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    def schema_version(self) -> int | None:
+        if not self.path.exists():
+            return None
+        conn = self._connect(read_only=True)
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_schema_migrations'"
+            ).fetchone()
+            if row is None:
+                return None
+            row = conn.execute(
+                "SELECT MAX(version) AS version FROM runtime_schema_migrations"
+            ).fetchone()
+            return int(row["version"]) if row["version"] is not None else 0
+        finally:
+            conn.close()
+
+    def _require_schema(self, conn: sqlite3.Connection) -> None:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_schema_migrations'"
+        ).fetchone()
+        if row is None:
+            raise RuntimeSchemaError("runtime-control schema is not initialized")
+        version = conn.execute(
+            "SELECT MAX(version) AS version FROM runtime_schema_migrations"
+        ).fetchone()["version"]
+        if version != LATEST_SCHEMA_VERSION:
+            raise RuntimeSchemaError(
+                f"runtime schema version {version!r} is not supported"
+            )
+
+    def _fault(self, stage: str) -> None:
+        if self.fault_injector is not None:
+            self.fault_injector(stage)
+
+    @contextlib.contextmanager
+    def _transaction(self) -> Iterator[tuple[sqlite3.Connection, str]]:
+        conn = self._connect()
+        try:
+            self._require_schema(conn)
+            conn.execute("BEGIN IMMEDIATE")
+            now = self._coordinator_now(conn)
+            yield conn, now
+            self._fault("before_commit")
+            conn.execute("COMMIT")
+            self._fault("after_commit")
+        except sqlite3.OperationalError as exc:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            if "locked" in str(exc).casefold() or "busy" in str(exc).casefold():
+                raise RuntimeBusy(str(exc)) from exc
+            raise
+        except Exception:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    def _coordinator_now(self, conn: sqlite3.Connection) -> str:
+        now = encode_time(self.clock.now())
+        row = conn.execute(
+            "SELECT last_coordinator_time FROM runtime_clock_state WHERE state_id=1"
+        ).fetchone()
+        if row is None:
+            raise RuntimeSchemaError("runtime clock state is not initialized")
+        if decode_time(now) < decode_time(row["last_coordinator_time"]):
+            raise ClockAnomaly(
+                f"coordinator clock moved backwards from {row['last_coordinator_time']} to {now}"
+            )
+        conn.execute(
+            "UPDATE runtime_clock_state SET last_coordinator_time=? WHERE state_id=1",
+            (now,),
+        )
+        return now
+
+    @staticmethod
+    def _command_args(
+        command_id: str | None,
+        idempotency_key: str | None,
+        default_key: str,
+    ) -> tuple[str, str]:
+        if command_id is not None:
+            command_id = _text("command_id", command_id)
+        if idempotency_key is not None:
+            idempotency_key = _text("idempotency_key", idempotency_key)
+        if command_id and idempotency_key and command_id != idempotency_key:
+            raise RuntimeConflict("command_id and idempotency_key must match")
+        key = command_id or idempotency_key or default_key
+        return key, key
+
+    def _existing_command(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        scope: str,
+        key: str,
+        fingerprint: str,
+        now: str,
+    ) -> CommandReceipt | None:
+        row = conn.execute(
+            "SELECT * FROM runtime_command_receipts WHERE idempotency_scope=? AND idempotency_key=?",
+            (scope, key),
+        ).fetchone()
+        if row is None:
+            return None
+        if row["semantic_fingerprint"] != fingerprint:
+            raise RuntimeIdempotencyConflict(
+                f"idempotency key {scope}/{key} has different semantics"
+            )
+        return self._receipt_from_row(conn, row, duplicate=True, now=now)
+
+    def _receipt_from_row(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+        *,
+        duplicate: bool,
+        now: str,
+    ) -> CommandReceipt:
+        result = json.loads(row["result_json"])
+        authority: bool | None = None
+        assignment_id = result.get("assignment_id")
+        if assignment_id:
+            assignment = conn.execute(
+                "SELECT lifecycle,lease_expires_at FROM runtime_assignments WHERE assignment_id=?",
+                (assignment_id,),
+            ).fetchone()
+            authority = bool(
+                assignment is not None
+                and assignment["lifecycle"] == "ACTIVE"
+                and decode_time(assignment["lease_expires_at"]) > decode_time(now)
+            )
+        return CommandReceipt(
+            command_id=row["command_id"],
+            idempotency_scope=row["idempotency_scope"],
+            idempotency_key=row["idempotency_key"],
+            original_committed_result=result,
+            current_authority_valid=authority,
+            duplicate=duplicate,
+        )
+
+    def _save_receipt(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        command_id: str,
+        scope: str,
+        key: str,
+        fingerprint: str,
+        result: Mapping[str, Any],
+        now: str,
+    ) -> CommandReceipt:
+        conn.execute(
+            """INSERT INTO runtime_command_receipts(
+                command_id,idempotency_scope,idempotency_key,semantic_fingerprint,result_json,committed_at
+            ) VALUES(?,?,?,?,?,?)""",
+            (command_id, scope, key, fingerprint, _canonical(result), now),
+        )
+        row = conn.execute(
+            "SELECT * FROM runtime_command_receipts WHERE command_id=?", (command_id,)
+        ).fetchone()
+        assert row is not None
+        self._fault("after_receipt")
+        return self._receipt_from_row(conn, row, duplicate=False, now=now)
+
+    def _append_event(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        stream_type: str,
+        stream_id: str,
+        event_type: str,
+        payload: Mapping[str, Any],
+        scope: str,
+        key: str,
+        now: str,
+    ) -> RuntimeEventRecord:
+        payload_json = _canonical(payload)
+        payload_bytes = len(payload_json.encode("utf-8"))
+        if payload_bytes > self.max_event_payload_bytes:
+            raise PayloadSizeExceeded(
+                f"runtime event payload {payload_bytes} exceeds {self.max_event_payload_bytes} bytes"
+            )
+        row = conn.execute(
+            "SELECT current_sequence FROM runtime_stream_versions WHERE stream_type=? AND stream_id=?",
+            (stream_type, stream_id),
+        ).fetchone()
+        current = int(row["current_sequence"]) if row is not None else 0
+        sequence = current + 1
+        conn.execute(
+            """INSERT INTO runtime_stream_versions(stream_type,stream_id,current_sequence)
+               VALUES(?,?,?)
+               ON CONFLICT(stream_type,stream_id) DO UPDATE SET current_sequence=excluded.current_sequence""",
+            (stream_type, stream_id, sequence),
+        )
+        event_id = _new_id("rte")
+        payload_hash = _hash(payload)
+        conn.execute(
+            """INSERT INTO runtime_events(
+                event_id,stream_type,stream_id,sequence,event_family,event_type,schema_version,
+                occurred_at,recorded_at,payload_json,payload_hash,idempotency_scope,idempotency_key
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                event_id,
+                stream_type,
+                stream_id,
+                sequence,
+                self.EVENT_FAMILY,
+                event_type,
+                1,
+                now,
+                now,
+                payload_json,
+                payload_hash,
+                scope,
+                f"{key}:event",
+            ),
+        )
+        self._fault("after_event")
+        outbox_id = _new_id("rto")
+        conn.execute(
+            """INSERT INTO runtime_outbox(
+                outbox_id,event_id,destination,idempotency_key,payload_json,state
+            ) VALUES(?,?,?,?,?,'PENDING')""",
+            (
+                outbox_id,
+                event_id,
+                "runtime_projection",
+                f"{scope}:{key}:outbox",
+                _canonical({"event_id": event_id, "event_type": event_type}),
+            ),
+        )
+        self._fault("after_outbox")
+        return RuntimeEventRecord(
+            event_id=event_id,
+            stream_type=stream_type,
+            stream_id=stream_id,
+            sequence=sequence,
+            event_family=self.EVENT_FAMILY,
+            event_type=event_type,
+            schema_version=1,
+            occurred_at=now,
+            recorded_at=now,
+            payload=payload,
+            payload_hash=payload_hash,
+        )
+
+    @staticmethod
+    def _worker_from(row: sqlite3.Row) -> WorkerRecord:
+        return WorkerRecord(
+            worker_id=row["worker_id"],
+            worker_kind=row["worker_kind"],
+            host_reference=row["host_reference"],
+            capabilities=tuple(json.loads(row["capabilities_json"])),
+            capacity=int(row["capacity"]),
+            lifecycle=row["lifecycle"],
+            version=int(row["version"]),
+            current_incarnation_id=row["current_incarnation_id"],
+            last_heartbeat_at=row["last_heartbeat_at"],
+        )
+
+    @staticmethod
+    def _incarnation_from(row: sqlite3.Row) -> IncarnationRecord:
+        return IncarnationRecord(
+            incarnation_id=row["incarnation_id"],
+            worker_id=row["worker_id"],
+            generation=int(row["generation"]),
+            lifecycle=row["lifecycle"],
+            version=int(row["version"]),
+            started_at=row["started_at"],
+            last_heartbeat_at=row["last_heartbeat_at"],
+        )
+
+    @staticmethod
+    def _execution_from(row: sqlite3.Row) -> ExecutionRecord:
+        return ExecutionRecord(
+            execution_id=row["execution_id"],
+            task_id=row["task_id"],
+            request_snapshot=json.loads(row["request_json"]),
+            execution_policy=json.loads(row["policy_json"]),
+            route_constraints=json.loads(row["route_json"]),
+            lifecycle=row["lifecycle"],
+            version=int(row["version"]),
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _attempt_from(row: sqlite3.Row) -> AttemptRecord:
+        return AttemptRecord(
+            attempt_id=row["attempt_id"],
+            execution_id=row["execution_id"],
+            retry_index=int(row["retry_index"]),
+            provider_session_id=row["provider_session_id"],
+            lifecycle=row["lifecycle"],
+            version=int(row["version"]),
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _assignment_from(row: sqlite3.Row) -> AssignmentRecord:
+        return AssignmentRecord(
+            assignment_id=row["assignment_id"],
+            attempt_id=row["attempt_id"],
+            worker_id=row["worker_id"],
+            incarnation_id=row["incarnation_id"],
+            resource_key=row["resource_key"],
+            resource_epoch=int(row["resource_epoch"]),
+            lifecycle=row["lifecycle"],
+            version=int(row["version"]),
+            lease_expires_at=row["lease_expires_at"],
+            created_at=row["created_at"],
+            allocation_id=row["allocation_id"] if "allocation_id" in row.keys() else None,
+        )
+
+    @staticmethod
+    def _allocation_from(row: sqlite3.Row) -> AllocationRecord:
+        return AllocationRecord(
+            allocation_id=row["allocation_id"],
+            assignment_id=row["assignment_id"],
+            attempt_id=row["attempt_id"],
+            worker_id=row["worker_id"],
+            incarnation_id=row["incarnation_id"],
+            resource_key=row["resource_key"],
+            resource_epoch=int(row["resource_epoch"]),
+            lifecycle=row["lifecycle"],
+            version=int(row["version"]),
+            expires_at=row["expires_at"],
+            release_reason=row["release_reason"],
+        )
+
+    def register_task_reference(
+        self,
+        task_id: str,
+        *,
+        source_system: str = "runtime_control",
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        task_id = _text("task_id", task_id)
+        source_system = _text("source_system", source_system)
+        command, key = self._command_args(command_id, idempotency_key, f"task:{task_id}")
+        scope = f"task:{task_id}"
+        semantic = {"operation": "register_task", "task_id": task_id, "source_system": source_system}
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            row = conn.execute("SELECT * FROM runtime_tasks WHERE task_id=?", (task_id,)).fetchone()
+            if row is not None and row["source_system"] != source_system:
+                raise RuntimeConflict(f"task reference already belongs to {row['source_system']}")
+            if row is None:
+                conn.execute(
+                    "INSERT INTO runtime_tasks(task_id,source_system,created_at) VALUES(?,?,?)",
+                    (task_id, source_system, now),
+                )
+                self._append_event(
+                    conn,
+                    stream_type="task",
+                    stream_id=task_id,
+                    event_type="TaskReferenceRegistered",
+                    payload={"task_id": task_id, "source_system": source_system},
+                    scope=scope,
+                    key=key,
+                    now=now,
+                )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key,
+                fingerprint=fingerprint, result={"task_id": task_id}, now=now
+            )
+
+    def register_task(
+        self,
+        task_id: str,
+        *,
+        source_system: str = "runtime_control",
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        """Short internal alias; registration remains explicit and V1-isolated."""
+        return self.register_task_reference(
+            task_id,
+            source_system=source_system,
+            command_id=command_id,
+            idempotency_key=idempotency_key,
+        )
+
+    def register_execution(
+        self,
+        task_id: str,
+        execution_id: str,
+        *,
+        request_snapshot: Mapping[str, Any] | None = None,
+        execution_policy: Mapping[str, Any] | None = None,
+        route_constraints: Mapping[str, Any] | None = None,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        task_id, execution_id = _text("task_id", task_id), _text("execution_id", execution_id)
+        request = _mapping(request_snapshot)
+        policy = _mapping(execution_policy)
+        route = _mapping(route_constraints)
+        command, key = self._command_args(command_id, idempotency_key, f"execution:{execution_id}")
+        scope = f"execution:{execution_id}"
+        semantic = {
+            "operation": "register_execution", "task_id": task_id, "execution_id": execution_id,
+            "request_snapshot": request, "execution_policy": policy, "route_constraints": route,
+        }
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            if conn.execute("SELECT 1 FROM runtime_tasks WHERE task_id=?", (task_id,)).fetchone() is None:
+                raise RuntimeNotFound(f"unknown runtime task: {task_id}")
+            if conn.execute("SELECT 1 FROM runtime_executions WHERE execution_id=?", (execution_id,)).fetchone() is not None:
+                raise RuntimeConflict(f"execution already exists: {execution_id}")
+            conn.execute(
+                """INSERT INTO runtime_executions(
+                    execution_id,task_id,request_json,policy_json,route_json,lifecycle,created_at
+                ) VALUES(?,?,?,?,?,'REQUESTED',?)""",
+                (execution_id, task_id, _canonical(request), _canonical(policy), _canonical(route), now),
+            )
+            self._append_event(
+                conn, stream_type="execution", stream_id=execution_id,
+                event_type="ExecutionRegistered",
+                payload={"execution_id": execution_id, "task_id": task_id},
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key,
+                fingerprint=fingerprint, result={"execution_id": execution_id, "task_id": task_id}, now=now
+            )
+
+    def register_attempt(
+        self,
+        execution_id: str,
+        attempt_id: str,
+        retry_index: int,
+        *,
+        provider_session_id: str | None = None,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        execution_id, attempt_id = _text("execution_id", execution_id), _text("attempt_id", attempt_id)
+        if retry_index < 0:
+            raise ValueError("retry_index must not be negative")
+        if provider_session_id is not None:
+            provider_session_id = _text("provider_session_id", provider_session_id)
+        command, key = self._command_args(command_id, idempotency_key, f"attempt:{attempt_id}")
+        scope = f"attempt:{attempt_id}"
+        semantic = {
+            "operation": "register_attempt", "execution_id": execution_id,
+            "attempt_id": attempt_id, "retry_index": retry_index,
+            "provider_session_id": provider_session_id,
+        }
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            execution = conn.execute(
+                "SELECT lifecycle FROM runtime_executions WHERE execution_id=?", (execution_id,)
+            ).fetchone()
+            if execution is None:
+                raise RuntimeNotFound(f"unknown runtime execution: {execution_id}")
+            if execution["lifecycle"] == "TERMINAL":
+                raise InvalidTransition("terminal execution cannot receive an attempt")
+            if conn.execute("SELECT 1 FROM runtime_attempts WHERE attempt_id=?", (attempt_id,)).fetchone() is not None:
+                raise RuntimeConflict(f"attempt already exists: {attempt_id}")
+            if conn.execute(
+                "SELECT 1 FROM runtime_attempts WHERE execution_id=? AND retry_index=?",
+                (execution_id, retry_index),
+            ).fetchone() is not None:
+                raise RuntimeConflict("retry_index already exists for execution")
+            conn.execute(
+                """INSERT INTO runtime_attempts(
+                    attempt_id,execution_id,retry_index,provider_session_id,lifecycle,created_at
+                ) VALUES(?,?,?,?,'PENDING',?)""",
+                (attempt_id, execution_id, retry_index, provider_session_id, now),
+            )
+            self._append_event(
+                conn, stream_type="attempt", stream_id=attempt_id,
+                event_type="AttemptRegistered",
+                payload={"attempt_id": attempt_id, "execution_id": execution_id, "retry_index": retry_index},
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key,
+                fingerprint=fingerprint, result={"attempt_id": attempt_id, "execution_id": execution_id}, now=now
+            )
+
+    def register_worker(
+        self,
+        worker_id: str,
+        *,
+        worker_kind: str = "runtime",
+        host_reference: str = "unknown",
+        capabilities: tuple[str, ...] | list[str] = (),
+        capacity: int = 1,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        worker_id = _text("worker_id", worker_id)
+        worker_kind, host_reference = _text("worker_kind", worker_kind), _text("host_reference", host_reference)
+        capabilities = tuple(_text("capability", value) for value in capabilities)
+        if len(set(capabilities)) != len(capabilities):
+            raise ValueError("capabilities must not contain duplicates")
+        if capacity < 1:
+            raise ValueError("capacity must be positive")
+        command, key = self._command_args(command_id, idempotency_key, f"worker:{worker_id}")
+        scope = f"worker:{worker_id}"
+        semantic = {
+            "operation": "register_worker", "worker_id": worker_id,
+            "worker_kind": worker_kind, "host_reference": host_reference,
+            "capabilities": list(capabilities), "capacity": capacity,
+        }
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            row = conn.execute("SELECT * FROM runtime_workers WHERE worker_id=?", (worker_id,)).fetchone()
+            if row is not None:
+                raise RuntimeConflict(f"worker already exists: {worker_id}")
+            conn.execute(
+                """INSERT INTO runtime_workers(
+                    worker_id,worker_kind,host_reference,capabilities_json,capacity,lifecycle
+                ) VALUES(?,?,?,?,?,'REGISTERED')""",
+                (worker_id, worker_kind, host_reference, _canonical(list(capabilities)), capacity),
+            )
+            self._append_event(
+                conn, stream_type="worker", stream_id=worker_id,
+                event_type="WorkerRegistered",
+                payload={"worker_id": worker_id, "capacity": capacity},
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key,
+                fingerprint=fingerprint, result={"worker_id": worker_id}, now=now
+            )
+
+    def register_incarnation(
+        self,
+        worker_id: str,
+        *,
+        incarnation_id: str | None = None,
+        generation: int | None = None,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        worker_id = _text("worker_id", worker_id)
+        if incarnation_id is None and (command_id is not None or idempotency_key is not None):
+            command, key = self._command_args(command_id, idempotency_key, f"incarnation-command:{worker_id}")
+            incarnation_id = "inc_" + _hash({"worker_id": worker_id, "key": key})[:24]
+        else:
+            incarnation_id = _text("incarnation_id", incarnation_id) if incarnation_id else _new_id("inc")
+            command, key = self._command_args(command_id, idempotency_key, f"incarnation:{incarnation_id}")
+        scope = f"incarnation:{incarnation_id}"
+        with self._transaction() as (conn, now):
+            worker = conn.execute("SELECT * FROM runtime_workers WHERE worker_id=?", (worker_id,)).fetchone()
+            if worker is None:
+                raise RuntimeNotFound(f"unknown runtime worker: {worker_id}")
+            stored = conn.execute(
+                "SELECT * FROM runtime_command_receipts WHERE idempotency_scope=? AND idempotency_key=?",
+                (scope, key),
+            ).fetchone()
+            if stored is not None and generation is None:
+                stored_result = json.loads(stored["result_json"])
+                generation = int(stored_result["generation"])
+            if generation is None:
+                row = conn.execute(
+                    "SELECT COALESCE(MAX(generation),0)+1 AS generation FROM runtime_worker_incarnations WHERE worker_id=?",
+                    (worker_id,),
+                ).fetchone()
+                generation = int(row["generation"])
+            if generation < 1:
+                raise ValueError("generation must be positive")
+            semantic = {"operation": "register_incarnation", "worker_id": worker_id, "incarnation_id": incarnation_id, "generation": generation}
+            fingerprint = _hash(semantic)
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            if conn.execute("SELECT 1 FROM runtime_worker_incarnations WHERE incarnation_id=?", (incarnation_id,)).fetchone() is not None:
+                raise RuntimeConflict(f"incarnation already exists: {incarnation_id}")
+            old = conn.execute(
+                "SELECT incarnation_id FROM runtime_worker_incarnations WHERE worker_id=? AND lifecycle='ACTIVE'",
+                (worker_id,),
+            ).fetchone()
+            if old is not None:
+                conn.execute(
+                    "UPDATE runtime_worker_incarnations SET lifecycle='SUPERSEDED',version=version+1 WHERE incarnation_id=?",
+                    (old["incarnation_id"],),
+                )
+                orphaned = conn.execute(
+                    "SELECT * FROM runtime_assignments WHERE incarnation_id=? AND lifecycle='ACTIVE'",
+                    (old["incarnation_id"],),
+                ).fetchall()
+                for assignment in orphaned:
+                    conn.execute(
+                        "UPDATE runtime_assignments SET lifecycle='ORPHANED',version=version+1 WHERE assignment_id=?",
+                        (assignment["assignment_id"],),
+                    )
+                    conn.execute(
+                        """UPDATE runtime_allocations SET lifecycle='QUARANTINED',release_reason=?
+                           WHERE assignment_id=? AND lifecycle='ACTIVE'""",
+                        ("worker_incarnation_superseded", assignment["assignment_id"]),
+                    )
+                    conn.execute(
+                        """INSERT INTO runtime_recovery_work(assignment_id,state,reason,updated_at)
+                           VALUES(?,'PENDING','worker incarnation superseded',?)
+                           ON CONFLICT(assignment_id) DO UPDATE SET state='PENDING',reason=excluded.reason,updated_at=excluded.updated_at""",
+                        (assignment["assignment_id"], now),
+                    )
+                    self._append_event(
+                        conn, stream_type="assignment", stream_id=assignment["assignment_id"],
+                        event_type="AssignmentOrphaned",
+                        payload={"assignment_id": assignment["assignment_id"], "reason": "worker_incarnation_superseded"},
+                        scope=scope, key=f"{key}:{assignment['assignment_id']}", now=now,
+                    )
+            conn.execute(
+                """INSERT INTO runtime_worker_incarnations(
+                    incarnation_id,worker_id,generation,lifecycle,started_at
+                ) VALUES(?,?,?,'ACTIVE',?)""",
+                (incarnation_id, worker_id, generation, now),
+            )
+            conn.execute(
+                """UPDATE runtime_workers SET current_incarnation_id=?,version=version+1
+                   WHERE worker_id=?""",
+                (incarnation_id, worker_id),
+            )
+            self._append_event(
+                conn, stream_type="worker", stream_id=worker_id,
+                event_type="WorkerIncarnationRegistered",
+                payload={"worker_id": worker_id, "incarnation_id": incarnation_id, "generation": generation},
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key,
+                fingerprint=fingerprint, result={"worker_id": worker_id, "incarnation_id": incarnation_id, "generation": generation}, now=now
+            )
+
+    def _active_worker(self, conn: sqlite3.Connection, worker_id: str, incarnation_id: str) -> sqlite3.Row:
+        row = conn.execute(
+            """SELECT w.*,i.lifecycle AS incarnation_lifecycle,i.generation
+               FROM runtime_workers w JOIN runtime_worker_incarnations i
+                 ON i.incarnation_id=w.current_incarnation_id
+               WHERE w.worker_id=? AND i.incarnation_id=?""",
+            (worker_id, incarnation_id),
+        ).fetchone()
+        if row is None or row["lifecycle"] != "REGISTERED" or row["incarnation_lifecycle"] != "ACTIVE":
+            raise StaleMutation("worker incarnation is not current and active")
+        return row
+
+    def heartbeat_worker(
+        self,
+        worker_id: str,
+        incarnation_id: str,
+        *,
+        worker_reported_at: str | None = None,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        worker_id, incarnation_id = _text("worker_id", worker_id), _text("incarnation_id", incarnation_id)
+        command, key = self._command_args(command_id, idempotency_key, f"heartbeat:{worker_id}:{incarnation_id}:{self.clock.now().isoformat()}")
+        scope = f"worker-incarnation:{incarnation_id}"
+        semantic = {"operation": "heartbeat", "worker_id": worker_id, "incarnation_id": incarnation_id, "worker_reported_at": worker_reported_at}
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            self._active_worker(conn, worker_id, incarnation_id)
+            conn.execute(
+                "UPDATE runtime_worker_incarnations SET last_heartbeat_at=?,version=version+1 WHERE incarnation_id=?",
+                (now, incarnation_id),
+            )
+            conn.execute(
+                "UPDATE runtime_workers SET last_heartbeat_at=?,version=version+1 WHERE worker_id=?",
+                (now, worker_id),
+            )
+            self._append_event(
+                conn, stream_type="incarnation", stream_id=incarnation_id,
+                event_type="WorkerHeartbeatRecorded",
+                payload={"worker_id": worker_id, "incarnation_id": incarnation_id, "worker_reported_at": worker_reported_at},
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
+                result={"worker_id": worker_id, "incarnation_id": incarnation_id, "heartbeat_at": now}, now=now
+            )
+
+    def assign_attempt(
+        self,
+        attempt_id: str,
+        worker_id: str,
+        incarnation_id: str,
+        resource_key: str,
+        *,
+        lease_seconds: int = 60,
+        assignment_id: str | None = None,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        attempt_id, worker_id = _text("attempt_id", attempt_id), _text("worker_id", worker_id)
+        incarnation_id, resource_key = _text("incarnation_id", incarnation_id), _text("resource_key", resource_key)
+        if lease_seconds < 1 or lease_seconds > self.max_lease_seconds:
+            raise ValueError("lease_seconds is outside the configured bound")
+        command, key = self._command_args(command_id, idempotency_key, f"assign:{attempt_id}:{resource_key}:{worker_id}:{incarnation_id}")
+        scope = f"assignment:{attempt_id}"
+        assignment_id = _text("assignment_id", assignment_id) if assignment_id else "asn_" + _hash({"scope": scope, "key": key})[:24]
+        semantic = {
+            "operation": "assign_attempt", "attempt_id": attempt_id, "worker_id": worker_id,
+            "incarnation_id": incarnation_id, "resource_key": resource_key,
+            "lease_seconds": lease_seconds, "assignment_id": assignment_id,
+        }
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            worker = self._active_worker(conn, worker_id, incarnation_id)
+            attempt = conn.execute("SELECT * FROM runtime_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            if attempt is None:
+                raise RuntimeNotFound(f"unknown attempt: {attempt_id}")
+            held = conn.execute(
+                "SELECT assignment_id,resource_key FROM runtime_assignments WHERE attempt_id=? AND lifecycle IN ('ACTIVE','EXPIRED','ORPHANED')",
+                (attempt_id,),
+            ).fetchone()
+            if held is not None:
+                if held["resource_key"] == resource_key:
+                    raise ResourceBusy(f"attempt resource remains held or quarantined: {resource_key}")
+                raise RuntimeConflict(f"attempt already has unresolved assignment: {held['assignment_id']}")
+            if attempt["lifecycle"] != "PENDING":
+                raise InvalidTransition(f"attempt {attempt_id} is not pending")
+            count = conn.execute(
+                "SELECT COUNT(*) AS count FROM runtime_assignments WHERE worker_id=? AND lifecycle IN ('ACTIVE','EXPIRED','ORPHANED')",
+                (worker_id,),
+            ).fetchone()["count"]
+            if int(count) >= int(worker["capacity"]):
+                raise CapacityExceeded(f"worker capacity exhausted: {worker_id}")
+            held_resource = conn.execute(
+                "SELECT allocation_id FROM runtime_allocations WHERE resource_key=? AND lifecycle IN ('ACTIVE','QUARANTINED')",
+                (resource_key,),
+            ).fetchone()
+            if held_resource is not None:
+                raise ResourceBusy(f"resource is held or quarantined: {resource_key}")
+            conn.execute(
+                "INSERT INTO runtime_resource_counters(resource_key,current_epoch) VALUES(?,0) ON CONFLICT(resource_key) DO NOTHING",
+                (resource_key,),
+            )
+            conn.execute(
+                "UPDATE runtime_resource_counters SET current_epoch=current_epoch+1 WHERE resource_key=?",
+                (resource_key,),
+            )
+            epoch = int(conn.execute(
+                "SELECT current_epoch FROM runtime_resource_counters WHERE resource_key=?", (resource_key,)
+            ).fetchone()["current_epoch"])
+            expires = encode_time(decode_time(now) + _datetime.timedelta(seconds=lease_seconds))
+            allocation_id = _new_id("alloc")
+            conn.execute(
+                """INSERT INTO runtime_assignments(
+                    assignment_id,attempt_id,worker_id,incarnation_id,resource_key,resource_epoch,
+                    lifecycle,lease_expires_at,created_at
+                ) VALUES(?,?,?,?,?,?, 'ACTIVE',?,?)""",
+                (assignment_id, attempt_id, worker_id, incarnation_id, resource_key, epoch, expires, now),
+            )
+            conn.execute(
+                """INSERT INTO runtime_allocations(
+                    allocation_id,assignment_id,attempt_id,worker_id,incarnation_id,resource_key,
+                    resource_epoch,lifecycle,expires_at
+                ) VALUES(?,?,?,?,?,?,?,'ACTIVE',?)""",
+                (allocation_id, assignment_id, attempt_id, worker_id, incarnation_id, resource_key, epoch, expires),
+            )
+            conn.execute(
+                "UPDATE runtime_attempts SET lifecycle='ASSIGNED',version=version+1 WHERE attempt_id=? AND version=?",
+                (attempt_id, attempt["version"]),
+            )
+            conn.execute(
+                """INSERT INTO runtime_protected_resources(resource_key,fencing_epoch,value_json,version)
+                   VALUES(?,?,NULL,0)
+                   ON CONFLICT(resource_key) DO UPDATE SET fencing_epoch=excluded.fencing_epoch""",
+                (resource_key, epoch),
+            )
+            self._append_event(
+                conn, stream_type="assignment", stream_id=assignment_id,
+                event_type="AssignmentGranted",
+                payload={
+                    "assignment_id": assignment_id, "attempt_id": attempt_id, "worker_id": worker_id,
+                    "incarnation_id": incarnation_id, "resource_key": resource_key,
+                    "resource_epoch": epoch, "lease_expires_at": expires, "allocation_id": allocation_id,
+                    "lifecycle": "ACTIVE",
+                },
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
+                result={
+                    "assignment_id": assignment_id, "allocation_id": allocation_id,
+                    "attempt_id": attempt_id, "worker_id": worker_id,
+                    "incarnation_id": incarnation_id, "resource_key": resource_key,
+                    "resource_epoch": epoch, "lease_expires_at": expires,
+                }, now=now
+            )
+
+    def _owner_rows(
+        self,
+        conn: sqlite3.Connection,
+        assignment_id: str,
+        worker_id: str,
+        incarnation_id: str,
+        attempt_id: str,
+        resource_key: str,
+        resource_epoch: int,
+        now: str,
+    ) -> tuple[sqlite3.Row, sqlite3.Row]:
+        row = conn.execute(
+            "SELECT * FROM runtime_assignments WHERE assignment_id=?", (assignment_id,)
+        ).fetchone()
+        if row is None:
+            raise RuntimeNotFound(f"unknown assignment: {assignment_id}")
+        exact = (
+            row["worker_id"] == worker_id
+            and row["incarnation_id"] == incarnation_id
+            and row["attempt_id"] == attempt_id
+            and row["resource_key"] == resource_key
+            and int(row["resource_epoch"]) == int(resource_epoch)
+        )
+        if not exact or row["lifecycle"] != "ACTIVE":
+            raise StaleMutation("assignment ownership tuple is no longer current")
+        if decode_time(now) >= decode_time(row["lease_expires_at"]):
+            raise LeaseExpired("assignment lease is expired")
+        allocation = conn.execute(
+            """SELECT * FROM runtime_allocations
+               WHERE assignment_id=? AND lifecycle='ACTIVE'""",
+            (assignment_id,),
+        ).fetchone()
+        if allocation is None or any(
+            allocation[name] != value
+            for name, value in (
+                ("attempt_id", attempt_id), ("worker_id", worker_id),
+                ("incarnation_id", incarnation_id), ("resource_key", resource_key),
+            )
+        ) or int(allocation["resource_epoch"]) != int(resource_epoch):
+            raise StaleMutation("resource allocation ownership tuple is no longer current")
+        self._active_worker(conn, worker_id, incarnation_id)
+        return row, allocation
+
+    def renew_assignment(
+        self,
+        assignment_id: str,
+        worker_id: str,
+        incarnation_id: str,
+        attempt_id: str,
+        resource_key: str,
+        resource_epoch: int,
+        *,
+        lease_seconds: int = 60,
+        expected_version: int | None = None,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        values = tuple(_text(name, value) for name, value in (
+            ("assignment_id", assignment_id), ("worker_id", worker_id),
+            ("incarnation_id", incarnation_id), ("attempt_id", attempt_id), ("resource_key", resource_key),
+        ))
+        assignment_id, worker_id, incarnation_id, attempt_id, resource_key = values
+        if lease_seconds < 1 or lease_seconds > self.max_lease_seconds:
+            raise ValueError("lease_seconds is outside the configured bound")
+        command, key = self._command_args(command_id, idempotency_key, f"renew:{assignment_id}:{resource_epoch}:{expected_version}")
+        scope = f"assignment:{assignment_id}"
+        semantic = {
+            "operation": "renew_assignment", "assignment_id": assignment_id, "worker_id": worker_id,
+            "incarnation_id": incarnation_id, "attempt_id": attempt_id, "resource_key": resource_key,
+            "resource_epoch": resource_epoch, "lease_seconds": lease_seconds, "expected_version": expected_version,
+        }
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            row, _ = self._owner_rows(conn, assignment_id, worker_id, incarnation_id, attempt_id, resource_key, resource_epoch, now)
+            if expected_version is not None and int(row["version"]) != expected_version:
+                raise RuntimeVersionConflict(f"expected assignment version {expected_version}, actual {row['version']}")
+            expires = encode_time(decode_time(now) + _datetime.timedelta(seconds=lease_seconds))
+            updated = conn.execute(
+                """UPDATE runtime_assignments SET lease_expires_at=?,version=version+1
+                   WHERE assignment_id=? AND lifecycle='ACTIVE' AND version=?""",
+                (expires, assignment_id, row["version"]),
+            ).rowcount
+            if updated != 1:
+                raise RuntimeVersionConflict("assignment changed while renewing")
+            conn.execute(
+                "UPDATE runtime_allocations SET expires_at=?,version=version+1 WHERE assignment_id=? AND lifecycle='ACTIVE'",
+                (expires, assignment_id),
+            )
+            self._append_event(
+                conn, stream_type="assignment", stream_id=assignment_id,
+                event_type="AssignmentRenewed",
+                payload={"assignment_id": assignment_id, "resource_epoch": resource_epoch, "lease_expires_at": expires, "lifecycle": "ACTIVE"},
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
+                result={"assignment_id": assignment_id, "lease_expires_at": expires, "resource_epoch": resource_epoch}, now=now
+            )
+
+    def release_assignment(
+        self,
+        assignment_id: str,
+        worker_id: str,
+        incarnation_id: str,
+        attempt_id: str,
+        resource_key: str,
+        resource_epoch: int,
+        *,
+        reason: str = "released",
+        expected_version: int | None = None,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        return self._finish_assignment(
+            "release_assignment", "AssignmentReleased", "RELEASED", True,
+            assignment_id, worker_id, incarnation_id, attempt_id, resource_key, resource_epoch,
+            reason=reason, expected_version=expected_version, command_id=command_id, idempotency_key=idempotency_key,
+        )
+
+    def revoke_assignment(
+        self,
+        assignment_id: str,
+        worker_id: str,
+        incarnation_id: str,
+        attempt_id: str,
+        resource_key: str,
+        resource_epoch: int,
+        *,
+        reason: str = "revoked",
+        expected_version: int | None = None,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        return self._finish_assignment(
+            "revoke_assignment", "AssignmentRevoked", "REVOKED", False,
+            assignment_id, worker_id, incarnation_id, attempt_id, resource_key, resource_epoch,
+            reason=reason, expected_version=expected_version, command_id=command_id, idempotency_key=idempotency_key,
+        )
+
+    def _finish_assignment(
+        self,
+        operation: str,
+        event_type: str,
+        lifecycle: str,
+        terminal_attempt: bool,
+        assignment_id: str,
+        worker_id: str,
+        incarnation_id: str,
+        attempt_id: str,
+        resource_key: str,
+        resource_epoch: int,
+        *,
+        reason: str,
+        expected_version: int | None,
+        command_id: str | None,
+        idempotency_key: str | None,
+    ) -> CommandReceipt:
+        values = tuple(_text(name, value) for name, value in (
+            ("assignment_id", assignment_id), ("worker_id", worker_id),
+            ("incarnation_id", incarnation_id), ("attempt_id", attempt_id), ("resource_key", resource_key),
+        ))
+        assignment_id, worker_id, incarnation_id, attempt_id, resource_key = values
+        reason = _text("reason", reason)
+        command, key = self._command_args(command_id, idempotency_key, f"{operation}:{assignment_id}:{resource_epoch}:{expected_version}")
+        scope = f"assignment:{assignment_id}"
+        semantic = {
+            "operation": operation, "assignment_id": assignment_id, "worker_id": worker_id,
+            "incarnation_id": incarnation_id, "attempt_id": attempt_id, "resource_key": resource_key,
+            "resource_epoch": resource_epoch, "reason": reason, "expected_version": expected_version,
+        }
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            row, _ = self._owner_rows(conn, assignment_id, worker_id, incarnation_id, attempt_id, resource_key, resource_epoch, now)
+            if expected_version is not None and int(row["version"]) != expected_version:
+                raise RuntimeVersionConflict(f"expected assignment version {expected_version}, actual {row['version']}")
+            conn.execute(
+                "UPDATE runtime_assignments SET lifecycle=?,version=version+1,released_at=? WHERE assignment_id=? AND version=?",
+                (lifecycle, now, assignment_id, row["version"]),
+            )
+            conn.execute(
+                "UPDATE runtime_allocations SET lifecycle='RELEASED',release_reason=?,version=version+1 WHERE assignment_id=? AND lifecycle='ACTIVE'",
+                (reason, assignment_id),
+            )
+            conn.execute(
+                "UPDATE runtime_attempts SET lifecycle=?,version=version+1 WHERE attempt_id=?",
+                ("RELEASED" if terminal_attempt else "PENDING", attempt_id),
+            )
+            self._append_event(
+                conn, stream_type="assignment", stream_id=assignment_id,
+                event_type=event_type,
+                payload={"assignment_id": assignment_id, "attempt_id": attempt_id, "resource_key": resource_key, "resource_epoch": resource_epoch, "reason": reason, "lifecycle": lifecycle},
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
+                result={"assignment_id": assignment_id, "resource_key": resource_key, "resource_epoch": resource_epoch, "lifecycle": lifecycle}, now=now
+            )
+
+    def reconcile_expired_once(self, *, limit: int = 100, command_id: str | None = None) -> tuple[str, ...]:
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        with self._transaction() as (conn, now):
+            rows = conn.execute(
+                """SELECT * FROM runtime_assignments
+                   WHERE lifecycle='ACTIVE' AND lease_expires_at<=?
+                   ORDER BY lease_expires_at,assignment_id LIMIT ?""",
+                (now, limit),
+            ).fetchall()
+            expired: list[str] = []
+            for row in rows:
+                assignment_id = row["assignment_id"]
+                key = f"expiry:{assignment_id}:{row['lease_expires_at']}"
+                scope = f"assignment:{assignment_id}"
+                semantic = {"operation": "reconcile_expiry", "assignment_id": assignment_id, "lease_expires_at": row["lease_expires_at"]}
+                fingerprint = _hash(semantic)
+                existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+                if existing:
+                    expired.append(assignment_id)
+                    continue
+                conn.execute(
+                    "UPDATE runtime_assignments SET lifecycle='EXPIRED',version=version+1 WHERE assignment_id=? AND lifecycle='ACTIVE'",
+                    (assignment_id,),
+                )
+                conn.execute(
+                    "UPDATE runtime_allocations SET lifecycle='QUARANTINED',release_reason='lease_expired',version=version+1 WHERE assignment_id=? AND lifecycle='ACTIVE'",
+                    (assignment_id,),
+                )
+                conn.execute(
+                    """INSERT INTO runtime_recovery_work(assignment_id,state,reason,updated_at)
+                       VALUES(?,'PENDING','lease expired; process death not proven',?)
+                       ON CONFLICT(assignment_id) DO UPDATE SET state='PENDING',reason=excluded.reason,updated_at=excluded.updated_at""",
+                    (assignment_id, now),
+                )
+                self._append_event(
+                    conn, stream_type="assignment", stream_id=assignment_id,
+                    event_type="AssignmentExpired",
+                    payload={"assignment_id": assignment_id, "resource_key": row["resource_key"], "resource_epoch": row["resource_epoch"], "lifecycle": "EXPIRED"},
+                    scope=scope, key=key, now=now,
+                )
+                self._save_receipt(
+                    conn, command_id=key, scope=scope, key=key, fingerprint=fingerprint,
+                    result={"assignment_id": assignment_id, "lifecycle": "EXPIRED"}, now=now,
+                )
+                expired.append(assignment_id)
+            return tuple(expired)
+
+    def recover_assignment(
+        self,
+        assignment_id: str,
+        *,
+        old_process_stopped: bool,
+        side_effect_fence_verified: bool,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        assignment_id = _text("assignment_id", assignment_id)
+        if not old_process_stopped or not side_effect_fence_verified:
+            raise RecoveryBlocked("old process stop and side-effect fence evidence are required")
+        command, key = self._command_args(command_id, idempotency_key, f"recover:{assignment_id}")
+        scope = f"assignment:{assignment_id}"
+        semantic = {"operation": "recover_assignment", "assignment_id": assignment_id, "old_process_stopped": True, "side_effect_fence_verified": True}
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            row = conn.execute("SELECT * FROM runtime_assignments WHERE assignment_id=?", (assignment_id,)).fetchone()
+            if row is None:
+                raise RuntimeNotFound(f"unknown assignment: {assignment_id}")
+            if row["lifecycle"] not in {"EXPIRED", "ORPHANED"}:
+                raise InvalidTransition("only expired or orphaned assignments can be recovered")
+            attempt = conn.execute("SELECT * FROM runtime_attempts WHERE attempt_id=?", (row["attempt_id"],)).fetchone()
+            if attempt is None or attempt["lifecycle"] == "TERMINAL":
+                raise InvalidTransition("terminal attempt cannot be recovered")
+            conn.execute(
+                "UPDATE runtime_assignments SET lifecycle='RECOVERED',version=version+1,released_at=? WHERE assignment_id=?",
+                (now, assignment_id),
+            )
+            conn.execute(
+                "UPDATE runtime_allocations SET lifecycle='RELEASED',release_reason='controlled_recovery',version=version+1 WHERE assignment_id=? AND lifecycle='QUARANTINED'",
+                (assignment_id,),
+            )
+            conn.execute(
+                "UPDATE runtime_attempts SET lifecycle='PENDING',version=version+1 WHERE attempt_id=?",
+                (row["attempt_id"],),
+            )
+            conn.execute(
+                "UPDATE runtime_recovery_work SET state='DONE',attempts=attempts+1,updated_at=? WHERE assignment_id=?",
+                (now, assignment_id),
+            )
+            self._append_event(
+                conn, stream_type="assignment", stream_id=assignment_id,
+                event_type="AssignmentRecovered",
+                payload={"assignment_id": assignment_id, "attempt_id": row["attempt_id"], "resource_key": row["resource_key"], "resource_epoch": row["resource_epoch"], "lifecycle": "RECOVERED"},
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
+                result={"assignment_id": assignment_id, "attempt_id": row["attempt_id"], "lifecycle": "RECOVERED"}, now=now
+            )
+
+    def record_attempt_evidence(
+        self,
+        assignment_id: str,
+        worker_id: str,
+        incarnation_id: str,
+        attempt_id: str,
+        resource_key: str,
+        resource_epoch: int,
+        evidence: Mapping[str, Any],
+        *,
+        evidence_id: str | None = None,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        evidence_id = evidence_id or _new_id("evidence")
+        evidence_id = _text("evidence_id", evidence_id)
+        evidence = _mapping(evidence)
+        encoded = _canonical(evidence)
+        if len(encoded.encode("utf-8")) > self.max_evidence_payload_bytes:
+            raise PayloadSizeExceeded("attempt evidence exceeds configured byte limit")
+        command, key = self._command_args(command_id, idempotency_key, f"evidence:{evidence_id}")
+        scope = f"attempt:{attempt_id}"
+        semantic = {
+            "operation": "record_attempt_evidence", "evidence_id": evidence_id,
+            "assignment_id": assignment_id, "worker_id": worker_id, "incarnation_id": incarnation_id,
+            "attempt_id": attempt_id, "resource_key": resource_key, "resource_epoch": resource_epoch,
+            "evidence": evidence,
+        }
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            self._owner_rows(conn, assignment_id, worker_id, incarnation_id, attempt_id, resource_key, resource_epoch, now)
+            if conn.execute("SELECT 1 FROM runtime_evidence WHERE evidence_id=?", (evidence_id,)).fetchone() is not None:
+                raise RuntimeConflict(f"evidence already exists: {evidence_id}")
+            conn.execute(
+                "INSERT INTO runtime_evidence(evidence_id,assignment_id,attempt_id,payload_json,recorded_at) VALUES(?,?,?,?,?)",
+                (evidence_id, assignment_id, attempt_id, encoded, now),
+            )
+            self._append_event(
+                conn, stream_type="attempt", stream_id=attempt_id,
+                event_type="AttemptEvidenceRecorded",
+                payload={"evidence_id": evidence_id, "assignment_id": assignment_id, "attempt_id": attempt_id},
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
+                result={"evidence_id": evidence_id, "assignment_id": assignment_id, "attempt_id": attempt_id}, now=now
+            )
+
+    def mutate_protected_resource(
+        self,
+        assignment_id: str,
+        worker_id: str,
+        incarnation_id: str,
+        attempt_id: str,
+        resource_key: str,
+        resource_epoch: int,
+        expected_version: int,
+        value: Mapping[str, Any],
+        *,
+        command_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> CommandReceipt:
+        value = _mapping(value)
+        command, key = self._command_args(command_id, idempotency_key, f"resource-mutation:{assignment_id}:{expected_version}")
+        scope = f"resource:{resource_key}"
+        semantic = {
+            "operation": "mutate_protected_resource", "assignment_id": assignment_id,
+            "worker_id": worker_id, "incarnation_id": incarnation_id, "attempt_id": attempt_id,
+            "resource_key": resource_key, "resource_epoch": resource_epoch,
+            "expected_version": expected_version, "value": value,
+        }
+        fingerprint = _hash(semantic)
+        with self._transaction() as (conn, now):
+            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            if existing:
+                return existing
+            self._owner_rows(conn, assignment_id, worker_id, incarnation_id, attempt_id, resource_key, resource_epoch, now)
+            updated = conn.execute(
+                """UPDATE runtime_protected_resources SET value_json=?,version=version+1
+                   WHERE resource_key=? AND fencing_epoch=? AND version=?""",
+                (_canonical(value), resource_key, resource_epoch, expected_version),
+            ).rowcount
+            if updated != 1:
+                raise RuntimeVersionConflict("protected resource version or fence is stale")
+            self._append_event(
+                conn, stream_type="resource", stream_id=resource_key,
+                event_type="ProtectedResourceMutated",
+                payload={"resource_key": resource_key, "resource_epoch": resource_epoch, "expected_version": expected_version},
+                scope=scope, key=key, now=now,
+            )
+            return self._save_receipt(
+                conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
+                result={"resource_key": resource_key, "resource_epoch": resource_epoch, "version": expected_version + 1}, now=now
+            )
+
+    def get_worker(self, worker_id: str) -> WorkerRecord:
+        with self._read_connection() as conn:
+            row = conn.execute("SELECT * FROM runtime_workers WHERE worker_id=?", (worker_id,)).fetchone()
+            if row is None:
+                raise RuntimeNotFound(f"unknown worker: {worker_id}")
+            return self._worker_from(row)
+
+    def get_incarnation(self, incarnation_id: str) -> IncarnationRecord:
+        with self._read_connection() as conn:
+            row = conn.execute("SELECT * FROM runtime_worker_incarnations WHERE incarnation_id=?", (incarnation_id,)).fetchone()
+            if row is None:
+                raise RuntimeNotFound(f"unknown incarnation: {incarnation_id}")
+            return self._incarnation_from(row)
+
+    def get_execution(self, execution_id: str) -> ExecutionRecord:
+        with self._read_connection() as conn:
+            row = conn.execute("SELECT * FROM runtime_executions WHERE execution_id=?", (execution_id,)).fetchone()
+            if row is None:
+                raise RuntimeNotFound(f"unknown execution: {execution_id}")
+            return self._execution_from(row)
+
+    def get_attempt(self, attempt_id: str) -> AttemptRecord:
+        with self._read_connection() as conn:
+            row = conn.execute("SELECT * FROM runtime_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            if row is None:
+                raise RuntimeNotFound(f"unknown attempt: {attempt_id}")
+            return self._attempt_from(row)
+
+    def get_assignment(self, assignment_id: str) -> AssignmentRecord:
+        with self._read_connection() as conn:
+            row = conn.execute(
+                """SELECT a.*, al.allocation_id FROM runtime_assignments a
+                   LEFT JOIN runtime_allocations al ON al.assignment_id=a.assignment_id
+                   WHERE a.assignment_id=?""",
+                (assignment_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeNotFound(f"unknown assignment: {assignment_id}")
+            return self._assignment_from(row)
+
+    def get_allocation(self, allocation_id: str) -> AllocationRecord:
+        with self._read_connection() as conn:
+            row = conn.execute("SELECT * FROM runtime_allocations WHERE allocation_id=?", (allocation_id,)).fetchone()
+            if row is None:
+                raise RuntimeNotFound(f"unknown allocation: {allocation_id}")
+            return self._allocation_from(row)
+
+    def get_recovery_status(self, assignment_id: str) -> RecoveryRecord | None:
+        with self._read_connection() as conn:
+            row = conn.execute("SELECT * FROM runtime_recovery_work WHERE assignment_id=?", (assignment_id,)).fetchone()
+            if row is None:
+                return None
+            return RecoveryRecord(
+                assignment_id=row["assignment_id"], state=row["state"], reason=row["reason"],
+                attempts=int(row["attempts"]), updated_at=row["updated_at"],
+            )
+
+    def get_protected_resource(self, resource_key: str) -> ProtectedResourceRecord:
+        with self._read_connection() as conn:
+            row = conn.execute("SELECT * FROM runtime_protected_resources WHERE resource_key=?", (resource_key,)).fetchone()
+            if row is None:
+                raise RuntimeNotFound(f"unknown protected resource: {resource_key}")
+            return ProtectedResourceRecord(
+                resource_key=row["resource_key"], fencing_epoch=int(row["fencing_epoch"]),
+                value=json.loads(row["value_json"]) if row["value_json"] is not None else None,
+                version=int(row["version"]),
+            )
+
+    @contextlib.contextmanager
+    def _read_connection(self) -> Iterator[sqlite3.Connection]:
+        self._require_schema_path()
+        conn = self._connect(read_only=True)
+        try:
+            self._require_schema(conn)
+            yield conn
+        finally:
+            conn.close()
+
+    def read_events(
+        self,
+        *,
+        stream_type: str | None = None,
+        stream_id: str | None = None,
+        after_sequence: int = 0,
+        limit: int = 100,
+        max_payload_bytes: int = 2_000_000,
+    ) -> tuple[RuntimeEventRecord, ...]:
+        if limit < 1 or max_payload_bytes < 1:
+            raise ValueError("limit and max_payload_bytes must be positive")
+        with self._read_connection() as conn:
+            where = ["sequence > ?"]
+            args: list[Any] = [after_sequence]
+            if stream_type is not None:
+                where.append("stream_type=?")
+                args.append(stream_type)
+            if stream_id is not None:
+                where.append("stream_id=?")
+                args.append(stream_id)
+            where_sql = " AND ".join(where)
+            metadata_cursor = conn.execute(
+                f"""SELECT event_id,stream_type,stream_id,sequence,event_family,event_type,
+                           schema_version,occurred_at,recorded_at,payload_hash,
+                           LENGTH(CAST(payload_json AS BLOB)) AS payload_bytes
+                    FROM runtime_events WHERE {where_sql}
+                    ORDER BY rowid LIMIT ?""",
+                (*args, limit),
+            )
+            metadata = []
+            total = 0
+            try:
+                for row in metadata_cursor:
+                    size = int(row["payload_bytes"])
+                    if size > max_payload_bytes:
+                        raise PayloadSizeExceeded(
+                            f"runtime event {row['event_id']} exceeds read budget"
+                        )
+                    total += size
+                    if total > max_payload_bytes:
+                        raise PayloadSizeExceeded("runtime event page exceeds read budget")
+                    metadata.append(row)
+            finally:
+                metadata_cursor.close()
+            if not metadata:
+                return ()
+            ids = [row["event_id"] for row in metadata]
+            placeholders = ",".join("?" for _ in ids)
+            body_cursor = conn.execute(
+                f"SELECT * FROM runtime_events WHERE event_id IN ({placeholders}) ORDER BY rowid",
+                ids,
+            )
+            try:
+                rows = list(body_cursor)
+            finally:
+                body_cursor.close()
+            return tuple(
+                RuntimeEventRecord(
+                    event_id=row["event_id"], stream_type=row["stream_type"], stream_id=row["stream_id"],
+                    sequence=int(row["sequence"]), event_family=row["event_family"], event_type=row["event_type"],
+                    schema_version=int(row["schema_version"]), occurred_at=row["occurred_at"], recorded_at=row["recorded_at"],
+                    payload=json.loads(row["payload_json"]), payload_hash=row["payload_hash"],
+                )
+                for row in rows
+            )
+
+    def count_events(self) -> int:
+        with self._read_connection() as conn:
+            return int(conn.execute("SELECT COUNT(*) AS count FROM runtime_events").fetchone()["count"])
+
+    def list_outbox(self, states: tuple[str, ...] = ("PENDING", "RETRY")) -> tuple[dict[str, Any], ...]:
+        with self._read_connection() as conn:
+            placeholders = ",".join("?" for _ in states)
+            rows = conn.execute(
+                f"SELECT * FROM runtime_outbox WHERE state IN ({placeholders}) ORDER BY rowid",
+                states,
+            ).fetchall()
+            return tuple(dict(row) for row in rows)
+
+    def replay_events(self, events: tuple[RuntimeEventRecord, ...] | list[RuntimeEventRecord]) -> dict[str, Any]:
+        """Replay a runtime stream using only immutable event data."""
+        ordered = tuple(events)
+        if not ordered:
+            return {"event_family": self.EVENT_FAMILY, "stream_version": 0, "event_types": (), "states": {}}
+        first = ordered[0]
+        expected = 1
+        states: dict[str, str] = {}
+        for event in ordered:
+            if event.event_family != self.EVENT_FAMILY or event.schema_version != 1:
+                raise RuntimeConflict("unknown runtime event family or schema")
+            if event.stream_type != first.stream_type or event.stream_id != first.stream_id:
+                raise RuntimeConflict("runtime replay contains multiple streams")
+            if event.sequence != expected:
+                raise RuntimeConflict("runtime event stream has a version gap")
+            expected += 1
+            payload = event.payload.to_dict()
+            if "assignment_id" in payload and "lifecycle" in payload:
+                states[payload["assignment_id"]] = payload["lifecycle"]
+        return {
+            "event_family": self.EVENT_FAMILY,
+            "stream_type": first.stream_type,
+            "stream_id": first.stream_id,
+            "stream_version": expected - 1,
+            "event_types": tuple(event.event_type for event in ordered),
+            "states": states,
+        }
