@@ -303,6 +303,24 @@ def test_expired_renewal_without_reconciliation_cannot_revive_after_reopen(tmp_p
     )
 
 
+def test_older_coordinator_cannot_lower_time_watermark_or_write(tmp_path):
+    store, clock, _, owner = _assigned(tmp_path, lease_seconds=30)
+    newer_clock = ManualClock(BASE + dt.timedelta(seconds=10))
+    newer = RuntimeControlStore(store.path, clock=newer_clock)
+    newer.mutate_protected_resource(*owner, 0, {"writer": "newer"}, command_id="newer-write")
+    assert store.get_protected_resource("resource-1").version == 1
+
+    clock.set(BASE + dt.timedelta(seconds=9))
+    with pytest.raises(ClockAnomaly):
+        store.mutate_protected_resource(*owner, 1, {"writer": "older"}, command_id="older-write")
+    assert store.get_protected_resource("resource-1").version == 1
+    with closing(store.connect()) as independent:
+        watermark = independent.execute(
+            "SELECT last_coordinator_time FROM runtime_clock_state WHERE state_id=1"
+        ).fetchone()[0]
+    assert watermark == "2026-01-01T00:00:10.000000+00:00"
+
+
 def test_reconciliation_response_loss_returns_original_batch_once(tmp_path):
     store, clock, receipt, _ = _assigned(tmp_path)
     clock.advance(10)
