@@ -283,6 +283,30 @@ CANONICAL_PROVIDER_E2E=NOT_RUN
 NEXT_PHASE_STARTED=NO
 ```
 
+Final follow-up verification in this checkout:
+
+```text
+python3 -m pytest -q
+428 passed, 66 subtests passed in 7.76s
+
+python3 -m runtime_control.qualification --seed 1806 --operations 200
+qualification=PASS; original=200/63/137; transition=10/7/2/1;
+worker_version_matrix heartbeats=2, replayed Worker/incarnation=4/2
+
+python3 -m compileall -q domain shadow_ledger runtime_control task_registry.py \
+  test_domain.py test_shadow_ledger.py test_runtime_control.py \
+  test_pvx1806_remediation.py
+PASS
+
+git diff --check
+PASS
+```
+
+The final commits are ordinary `main` commits `ba5266ad21ef57fe02aff8742138be56aa70a3e7`
+and `09bccb53d83b5eb364c03122efbb966c407c831e7`; `origin/main` was read back
+at the latter SHA and the worktree was clean. No production database migration,
+deployment, service restart, provider takeover, or next phase was performed.
+
 Not qualified here: physical process or shell fencing, real provider failover,
 live worktree takeover, distributed SQLite, power-loss durability, scheduler
 fairness, quotas, long-term retention, production throughput, Rust, RPC,
