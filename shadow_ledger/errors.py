@@ -13,6 +13,12 @@ class LedgerValidationError(ShadowLedgerError):
     pass
 
 
+class PayloadSizeExceeded(LedgerValidationError):
+    """An append payload exceeds the configured single-event write budget."""
+
+    pass
+
+
 class TransactionOwnershipError(ShadowLedgerError):
     pass
 

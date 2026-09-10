@@ -222,8 +222,10 @@ source_execution_ref
 execution_state
 current_stage
 exact_result_ref
+result_status
 turn_id
 lease_state
+resource_key
 stream_version
 attribution
 ```
@@ -268,6 +270,52 @@ The fixed comparison fields are:
 - final stream version;
 - attribution and history-completeness markers.
 
+The typed comparison contract is the following exact ordered set. The order is
+part of the deterministic comparison output, while the values are the
+field-level V1 evidence selected by the reducer:
+
+```text
+aggregate_type
+task_id
+execution_id
+source_task_id
+source_execution_ref
+execution_state
+current_stage
+exact_result_ref
+result_status
+turn_id
+lease_state
+resource_key
+stream_version
+attribution
+```
+
+`result_status` and `resource_key` are not derived from a projection or from
+the result reference alone. A PASS result and a BLOCKED result are different
+observations, as are two lease states with different resource identities. The
+reducer carries both values into `ReplayResult` and the summary hash, and
+`ReplayService.compare()` reports a difference when either changes.
+
+Expected comparison input is an explicit schema: every field in the set above
+must be present. Missing expected fields fail with `ReplayError`; they are not
+treated as an implicit `null` or as equality. Expected values must come from an
+independent V1 snapshot or fixture rather than being generated from the
+replayed result itself.
+
+For schema-version-1 history written before these fields were observed,
+replay preserves compatibility by materializing `result_status=UNKNOWN` and
+`resource_key=UNKNOWN`. Existing immutable events are not rewritten, and
+comparisons against historical traces must declare those unknowns explicitly.
+
+Legacy task streams with `execution_ref=NULL` remain task-level and
+`UNATTRIBUTED`. The first snapshot or claim bootstraps the stream; later
+unattributed claims are new resource-acquisition observations only after the
+previous lease cycle was released. A release must follow a held lease and,
+when present, must match the held `resource_key`. Replay still rejects a
+duplicate bootstrap, version gap, wrong attribution, or illegal duplicate
+release, and it never invents an execution, attempt, or provider-session ID.
+
 Explicit exclusions for PVX-1805 are:
 
 - raw provider payload and unpersisted provider notification history;
@@ -287,6 +335,17 @@ and digest.
 Reads are bounded by page count, page size, and per-page payload bytes.
 Projection checkpoints store only a cursor/version position and mutable status;
 they do not modify event payloads.
+
+The append/read byte boundary is explicit. New event payloads are rejected with
+`PayloadSizeExceeded` when their canonical UTF-8 JSON exceeds the configured
+single-event write limit. Exact idempotent retries are checked before that
+admission rule so an event accepted under an older limit remains retryable.
+Reads first select cursor and UTF-8 byte-length metadata, reject a single
+oversized record or an over-budget page, and only then materialize event
+bodies. Existing oversized records therefore remain readable only under a
+budget that admits them; they are not silently skipped. A failed preflight
+does not advance the caller's cursor, and read connections/cursors are closed
+on both success and error.
 
 ## 11. Covered and Uncovered Boundaries
 

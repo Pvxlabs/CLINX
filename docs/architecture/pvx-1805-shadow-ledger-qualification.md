@@ -41,6 +41,11 @@ python3 -m pytest -q
 No real provider, host command, production database, managed service, Linear
 write, deployment, merge, or follow-on issue was started.
 
+The independent review and remediation baseline for this qualification is
+`b09a36eeca15f693df7031b4f34f635f68ef99ee`. The historical source report above
+is retained for lineage; its original test counts are not substituted for the
+current checkout results in the remediation addendum below.
+
 ## 2. Delivered Changes
 
 ### Architecture and qualification
@@ -292,3 +297,180 @@ CANONICAL_PROVIDER_E2E=NOT_RUN
 - No power-loss, filesystem-corruption, backup/restore, or disaster-recovery test.
 - No Rust runtime or RPC boundary.
 - No MCP schema or response change.
+
+## 13. PVX-1805 Remediation Addendum: SL-01 to SL-04
+
+This addendum records the bounded correction requested by the independent
+review. It does not change the V1 authority boundary or promote the shadow
+ledger to a runtime decision maker.
+
+```ini
+REVIEW_BASE_COMMIT=b09a36eeca15f693df7031b4f34f635f68ef99ee
+FINAL_COMMIT=RECORDED_IN_FINAL_REPORT_AFTER_COMMIT
+V1_AUTHORITY=ON
+V2_EVENT_AUTHORITY=OFF
+SHADOW_DEFAULT=OFF
+PUBLIC_MCP_CONTRACT=UNCHANGED
+```
+
+### SL-01 — Snapshot field fidelity
+
+**Defect and root cause.** The original baseline importer used one `stage`
+value for both lifecycle state and current stage, and only read a provider turn
+from an existing result row. That lost an already persisted active turn and
+could misstate `CODEX_RUNNING / provider_wait` as `provider_wait / provider_wait`.
+
+**Fix location.** `task_registry.py::import_shadow_baseline()` now reads
+`execution_state`, `current_stage`, and `turn_id` independently when an exact
+active execution and its task projection are provably correlated. Retained
+history uses only execution-owned evidence; fields absent from that history are
+`UNKNOWN` with field-level provenance. A newer execution on the same task is
+never used to fill an older execution's facts. `result_status` and
+`resource_key` are also imported explicitly.
+
+**Test mapping.**
+
+- `test_snapshot_baseline_preserves_active_state_stage_and_turn_without_result`
+- `test_retained_old_execution_does_not_borrow_new_task_projection`
+- `test_existing_exact_execution_requires_explicit_unknown_history_baseline`
+- `test_legacy_snapshot_then_new_cycle_replays_without_invented_identity`
+
+**Before/after.** Before remediation, the defect was source-confirmed by the
+review and the active/no-result candidate was not independently run against the
+review checkout. After remediation, the real `TaskRegistry` plus temporary
+SQLite regression passes and preserves all three fields and provenance.
+
+**Compatibility and remaining boundary.** The importer remains a declared
+current snapshot, not reconstruction of pre-baseline history. Missing retained
+fields stay `UNKNOWN`; no historical event is fabricated or rewritten.
+
+### SL-02 — Legacy task stream multi-cycle replay
+
+**Defect and root cause.** The original reducer treated every
+`V1UnattributedExecutionClaimObserved` as a stream bootstrap, so a legal
+`claim -> release -> claim -> release` sequence failed at the second claim.
+
+**Fix location.** `shadow_ledger/replay.py::ReplayReducer._apply()` now
+distinguishes first-stream bootstrap from a later unattributed acquisition.
+Later claims require an `UNATTRIBUTED` stream with no held lease and establish
+a new held resource cycle. Releases require a held lease and a matching
+resource when one is known. No execution, attempt, or provider-session ID is
+created.
+
+**Test mapping.**
+
+- `test_legacy_task_stream_replays_two_real_resource_cycles`
+- `test_legacy_snapshot_then_new_cycle_replays_without_invented_identity`
+- `test_replay_rejects_duplicate_bootstrap_after_valid_baseline`
+- `test_replay_rejects_version_gap_after_valid_baseline`
+- `test_legacy_release_requires_held_lease_and_matching_resource`
+- `test_replay_rejects_wrong_attribution_and_turn_ownership`
+
+**Before/after.** The review's red-phase reproduction produced
+`ReplayError: baseline event must be first in a stream` for the second legacy
+claim. The corrected real-registry and reducer fixtures replay both resource
+cycles and still reject duplicate bootstrap, version gaps, wrong ownership,
+and invalid releases.
+
+**Compatibility and remaining boundary.** Existing task-level unattributed
+history remains legal and identity-free. The reducer does not infer causality
+between unrelated streams or repair malformed historical order.
+
+### SL-03 — Result status and resource identity comparison
+
+**Defect and root cause.** The original ADR/code contract omitted
+`result_status` and `resource_key` from typed replay state, summary hashing, and
+field comparison. PASS versus BLOCKED or resource A versus resource B could
+therefore compare as equal.
+
+**Fix location.** `ReplayResult`, `ReplayReducer`, `COMPARISON_FIELDS`, and
+`ReplayService.compare()` now carry and compare both fields. Expected input must
+contain every comparison field. Exact execution, turn, and attribution
+correlation conflicts fail closed. Historical schema-1 events lacking the new
+facts replay as explicit `UNKNOWN` values.
+
+**Test mapping.**
+
+- `test_comparison_requires_result_status_and_resource_key_from_v1_fixture`
+- `test_replay_rejects_wrong_attribution_and_turn_ownership`
+- `test_old_execution_result_cannot_apply_to_new_execution_stream`
+- `test_replay_rejects_unknown_schema_gap_missing_baseline_and_correlation`
+- `test_append_only_triggers_reject_update_and_delete`
+- `test_offline_cli_replays_and_compares_without_writing`
+
+**Before/after.** The review's isolated reproduction showed identical replay
+state, identical summary hash, and `compare=PASS` when either field changed.
+After remediation, independent V1 fixture values detect both differences,
+missing expected fields raise `ReplayError`, and exact identity/turn conflicts
+are rejected. The append-only triggers remain active; committed events are not
+edited.
+
+**Compatibility and remaining boundary.** Old legal events are not migrated in
+place. A comparison involving them must declare `UNKNOWN`, and fields outside
+`COMPARISON_FIELDS` remain `NOT_COVERED`.
+
+### SL-04 — Read and write size boundaries
+
+**Defect and root cause.** The original reader selected and `fetchall()`'d full
+event rows before checking the UTF-8 payload budget, and new writes had no
+single-payload admission limit.
+
+**Fix location.** `shadow_ledger/store.py::EventStore._append()` checks the
+canonical UTF-8 payload size after exact-idempotency lookup and before storing a
+new event, raising `PayloadSizeExceeded`. `read_events()` first selects cursor
+and SQLite BLOB byte lengths, validates single and cumulative page budgets, and
+only then selects full event bodies. It explicitly closes cursors and
+connections on success and error.
+
+**Test mapping.**
+
+- `test_append_rejects_payload_above_write_budget_with_distinct_error`
+- `test_append_accepts_payload_exactly_at_utf8_write_budget`
+- `test_exact_retry_of_historical_large_payload_survives_lower_write_budget`
+- `test_read_preflights_existing_oversized_payload_before_full_select`
+- `test_read_budget_is_utf8_exact_and_rejects_one_byte_below`
+- `test_read_cumulative_budget_does_not_skip_unread_events`
+- `test_read_exception_closes_connection_and_cursor_resources`
+
+**Before/after.** Before remediation, the review confirmed the full-row
+materialization ordering from source inspection; no production OOM was claimed.
+After remediation, single-record, cumulative, multibyte, exact-budget,
+pagination, pre-materialization, and cleanup tests pass.
+
+**Compatibility and remaining boundary.** Existing oversized records are not
+deleted or truncated. They are rejected before payload materialization when a
+page budget cannot admit them. Exact retries of historical events remain
+idempotent after a write limit is lowered. This is a bounded local SQLite read
+contract, not a distributed storage capacity or power-loss guarantee.
+
+## 14. Remediation Test Evidence
+
+These are the actual results from the current checkout after the remediation
+patches. The original report's `338 passed, 66 subtests passed` is historical;
+the additional negative and boundary tests account for the new total.
+
+```text
+python3 -m pytest -q --ignore=test_domain.py --ignore=test_shadow_ledger.py
+297 passed, 48 subtests passed in 5.15s
+
+python3 -m pytest -q test_domain.py
+10 passed, 10 subtests passed in 0.05s
+
+python3 -m pytest -q test_shadow_ledger.py
+47 passed, 8 subtests passed in 0.66s
+
+python3 -m pytest -q
+354 passed, 66 subtests passed in 5.69s
+
+python3 -m compileall -q domain shadow_ledger task_registry.py test_domain.py test_shadow_ledger.py
+PASS
+
+git diff --check
+PASS
+```
+
+The Shadow Ledger suite includes the existing CAS, multi-process race,
+idempotency conflict, crash-before/after-commit, rollback, inbox/outbox,
+default-off, ON-to-OFF, append-only, CLI replay/compare, and real-registry
+fixtures. These remain local temporary-database tests; canonical provider E2E,
+production database migration, deployment, and authority cutover were not run.

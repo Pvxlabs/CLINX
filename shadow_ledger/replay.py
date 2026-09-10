@@ -39,8 +39,10 @@ COMPARISON_FIELDS = (
     "execution_state",
     "current_stage",
     "exact_result_ref",
+    "result_status",
     "turn_id",
     "lease_state",
+    "resource_key",
     "stream_version",
     "attribution",
 )
@@ -76,10 +78,13 @@ class ReplayResult:
     execution_state: str
     current_stage: str
     exact_result_ref: str | None
+    result_status: str
     turn_id: str | None
     lease_state: str
+    resource_key: str
     stream_version: int
     attribution: str
+    field_provenance: Mapping[str, str]
     evidence_references: tuple[str, ...]
     history_before_baseline: str
     event_count: int
@@ -166,9 +171,12 @@ class ReplayReducer:
                     "execution_state": payload.get("execution_state", "UNKNOWN"),
                     "current_stage": payload.get("current_stage", "UNKNOWN"),
                     "exact_result_ref": payload.get("exact_result_ref"),
+                    "result_status": payload.get("result_status", "UNKNOWN"),
                     "turn_id": payload.get("turn_id"),
                     "lease_state": payload.get("lease_state", "UNKNOWN"),
+                    "resource_key": payload.get("resource_key", "UNKNOWN"),
                     "attribution": payload["attribution"],
+                    "field_provenance": dict(payload.get("field_provenance", {})),
                     "history_before_baseline": payload.get(
                         "history_before_baseline", "UNKNOWN"
                     ),
@@ -226,7 +234,13 @@ class ReplayReducer:
 
     @staticmethod
     def _validate_correlation(state: dict[str, Any], payload: dict[str, Any]) -> None:
-        for name in ("task_id", "source_task_id", "execution_id", "source_execution_ref"):
+        for name in (
+            "task_id",
+            "source_task_id",
+            "execution_id",
+            "source_execution_ref",
+            "attribution",
+        ):
             if name in payload and payload[name] != state.get(name):
                 raise ReplayError(f"correlation conflict for {name}")
 
@@ -237,12 +251,33 @@ class ReplayReducer:
         payload: dict[str, Any],
         evidence: list[str],
     ) -> None:
-        if event_type in BASELINE_EVENT_TYPES:
-            raise ReplayError("baseline event must be first in a stream")
+        if event_type in {
+            "V1SnapshotBaselineImported",
+            "V1ExecutionClaimObserved",
+        }:
+            raise ReplayError("bootstrap event must be first in a stream")
+        if event_type == "V1UnattributedExecutionClaimObserved":
+            if state["attribution"] != "UNATTRIBUTED":
+                raise ReplayError("legacy claim cannot apply to an exact stream")
+            if state["lease_state"] == "HELD":
+                raise ReplayError("legacy claim observed while lease is already held")
+            if payload.get("lease_state") != "HELD":
+                raise ReplayError("legacy claim must establish a held lease")
+            state["execution_state"] = payload.get(
+                "execution_state", state["execution_state"]
+            )
+            state["current_stage"] = payload.get(
+                "current_stage", state["current_stage"]
+            )
+            state["lease_state"] = "HELD"
+            state["resource_key"] = payload.get("resource_key", "UNKNOWN")
+            return
         if event_type in {"V1ExecutionProgressObserved", "V1TerminalStateObserved"}:
             for name in ("execution_state", "current_stage", "turn_id"):
                 if name in payload:
                     state[name] = payload[name]
+            if "resource_key" in payload:
+                state["resource_key"] = payload["resource_key"]
             return
         if event_type == "V1ExecutionResultPersistedObserved":
             result_ref = payload.get("exact_result_ref")
@@ -253,6 +288,7 @@ class ReplayReducer:
             if state["source_execution_ref"] != result_ref:
                 raise ReplayError("result does not match the stream execution identity")
             state["exact_result_ref"] = result_ref
+            state["result_status"] = payload.get("result_status", "UNKNOWN")
             if "turn_id" in payload:
                 existing_turn = state.get("turn_id")
                 if existing_turn not in {None, payload["turn_id"]}:
@@ -263,8 +299,16 @@ class ReplayReducer:
             "V1LeaseReleasedObserved",
             "V1UnattributedLeaseReleasedObserved",
         }:
-            if state["lease_state"] == "RELEASED":
-                raise ReplayError("lease release observed more than once")
+            if state["lease_state"] != "HELD":
+                raise ReplayError("lease release observed without a held lease")
+            payload_resource = payload.get("resource_key")
+            if (
+                payload_resource is not None
+                and state["resource_key"] not in {"UNKNOWN", payload_resource}
+            ):
+                raise ReplayError("lease release resource does not match held lease")
+            if payload_resource is not None:
+                state["resource_key"] = payload_resource
             state["lease_state"] = "RELEASED"
             return
         if event_type in {
@@ -322,11 +366,16 @@ class ReplayService:
     def compare(
         replayed: ReplayResult, expected: Mapping[str, Any]
     ) -> CompareResult:
+        missing = [field for field in COMPARISON_FIELDS if field not in expected]
+        if missing:
+            raise ReplayError(
+                "expected comparison input is missing fields: " + ", ".join(missing)
+            )
         actual = replayed.to_dict()
         differences = tuple(
-            ReplayDifference(field, expected.get(field), actual.get(field))
+            ReplayDifference(field, expected[field], actual.get(field))
             for field in COMPARISON_FIELDS
-            if expected.get(field) != actual.get(field)
+            if expected[field] != actual.get(field)
         )
         return CompareResult("PASS" if not differences else "FAIL", differences)
 

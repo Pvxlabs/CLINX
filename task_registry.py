@@ -646,25 +646,93 @@ class TaskRegistry:
                        WHERE task_id=? AND execution_ref=?""",
                     (task_id, execution_ref),
                 ).fetchone()
-                state = execution["stage"]
-                stage = execution["stage"]
-                turn_id = exact_result["turn_id"] if exact_result is not None else None
-                lease_state = "HELD" if lease is not None else (
-                    "RELEASED" if retained else "UNKNOWN"
-                )
+                if retained:
+                    # execution_history has an execution-owned stage and
+                    # worktree identity, but it does not persist a separate
+                    # lifecycle state or provider turn.  Do not borrow the
+                    # task's current projection, which may belong to a newer
+                    # execution.
+                    state = "UNKNOWN"
+                    stage = execution["stage"] or "UNKNOWN"
+                    turn_id = (
+                        exact_result["turn_id"]
+                        if exact_result is not None else None
+                    )
+                    lease_state = "RELEASED"
+                    provenance = {
+                        "execution_state": "UNKNOWN:NOT_PERSISTED_FOR_EXACT_EXECUTION",
+                        "current_stage": "V1_EXECUTION_HISTORY_STAGE",
+                        "turn_id": (
+                            "V1_EXECUTION_RESULT"
+                            if exact_result is not None
+                            else "UNKNOWN:NOT_PERSISTED_FOR_EXACT_EXECUTION"
+                        ),
+                        "lease_state": "V1_EXECUTION_HISTORY_RETAINED",
+                        "resource_key": "V1_EXECUTION_HISTORY_WORKTREE_KEY",
+                        "result_status": (
+                            "V1_EXECUTION_RESULT"
+                            if exact_result is not None
+                            else "UNKNOWN:NOT_PERSISTED_FOR_EXACT_EXECUTION"
+                        ),
+                    }
+                else:
+                    # The active executions row and matching lease establish
+                    # that the task projection belongs to this exact ref.
+                    state = task["execution_state"]
+                    stage = task["current_stage"]
+                    turn_id = task["turn_id"]
+                    lease_state = "HELD" if lease is not None else "UNKNOWN"
+                    provenance = {
+                        "execution_state": "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
+                        "current_stage": "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
+                        "turn_id": "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
+                        "lease_state": (
+                            "V1_WORKTREE_LEASE_EXACT_EXECUTION"
+                            if lease is not None
+                            else "UNKNOWN:ACTIVE_LEASE_NOT_PRESENT"
+                        ),
+                        "resource_key": "V1_EXECUTION_WORKTREE_KEY",
+                        "result_status": (
+                            "V1_EXECUTION_RESULT"
+                            if exact_result is not None
+                            else "UNKNOWN:RESULT_NOT_PERSISTED"
+                        ),
+                    }
                 observed_at = (
                     execution["released_at"] if retained else execution["acquired_at"]
+                )
+                resource_key = execution["worktree_key"] or "UNKNOWN"
+                result_status = (
+                    exact_result["status"] if exact_result is not None else "UNKNOWN"
                 )
             else:
                 state = task["execution_state"]
                 stage = task["current_stage"]
                 turn_id = None
                 lease = conn.execute(
-                    """SELECT 1 FROM worktree_leases
+                    """SELECT worktree_key FROM worktree_leases
                        WHERE task_id=? AND execution_ref IS NULL""",
                     (task_id,),
                 ).fetchone()
                 lease_state = "HELD" if lease is not None else "UNKNOWN"
+                resource_key = lease["worktree_key"] if lease is not None else "UNKNOWN"
+                result_status = "UNKNOWN"
+                provenance = {
+                    "execution_state": "V1_TASK_PROJECTION_UNATTRIBUTED",
+                    "current_stage": "V1_TASK_PROJECTION_UNATTRIBUTED",
+                    "turn_id": "UNKNOWN:NOT_EXACT_EXECUTION",
+                    "lease_state": (
+                        "V1_WORKTREE_LEASE_UNATTRIBUTED"
+                        if lease is not None
+                        else "UNKNOWN:LEASE_NOT_PRESENT"
+                    ),
+                    "resource_key": (
+                        "V1_WORKTREE_LEASE_UNATTRIBUTED"
+                        if lease is not None
+                        else "UNKNOWN:LEASE_NOT_PRESENT"
+                    ),
+                    "result_status": "UNKNOWN:NOT_EXACT_EXECUTION",
+                }
                 observed_at = task["updated_at"]
             self._append_shadow_observation(
                 conn,
@@ -678,12 +746,15 @@ class TaskRegistry:
                     "current_stage": stage,
                     "turn_id": turn_id,
                     "lease_state": lease_state,
+                    "resource_key": resource_key,
                     "exact_result_ref": (
                         exact_result["execution_ref"]
                         if exact_result is not None else None
                     ),
+                    "result_status": result_status,
                     "history_before_baseline": "UNKNOWN",
                     "baseline_source": "V1_CURRENT_SNAPSHOT",
+                    "field_provenance": provenance,
                 },
             )
 

@@ -18,6 +18,8 @@ from shadow_ledger import (
     LedgerBusy,
     LedgerSchemaError,
     LedgerValidationError,
+    PayloadSizeExceeded,
+    ReplayBoundaryExceeded,
     OutboxRequest,
     ReplayError,
     TransactionOwnershipError,
@@ -184,7 +186,6 @@ class EventStoreTestCase(unittest.TestCase):
             },
         )
 
-
 class PersistenceAndIdempotencyTests(EventStoreTestCase):
     def test_uninitialized_and_unknown_schema_fail_explicitly(self):
         missing = Path(self.temp.name) / "uninitialized.sqlite3"
@@ -248,6 +249,181 @@ class PersistenceAndIdempotencyTests(EventStoreTestCase):
 
         with self.assertRaises(LedgerValidationError):
             dataclasses.replace(request, payload={"not_finite": float("nan")})
+
+    def test_append_rejects_payload_above_write_budget_with_distinct_error(self):
+        request = dataclasses.replace(
+            self.claim_request(),
+            payload={
+                **self.claim_request().payload.to_dict(),
+                "large_utf8": "界" * 128,
+            },
+        )
+        bounded = EventStore(self.db, max_append_payload_bytes=128)
+        with self.assertRaises(PayloadSizeExceeded):
+            bounded.append(request)
+        self.assertEqual(self.store.count_events(), 0)
+
+    def test_append_accepts_payload_exactly_at_utf8_write_budget(self):
+        request = dataclasses.replace(
+            self.claim_request(),
+            payload={
+                **self.claim_request().payload.to_dict(),
+                "multibyte": "界" * 16,
+            },
+        )
+        budget = len(request.payload.to_json().encode("utf-8"))
+        bounded = EventStore(self.db, max_append_payload_bytes=budget)
+        result = bounded.append(request)
+        self.assertFalse(result.duplicate)
+        self.assertEqual(
+            len(result.stored_event.event.payload.to_json().encode("utf-8")),
+            budget,
+        )
+
+    def test_exact_retry_of_historical_large_payload_survives_lower_write_budget(self):
+        db = Path(self.temp.name) / "historical-large.sqlite3"
+        request = dataclasses.replace(
+            self.claim_request(),
+            payload={
+                **self.claim_request().payload.to_dict(),
+                "historical": "x" * 512,
+            },
+        )
+        writer = EventStore(db, max_append_payload_bytes=2_000_000)
+        writer.initialize()
+        first = writer.append(request)
+        payload_size = len(request.payload.to_json().encode("utf-8"))
+        self.assertGreater(payload_size, 128)
+
+        bounded_retry = EventStore(db, max_append_payload_bytes=128)
+        retry = bounded_retry.append(request)
+        self.assertTrue(retry.duplicate)
+        self.assertEqual(retry.stored_event.event.event_id, first.stored_event.event.event_id)
+
+    def test_read_preflights_existing_oversized_payload_before_full_select(self):
+        writer = EventStore(self.db, max_append_payload_bytes=2_000_000)
+        writer.append(
+            dataclasses.replace(
+                self.claim_request(),
+                payload={
+                    **self.claim_request().payload.to_dict(),
+                    "large_utf8": "界" * 1024,
+                },
+            )
+        )
+
+        class TracingStore(EventStore):
+            def __init__(self, path):
+                super().__init__(path)
+                self.statements = []
+                self.materialized_payload_bytes = 0
+
+            def _connect(self, *, read_only=False):
+                conn = super()._connect(read_only=read_only)
+                conn.set_trace_callback(self.statements.append)
+                def row_factory(cursor, values):
+                    for index, description in enumerate(cursor.description or ()):
+                        if (
+                            description[0] == "payload_json"
+                            and isinstance(values[index], str)
+                        ):
+                            self.materialized_payload_bytes += len(
+                                values[index].encode("utf-8")
+                            )
+                    return sqlite3.Row(cursor, values)
+                conn.row_factory = row_factory
+                return conn
+
+        reader = TracingStore(self.db)
+        with self.assertRaises(ReplayBoundaryExceeded):
+            reader.read_events(limit=1, max_payload_bytes=128)
+        self.assertFalse(
+            any(
+                "SELECT * FROM v2_events WHERE" in statement
+                for statement in reader.statements
+            ),
+            reader.statements,
+        )
+        self.assertEqual(reader.materialized_payload_bytes, 0)
+
+    def test_read_budget_is_utf8_exact_and_rejects_one_byte_below(self):
+        request = dataclasses.replace(
+            self.claim_request(),
+            payload={
+                **self.claim_request().payload.to_dict(),
+                "multibyte": "界" * 16,
+            },
+        )
+        writer = EventStore(self.db, max_append_payload_bytes=2_000_000)
+        writer.append(request)
+        budget = len(request.payload.to_json().encode("utf-8"))
+
+        self.assertEqual(
+            len(self.store.read_events(limit=1, max_payload_bytes=budget)), 1
+        )
+        with self.assertRaises(ReplayBoundaryExceeded):
+            self.store.read_events(limit=1, max_payload_bytes=budget - 1)
+
+    def test_read_cumulative_budget_does_not_skip_unread_events(self):
+        first = self.store.append(self.claim_request("budget-first"))
+        second = self.store.append(
+            exact_request(
+                self.execution_id,
+                "exec_v1",
+                1,
+                "V1ExecutionProgressObserved",
+                "budget-second",
+                payload={
+                    "execution_state": "CODEX_RUNNING",
+                    "current_stage": "provider_wait",
+                    "turn_id": "turn_budget",
+                },
+            )
+        )
+        first_size = len(first.stored_event.event.payload.to_json().encode("utf-8"))
+        second_size = len(second.stored_event.event.payload.to_json().encode("utf-8"))
+        budget = max(first_size, second_size)
+        self.assertGreater(first_size + second_size, budget)
+
+        with self.assertRaises(ReplayBoundaryExceeded):
+            self.store.read_events(limit=2, max_payload_bytes=budget)
+
+        page = self.store.read_events(limit=1, max_payload_bytes=budget)
+        self.assertEqual(page[0].cursor, first.stored_event.cursor)
+        self.assertEqual(
+            self.store.read_events(
+                after_cursor=page[-1].cursor,
+                limit=1,
+                max_payload_bytes=budget,
+            )[0].cursor,
+            second.stored_event.cursor,
+        )
+
+    def test_read_exception_closes_connection_and_cursor_resources(self):
+        connections = []
+
+        class TrackingStore(EventStore):
+            def _connect(self, *, read_only=False):
+                connection = super()._connect(read_only=read_only)
+                connections.append(connection)
+                return connection
+
+        writer = EventStore(self.db, max_append_payload_bytes=2_000_000)
+        writer.append(
+            dataclasses.replace(
+                self.claim_request(),
+                payload={
+                    **self.claim_request().payload.to_dict(),
+                    "large_utf8": "界" * 1024,
+                },
+            )
+        )
+        reader = TrackingStore(self.db)
+        with self.assertRaises(ReplayBoundaryExceeded):
+            reader.read_events(limit=1, max_payload_bytes=128)
+        self.assertEqual(len(connections), 1)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            connections[0].execute("SELECT 1")
 
     def test_append_only_triggers_reject_update_and_delete(self):
         result = self.store.append(self.claim_request())
@@ -537,15 +713,87 @@ class ReplayTests(EventStoreTestCase):
         return [self.store.append(request) for request in requests]
 
     def test_replay_is_deterministic_and_compares_fixed_fields(self):
-        self.append_trace()
+        self.store.append(
+            dataclasses.replace(
+                self.claim_request(),
+                payload={
+                    **self.claim_request().payload.to_dict(),
+                    "resource_key": "worktree-a",
+                },
+            )
+        )
+        self.store.append(
+            exact_request(
+                self.execution_id,
+                "exec_v1",
+                1,
+                "V1ExecutionProgressObserved",
+                "progress",
+                payload={
+                    "execution_state": "CODEX_RUNNING",
+                    "current_stage": "CODEX_RUNNING",
+                    "turn_id": "turn_1",
+                },
+            )
+        )
+        self.store.append(
+            exact_request(
+                self.execution_id,
+                "exec_v1",
+                2,
+                "V1ExecutionResultPersistedObserved",
+                "result",
+                payload={
+                    "exact_result_ref": "exec_v1",
+                    "turn_id": "turn_1",
+                    "result_status": "PASS",
+                },
+            )
+        )
+        self.store.append(
+            exact_request(
+                self.execution_id,
+                "exec_v1",
+                3,
+                "V1TerminalStateObserved",
+                "terminal",
+                payload={
+                    "execution_state": "COMPLETED",
+                    "current_stage": "COMPLETED",
+                    "turn_id": "turn_1",
+                },
+            )
+        )
+        self.store.append(
+            exact_request(
+                self.execution_id,
+                "exec_v1",
+                4,
+                "V1LeaseReleasedObserved",
+                "release",
+                payload={"lease_state": "RELEASED", "resource_key": "worktree-a"},
+            )
+        )
         service = ReplayService(self.store)
         first = service.replay_stream("execution", self.execution_id, batch_size=2)
         second = service.replay_stream("execution", self.execution_id, batch_size=1)
 
         self.assertEqual(first, second)
         expected = {
-            field: first.to_dict()[field]
-            for field in service.compare(first, {}).compared_fields
+            "aggregate_type": "execution",
+            "task_id": "shadow_task_1",
+            "execution_id": self.execution_id,
+            "source_task_id": "task_v1",
+            "source_execution_ref": "exec_v1",
+            "execution_state": "COMPLETED",
+            "current_stage": "COMPLETED",
+            "exact_result_ref": "exec_v1",
+            "result_status": "PASS",
+            "turn_id": "turn_1",
+            "lease_state": "RELEASED",
+            "resource_key": "worktree-a",
+            "stream_version": 5,
+            "attribution": "EXACT",
         }
         self.assertEqual(service.compare(first, expected).status, "PASS")
         expected["current_stage"] = "FAILED"
@@ -553,13 +801,264 @@ class ReplayTests(EventStoreTestCase):
         self.assertEqual(comparison.status, "FAIL")
         self.assertEqual(comparison.differences[0].field, "current_stage")
 
+    def test_comparison_requires_result_status_and_resource_key_from_v1_fixture(self):
+        self.store.append(
+            dataclasses.replace(
+                self.claim_request(),
+                payload={
+                    **self.claim_request().payload.to_dict(),
+                    "resource_key": "worktree-a",
+                },
+            )
+        )
+        self.store.append(
+            exact_request(
+                self.execution_id,
+                "exec_v1",
+                1,
+                "V1ExecutionResultPersistedObserved",
+                "result-status",
+                payload={
+                    "exact_result_ref": "exec_v1",
+                    "turn_id": "turn_1",
+                    "result_status": "PASS",
+                },
+            )
+        )
+        replayed = ReplayService(self.store).replay_stream(
+            "execution", self.execution_id
+        )
+        self.assertEqual(replayed.result_status, "PASS")
+        self.assertEqual(replayed.resource_key, "worktree-a")
+        with self.assertRaises(ReplayError):
+            ReplayService.compare(replayed, {})
+
+        expected = {
+            "aggregate_type": "execution",
+            "task_id": "shadow_task_1",
+            "execution_id": self.execution_id,
+            "source_task_id": "task_v1",
+            "source_execution_ref": "exec_v1",
+            "execution_state": "CLAIMED",
+            "current_stage": "CLAIMED",
+            "exact_result_ref": "exec_v1",
+            "result_status": "PASS",
+            "turn_id": "turn_1",
+            "lease_state": "HELD",
+            "resource_key": "worktree-a",
+            "stream_version": 2,
+            "attribution": "EXACT",
+        }
+        self.assertEqual(ReplayService.compare(replayed, expected).status, "PASS")
+        blocked = dict(expected)
+        blocked["result_status"] = "BLOCKED"
+        self.assertEqual(ReplayService.compare(replayed, blocked).status, "FAIL")
+        other_resource = dict(expected)
+        other_resource["resource_key"] = "worktree-b"
+        self.assertEqual(ReplayService.compare(replayed, other_resource).status, "FAIL")
+
+    def test_legacy_task_stream_replays_two_real_resource_cycles(self):
+        task_id = self.store.map_legacy_identity(
+            source_system="clinx_v1",
+            source_type="task_id",
+            source_identity="task_v1",
+            target_type="task",
+        ).target_id
+        requests = (
+            task_request(
+                task_id, 0, "V1UnattributedExecutionClaimObserved", "cycle-1-claim",
+                payload={
+                    "execution_state": "CLAIMED",
+                    "current_stage": "CLAIMED",
+                    "lease_state": "HELD",
+                    "resource_key": "worktree-a",
+                },
+            ),
+            task_request(
+                task_id, 1, "V1UnattributedLeaseReleasedObserved", "cycle-1-release",
+                payload={"lease_state": "RELEASED", "resource_key": "worktree-a"},
+            ),
+            task_request(
+                task_id, 2, "V1UnattributedExecutionClaimObserved", "cycle-2-claim",
+                payload={
+                    "execution_state": "CLAIMED",
+                    "current_stage": "CLAIMED",
+                    "lease_state": "HELD",
+                    "resource_key": "worktree-b",
+                },
+            ),
+            task_request(
+                task_id, 3, "V1UnattributedLeaseReleasedObserved", "cycle-2-release",
+                payload={"lease_state": "RELEASED", "resource_key": "worktree-b"},
+            ),
+        )
+        events = [self.store.append(request).stored_event for request in requests]
+        replayed = ReplayReducer().replay(events)
+        self.assertEqual(replayed.attribution, "UNATTRIBUTED")
+        self.assertIsNone(replayed.execution_id)
+        self.assertEqual(replayed.lease_state, "RELEASED")
+        self.assertEqual(replayed.resource_key, "worktree-b")
+
+        duplicate_claim = dataclasses.replace(
+            events[0],
+            cursor=2,
+            event=dataclasses.replace(
+                events[0].event,
+                aggregate_version=2,
+                event_id="duplicate-claim",
+            ),
+        )
+        with self.assertRaises(ReplayError):
+            ReplayReducer().replay((events[0], duplicate_claim))
+
+    def test_legacy_release_requires_held_lease_and_matching_resource(self):
+        task_id = self.store.map_legacy_identity(
+            source_system="clinx_v1",
+            source_type="task_id",
+            source_identity="task_v1",
+            target_type="task",
+        ).target_id
+        baseline = self.store.append(
+            task_request(
+                task_id, 0, "V1SnapshotBaselineImported", "snapshot",
+                payload={
+                    "execution_state": "UNKNOWN",
+                    "current_stage": "UNKNOWN",
+                    "lease_state": "UNKNOWN",
+                    "history_before_baseline": "UNKNOWN",
+                },
+            )
+        ).stored_event
+        release = dataclasses.replace(
+            baseline,
+            cursor=2,
+            event=dataclasses.replace(
+                baseline.event,
+                aggregate_version=2,
+                event_id="release-without-claim",
+                event_type="V1UnattributedLeaseReleasedObserved",
+                payload_hash=None,
+                payload={
+                    "task_id": task_id,
+                    "source_task_id": "task_v1",
+                    "attribution": "UNATTRIBUTED",
+                    "lease_state": "RELEASED",
+                    "resource_key": "worktree-a",
+                },
+            ),
+        )
+        with self.assertRaises(ReplayError):
+            ReplayReducer().replay((baseline, release))
+
+    def test_replay_rejects_duplicate_bootstrap_after_valid_baseline(self):
+        baseline = self.store.append(self.claim_request()).stored_event
+        duplicate_bootstrap = self.store.append(
+            exact_request(
+                self.execution_id,
+                "exec_v1",
+                1,
+                "V1SnapshotBaselineImported",
+                "duplicate-bootstrap",
+                payload={
+                    "execution_state": "CLAIMED",
+                    "current_stage": "CLAIMED",
+                    "lease_state": "HELD",
+                    "history_before_baseline": "UNKNOWN",
+                },
+            )
+        ).stored_event
+
+        with self.assertRaisesRegex(ReplayError, "bootstrap event must be first"):
+            ReplayReducer().replay((baseline, duplicate_bootstrap))
+
+    def test_replay_rejects_version_gap_after_valid_baseline(self):
+        baseline = self.store.append(self.claim_request()).stored_event
+        gap = dataclasses.replace(
+            baseline,
+            cursor=2,
+            event=dataclasses.replace(
+                baseline.event,
+                event_id="gap-progress",
+                aggregate_version=3,
+                event_type="V1ExecutionProgressObserved",
+                payload_hash=None,
+                payload={
+                    **baseline.event.payload.to_dict(),
+                    "execution_state": "CODEX_RUNNING",
+                    "current_stage": "provider_wait",
+                    "turn_id": "turn-gap",
+                },
+            ),
+        )
+
+        with self.assertRaisesRegex(ReplayError, "version gap or order error"):
+            ReplayReducer().replay((baseline, gap))
+
+    def test_replay_rejects_wrong_attribution_and_turn_ownership(self):
+        baseline = self.store.append(
+            dataclasses.replace(
+                self.claim_request(),
+                payload={
+                    **self.claim_request().payload.to_dict(),
+                    "turn_id": "turn-owned",
+                },
+            )
+        ).stored_event
+        wrong_attribution = dataclasses.replace(
+            baseline,
+            cursor=2,
+            event=dataclasses.replace(
+                baseline.event,
+                event_id="wrong-attribution",
+                aggregate_version=2,
+                event_type="V1ExecutionProgressObserved",
+                payload_hash=None,
+                payload={
+                    **baseline.event.payload.to_dict(),
+                    "attribution": "UNATTRIBUTED",
+                    "execution_state": "CODEX_RUNNING",
+                },
+            ),
+        )
+        with self.assertRaisesRegex(ReplayError, "correlation conflict for attribution"):
+            ReplayReducer().replay((baseline, wrong_attribution))
+
+        result = self.store.append(
+            exact_request(
+                self.execution_id,
+                "exec_v1",
+                1,
+                "V1ExecutionResultPersistedObserved",
+                "turn-conflict",
+                payload={
+                    "exact_result_ref": "exec_v1",
+                    "turn_id": "turn-other",
+                    "result_status": "PASS",
+                },
+            )
+        ).stored_event
+        with self.assertRaisesRegex(ReplayError, "result turn correlation conflicts"):
+            ReplayReducer().replay((baseline, result))
+
     def test_offline_cli_replays_and_compares_without_writing(self):
         self.append_trace()
         service = ReplayService(self.store)
         replayed = service.replay_stream("execution", self.execution_id)
         expected = {
-            field: replayed.to_dict()[field]
-            for field in service.compare(replayed, {}).compared_fields
+            "aggregate_type": "execution",
+            "task_id": "shadow_task_1",
+            "execution_id": self.execution_id,
+            "source_task_id": "task_v1",
+            "source_execution_ref": "exec_v1",
+            "execution_state": "COMPLETED",
+            "current_stage": "COMPLETED",
+            "exact_result_ref": "exec_v1",
+            "result_status": "UNKNOWN",
+            "turn_id": "turn_1",
+            "lease_state": "RELEASED",
+            "resource_key": "UNKNOWN",
+            "stream_version": 5,
+            "attribution": "EXACT",
         }
         expected_path = Path(self.temp.name) / "expected.json"
         expected_path.write_text(json.dumps(expected), encoding="utf-8")
@@ -942,8 +1441,12 @@ class TaskRegistryShadowIntegrationTests(unittest.TestCase):
             "execution_state": final_task.execution_state,
             "current_stage": final_task.current_stage,
             "exact_result_ref": execution_ref,
+            "result_status": "PASS",
             "turn_id": turn_id,
             "lease_state": "RELEASED",
+            "resource_key": registry.worktree_key(
+                host="p620", cwd="/tmp/clinx-shadow", repository_origin=None
+            ),
             "stream_version": store.current_version("execution", execution_id),
             "attribution": "EXACT",
         }
@@ -1009,6 +1512,143 @@ class TaskRegistryShadowIntegrationTests(unittest.TestCase):
 
         self.assertEqual(replayed.history_before_baseline, "UNKNOWN")
         self.assertEqual(replayed.event_count, 1)
+
+    def test_snapshot_baseline_preserves_active_state_stage_and_turn_without_result(self):
+        v1 = TaskRegistry(self.db)
+        task = self.create_task(v1)
+        with v1.execution(task.task_id, execution_ref="exec_active", retain=True):
+            v1.set_execution_state(
+                task.task_id,
+                "CODEX_RUNNING",
+                current_stage="provider_wait",
+                codex_running=True,
+                turn_id="turn_existing",
+            )
+
+        shadow = TaskRegistry(self.db, shadow_events=True)
+        shadow.import_shadow_baseline(
+            task_id=task.task_id, execution_ref="exec_active"
+        )
+        execution_id = shadow.shadow_event_store.map_legacy_identity(
+            source_system="clinx_v1",
+            source_type="execution_ref",
+            source_identity="exec_active",
+            target_type="execution",
+        ).target_id
+        replayed = ReplayService(shadow.shadow_event_store).replay_stream(
+            "execution", execution_id
+        )
+        self.assertEqual(replayed.execution_state, "CODEX_RUNNING")
+        self.assertEqual(replayed.current_stage, "provider_wait")
+        self.assertEqual(replayed.turn_id, "turn_existing")
+        self.assertIsNone(replayed.exact_result_ref)
+        self.assertEqual(replayed.result_status, "UNKNOWN")
+
+        event = shadow.shadow_event_store.read_events(
+            aggregate_type="execution", aggregate_id=execution_id
+        )[0].event
+        provenance = event.payload.to_dict()["field_provenance"]
+        self.assertEqual(
+            provenance["execution_state"],
+            "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
+        )
+        self.assertEqual(
+            provenance["current_stage"],
+            "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
+        )
+        self.assertEqual(
+            provenance["turn_id"],
+            "V1_TASK_PROJECTION_EXACT_ACTIVE_EXECUTION",
+        )
+
+    def test_retained_old_execution_does_not_borrow_new_task_projection(self):
+        v1 = TaskRegistry(self.db)
+        task = self.create_task(v1)
+        with v1.execution(task.task_id, execution_ref="exec_old", retain=True):
+            v1.set_execution_state(
+                task.task_id,
+                "CODEX_RUNNING",
+                current_stage="old_provider_wait",
+                codex_running=True,
+                turn_id="turn_old",
+            )
+            v1.record_execution_result(
+                execution_ref="exec_old",
+                task_id=task.task_id,
+                turn_id="turn_old",
+                status="PASS",
+                summary="old result",
+                changed_files="NONE",
+                validation="PASS",
+                blockers="NONE",
+                next_state="COMPLETED",
+                raw_result="old result",
+            )
+        v1.reconcile_terminal("exec_old", "COMPLETED")
+
+        with v1.execution(task.task_id, execution_ref="exec_new", retain=True):
+            v1.set_execution_state(
+                task.task_id,
+                "CODEX_RUNNING",
+                current_stage="new_provider_wait",
+                codex_running=True,
+                turn_id="turn_new",
+            )
+
+        shadow = TaskRegistry(self.db, shadow_events=True)
+        shadow.import_shadow_baseline(task_id=task.task_id, execution_ref="exec_old")
+        old_id = shadow.shadow_event_store.map_legacy_identity(
+            source_system="clinx_v1",
+            source_type="execution_ref",
+            source_identity="exec_old",
+            target_type="execution",
+        ).target_id
+        replayed = ReplayService(shadow.shadow_event_store).replay_stream(
+            "execution", old_id
+        )
+        self.assertEqual(replayed.execution_state, "UNKNOWN")
+        self.assertEqual(replayed.current_stage, "COMPLETED")
+        self.assertEqual(replayed.turn_id, "turn_old")
+        self.assertEqual(replayed.result_status, "PASS")
+        self.assertNotEqual(replayed.current_stage, "new_provider_wait")
+        self.assertNotEqual(replayed.turn_id, "turn_new")
+
+    def test_legacy_snapshot_then_new_cycle_replays_without_invented_identity(self):
+        v1 = TaskRegistry(self.db)
+        task = self.create_task(v1)
+        legacy = v1.execution(task.task_id, execution_ref=None, retain=True)
+        legacy.__enter__()
+        try:
+            shadow = TaskRegistry(self.db, shadow_events=True)
+            shadow.import_shadow_baseline(task_id=task.task_id)
+            shadow.release_execution(task.task_id, None)
+            with shadow.execution(task.task_id, execution_ref=None):
+                pass
+        finally:
+            legacy.__exit__(None, None, None)
+
+        store = shadow.shadow_event_store
+        task_id = store.map_legacy_identity(
+            source_system="clinx_v1",
+            source_type="task_id",
+            source_identity=task.task_id,
+            target_type="task",
+        ).target_id
+        events = store.read_events(aggregate_type="task", aggregate_id=task_id)
+        self.assertEqual(
+            [event.event.event_type for event in events],
+            [
+                "V1SnapshotBaselineImported",
+                "V1UnattributedLeaseReleasedObserved",
+                "V1UnattributedExecutionClaimObserved",
+                "V1UnattributedLeaseReleasedObserved",
+            ],
+        )
+        replayed = ReplayService(store).replay_stream("task", task_id)
+        self.assertEqual(replayed.attribution, "UNATTRIBUTED")
+        self.assertIsNone(replayed.execution_id)
+        self.assertEqual(replayed.lease_state, "RELEASED")
+        self.assertEqual(replayed.event_count, 4)
 
     def test_sequential_v1_executions_map_to_separate_streams(self):
         registry = TaskRegistry(self.db, shadow_events=True)
