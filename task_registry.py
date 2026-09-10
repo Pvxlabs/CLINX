@@ -467,8 +467,16 @@ def _now() -> str:
 class TaskRegistry:
     """SQLite-backed durable task registry with one active execution lease."""
 
-    def __init__(self, path: Path | str):
+    def __init__(
+        self,
+        path: Path | str,
+        *,
+        shadow_events: bool = False,
+        shadow_fault_injector: Any = None,
+    ):
         self.path = Path(path).expanduser()
+        self.shadow_events_enabled = bool(shadow_events)
+        self._shadow_store: Any = None
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             self._initialize()
@@ -478,6 +486,13 @@ class TaskRegistry:
             # CLINX process will run migrations when its DB is writable.
             if "readonly" not in str(exc).casefold():
                 raise
+        if self.shadow_events_enabled:
+            from shadow_ledger import EventStore
+
+            self._shadow_store = EventStore(
+                self.path, fault_injector=shadow_fault_injector
+            )
+            self._shadow_store.initialize()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
@@ -485,6 +500,192 @@ class TaskRegistry:
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
+
+    @property
+    def shadow_event_store(self) -> Any:
+        """Return the explicitly enabled local shadow ledger, if any."""
+        return self._shadow_store
+
+    @contextlib.contextmanager
+    def _shadow_write_connection(self) -> Iterator[sqlite3.Connection]:
+        """Keep the default V1 path unchanged; group dual writes only when on."""
+        with self._connect() as conn:
+            if self._shadow_store is None:
+                yield conn
+                return
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                yield conn
+                conn.execute("COMMIT")
+            except Exception:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+
+    def _append_shadow_observation(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        task_id: str,
+        execution_ref: str | None,
+        event_type: str,
+        observed_at: str,
+        payload: dict[str, Any],
+        require_empty_stream: bool = False,
+    ) -> None:
+        if self._shadow_store is None:
+            return
+        from domain import EventActor
+        from shadow_ledger import AppendRequest, OutboxRequest
+
+        with self._shadow_store.unit_of_work(conn) as unit:
+            task_mapping = unit.map_legacy_identity(
+                source_system="clinx_v1",
+                source_type="task_id",
+                source_identity=task_id,
+                target_type="task",
+            )
+            identity = {
+                "task_id": task_mapping.target_id,
+                "source_task_id": task_id,
+            }
+            if execution_ref:
+                execution_mapping = unit.map_legacy_identity(
+                    source_system="clinx_v1",
+                    source_type="execution_ref",
+                    source_identity=execution_ref,
+                    target_type="execution",
+                )
+                aggregate_type = "execution"
+                aggregate_id = execution_mapping.target_id
+                identity.update({
+                    "execution_id": execution_mapping.target_id,
+                    "source_execution_ref": execution_ref,
+                    "attribution": "EXACT",
+                })
+                correlation_id = execution_ref
+            else:
+                aggregate_type = "task"
+                aggregate_id = task_mapping.target_id
+                identity["attribution"] = "UNATTRIBUTED"
+                correlation_id = task_id
+            body = dict(payload)
+            body.update(identity)
+            body["observed_at"] = observed_at
+            encoded = json.dumps(
+                body,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            semantic_key = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+            idempotency_key = f"{event_type}:{semantic_key}"
+            expected_version = unit.current_version(aggregate_type, aggregate_id)
+            if require_empty_stream and expected_version != 0:
+                raise TaskRegistryError(
+                    "shadow baseline requires an empty aggregate stream"
+                )
+            unit.append(AppendRequest(
+                aggregate_type=aggregate_type,
+                aggregate_id=aggregate_id,
+                expected_version=expected_version,
+                event_type=event_type,
+                actor=EventActor("v1_registry", "task_registry"),
+                idempotency_scope=f"{aggregate_type}:{aggregate_id}",
+                idempotency_key=idempotency_key,
+                payload=body,
+                occurred_at=observed_at,
+                correlation_id=correlation_id,
+                outbox=(OutboxRequest(
+                    destination="shadow_projection",
+                    idempotency_key=f"{aggregate_type}:{aggregate_id}:{idempotency_key}",
+                    payload={
+                        "aggregate_type": aggregate_type,
+                        "aggregate_id": aggregate_id,
+                        "event_type": event_type,
+                    },
+                ),),
+            ))
+
+    def import_shadow_baseline(
+        self, *, task_id: str, execution_ref: str | None = None
+    ) -> None:
+        """Import one declared-current V1 snapshot without inventing history."""
+        if self._shadow_store is None:
+            raise TaskRegistryError("shadow event ledger is not enabled")
+        with self._shadow_write_connection() as conn:
+            task = conn.execute(
+                "SELECT * FROM tasks WHERE task_id=?", (task_id,)
+            ).fetchone()
+            if task is None:
+                raise UnknownTaskError(f"Unknown task: {task_id}")
+            exact_result = None
+            if execution_ref is not None:
+                execution = conn.execute(
+                    "SELECT * FROM executions WHERE task_id=? AND execution_ref=?",
+                    (task_id, execution_ref),
+                ).fetchone()
+                retained = False
+                if execution is None:
+                    execution = conn.execute(
+                        "SELECT * FROM execution_history WHERE task_id=? AND execution_ref=?",
+                        (task_id, execution_ref),
+                    ).fetchone()
+                    retained = execution is not None
+                if execution is None:
+                    raise TaskRegistryError(
+                        f"Execution ref {execution_ref} is not owned by task {task_id}"
+                    )
+                exact_result = conn.execute(
+                    "SELECT * FROM execution_results WHERE execution_ref=? AND task_id=?",
+                    (execution_ref, task_id),
+                ).fetchone()
+                lease = conn.execute(
+                    """SELECT 1 FROM worktree_leases
+                       WHERE task_id=? AND execution_ref=?""",
+                    (task_id, execution_ref),
+                ).fetchone()
+                state = execution["stage"]
+                stage = execution["stage"]
+                turn_id = exact_result["turn_id"] if exact_result is not None else None
+                lease_state = "HELD" if lease is not None else (
+                    "RELEASED" if retained else "UNKNOWN"
+                )
+                observed_at = (
+                    execution["released_at"] if retained else execution["acquired_at"]
+                )
+            else:
+                state = task["execution_state"]
+                stage = task["current_stage"]
+                turn_id = None
+                lease = conn.execute(
+                    """SELECT 1 FROM worktree_leases
+                       WHERE task_id=? AND execution_ref IS NULL""",
+                    (task_id,),
+                ).fetchone()
+                lease_state = "HELD" if lease is not None else "UNKNOWN"
+                observed_at = task["updated_at"]
+            self._append_shadow_observation(
+                conn,
+                task_id=task_id,
+                execution_ref=execution_ref,
+                event_type="V1SnapshotBaselineImported",
+                observed_at=observed_at,
+                require_empty_stream=True,
+                payload={
+                    "execution_state": state,
+                    "current_stage": stage,
+                    "turn_id": turn_id,
+                    "lease_state": lease_state,
+                    "exact_result_ref": (
+                        exact_result["execution_ref"]
+                        if exact_result is not None else None
+                    ),
+                    "history_before_baseline": "UNKNOWN",
+                    "baseline_source": "V1_CURRENT_SNAPSHOT",
+                },
+            )
 
     def _initialize(self) -> None:
         with self._connect() as conn:
@@ -1968,6 +2169,7 @@ class TaskRegistry:
         failure_stage: str | None | object = _UNSET,
         failure_code: str | None | object = _UNSET,
         failure_evidence: str | None | object = _UNSET,
+        _shadow_execution_ref: str | None | object = _UNSET,
     ) -> TaskRecord:
         allowed = {
             "QUEUED", "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
@@ -2024,7 +2226,7 @@ class TaskRegistry:
             or task.failure_evidence != effective_failure_evidence
         )
         stamp = _now() if changed else task.last_progress_at
-        with self._connect() as conn:
+        with self._shadow_write_connection() as conn:
             conn.execute(
                 """UPDATE tasks SET execution_state=?, current_stage=?, current_blocker=?,
                    last_progress_at=?, codex_running=?, turn_id=?, retry_required=?,
@@ -2039,6 +2241,47 @@ class TaskRegistry:
                 "AND stage NOT IN (?,?,?,?,?,?,?)",
                 (str(stage or state), task_id, *TERMINAL_EXECUTION_STAGES),
             )
+            if changed and self._shadow_store is not None:
+                if _shadow_execution_ref is _UNSET:
+                    execution = conn.execute(
+                        "SELECT execution_ref FROM executions WHERE task_id=?",
+                        (task_id,),
+                    ).fetchone()
+                    observed_execution_ref = (
+                        execution["execution_ref"] if execution is not None else None
+                    )
+                else:
+                    observed_execution_ref = _shadow_execution_ref
+                terminal = state in {
+                    "BLOCKED", "FAILED", "RECOVERY_REQUIRED", "IN_REVIEW",
+                    "COMPLETED", "CANCELLED", "STOPPED",
+                }
+                self._append_shadow_observation(
+                    conn,
+                    task_id=task_id,
+                    execution_ref=(
+                        observed_execution_ref
+                        if isinstance(observed_execution_ref, str)
+                        and observed_execution_ref.strip()
+                        else None
+                    ),
+                    event_type=(
+                        "V1TerminalStateObserved"
+                        if terminal else "V1ExecutionProgressObserved"
+                    ),
+                    observed_at=stamp,
+                    payload={
+                        "execution_state": state,
+                        "current_stage": str(stage or state),
+                        "current_blocker": blocker,
+                        "codex_running": running,
+                        "turn_id": effective_turn,
+                        "retry_required": retry,
+                        "failure_stage": effective_failure_stage,
+                        "failure_code": effective_failure_code,
+                        "failure_evidence": effective_failure_evidence,
+                    },
+                )
         return self.get_task(task_id)
 
     def request_cancellation(self, execution_ref: str) -> TaskRecord:
@@ -2066,6 +2309,7 @@ class TaskRegistry:
             failure_stage=None,
             failure_code=None,
             failure_evidence=None,
+            _shadow_execution_ref=execution_ref,
         )
 
     def mark_cancellation_pending(
@@ -2084,6 +2328,7 @@ class TaskRegistry:
             failure_stage="cancel",
             failure_code="PROVIDER_UNAVAILABLE",
             failure_evidence=(evidence or "provider cancellation unavailable")[:4000],
+            _shadow_execution_ref=execution_ref,
         )
 
     def finalize_cancellation(self, execution_ref: str) -> TaskRecord:
@@ -2100,6 +2345,7 @@ class TaskRegistry:
             failure_stage=None,
             failure_code=None,
             failure_evidence=None,
+            _shadow_execution_ref=execution_ref,
         )
         # Archive the terminal identity for idempotent repeated cancellation,
         # then release the active execution and its mutating worktree lease.
@@ -2155,6 +2401,7 @@ class TaskRegistry:
                 failure_stage=failure_stage,
                 failure_code=failure_code,
                 failure_evidence=evidence,
+                _shadow_execution_ref=execution_ref,
             )
             with self._connect() as conn:
                 conn.execute(
@@ -2171,6 +2418,7 @@ class TaskRegistry:
             failure_stage=failure_stage,
             failure_code=failure_code,
             failure_evidence=evidence,
+            _shadow_execution_ref=execution_ref,
         )
         # Keep the terminal execution row so its creation-time routing
         # identity remains available for status/readback.  Only the mutable
@@ -2302,7 +2550,7 @@ class TaskRegistry:
                 )
             return existing
         stamp = _now()
-        with self._connect() as conn:
+        with self._shadow_write_connection() as conn:
             conn.execute(
                 """INSERT INTO execution_results
                 (execution_ref,task_id,turn_id,status,summary,changed_files,validation,
@@ -2311,6 +2559,19 @@ class TaskRegistry:
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,'PENDING',NULL,NULL)""",
                 (execution_ref, task_id, turn_id, status, summary, changed_files,
                  validation, blockers, next_state, raw_result, stamp),
+            )
+            self._append_shadow_observation(
+                conn,
+                task_id=task_id,
+                execution_ref=execution_ref,
+                event_type="V1ExecutionResultPersistedObserved",
+                observed_at=stamp,
+                payload={
+                    "exact_result_ref": execution_ref,
+                    "turn_id": turn_id,
+                    "result_status": status,
+                    "evidence_ref": execution_ref,
+                },
             )
         return self.get_execution_result(execution_ref)  # type: ignore[return-value]
 
@@ -2649,10 +2910,24 @@ class TaskRegistry:
             raise TaskRegistryError("missing host execution fields: " + ", ".join(missing))
         columns = tuple(values)
         placeholders = ",".join("?" for _ in columns)
-        with self._connect() as conn:
+        with self._shadow_write_connection() as conn:
             conn.execute(
                 f"INSERT INTO host_executions({','.join(columns)}) VALUES ({placeholders})",
                 tuple(values[column] for column in columns),
+            )
+            self._append_shadow_observation(
+                conn,
+                task_id=values["task_id"],
+                execution_ref=values["execution_ref"],
+                event_type="V1HostExecutionStartedObserved",
+                observed_at=values["started_at"],
+                payload={
+                    "evidence_ref": values["host_execution_ref"],
+                    "host_result_state": values["result_state"],
+                    "operation_class": values["operation_class"],
+                    "capability": values["capability"],
+                    "operation": values["operation"],
+                },
             )
 
     def complete_host_execution(self, host_execution_ref: str, **values: Any) -> None:
@@ -2665,13 +2940,41 @@ class TaskRegistry:
         if not values or not set(values).issubset(allowed):
             raise TaskRegistryError("invalid host execution completion fields")
         assignments = ",".join(f"{column}=?" for column in values)
-        with self._connect() as conn:
+        with self._shadow_write_connection() as conn:
+            before = conn.execute(
+                "SELECT * FROM host_executions WHERE host_execution_ref=?",
+                (host_execution_ref,),
+            ).fetchone()
+            if before is None:
+                raise TaskRegistryError(f"Unknown host execution: {host_execution_ref}")
             updated = conn.execute(
                 f"UPDATE host_executions SET {assignments} WHERE host_execution_ref=?",
                 (*values.values(), host_execution_ref),
             ).rowcount
-        if updated != 1:
-            raise TaskRegistryError(f"Unknown host execution: {host_execution_ref}")
+            if updated != 1:
+                raise TaskRegistryError(f"Unknown host execution: {host_execution_ref}")
+            changed = any(before[column] != value for column, value in values.items())
+            if changed:
+                completed = conn.execute(
+                    "SELECT * FROM host_executions WHERE host_execution_ref=?",
+                    (host_execution_ref,),
+                ).fetchone()
+                self._append_shadow_observation(
+                    conn,
+                    task_id=completed["task_id"],
+                    execution_ref=completed["execution_ref"],
+                    event_type="V1HostEvidenceObserved",
+                    observed_at=completed["completed_at"] or _now(),
+                    payload={
+                        "evidence_ref": host_execution_ref,
+                        "host_result_state": completed["result_state"],
+                        "exit_code": completed["exit_code"],
+                        "stdout_sha256": completed["stdout_sha256"],
+                        "stderr_sha256": completed["stderr_sha256"],
+                        "timed_out": bool(completed["timed_out"]),
+                        "cancel_requested": bool(completed["cancel_requested"]),
+                    },
+                )
 
     def request_host_execution_cancellation(self, execution_ref: str) -> int:
         with self._connect() as conn:
@@ -2810,18 +3113,29 @@ class TaskRegistry:
         the active row is deleted. Legacy/null-ref cleanup still deletes its
         row because there is no stable execution identity to retain.
         """
-        with self._connect() as conn:
+        with self._shadow_write_connection() as conn:
             if execution_ref:
                 row = conn.execute(
-                    "SELECT worktree_key FROM executions WHERE task_id=? AND execution_ref=?",
+                    "SELECT worktree_key,execution_ref FROM executions "
+                    "WHERE task_id=? AND execution_ref=?",
                     (task_id, execution_ref),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "SELECT worktree_key FROM executions WHERE task_id=?", (task_id,)
+                    "SELECT worktree_key,execution_ref FROM executions WHERE task_id=?",
+                    (task_id,),
                 ).fetchone()
+            lease = None
             if row is not None:
-                conn.execute("DELETE FROM worktree_leases WHERE worktree_key=?", (row["worktree_key"],))
+                lease = conn.execute(
+                    "SELECT worktree_key FROM worktree_leases WHERE worktree_key=?",
+                    (row["worktree_key"],),
+                ).fetchone()
+                conn.execute(
+                    "DELETE FROM worktree_leases WHERE worktree_key=?",
+                    (row["worktree_key"],),
+                )
+            released_at = _now()
             if retain_history and execution_ref:
                 conn.execute(
                     """INSERT OR IGNORE INTO execution_history
@@ -2832,7 +3146,7 @@ class TaskRegistry:
                               resolved_model,stage,acquired_at,routing_identity_json,
                               execution_policy_json,?
                        FROM executions WHERE task_id=? AND execution_ref=?""",
-                    (_now(), task_id, execution_ref),
+                    (released_at, task_id, execution_ref),
                 )
                 # A retained recovery record can later receive exact provider
                 # result evidence. Keep its historical terminal stage aligned
@@ -2851,6 +3165,26 @@ class TaskRegistry:
                 + (" AND execution_ref=?" if execution_ref else ""),
                 (task_id, execution_ref) if execution_ref else (task_id,),
             )
+            if row is not None and lease is not None:
+                observed_ref = row["execution_ref"]
+                self._append_shadow_observation(
+                    conn,
+                    task_id=task_id,
+                    execution_ref=(
+                        observed_ref
+                        if isinstance(observed_ref, str) and observed_ref.strip()
+                        else None
+                    ),
+                    event_type=(
+                        "V1LeaseReleasedObserved"
+                        if observed_ref else "V1UnattributedLeaseReleasedObserved"
+                    ),
+                    observed_at=released_at,
+                    payload={
+                        "lease_state": "RELEASED",
+                        "resource_key": row["worktree_key"],
+                    },
+                )
 
     def get_linear_audit(self, task_id: str) -> LinearAuditRecord | None:
         self.get_task(task_id)
@@ -2935,6 +3269,37 @@ class TaskRegistry:
                         raise TaskExecutionBusy(f"Task already has an active execution: {task_id}") from exc
                 except sqlite3.IntegrityError as exc:
                     raise TaskExecutionBusy(f"Task already has an active execution: {task_id}") from exc
+                execution_row = conn.execute(
+                    "SELECT acquired_at FROM executions WHERE task_id=?",
+                    (task_id,),
+                ).fetchone()
+                lease_row = conn.execute(
+                    "SELECT acquired_at FROM worktree_leases WHERE worktree_key=?",
+                    (worktree_key,),
+                ).fetchone()
+                self._append_shadow_observation(
+                    conn,
+                    task_id=task_id,
+                    execution_ref=(
+                        execution_ref
+                        if isinstance(execution_ref, str) and execution_ref.strip()
+                        else None
+                    ),
+                    event_type=(
+                        "V1ExecutionClaimObserved"
+                        if execution_ref else "V1UnattributedExecutionClaimObserved"
+                    ),
+                    observed_at=execution_row["acquired_at"],
+                    payload={
+                        "execution_state": "CLAIMED",
+                        "current_stage": "CLAIMED",
+                        "lease_state": "HELD",
+                        "resource_key": worktree_key,
+                        "lease_acquired_at": lease_row["acquired_at"],
+                        "history_before_baseline": "UNKNOWN",
+                        "turn_id": task.turn_id,
+                    },
+                )
                 conn.execute("COMMIT")
             except Exception:
                 conn.execute("ROLLBACK")
