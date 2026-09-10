@@ -72,7 +72,7 @@ from host_executor import (
     HostExecutorConfig,
     RegisteredTarget,
 )
-from m9_integration import ExecutionResultService
+from m9_integration import ExecutionFinalizer, ExecutionResultService, parse_codex_result
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 BRIDGE_VERSION = "1.0.0-m6"
@@ -2207,6 +2207,22 @@ class TaskDispatcher:
         """Persist machine execution state without changing Linear's coarse state."""
         self.tasks.set_execution_state(task_id, state, **kwargs)
 
+    def _finalize_pre_turn_failure(
+        self,
+        *,
+        task_id: str,
+        execution_ref: str | None,
+        evidence: str,
+        failure_code: str,
+    ) -> None:
+        ExecutionFinalizer(self.tasks, getattr(self, "linear", None)).finalize_pre_turn(
+            task_id=task_id,
+            execution_ref=execution_ref,
+            state="BLOCKED",
+            evidence=evidence,
+            failure_code=failure_code,
+        )
+
     def _workspace(self, host: str | None) -> WorkspaceConfig:
         if host:
             try:
@@ -2801,13 +2817,11 @@ class TaskDispatcher:
                             retry_required=False,
                         )
                 except IdentityGuardError:
-                    self._execution_state(
-                        leased.task_id,
-                        "BLOCKED",
-                        current_stage="project identity guard",
-                        current_blocker="pre-dispatch handoff failed",
-                        codex_running=False,
-                        retry_required=True,
+                    self._finalize_pre_turn_failure(
+                        task_id=leased.task_id,
+                        execution_ref=execution_ref,
+                        evidence="pre-dispatch handoff failed",
+                        failure_code="DISPATCH_IDENTITY_GUARD_FAILED",
                     )
                     raise
                 except AppServerError:
@@ -2818,13 +2832,11 @@ class TaskDispatcher:
                     )
                     raise
                 except Exception as exc:
-                    self._execution_state(
-                        leased.task_id,
-                        "BLOCKED",
-                        current_stage="dispatch",
-                        current_blocker=str(exc)[:2000],
-                        codex_running=False,
-                        retry_required=True,
+                    self._finalize_pre_turn_failure(
+                        task_id=leased.task_id,
+                        execution_ref=execution_ref,
+                        evidence=str(exc)[:4000],
+                        failure_code="DISPATCH_FAILURE",
                     )
                     raise
             if issue_id:
@@ -3017,10 +3029,11 @@ class TaskDispatcher:
                         retry_required=False,
                     )
             except IdentityGuardError:
-                self._execution_state(
-                    leased.task_id, "BLOCKED", current_stage="project identity guard",
-                    current_blocker="pre-dispatch handoff failed", codex_running=False,
-                    retry_required=True,
+                self._finalize_pre_turn_failure(
+                    task_id=leased.task_id,
+                    execution_ref=execution_ref,
+                    evidence="pre-dispatch handoff failed",
+                    failure_code="DISPATCH_IDENTITY_GUARD_FAILED",
                 )
                 raise
             except AppServerError:
@@ -3031,10 +3044,11 @@ class TaskDispatcher:
                 )
                 raise
             except Exception as exc:
-                self._execution_state(
-                    leased.task_id, "BLOCKED", current_stage="dispatch",
-                    current_blocker=str(exc)[:2000], codex_running=False,
-                    retry_required=True,
+                self._finalize_pre_turn_failure(
+                    task_id=leased.task_id,
+                    execution_ref=execution_ref,
+                    evidence=str(exc)[:4000],
+                    failure_code="DISPATCH_FAILURE",
                 )
                 raise
         if issue_id:
@@ -3358,7 +3372,11 @@ class TaskDispatcher:
                 "retry_required": True,
                 "routing_identity": route.public_dict() if route is not None else None,
             }
-        cancelled = self.tasks.finalize_cancellation(execution_ref)
+        cancelled = ExecutionFinalizer(
+            self.tasks, getattr(self, "linear", None)
+        ).finalize_cancellation(
+            execution_ref
+        )
         return {
             "execution_ref": execution_ref,
             "task_ref": cancelled.task_id,
@@ -3377,6 +3395,18 @@ class TaskDispatcher:
         if value is None:
             value = row.get("state") or row.get("statusType")
         return str(value or "UNKNOWN").replace("_", "").replace("-", "").casefold()
+
+    @staticmethod
+    def _provider_terminal_outcome(status: str) -> str | None:
+        if status in {"completed", "succeeded", "success"}:
+            return "PROVIDER_TERMINAL"
+        if status in {"failed", "error", "systemerror", "errored"}:
+            return "PROVIDER_FAILED"
+        if status in {"timeout", "timedout"}:
+            return "PROVIDER_TIMEOUT"
+        if status in {"disconnected", "connectionlost", "connectionclosed"}:
+            return "PROVIDER_DISCONNECTED"
+        return None
 
     def reconcile_execution(
         self, execution_ref: str | None = None, *, task_id: str | None = None
@@ -3415,14 +3445,20 @@ class TaskDispatcher:
         else:
             task = self.tasks.get_task(active["task_id"])
 
+        finalizer = ExecutionFinalizer(self.tasks, getattr(self, "linear", None))
+
         def terminalize(state: str, **kwargs: Any):
             if orphaned:
-                return self.tasks.reconcile_orphaned_terminal(task.task_id, state, **kwargs)
+                return finalizer.finalize_orphaned(task_id=task.task_id, state=state, **kwargs)
+            if state == "CANCELLED":
+                return finalizer.finalize_cancellation(execution_ref)
             if exact_turn_id and task.turn_id and task.turn_id != exact_turn_id:
                 # Late evidence from an older execution is readable only under
                 # that execution; it must not mutate the newer task projection.
                 return task
-            return self.tasks.reconcile_terminal(execution_ref, state, **kwargs)
+            raise TaskRegistryError(
+                "terminal provider evidence without an exact finalizer-owned path"
+            )
 
         binding = self.tasks.get_binding(task.task_id)
         if binding is None:
@@ -3444,6 +3480,64 @@ class TaskDispatcher:
             repository_origin=task.repository_origin, branch=task.branch,
             workspace_alias=task.workspace_alias,
         )
+
+        def finalize_provider(
+            provider_outcome: str, provider_status: str, raw_result: str | None = None
+        ) -> dict[str, Any]:
+            if orphaned:
+                try:
+                    parsed = parse_codex_result(raw_result) if raw_result else None
+                except Exception:
+                    parsed = None
+                if provider_outcome == "PROVIDER_FAILED":
+                    final_state = "FAILED"
+                elif provider_outcome in {"PROVIDER_TIMEOUT", "PROVIDER_DISCONNECTED"}:
+                    final_state = "BLOCKED"
+                elif parsed is not None:
+                    final_state = "BLOCKED" if parsed.status == "BLOCKED" else "COMPLETED"
+                else:
+                    final_state = "BLOCKED"
+                terminalize(
+                    final_state,
+                    retry_required=final_state == "BLOCKED",
+                    failure_stage="provider" if final_state in {"FAILED", "BLOCKED"} else None,
+                    failure_code=(
+                        provider_outcome if provider_outcome != "PROVIDER_TERMINAL" else None
+                    ),
+                    evidence=(
+                        f"provider status={provider_status}"
+                        if provider_outcome != "PROVIDER_TERMINAL" else None
+                    ),
+                )
+                return {"state": final_state, "authoritative": True}
+
+            index = self.tasks.get_task_index(task.task_id)
+            linear = getattr(self, "linear", None)
+            finalized = ExecutionFinalizer(self.tasks, linear).finalize(
+                execution_ref=execution_ref,
+                task_id=task.task_id,
+                turn_id=exact_turn_id,
+                raw_result=raw_result,
+                issue_id=index.issue_id if index is not None else "",
+                team_id=getattr(self.cfg, "team_id", None),
+                review_state=getattr(self.cfg, "review_state", ""),
+                blocked_state=getattr(self.cfg, "todo_state", ""),
+                provider_outcome=provider_outcome,
+                provider_status=provider_status,
+            )
+            final_state = finalized.terminal_state or (
+                "BLOCKED" if finalized.status == "BLOCKED" else "COMPLETED"
+            )
+            return {
+                "state": final_state,
+                "authoritative": True,
+                "finalized": True,
+                "provider_outcome": provider_outcome,
+                "result_source": (
+                    "provider" if raw_result and finalized.raw_result == raw_result else "finalizer"
+                ),
+            }
+
         route: RoutingIdentity | None = None
         bounded_items: list[dict[str, Any]] = []
         try:
@@ -3473,10 +3567,12 @@ class TaskDispatcher:
                     if running is not None:
                         return {"state": "CODEX_RUNNING", "authoritative": True,
                                 "active_turn_present": True}
-                    terminal = {"completed", "succeeded", "success", "cancelled", "canceled",
-                                "interrupted", "aborted", "failed", "error", "systemerror", "errored"}
+                    cancelled = {"cancelled", "canceled", "interrupted", "aborted"}
                     if page.get("nextCursor") or any(not isinstance(row, dict)
-                            or self._turn_status(row) not in terminal for row in rows):
+                            or (
+                                self._turn_status(row) not in cancelled
+                                and self._provider_terminal_outcome(self._turn_status(row)) is None
+                            ) for row in rows):
                         return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
                     terminalize("COMPLETED", retry_required=False)
                     return {"state": "COMPLETED", "authoritative": True,
@@ -3527,14 +3623,13 @@ class TaskDispatcher:
             }
         except AppServerError as exc:
             evidence = str(exc)
-            # A child exit/closed byte channel is terminal evidence for this
-            # local execution; a generic reachability failure is uncertain.
-            if "exit " in evidence.casefold() or "byte transport closed" in evidence.casefold():
-                terminalize(
-                    "RECOVERY_REQUIRED", failure_stage="transport",
-                    failure_code="APP_SERVER_TRANSPORT_FAILURE", evidence=evidence,
+            # A child exit/closed byte channel is definitive disconnect
+            # evidence for this exact execution. Generic reachability failure
+            # remains retryable observation uncertainty.
+            if "exit " in evidence.casefold() or "transport closed" in evidence.casefold():
+                return finalize_provider(
+                    "PROVIDER_DISCONNECTED", evidence,
                 )
-                return {"state": "RECOVERY_REQUIRED", "authoritative": True, "evidence": evidence}
             if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
                 self.tasks.mark_cancellation_pending(execution_ref, evidence=evidence)
                 return {"state": "CANCELLATION_PENDING", "authoritative": False, "evidence": evidence}
@@ -3582,88 +3677,15 @@ class TaskDispatcher:
                 retry_required=False,
             )
             return {"state": "CANCELLED", "authoritative": True}
-        if status in {"completed", "succeeded", "success"}:
-            result = self.tasks.get_execution_result(execution_ref) if execution_ref else None
-            if result is not None:
-                final_state = "BLOCKED" if result.status == "BLOCKED" else "COMPLETED"
-                terminalize(
-                    final_state, failure_stage=None,
-                    failure_code=None, evidence=None,
-                    retry_required=final_state == "BLOCKED",
-                )
-                return {"state": final_state, "authoritative": True}
+        provider_outcome = self._provider_terminal_outcome(status)
+        if provider_outcome is not None:
             # A turn summary can contain both the prompt and its response.  Only
             # the provider response may satisfy the strict result contract.
             raw_result = self._turn_text(row.get("items", row), assistant_only=True)
             if not raw_result and bounded_items:
                 raw_result = self._turn_text(bounded_items, assistant_only=True)
-            if raw_result:
-                index = self.tasks.get_task_index(task.task_id)
-                try:
-                    from m9_integration import parse_codex_result
-                    parsed = parse_codex_result(raw_result)
-                except Exception:
-                    parsed = None
-                if parsed is not None:
-                    if orphaned:
-                        # A legacy row has no safe execution identity under
-                        # which to persist a new result.  The exact provider
-                        # turn is still authoritative for the task terminal
-                        # projection; preserve the parsed outcome and release
-                        # only this null-ref lease.
-                        final_state = "BLOCKED" if parsed.status == "BLOCKED" else "COMPLETED"
-                        terminalize(final_state, retry_required=final_state == "BLOCKED")
-                        return {"state": final_state, "authoritative": True}
-                    if self.linear is not None and index is not None:
-                        try:
-                            states = self.linear.team_states(self.cfg.team_id)
-                            ExecutionResultService(self.tasks, self.linear).receive_and_writeback(
-                                execution_ref=execution_ref,
-                                task_id=task.task_id,
-                                turn_id=exact_turn_id,
-                                raw_result=raw_result,
-                                issue_id=index.issue_id,
-                                review_state_id=states.get(self.cfg.review_state),
-                                blocked_state_id=states.get(self.cfg.todo_state),
-                            )
-                        except Exception as exc:
-                            self.tasks.set_execution_state(
-                                task.task_id, "RECOVERY_REQUIRED", current_stage="result",
-                                current_blocker=str(exc)[:2000], codex_running=False,
-                                retry_required=True, failure_stage="linear_writeback",
-                                failure_code="LINEAR_AUDIT_SYNC_FAILED",
-                                failure_evidence=str(exc)[:4000],
-                            )
-                            return {"state": "RECOVERY_REQUIRED", "authoritative": True}
-                    else:
-                        self.tasks.record_execution_result(
-                            execution_ref=execution_ref, task_id=task.task_id,
-                            turn_id=exact_turn_id, status=parsed.status,
-                            summary=parsed.summary, changed_files=parsed.changed_files,
-                            validation=parsed.validation, blockers=parsed.blockers,
-                            next_state=parsed.next_state, raw_result=raw_result,
-                        )
-                        final_state = "BLOCKED" if parsed.status == "BLOCKED" else "COMPLETED"
-                        terminalize(
-                            final_state,
-                            retry_required=final_state == "BLOCKED",
-                        )
-                    return {
-                        "state": "BLOCKED" if parsed.status == "BLOCKED" else "COMPLETED",
-                        "authoritative": True,
-                    }
-            terminalize(
-                "RECOVERY_REQUIRED", failure_stage="result",
-                failure_code="TURN_COMPLETED_WITHOUT_RESULT",
-                evidence="provider turn is terminal but no CLINX result marker was persisted",
-            )
-            return {"state": "RECOVERY_REQUIRED", "authoritative": True}
-        if status in {"failed", "error", "systemerror", "errored"}:
-            terminalize(
-                "RECOVERY_REQUIRED", failure_stage="provider",
-                failure_code="PROVIDER_TURN_FAILURE", evidence=f"provider turn status={status}",
-            )
-            return {"state": "RECOVERY_REQUIRED", "authoritative": True}
+
+            return finalize_provider(provider_outcome, status, raw_result)
         return {"state": "CODEX_RUNNING", "authoritative": False, "status": status}
 
     def reconcile_task(self, task_id: str) -> dict[str, Any]:
@@ -6144,25 +6166,9 @@ class Bridge:
         prefix: str = "BRIDGE_EXECUTION_FAILED",
         pre_turn_failure: bool = False,
     ) -> None:
-        task_id = getattr(self.task_dispatcher, "last_task_id", None)
-        execution_ref = getattr(self.task_dispatcher, "last_execution_ref", None)
-        issue_refs = {issue.get("id"), issue.get("identifier")}
-        if (
-            task_id
-            and self.task_dispatcher is not None
-            and execution_ref in issue_refs
-        ):
-            try:
-                self.task_dispatcher.tasks.set_execution_state(
-                    task_id,
-                    "BLOCKED",
-                    current_stage="project identity guard" if "IDENTITY" in reason else "dispatch",
-                    current_blocker=reason[:2000],
-                    codex_running=False,
-                    retry_required=True,
-                )
-            except Exception as exc:
-                print(f"Warning: failed to persist blocked execution state: {exc}")
+        # This legacy bridge loop is Linear projection only.  Terminal state
+        # ownership belongs to TaskDispatcher's ExecutionFinalizer path; this
+        # method must not create a second BLOCKED writer.
         body = (
             f"{prefix}\n\n"
             f"- Bridge: `linear-local-codex-bridge/{BRIDGE_VERSION}`\n"

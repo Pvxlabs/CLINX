@@ -66,7 +66,8 @@ MAX_TASK_TITLE_LENGTH = 240
 MAX_TASK_SUMMARY_LENGTH = 2000
 _UNSET = object()
 TERMINAL_EXECUTION_STAGES = frozenset({
-    "CANCELLED", "COMPLETED", "IN_REVIEW", "BLOCKED", "RECOVERY_REQUIRED", "STOPPED",
+    "CANCELLED", "COMPLETED", "FAILED", "IN_REVIEW", "BLOCKED",
+    "RECOVERY_REQUIRED", "STOPPED",
 })
 
 
@@ -1970,9 +1971,10 @@ class TaskRegistry:
     ) -> TaskRecord:
         allowed = {
             "QUEUED", "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
-            "RESULT_RECEIVED", "RESULT_PARSE", "LINEAR_WRITEBACK",
+            "RESULT_RECEIVED", "RESULT_PARSE", "FINALIZING", "LINEAR_WRITEBACK",
             "TRANSPORT_UNCERTAIN", "CANCEL_REQUESTED", "CANCELLATION_PENDING",
-            "BLOCKED", "RECOVERY_REQUIRED", "IN_REVIEW", "COMPLETED", "CANCELLED", "STOPPED",
+            "BLOCKED", "FAILED", "RECOVERY_REQUIRED", "IN_REVIEW", "COMPLETED",
+            "CANCELLED", "STOPPED",
         }
         if state not in allowed:
             raise TaskRegistryError(f"Unsupported execution state: {state}")
@@ -1984,7 +1986,7 @@ class TaskRegistry:
             if not isinstance(candidate_turn, str) or not candidate_turn.strip():
                 raise TaskRegistryError("CODEX_RUNNING requires an exact turn_id")
         if state in {
-            "BLOCKED", "RECOVERY_REQUIRED", "IN_REVIEW",
+            "BLOCKED", "FAILED", "RECOVERY_REQUIRED", "IN_REVIEW",
             "COMPLETED", "CANCELLED", "STOPPED",
         }:
             running = False
@@ -2034,7 +2036,7 @@ class TaskRegistry:
             )
             conn.execute(
                 "UPDATE executions SET stage=? WHERE task_id=? "
-                "AND stage NOT IN (?,?,?,?,?,?)",
+                "AND stage NOT IN (?,?,?,?,?,?,?)",
                 (str(stage or state), task_id, *TERMINAL_EXECUTION_STAGES),
             )
         return self.get_task(task_id)
@@ -2115,7 +2117,9 @@ class TaskRegistry:
         retry_required: bool | None = None,
     ) -> TaskRecord:
         """Persist authoritative terminal evidence and release its lease."""
-        if state not in {"COMPLETED", "RECOVERY_REQUIRED", "BLOCKED", "CANCELLED"}:
+        if state not in {
+            "COMPLETED", "FAILED", "RECOVERY_REQUIRED", "BLOCKED", "CANCELLED",
+        }:
             raise TaskRegistryError(f"Unsupported terminal reconciliation state: {state}")
         active = self.get_active_execution(execution_ref)
         if active is None:
@@ -2127,11 +2131,18 @@ class TaskRegistry:
             if retained is None or retained["stage"] != "RECOVERY_REQUIRED":
                 raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
             current = self.get_task(retained["task_id"])
-            if (
-                current.execution_state != "RECOVERY_REQUIRED"
-                or not current.retry_required
-                or self.get_latest_execution_for_task(current.task_id) is not None
-            ):
+            result = self.get_execution_result(execution_ref)
+            recovery_pending = (
+                current.execution_state == "RECOVERY_REQUIRED" and current.retry_required
+            )
+            exact_finalizing = (
+                current.execution_state == "FINALIZING"
+                and result is not None
+                and result.task_id == current.task_id
+                and result.turn_id == current.turn_id
+            )
+            if (not (recovery_pending or exact_finalizing)
+                    or self.get_latest_execution_for_task(current.task_id) is not None):
                 raise TaskRegistryError(
                     f"Retained execution is not eligible for reconciliation: {execution_ref}"
                 )
@@ -2186,7 +2197,9 @@ class TaskRegistry:
         lease after persisting a terminal task state.  Unknown/active identities are
         left untouched so transport uncertainty cannot release a real lease.
         """
-        if state not in {"COMPLETED", "RECOVERY_REQUIRED", "BLOCKED", "CANCELLED"}:
+        if state not in {
+            "COMPLETED", "FAILED", "RECOVERY_REQUIRED", "BLOCKED", "CANCELLED",
+        }:
             raise TaskRegistryError(f"Unsupported terminal reconciliation state: {state}")
         task = self.get_task(task_id)
         with self._connect() as conn:
@@ -2203,7 +2216,8 @@ class TaskRegistry:
         if lease is not None and lease["execution_ref"] is not None:
             return None
         if task.execution_state in {
-            "COMPLETED", "BLOCKED", "RECOVERY_REQUIRED", "CANCELLED", "STOPPED", "IN_REVIEW",
+            "COMPLETED", "FAILED", "BLOCKED", "RECOVERY_REQUIRED", "CANCELLED",
+            "STOPPED", "IN_REVIEW",
         } and not task.codex_running:
             # The durable terminal projection already won.  A repeated read is
             # idempotent, and there is no stale lease left to release.
@@ -2336,7 +2350,7 @@ class TaskRegistry:
                           t.current_stage, t.codex_running
                    FROM executions e JOIN tasks t ON t.task_id=e.task_id
                    WHERE e.execution_ref=?
-                     AND e.stage NOT IN ('CANCELLED','COMPLETED','IN_REVIEW','BLOCKED','RECOVERY_REQUIRED','STOPPED')""",
+                     AND e.stage NOT IN ('CANCELLED','COMPLETED','FAILED','IN_REVIEW','BLOCKED','RECOVERY_REQUIRED','STOPPED')""",
                 (execution_ref,),
             ).fetchone()
         return dict(row) if row is not None else None
@@ -2367,7 +2381,7 @@ class TaskRegistry:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM executions WHERE task_id=? "
-                "AND stage NOT IN (?,?,?,?,?,?) "
+                "AND stage NOT IN (?,?,?,?,?,?,?) "
                 "ORDER BY acquired_at DESC, rowid DESC LIMIT 1",
                 (task_id, *TERMINAL_EXECUTION_STAGES),
             ).fetchone()
@@ -2933,7 +2947,8 @@ class TaskRegistry:
             terminal = False
             try:
                 terminal = self.get_task(task_id).execution_state in {
-                    "COMPLETED", "IN_REVIEW", "BLOCKED", "RECOVERY_REQUIRED", "CANCELLED", "STOPPED",
+                    "COMPLETED", "FAILED", "IN_REVIEW", "BLOCKED", "RECOVERY_REQUIRED",
+                    "CANCELLED", "STOPPED",
                 }
             except UnknownTaskError:
                 terminal = True
