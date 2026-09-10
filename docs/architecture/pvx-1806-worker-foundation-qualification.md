@@ -206,7 +206,9 @@ git diff --check
 The final report records the exact output for the full suite, domain suite,
 shadow suite, V1 suite, runtime suite, CLI checks, and bounded qualification.
 
-Current checkout results after the implementation are:
+The foundation-delivery results below are preserved from the `fca699e9`
+round; they are historical evidence and are not relabeled as the corrective
+run:
 
 ```text
 python3 -m pytest -q --ignore=test_domain.py --ignore=test_shadow_ledger.py --ignore=test_runtime_control.py
@@ -286,3 +288,227 @@ live worktree takeover, distributed SQLite, power-loss durability, scheduler
 fairness, quotas, long-term retention, production throughput, Rust, RPC,
 systemd service operation, Linear delivery, V2 terminal finalization, and any
 PVX-1807 work.
+
+## 10. fca699e9 Independent Review Remediation
+
+### 10.1 Baseline and actual fixtures
+
+```ini
+REVIEW_BASE=fca699e9dc19f4791be63702981918471b6f9af5
+BRANCH=main
+START_WORKTREE=CLEAN
+START_REMOTE_MAIN=fca699e9dc19f4791be63702981918471b6f9af5
+LINEAR_STATE=In Review
+LINEAR_LATEST_REVIEW=fca699e9 independent review - CHANGES_REQUESTED
+PYTHON_VERSION=3.12.3
+SQLITE_RUNTIME_VERSION=3.45.1
+```
+
+The supplied review archive was extracted to `/tmp` and its unmodified
+`test_pvx1806_review_candidates.py` was imported against the real checkout.
+All databases and protected resources were pytest temporary SQLite fixtures.
+No production database, provider, service, physical worktree, or background
+runtime was opened.
+
+Red phase:
+
+```text
+PYTHONPATH=/home/pvxlabs/dev/clinx python3 -m pytest -vv \
+  /tmp/<review>/test_pvx1806_review_candidates.py
+6 failed in 0.20s
+```
+
+The six cases reproduced: rejected-expiry clock rollback, ordinary generated
+evidence retry, generated evidence retry after a lost response, cross-scope
+client-key collision, orphan replay divergence, and cross-stream page loss.
+The first attempted command used unavailable `python` and executed no tests;
+it is not counted as red evidence.
+
+For the green review-candidate run, only RC-04 was adapted as authorized: the
+old unfiltered `after_sequence` continuation was replaced with
+`scan_events(cursor=...)`, while its complete ordered event-ID comparison and
+the other five cases were preserved.
+
+```text
+PYTHONPATH=/home/pvxlabs/dev/clinx python3 -m pytest -q \
+  /tmp/<review>/test_pvx1806_review_candidates.py
+6 passed in 0.14s
+```
+
+### 10.2 RC-01 safety observation boundary
+
+Trusted coordinator time is committed in its own short `BEGIN IMMEDIATE`
+transaction before a business transaction starts. The business transaction
+then reacquires the write lock and rejects if another coordinator persisted a
+newer watermark in between. Therefore a rejected exact-expiry renewal or
+protected mutation, a stale owner, a semantic conflict, or an injected
+business rollback cannot erase the observation. No business row, event,
+receipt, or outbox record is included in the safety transaction.
+
+Accepted ownership/state changes still commit state, event, append position,
+receipt, and outbox atomically in the second transaction. Tests cover a
+successful command followed by clock rollback, an exact-expiry rejection
+followed by reopen at an older time, a pre-commit protected-write fault,
+independent connections, no prior reconciliation, renew, and the actual
+protected resource value/version.
+
+### 10.3 RC-02 scoped identity and migration
+
+Runtime schema migration 2 separates `receipt_id` (global storage identity)
+from `command_id` (caller-visible compatibility value). Uniqueness and lookup
+remain `(idempotency_scope, idempotency_key)`. The existing rule that
+simultaneously supplied `command_id` and `idempotency_key` must match is
+unchanged. Consequently `task-a/create` and `task-b/create` have distinct
+receipt rows but each returns `command_id=create`; a semantic change inside
+either scope is still rejected.
+
+For omitted `evidence_id`, an existing scoped receipt is read before an ID is
+chosen, and its committed evidence ID participates in fingerprint validation.
+With no receipt, generation occurs once under the serialized transaction.
+Explicit evidence IDs remain optional and semantic. Tests cover ordinary and
+post-commit-response-loss retries, reopen, explicit/generated IDs, payload and
+owner conflicts, invalidated authority, and a deterministic two-process
+duplicate race that leaves one evidence row and one event.
+
+`reconcile_expired_once(command_id=...)` also records one batch receipt. A
+post-commit lost response therefore returns the original assignment-ID tuple on
+retry rather than an empty rescan; reusing that batch key with a different
+limit remains a semantic conflict.
+
+The upgrade fixture constructs the preserved migration-1 schema and real old
+task/event/outbox/receipt rows, then runs `initialize()`. The old event bytes
+and hash remain identical, the old receipt becomes
+`receipt_id=legacy command_id`, a new scope can reuse that client key, and
+migration versions are exactly `(1, 2)`. The reviewed migration-1 schema at the
+baseline had Git blob `de2e2d6414dac5266b59346bee0484bbcc844dda`.
+
+### 10.4 RC-03 event/reducer coverage
+
+Assignment producers persist a complete versioned state snapshot in the same
+transaction as each event. Replay uses only immutable event input and validates
+family, schema, payload hash, timestamps, stream identity, continuous sequence,
+event type, required fields, immutable owner tuple, legal transition, dependent
+lifecycle, and exact version changes.
+
+| Command/event | Persisted and replay-compared fields |
+|---|---|
+| Grant | assignment/allocation IDs, attempt, worker, incarnation, resource, epoch, lease, lifecycle, versions |
+| Renew | unchanged identity, new lease, assignment/allocation versions |
+| Release/revoke | assignment lifecycle/version, allocation release state/version/reason, attempt lifecycle/version |
+| Expire | assignment `EXPIRED`, allocation `QUARANTINED`, pending recovery work |
+| Orphan | assignment `ORPHANED`, allocation `QUARANTINED`, replacement reason, pending recovery work |
+| Recover | assignment `RECOVERED`, allocation `RELEASED`, attempt `PENDING`, recovery `DONE` and attempts |
+| Worker incarnation replacement | current incarnation/generation, superseded lifecycle/version, worker version |
+
+Legacy legal schema-1 assignment payloads are upcast by event-specific rules;
+the old orphan allocation version behavior is retained only for those old
+events. Unknown event family/schema/type, gaps, identity conflicts, hash
+changes, and illegal lifecycle changes reject the replay. Unknown extension
+fields are listed in `not_covered_fields` and omitted from projected state.
+Non-assignment aggregate details not present in historical events remain
+`UNKNOWN`/`NOT_COVERED`; the reducer does not query current tables to invent
+them.
+
+The bounded qualification preserves the original fixed-seed 8-worker,
+32-attempt, 200-operation sample and adds a separate deterministic transition
+matrix with clock advancement, response loss/retry, exact expiry, recovery,
+reassignment, and incarnation replacement. It reports attempted, effective,
+no-op, and rejected operations separately:
+
+```text
+original sample: attempted=200, effective=63, no_op=137,
+  successful_assignments=32, successful_releases=32,
+  assignment_streams_replayed=32, event_count=145
+transition matrix: attempted=10, effective=7, no_op=2, rejected=1,
+  assignment_streams_compared=2, incarnation_replacement_compared=true,
+  response_loss_retry_compared=true
+```
+
+### 10.5 RC-04 cursor contract
+
+`read_events(stream_type, stream_id, after_sequence)` is the single-stream
+contract. Both stream identifiers are required; using a non-zero
+`after_sequence` without them fails explicitly. `scan_events(cursor)` is the
+bounded cross-stream contract. Its opaque v1 token advances over a durable
+append-only `global_position`, which is assigned by an event-insert trigger and
+backfilled for old events without changing the event rows. It is storage order,
+not cross-aggregate causality.
+
+Tests cover A1/A2/B1 interleaving, a newly appended stream at sequence 1,
+changing page sizes, an empty page with an unchanged checkpoint, reopen with
+the same token, malformed tokens, and byte-budget rejection followed by a
+successful retry from the original cursor. No query raises the row limit or
+materializes the complete history to manufacture a pass.
+
+### 10.6 Corrective-run results
+
+```text
+python3 -m pytest -q test_runtime_control.py test_pvx1806_remediation.py
+44 passed in 1.27s
+
+python3 -m pytest -q --ignore=test_domain.py --ignore=test_shadow_ledger.py \
+  --ignore=test_runtime_control.py --ignore=test_pvx1806_remediation.py
+306 passed, 48 subtests passed in 5.48s
+
+python3 -m pytest -q test_domain.py
+10 passed, 10 subtests passed in 0.05s
+
+python3 -m pytest -q test_shadow_ledger.py
+50 passed, 8 subtests passed in 0.81s
+
+python3 -m pytest -q test_pvx1805_v1_compatibility.py
+9 passed in 0.31s
+
+python3 -m pytest -q
+410 passed, 66 subtests passed in 7.14s
+
+python3 -m runtime_control.qualification --seed 1806 --operations 200
+qualification=PASS (bounded counts listed above)
+
+python3 -m runtime_control.qualification --help
+PASS
+
+python3 -m compileall -q domain shadow_ledger runtime_control task_registry.py \
+  test_domain.py test_shadow_ledger.py test_runtime_control.py \
+  test_pvx1806_remediation.py
+PASS
+
+git diff --check
+PASS
+```
+
+The V1 subtotal is `306 passed / 48 subtests`; its nine PVX-1805
+compatibility tests are already included and are not added again. The separate
+`9 passed` line is a focused rerun, not a contribution to `410` beyond its
+existing inclusion.
+
+```ini
+EXPIRY_DECISION_SURVIVES_REJECTION=PASS
+CLOCK_ROLLBACK_CANNOT_REVIVE_AUTHORITY=PASS
+SCOPED_COMMAND_IDEMPOTENCY=PASS
+GENERATED_EVIDENCE_ID_RETRY=PASS
+RESPONSE_LOSS_RECEIPT_RECOVERY=PASS
+ORPHAN_REPLAY_EQUIVALENCE=PASS
+RUNTIME_STATE_REPLAY_MATRIX=PASS
+LOSSLESS_MULTISTREAM_PAGINATION=PASS
+RUNTIME_SCHEMA_UPGRADE_COMPATIBILITY=PASS
+ATOMIC_OWNERSHIP_EVENT_RECEIPT=PASS
+STALE_OWNER_REJECTION=PASS
+PVX1805_REGRESSION=PASS
+FULL_SUITE=PASS
+
+V1_LIVE_AUTHORITY=ON
+V2_LIVE_AUTHORITY_CUTOVER=NOT_PERFORMED
+WORKER_RUNTIME_DEFAULT=OFF
+SHADOW_DEFAULT=OFF
+PUBLIC_MCP_CONTRACT=UNCHANGED
+PRODUCTION_DB_MIGRATION=NOT_PERFORMED
+PRODUCTION_DEPLOY=NOT_PERFORMED
+REAL_PROVIDER_TAKEOVER=NOT_RUN
+PHYSICAL_PROCESS_FENCING=NOT_QUALIFIED
+CANONICAL_PROVIDER_E2E=NOT_RUN
+NEXT_PHASE_STARTED=NO
+```
+
+The final Git commit, push, remote readback, and post-commit worktree state are
+reported by the enclosing task because a commit cannot contain its own SHA.
