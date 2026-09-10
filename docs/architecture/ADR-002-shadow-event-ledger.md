@@ -228,6 +228,21 @@ updates the execution-owned columns in the same V1/shadow transaction. These
 columns are nullable so rows created before this ownership contract remain
 historically `UNKNOWN` rather than being retroactively attributed.
 
+V1 call compatibility is separate from shadow attribution. During additive
+upgrade, an old active execution can have `execution_state=NULL` and
+`turn_id=NULL` in the new columns while the Task row still carries the exact
+turn required by the existing V1 setter contract. `CODEX_RUNNING` validation
+may use that Task turn only to preserve the pre-existing V1 operation; the
+execution-owned shadow event remains `turn_id=NULL` unless an exact owned turn
+is explicitly persisted. A newly claimed row has `execution_state=CLAIMED`, so
+it does not receive this legacy fallback.
+
+Recovery queries use distinct SQL names for Task state, execution-owned state,
+and execution-owned turn. Task-terminal orphan recovery reads only the Task
+alias. Retained-history insertion reads only execution-owned aliases. This
+prevents nullable ownership columns from shadowing the Task state in SQLite
+named-row access.
+
 Replay comparison is fixed before execution to these fields:
 
 ```text
