@@ -20,6 +20,7 @@ from .errors import (
     LedgerBusy,
     LedgerSchemaError,
     LedgerValidationError,
+    PayloadSizeExceeded,
     ReplayBoundaryExceeded,
     TransactionOwnershipError,
 )
@@ -107,10 +108,12 @@ class EventStore:
         *,
         busy_timeout_ms: int = 30_000,
         fault_injector: FaultInjector | None = None,
+        max_append_payload_bytes: int = 1_048_576,
     ):
         self.path = Path(path).expanduser()
         self.busy_timeout_ms = max(0, int(busy_timeout_ms))
         self.fault_injector = fault_injector
+        self.max_append_payload_bytes = max(1, int(max_append_payload_bytes))
 
     def _connect(self, *, read_only: bool = False) -> sqlite3.Connection:
         target: str | Path = self.path
@@ -352,6 +355,15 @@ class EventStore:
                 duplicate=True,
             )
 
+        # Preserve exact-retry semantics for events accepted under an older
+        # write budget. New events are bounded before their payload is stored.
+        payload_bytes = len(request.payload.to_json().encode("utf-8"))
+        if payload_bytes > self.max_append_payload_bytes:
+            raise PayloadSizeExceeded(
+                f"event payload {payload_bytes} exceeds write limit "
+                f"{self.max_append_payload_bytes} bytes"
+            )
+
         current = self._current_version(
             conn, request.aggregate_type, request.aggregate_id
         )
@@ -535,18 +547,50 @@ class EventStore:
             clauses.append("aggregate_id = ?")
             args.append(aggregate_id)
         args.append(limit)
-        with self._connect(read_only=True) as conn:
+        conn = self._connect(read_only=True)
+        try:
             self._require_schema(conn)
-            rows = conn.execute(
-                f"SELECT * FROM v2_events WHERE {' AND '.join(clauses)} "
+            # SQLite can calculate the UTF-8 byte length without returning the
+            # payload body. Reject the page before a full row materialization.
+            metadata_cursor = conn.execute(
+                f"SELECT cursor, length(CAST(payload_json AS BLOB)) AS payload_bytes "
+                f"FROM v2_events WHERE {' AND '.join(clauses)} "
                 "ORDER BY cursor LIMIT ?",
                 tuple(args),
-            ).fetchall()
-        payload_bytes = sum(len(row["payload_json"].encode("utf-8")) for row in rows)
-        if payload_bytes > max_payload_bytes:
-            raise ReplayBoundaryExceeded(
-                f"event page payload {payload_bytes} exceeds {max_payload_bytes} bytes"
             )
+            try:
+                metadata_rows = metadata_cursor.fetchall()
+            finally:
+                metadata_cursor.close()
+            total_payload_bytes = 0
+            for row in metadata_rows:
+                payload_bytes = int(row["payload_bytes"] or 0)
+                if payload_bytes > max_payload_bytes:
+                    raise ReplayBoundaryExceeded(
+                        f"event payload {payload_bytes} exceeds page budget "
+                        f"{max_payload_bytes} bytes"
+                    )
+                total_payload_bytes += payload_bytes
+                if total_payload_bytes > max_payload_bytes:
+                    raise ReplayBoundaryExceeded(
+                        f"event page payload {total_payload_bytes} exceeds "
+                        f"{max_payload_bytes} bytes"
+                    )
+            if not metadata_rows:
+                return ()
+            cursors = tuple(int(row["cursor"]) for row in metadata_rows)
+            placeholders = ",".join("?" for _ in cursors)
+            event_cursor = conn.execute(
+                f"SELECT * FROM v2_events WHERE cursor IN ({placeholders}) "
+                "ORDER BY cursor",
+                cursors,
+            )
+            try:
+                rows = event_cursor.fetchall()
+            finally:
+                event_cursor.close()
+        finally:
+            conn.close()
         return tuple(self._stored_event(row) for row in rows)
 
     def count_events(self) -> int:
