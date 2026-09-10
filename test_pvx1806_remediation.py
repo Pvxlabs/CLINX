@@ -3,6 +3,7 @@ import datetime as dt
 import hashlib
 import json
 import multiprocessing
+import os
 import sqlite3
 import threading
 from contextlib import closing
@@ -23,6 +24,7 @@ from runtime_control import (
     SafetyDecisionPending,
     StaleMutation,
 )
+from runtime_control.errors import RuntimeAuthorizationError
 from runtime_control.schema import MIGRATIONS
 from runtime_control.replay import replay_runtime_events
 
@@ -148,6 +150,67 @@ def _interleaving_fixture(path: Path, lease_seconds: int):
         assigned.assignment_id, "worker", "incarnation", "attempt", "resource", assigned.resource_epoch
     )
     return store, clock, assigned, owner
+
+
+OWNER_WRITE_OPERATIONS = (
+    "mutate",
+    "renew",
+    "release",
+    "revoke",
+    "evidence",
+)
+
+
+def _invoke_owner_write(store, owner, operation, command_id):
+    if operation == "mutate":
+        return store.mutate_protected_resource(
+            *owner,
+            0,
+            {"operation": operation, "command": command_id},
+            command_id=command_id,
+        )
+    if operation == "renew":
+        return store.renew_assignment(
+            *owner,
+            lease_seconds=20,
+            command_id=command_id,
+        )
+    if operation == "release":
+        return store.release_assignment(*owner, command_id=command_id)
+    if operation == "revoke":
+        return store.revoke_assignment(*owner, command_id=command_id)
+    if operation == "evidence":
+        return store.record_attempt_evidence(
+            *owner,
+            {"operation": operation, "command": command_id},
+            command_id=command_id,
+        )
+    raise AssertionError(f"unknown owner operation: {operation}")
+
+
+class _ExitBeforeSafetyHandoff(RuntimeControlStore):
+    """Qualification-only child that exits after business rollback."""
+
+    def _complete_safety_handoff(self, handoff_key, handoff_token, observed_at):
+        os._exit(17)
+
+
+def _exit_during_evidence_handoff(path, owner, queue):
+    def fail_business(stage):
+        if stage == "before_commit":
+            raise RuntimeError("business rollback before child exit")
+
+    store = _ExitBeforeSafetyHandoff(
+        path,
+        clock=ManualClock(BASE + dt.timedelta(seconds=8)),
+        fault_injector=fail_business,
+    )
+    store.record_attempt_evidence(
+        *owner,
+        {"child": True},
+        command_id="child-evidence",
+    )
+    queue.put("unreachable")
 
 
 @pytest.mark.parametrize("phase", ["observation_lock", "business_lock"])
@@ -620,8 +683,24 @@ def test_generated_evidence_concurrent_retry_creates_one_identity(tmp_path):
         assert not process.is_alive()
         assert process.exitcode == 0
     outcomes = [queue.get(timeout=2) for _ in processes]
-    assert sorted(item[0] for item in outcomes) == [False, True]
-    assert len({item[1] for item in outcomes}) == 1
+    if all(isinstance(item[0], bool) for item in outcomes):
+        assert sorted(item[0] for item in outcomes) == [False, True]
+        evidence_ids = {item[1] for item in outcomes}
+    else:
+        # The assignment guard may legitimately reject the overlapping call.
+        # An exact retry after the winner commits must recover its receipt.
+        assert sum(item[0] is False for item in outcomes) == 1
+        assert sum(item[0] == "SafetyDecisionPending" for item in outcomes) == 1
+        committed_id = next(item[1] for item in outcomes if item[0] is False)
+        retry = store.record_attempt_evidence(
+            *owner,
+            {"concurrent": True},
+            command_id="same-evidence-command",
+        )
+        assert retry.duplicate is True
+        assert retry.evidence_id == committed_id
+        evidence_ids = {committed_id, retry.evidence_id}
+    assert len(evidence_ids) == 1
     with closing(sqlite3.connect(store.path)) as conn:
         assert conn.execute("SELECT COUNT(*) FROM runtime_evidence").fetchone()[0] == 1
     assert store.count_events() == before + 1
@@ -1107,3 +1186,192 @@ def test_fca699e9_schema_receipt_and_event_upgrade_is_additive(tmp_path):
     assert after_event == before_event
     assert versions == [(1,), (2,), (3,)]
     assert receipt_count == 2
+
+
+@pytest.mark.parametrize("operation", OWNER_WRITE_OPERATIONS)
+def test_all_owner_write_entries_successfully_complete_their_own_guard(tmp_path, operation):
+    store, clock, _, owner = _assigned(tmp_path / operation, lease_seconds=30)
+    clock.advance(1)
+    receipt = _invoke_owner_write(store, owner, operation, f"guard-success-{operation}")
+    assert receipt.duplicate is False
+    assert store.get_safety_handoff(owner[0]) is None
+    if operation == "mutate":
+        assert store.get_protected_resource(owner[4]).version == 1
+    elif operation == "renew":
+        assert store.get_assignment(owner[0]).version == 1
+    elif operation in {"release", "revoke"}:
+        assert store.get_assignment(owner[0]).lifecycle == (
+            "RELEASED" if operation == "release" else "REVOKED"
+        )
+    else:
+        with closing(sqlite3.connect(store.path)) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM runtime_evidence").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("operation", OWNER_WRITE_OPERATIONS)
+def test_pending_guard_rejects_every_new_owner_write_without_business_side_effects(
+    tmp_path, operation
+):
+    store, _, _, owner = _assigned(tmp_path / operation)
+    blocker = RuntimeControlStore(store.path, clock=ManualClock(BASE))
+    blocker._begin_safety_handoff(owner[0])
+    before_assignment = store.get_assignment(owner[0])
+    before_resource = store.get_protected_resource(owner[4])
+    with closing(sqlite3.connect(store.path)) as conn:
+        before_counts = tuple(
+            conn.execute(
+                "SELECT (SELECT COUNT(*) FROM runtime_evidence),"
+                "(SELECT COUNT(*) FROM runtime_events),"
+                "(SELECT COUNT(*) FROM runtime_command_receipts),"
+                "(SELECT COUNT(*) FROM runtime_outbox)"
+            ).fetchone()
+        )
+    with pytest.raises(SafetyDecisionPending):
+        _invoke_owner_write(store, owner, operation, f"guard-pending-{operation}")
+    assert store.get_assignment(owner[0]) == before_assignment
+    assert store.get_protected_resource(owner[4]) == before_resource
+    assert blocker.get_safety_handoff(owner[0]) is not None
+    with closing(sqlite3.connect(store.path)) as conn:
+        after_counts = tuple(
+            conn.execute(
+                "SELECT (SELECT COUNT(*) FROM runtime_evidence),"
+                "(SELECT COUNT(*) FROM runtime_events),"
+                "(SELECT COUNT(*) FROM runtime_command_receipts),"
+                "(SELECT COUNT(*) FROM runtime_outbox)"
+            ).fetchone()
+        )
+    assert after_counts == before_counts
+
+
+@pytest.mark.parametrize("prior_operation", OWNER_WRITE_OPERATIONS)
+@pytest.mark.parametrize("followup_operation", OWNER_WRITE_OPERATIONS)
+def test_failed_owner_write_handoff_blocks_every_followup_entry(
+    tmp_path, prior_operation, followup_operation
+):
+    store, _, _, owner = _assigned(tmp_path / f"{prior_operation}-{followup_operation}")
+    with closing(sqlite3.connect(store.path)) as conn:
+        before_receipts = conn.execute(
+            "SELECT COUNT(*) FROM runtime_command_receipts"
+        ).fetchone()[0]
+        before_events = conn.execute("SELECT COUNT(*) FROM runtime_events").fetchone()[0]
+        before_outbox = conn.execute("SELECT COUNT(*) FROM runtime_outbox").fetchone()[0]
+
+    def fail_business_and_safety(stage):
+        if stage in {"before_commit", "safety_before_commit"}:
+            raise RuntimeError(f"injected {stage}")
+
+    store.fault_injector = fail_business_and_safety
+    with pytest.raises(RuntimeError, match="injected safety_before_commit"):
+        _invoke_owner_write(store, owner, prior_operation, f"failed-{prior_operation}")
+    store.fault_injector = None
+    assert store.get_safety_handoff(owner[0]) is not None
+    with pytest.raises(SafetyDecisionPending):
+        _invoke_owner_write(store, owner, followup_operation, f"followup-{followup_operation}")
+    assert store.get_safety_handoff(owner[0]) is not None
+    assert store.get_assignment(owner[0]).lifecycle == "ACTIVE"
+    assert store.get_assignment(owner[0]).version == 0
+    assert store.get_protected_resource(owner[4]).version == 0
+    with closing(sqlite3.connect(store.path)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM runtime_evidence").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM runtime_command_receipts").fetchone()[0] == before_receipts
+        assert conn.execute("SELECT COUNT(*) FROM runtime_events").fetchone()[0] == before_events
+        assert conn.execute("SELECT COUNT(*) FROM runtime_outbox").fetchone()[0] == before_outbox
+
+
+def test_owner_rows_requires_persistent_current_transaction_token(tmp_path):
+    store, _, _, owner = _assigned(tmp_path)
+    token, _ = store._begin_safety_handoff(owner[0])
+    conn = store.connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        with pytest.raises(RuntimeAuthorizationError, match="durable handoff"):
+            store._owner_rows(
+                conn, *owner, BASE.isoformat(), handoff_token=None
+            )
+        with pytest.raises(SafetyDecisionPending, match="owned by another"):
+            store._owner_rows(
+                conn, *owner, BASE.isoformat(), handoff_token="wrong-token"
+            )
+        assignment, allocation = store._owner_rows(
+            conn, *owner, BASE.isoformat(), handoff_token=token
+        )
+        assert assignment["assignment_id"] == owner[0]
+        assert allocation["resource_epoch"] == owner[5]
+        conn.execute("ROLLBACK")
+    finally:
+        conn.close()
+    store._clear_safety_handoff(owner[0], token)
+
+
+def test_pending_guard_does_not_cross_assignment_boundary(tmp_path):
+    store, _, _, owner_a = _assigned(tmp_path, lease_seconds=30)
+    store.register_attempt("execution-1", "attempt-2", 1, command_id="attempt-2")
+    owner_b_receipt = store.assign_attempt(
+        "attempt-2", "worker-1", "incarnation-1", "resource-2", command_id="assign-2"
+    )
+    owner_b = (
+        owner_b_receipt.assignment_id,
+        "worker-1",
+        "incarnation-1",
+        "attempt-2",
+        "resource-2",
+        owner_b_receipt.resource_epoch,
+    )
+    RuntimeControlStore(store.path, clock=ManualClock(BASE))._begin_safety_handoff(owner_a[0])
+    receipt = store.mutate_protected_resource(
+        *owner_b,
+        0,
+        {"assignment": "B"},
+        command_id="assignment-b-write",
+    )
+    assert receipt.duplicate is False
+    assert store.get_protected_resource("resource-2").version == 1
+    assert store.get_safety_handoff(owner_a[0]) is not None
+
+
+def test_evidence_handoff_guard_survives_child_exit_before_safety_publish(tmp_path):
+    store, _, _, owner = _assigned(tmp_path, lease_seconds=30)
+    context = multiprocessing.get_context("fork")
+    queue = context.Queue()
+    process = context.Process(
+        target=_exit_during_evidence_handoff,
+        args=(str(store.path), owner, queue),
+    )
+    process.start()
+    process.join(10)
+    assert not process.is_alive()
+    assert process.exitcode == 17
+    reopened = RuntimeControlStore(
+        store.path,
+        clock=ManualClock(BASE + dt.timedelta(seconds=9, microseconds=500_000)),
+    )
+    assert reopened.get_safety_handoff(owner[0]) is not None
+    with pytest.raises(SafetyDecisionPending):
+        reopened.mutate_protected_resource(
+            *owner,
+            0,
+            {"must": "stay-blocked"},
+            command_id="after-child-exit",
+        )
+    assert reopened.get_protected_resource(owner[4]).version == 0
+
+
+def test_history_receipt_is_not_replayed_while_assignment_guard_is_pending(tmp_path):
+    store, _, _, owner = _assigned(tmp_path, lease_seconds=30)
+    first = store.record_attempt_evidence(
+        *owner,
+        {"receipt": "committed"},
+        command_id="history-receipt",
+    )
+    blocker = RuntimeControlStore(store.path, clock=ManualClock(BASE))
+    blocker._begin_safety_handoff(owner[0])
+    with pytest.raises(SafetyDecisionPending):
+        store.record_attempt_evidence(
+            *owner,
+            {"receipt": "committed"},
+            command_id="history-receipt",
+        )
+    assert first.current_authority_valid is True
+    assert store.get_safety_handoff(owner[0]) is not None
+    with closing(sqlite3.connect(store.path)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM runtime_evidence").fetchone()[0] == 1

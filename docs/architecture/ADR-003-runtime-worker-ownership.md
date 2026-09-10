@@ -74,7 +74,7 @@ to an attempt, but it never becomes an execution or assignment identity.
 | Reconcile expiry | Coordinator | Coordinator clock and bounded scan | Marks expired ownership and quarantines the resource; it does not prove process death. |
 | Recover assignment | Coordinator with explicit fixture evidence | Expired/orphaned assignment, old process stopped, side-effect fence verified | Releases quarantine and makes a non-terminal attempt eligible for a controlled reassignment. |
 | Revoke/release | Coordinator/current owner as allowed by internal policy | Exact current ownership tuple and expected version | Invalidates the old assignment; release never resets the resource epoch. |
-| Evidence mutation | Current worker through an internal boundary | Exact current ownership tuple and valid lease | Stores attempt-local evidence only; it cannot finalize Task or Execution. |
+| Evidence mutation | Current worker through an internal boundary | Exact current ownership tuple, valid lease, and assignment-owner handoff | Stores attempt-local evidence only; it cannot finalize Task or Execution. |
 | Protected mutation | Resource adapter at the actual SQLite write | Full owner tuple, epoch, lease, expected version | Updates only when the same transaction validates the current fence. |
 
 There is no external authentication protocol in this package. A caller-supplied
@@ -107,6 +107,10 @@ conflict. A historical receipt includes `original_committed_result`, but its
 `current_authority_valid` value is recomputed from current rows; replaying a
 receipt cannot restore an expired or revoked permission.
 
+Receipt lookup is not an authorization or recovery path: a new
+owner-authorized command must still obtain the assignment handoff described
+below.
+
 `command_id` remains the caller-facing compatibility parameter and is returned
 unchanged in `CommandReceipt`. It is not a globally unique storage key. Receipt
 lookup and conflict detection use `(idempotency_scope, idempotency_key)`;
@@ -121,6 +125,9 @@ the ID is generated inside the serialized business transaction. If neither a
 client key nor an explicit evidence ID is supplied, the default scoped key is
 derived from the request semantics. Explicit IDs remain part of the semantic
 fingerprint. Payload or owner changes under the same scoped key still conflict.
+An overlapping same-key call may be rejected while the first call's assignment
+guard is pending; an exact retry after the winner commits recovers the original
+receipt and generated evidence ID.
 
 Assignment, allocation, state changes, runtime event, command receipt, and
 outbox row are one local transaction. Faults before commit roll back all of
@@ -130,14 +137,25 @@ them. A response lost after commit is recovered by the exact command retry.
 
 The coordinator clock supplies lease decisions and absolute `expires_at`.
 Worker-reported timestamps are telemetry only. Tests use an injected clock.
-Every command first commits a trusted preflight observation to
-`runtime_clock_state`. Protected mutation and renewal then create a durable,
-per-assignment `runtime_safety_handoffs` row in a short safety transaction
-before acquiring the ownership write lock. The row is a fail-closed guard, not
-a business event; it records the observation and the lease expiry bound that
-must be crossed before orphan recovery is allowed. The business transaction
-acquires its lock and samples the clock again. That post-lock sample is the
+Every owner-authorized write — protected mutation, renewal, release, revoke,
+and attempt evidence — first commits a trusted preflight observation to
+`runtime_clock_state`, then creates a durable, per-assignment
+`runtime_safety_handoffs` row in a short safety transaction before acquiring
+the ownership write lock. The row is a fail-closed guard, not a business
+event; it records the observation and the lease expiry bound that must be
+crossed before orphan recovery is allowed. The business transaction acquires
+its lock and samples the clock again. That post-lock sample is the
 authorization linearization point and must satisfy `now < expires_at`.
+
+The shared `_owner_rows(..., handoff_token=...)` boundary is mandatory for all
+five owner-authorized writes. It verifies that the current transaction's
+durable token belongs to the requested assignment before checking the owner
+tuple, incarnation, epoch, allocation, version, and lease. A pending guard
+owned by another command is a `SafetyDecisionPending` decision: it cannot be
+deleted, replaced, or treated as proof of current authority. A guard on an
+unrelated assignment is not consulted, so an independently valid assignment
+can continue. The token is an internal transaction capability, not an
+external authentication credential.
 
 On success, state, event, receipt, outbox, the newest watermark, and deletion of
 the matching handoff guard commit together. On a rejected decision or business
@@ -148,7 +166,9 @@ and cannot use the old watermark. If safety persistence is busy, fails, or the
 process exits, the guard remains and `SafetyDecisionPending` (or the original
 safety failure) fails authorization closed. The original business reason is
 retained as exception context; no failed mutation state, event, receipt, or
-outbox row is committed.
+outbox row is committed. Evidence is not a diagnostic exception to the owner
+contract: it has the same safety boundary while its committed receipt remains
+a historical result rather than a renewed permission.
 
 `recover_safety_handoff()` is an explicit, evidence-gated recovery path. It
 requires old-process stop and side-effect-fence evidence and refuses to clear a

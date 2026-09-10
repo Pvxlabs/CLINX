@@ -706,9 +706,10 @@ expired boundaries, protected mutation and renewal (12 cases), plus normal
 rejection, business rollback, response loss, real safety busy and commit
 failure, reopen, and one forked child exit. Assertions inspect protected
 value/version, assignment and epoch, clock watermark, guard, receipt/event/
-outbox rows, and follow-up write eligibility. Registration, evidence, resource
-admission, and V1 paths do not share this guard and retain their existing
-concurrency/idempotency contracts.
+outbox rows, and follow-up write eligibility. Registration, resource admission,
+heartbeat, and V1 paths do not share this guard; evidence is intentionally
+included because it is an owner-authorized write. Those non-owner paths retain
+their existing concurrency/idempotency contracts.
 
 Safety handoff gates:
 
@@ -735,3 +736,117 @@ continues to be rejected because a cross-stream `after_sequence` is ambiguous.
 The guard is an internal runtime-control mechanism only. Physical process
 fencing, power-loss durability, provider takeover, production migration, and
 V2 authority cutover remain outside this qualification.
+
+### 10.9 Assignment-owner guard coverage corrective run (fad9679)
+
+This corrective run closes the remaining RC-01 entry-point gap identified by
+the `fad9679719da9a37412c2d3161e886cfd3c97bd8` continuation review. The review
+and supplied SPEC are execution constraints and evidence sources; they are not
+product files. The review harness was not added to the repository.
+
+```ini
+REVIEW_BASE=fad9679719da9a37412c2d3161e886cfd3c97bd8
+FINAL_COMMIT=WORKTREE_PENDING
+BRANCH=main
+CLINX_EXECUTION=BLOCKED_EXISTING_PVX1800_WORKTREE_LEASE
+```
+
+The two required red cases were run against an isolated checkout of the
+review baseline with real `RuntimeControlStore`, temporary SQLite, independent
+connections, and `ManualClock`:
+
+```text
+RED_A pending guard bypass: guard_present=True,
+  evidence=True, evidence_rows=1 (before=0), current_authority_valid=True
+RED_B evidence-first rollback: evidence_failure="business rollback",
+  guard_present=False, mutation=True, protected_version=1,
+  value={"red":"revived"}
+```
+
+`RED_A` demonstrates that a protected mutation's unresolved guard did not
+block a new evidence write. `RED_B` demonstrates that evidence as the first
+failed owner command left no guard, allowing a reopened coordinator at an
+earlier time to update the protected row from version 0 to 1. These are
+baseline counterexamples, not post-fix results.
+
+The minimal correction makes the five existing owner-authorized write entries
+use one assignment-scoped handoff protocol:
+
+| Entry | Handoff and owner proof | Successful business effect |
+|---|---|---|
+| `mutate_protected_resource` | Durable token, exact assignment/allocation tuple, post-lock lease check | Protected value/version, event, receipt, outbox |
+| `renew_assignment` | Same assignment guard and post-lock `now < expires_at` check | Assignment/allocation lease and versions |
+| `release_assignment` | Shared `_finish_assignment` guard-aware owner boundary | Assignment/allocation/attempt release state |
+| `revoke_assignment` | Shared `_finish_assignment` guard-aware owner boundary | Assignment/allocation/attempt revoke state |
+| `record_attempt_evidence` | Same guard-aware boundary; generated ID remains scoped/idempotent | Evidence, event, receipt, outbox |
+
+The guard is committed before the business `BEGIN IMMEDIATE` lock. A successful
+command clears only its own token in the same business transaction as state,
+event, receipt, outbox, and the newest watermark. A rejected or failed business
+transaction rolls back all business rows; safety completion persists the fresh
+observation before clearing the guard. If safety completion is busy, fails, or
+the process exits, the guard remains durable and later owner writes fail closed
+with `SafetyDecisionPending`. A guard on assignment A does not block an
+independently valid assignment B. Missing, wrong, or another transaction's
+token cannot pass `_owner_rows`; the token is an internal transaction
+capability, not caller authentication.
+
+The repository's deterministic matrix includes five successful entries, five
+pending-guard rejection cases, and all 25 prior-entry × follow-up-entry
+handoffs. Each rejection checks assignment/allocation, protected value/version,
+evidence, event, receipt, outbox, and guard rows. It also covers the original
+12 lock-wait cases, response loss, safety busy/commit-failure injection,
+clock rollback, explicit recovery bounds, an evidence-first forked child exit,
+reopen, receipt replay under a pending guard, independent assignment progress,
+and the concurrent same-key case where a guard rejection is followed by an
+exact receipt-recovery retry. The child exits after business rollback and
+before safety publish; this is process-exit evidence only and does not qualify
+power-loss durability or physical process fencing.
+
+```text
+PYTHONPATH=. python3 -m pytest -q test_pvx1806_remediation.py
+85 passed in 1.79s
+
+PYTHONPATH=. python3 -m pytest -q test_runtime_control.py test_pvx1806_remediation.py
+105 passed in 2.58s
+
+PYTHONPATH=. python3 -m pytest -q
+471 passed, 66 subtests passed in 8.48s
+
+PYTHONPATH=. python3 -m runtime_control.qualification --seed 1806 --operations 200
+qualification=PASS; attempted=200; effective=63; no_op=137;
+event_count=145; assignment_streams_replayed=32;
+transition_attempted=10; transition_effective=7; transition_no_op=2;
+transition_rejected=1; worker_version_replayed=4;
+incarnation_version_replayed=2; legacy_missing_versions=UNKNOWN_NOT_COVERED
+```
+
+The focused guard tests add no schema migration and preserve runtime schema v3,
+receipt/event history, RC-02/RC-03/RC-04, and PVX-1805 compatibility. The
+full suite count is the actual current-checkout result; it is not the
+historical `432 passed / 66 subtests` baseline and does not double-count the
+nine PVX-1805 compatibility tests already included in the V1 subtotal.
+
+Guard-coverage gates:
+
+```ini
+MANDATORY_ASSIGNMENT_AUTHORIZATION_BOUNDARY=PASS
+ALL_FIVE_OWNER_WRITES_GUARDED=PASS
+PENDING_GUARD_REJECTS_NEW_EVIDENCE=PASS
+EVIDENCE_FIRST_FAILURE_CANNOT_REVIVE_AUTHORITY=PASS
+CROSS_ENTRY_HANDOFF_MATRIX=PASS
+TRANSACTION_GUARD_OWNERSHIP=PASS
+RECEIPT_AUTHORITY_RESPECTS_PENDING_GUARD=PASS
+GENERATED_EVIDENCE_ID_IDEMPOTENCY=PASS
+RESPONSE_LOSS_IDEMPOTENCY=PASS
+VALID_COMMAND_PROGRESS=PASS
+RUNTIME_SCHEMA_COMPATIBILITY=PASS
+RC02_RC03_RC04_REGRESSION=PASS
+PVX1805_REGRESSION=PASS
+FULL_SUITE=PASS
+```
+
+The final commit SHA, ordinary push, remote readback, and clean-worktree
+state are reported by the enclosing task after documentation and verification
+are complete. No production database, provider, manager service, physical
+worktree, deployment, or next-phase work was started.
