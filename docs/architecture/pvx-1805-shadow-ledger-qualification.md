@@ -554,3 +554,99 @@ reopen, active no-result fidelity, exact result ownership/conflict, and retained
 execution isolation. All use temporary SQLite fixtures and deterministic
 context-manager boundaries; no provider, management service, or production
 database was started.
+
+## 16. V1 ownership-column compatibility correction
+
+This follow-up is based on the review of `b64b93d7c654f4357dc069590b3b83fc5a6374fc`
+against parent `fd948f0cabc30b6f48d32d6cb20d76970f8d3630`. It is limited to the
+compatibility regressions caused by the nullable execution ownership columns.
+The claim-window isolation and SL-02/03/04 behavior remain in force.
+
+### R1: orphan lease recovery
+
+The regression was a SQLite named-column collision in
+`reclaim_stale_worktree_leases()`: both `e.execution_state` and
+`t.execution_state` were selected without aliases, while the predicate used
+`row["execution_state"]`. For a terminal Task with `COMPLETED` and
+`codex_running=0`, a missing execution row made the named value NULL. The
+parent predicate reclaimed the lease; the reviewed commit returned zero and
+left one lease.
+
+The minimal fix is in `task_registry.py`: the query now names
+`task_execution_state`, `task_codex_running`, `execution_owned_state`, and
+`execution_owned_turn` separately. Task-terminal recovery uses only the Task
+aliases. Retained history uses only execution-owned aliases. The original
+conservative rule remains: a live execution is not reclaimed merely because
+the Task is `RECOVERY_REQUIRED` or otherwise marked uncertain.
+
+### R2: legacy running update
+
+The parent-created database test proves that an old active execution has no
+`executions.execution_state` or `executions.turn_id` columns. After the current
+initializer adds both nullable columns, they are NULL. The reviewed setter
+incorrectly treated the NULL owned turn as the only validation source and
+rejected the parent-accepted same-state call:
+
+```text
+CODEX_RUNNING requires an exact turn_id
+```
+
+The correction is in `set_execution_state()`. If the active row is an old row
+whose ownership state is still NULL, the existing Task turn may be used for
+V1 setter validation. That fallback is deliberately not copied into the
+execution-owned field or shadow event. A new claim has ownership state
+`CLAIMED`, so an omitted turn is not accepted as a new exact turn and the
+claim-window isolation remains intact.
+
+### Red and green evidence
+
+The supplied full-checkout candidate was executed locally through pytest
+against the current repository before the fix:
+
+```text
+3 failed, 1 passed
+R1 direct orphan reclaim: 0, lease remained 1
+R1 startup orphan reclaim: lease remained 1
+R2 parent-created DB upgrade: CODEX_RUNNING requires an exact turn_id
+```
+
+After the correction, the added real-registry temporary SQLite suite passes:
+
+```text
+python3 -m pytest -q test_pvx1805_v1_compatibility.py
+9 passed
+```
+
+It covers parent-created and current-created databases, shadow OFF and ON,
+direct and startup reclaim, repeated reclaim idempotency, active recovery
+guarding, legacy running update after additive migration, explicit owned-turn
+preservation, and shadow observation that remains NULL rather than fabricating
+the legacy Task turn.
+
+### Schema and source lineage
+
+The default initializer still performs an automatic additive migration when
+opening an older writable database. It adds nullable `execution_state` and
+`turn_id` columns to `executions` and `execution_history`; it does not backfill
+them from `tasks`. On a new database, the same columns are created in the
+initial table definitions. A fresh database opened with
+`shadow_events=False` creates no V2 ledger tables; opening with
+`shadow_events=True` creates the local shadow tables after V1 initialization.
+Reopening an existing shadow database with shadow disabled retains its history
+but appends no new events. This code path was exercised only on temporary
+SQLite databases. `PRODUCTION_DB_MIGRATION` remains `NOT_PERFORMED`.
+
+The parent source was loaded from the local Git object
+`fd948f0cabc30b6f48d32d6cb20d76970f8d3630` to create the old database; the
+current checkout then opened that same database and performed the migration.
+Existing events, execution rows, and leases were not rewritten or deleted to
+make the compatibility test pass. Old owned fields that remain NULL are still
+`UNKNOWN` for exact shadow purposes.
+
+### Remaining limits
+
+This correction does not define a general migration for databases whose
+execution row is already partially corrupted, does not infer historical
+ownership from timestamps, and does not add a startup drain or new V1 policy.
+It does not alter Finalizer, scheduler, cancellation, resource authority,
+provider calls, MCP contracts, or production deployment behavior.
