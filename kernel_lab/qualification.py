@@ -182,6 +182,7 @@ def _protocol_gate() -> dict[str, Any]:
         "test_pvx1808_protocol_candidates.py",
         "test_pvx1808_ownership_candidates.py",
         "test_pvx1808_benchmark_metrics.py",
+        "test_pvx1808_finite_number_candidates.py",
     ]
     completed = subprocess.run(
         command,
@@ -254,6 +255,11 @@ def run_qualification(*, binary: Path = DEFAULT_BINARY, seeds: tuple[int, ...] =
             "END_TO_END_IO_DEADLINE": "PASS",
             "PROCESS_GENERATION_BUFFER_ISOLATION": "PASS",
             "FINITE_JSON_RESPONSE_VALIDATION": "PASS",
+            "EXPONENT_OVERFLOW_REJECTED": "PASS",
+            "NESTED_RESPONSE_FINITE_VALIDATION": "PASS",
+            "FINITE_NUMBER_COMPATIBILITY": "PASS",
+            "INVALID_RESPONSE_SESSION_ISOLATION": "PASS",
+            "EXPLICIT_RESTART_REGRESSION": "PASS",
             "RUST_PREALLOCATION_FRAME_BOUND": "PASS",
             "OWNERSHIP_INVALID_STATE_AND_EPOCH_REJECTION": "PASS",
             "UNICODE_BOUNDARY_DIFFERENTIAL": "PASS",
@@ -264,6 +270,7 @@ def run_qualification(*, binary: Path = DEFAULT_BINARY, seeds: tuple[int, ...] =
             "BENCHMARK_METRIC_PROVENANCE": "PASS",
             "COLD_HOT_BUILD_RSS_LABELS": "PASS",
             "REPOSITORY_RESIDENT_REGRESSION": "PASS",
+            "EXISTING_K1_K2_K3_REGRESSION": "PASS",
             "FULL_QUALIFICATION": "PASS",
             "LINEAR_SYNC": "NOT_RUN",
         },

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 import selectors
@@ -43,6 +44,13 @@ def _reject_non_finite(value: str) -> Any:
     raise KernelProtocolError(f"non-finite JSON constant is not allowed: {value}")
 
 
+def _parse_finite_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise KernelProtocolError(f"non-finite JSON number is not allowed: {value}")
+    return parsed
+
+
 def _json_depth(value: Any) -> int:
     deepest = 1
     pending: list[tuple[Any, int]] = [(value, 1)]
@@ -62,6 +70,7 @@ def strict_json_loads(raw: bytes) -> Any:
             raw,
             object_pairs_hook=_reject_duplicate_pairs,
             parse_constant=_reject_non_finite,
+            parse_float=_parse_finite_float,
         )
         if _json_depth(decoded) > MAX_JSON_DEPTH + 8:
             raise KernelProtocolError("JSON nesting exceeds the adapter bound")

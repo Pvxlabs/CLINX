@@ -45,8 +45,10 @@ The final K1 correction uses a `BufRead::fill_buf`/`consume` reader in
 `clinx-kernel-eval`. It bounds the frame before copying bytes, preserves bytes
 after a delimiter for the next request, emits one bounded `FRAME_TOO_LARGE`
 failure, and exits rather than attempting unbounded discard. Python request
-deadlines cover non-blocking stdin delivery, stdout/stderr draining, response
-reading, and bounded cleanup. A failed or closed session is not implicitly
+deadlines cover non-blocking stdin delivery, stdout/stderr draining, and
+response reading. The `close()` operation has a separate bounded cleanup
+budget for wait, terminate, and kill; it is not claimed to share the request
+I/O timeout. A failed or closed session is not implicitly
 reused: a new generation requires explicit `restart()` and has empty buffers,
 request count, and channel state.
 
@@ -65,7 +67,7 @@ request count, and channel state.
 | Assignment stream order | Runtime event sequence validation | Assignment stream ID and contiguous sequence | Version gaps, mixed streams, duplicate fields, bad order | `replay_assignment_reference` | `replay_assignment` | A business total order across independent streams |
 | Payload integrity and timestamps | Runtime event store and existing canonical payload hash | Canonical JSON payload hash, occurred/recorded UTC timestamps | Bad hash, invalid timestamp, recorded-before-occurred | `replay_assignment_reference` | `replay_assignment` | Rehashing or rewriting historical event bytes |
 | Assignment transitions | `runtime_control.replay.py` state reducer | Seven event types and state snapshots | Current golden, legacy traces, negative fixtures, SQLite traces | `replay_assignment_reference` | `replay_assignment` | Worker-associated streams, Provider wire events, projections |
-| Process and request bounds | New qualification boundary, not runtime authority | Bounded NDJSON request/response and child process | 20 conformance tests plus focused candidate tests cover malformed input, limits, correlation, exit, timeout, and restart | `KernelSession` / `run_once` | `clinx-kernel-eval` | A daemon, service, queue, FFI, gRPC, or exactly-once network protocol |
+| Process and request bounds | New qualification boundary, not runtime authority | Bounded NDJSON request/response and child process | 20 conformance tests plus 18 focused candidate tests cover malformed input, limits, finite numbers, correlation, exit, timeout, and restart | `KernelSession` / `run_once` | `clinx-kernel-eval` | A daemon, service, queue, FFI, gRPC, or exactly-once network protocol |
 
 ## Ownership decision contract
 
@@ -120,6 +122,10 @@ responses. The boundary uses finite JSON integers, exact strings, explicit
 It rejects duplicate JSON object fields, unknown envelope fields, unsupported
 protocol versions, unknown operations, non-finite JSON, out-of-range integers,
 oversized frames, and oversized event input.
+
+The finite-number response boundary is tested with nested arrays and objects:
+JSON exponent overflow such as `1e309` and `-1e9999` is rejected after float
+conversion, while finite scientific notation remains accepted.
 
 The limits are deliberately conservative and checked in both directions:
 
