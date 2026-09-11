@@ -110,6 +110,12 @@ PVX-1806 runtime/guard regressions. The focused adapter/client, V1 default
 path, and compatibility commands were run before the full suite. No tests
 were skipped, deleted, weakened, or double-counted.
 
+The implementation was committed normally as
+`7a0445e74c2540fd776366784354b4638111112e` and pushed to feature branch
+`pvx-1807-remediation`. The HTTPS `origin` URL remained unchanged; the push
+used the machine's existing SSH Git authentication after HTTPS reported that
+no non-interactive username credential was available. No force push was used.
+
 The disposable pre-remediation red clone was run with the same candidate file
 and produced failures in the intended PA cases: provider-handle interrupt
 routing, generation rebind, nested-request side-effect classification,
