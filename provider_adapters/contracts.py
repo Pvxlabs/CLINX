@@ -212,12 +212,12 @@ class NormalizedEvent:
     local_sequence: int | None = None
     cursor: str | None = None
     terminal_observed: bool = False
-    terminal_status: str | None = None
     cancel_state: CancelState = CancelState.NOT_REQUESTED
     error_code: str | None = None
     evidence_reference: str | None = None
     duplicate: bool = False
     payload: Mapping[str, Any] = dataclasses.field(default_factory=dict)
+    terminal_status: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "receipt_id", _text("receipt_id", self.receipt_id))

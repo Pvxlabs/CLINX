@@ -55,7 +55,7 @@ The actual files imported by the isolated tests were all under
 
 | File | SHA-256 |
 | --- | --- |
-| `provider_adapters/contracts.py` | `2fe870d0c2294e249d3243a18ca013c290c735512e4030c68fe64bac7d551e84` |
+| `provider_adapters/contracts.py` | `6d314b6a7ec363b7b5ada308e5198042420bddf2344410998a9217ddedfef7b6` |
 | `provider_adapters/codex.py` | `4c1e513fa73e32ba000c7de58047289a5052a71755955cc6feaaeb165fa9fd8f` |
 | `provider_adapters/fixtures.py` | `b7ffad678bc21a305a79e285fd2754e9cc78c40e1f93642f2e3c7cac8292c9bf` |
 | `provider_adapters/protocol.py` | `54fc5137392569cf52031e9cac531bd78d7d6c4e022af6018c5871dfdf9cf584` |
