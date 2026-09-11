@@ -852,3 +852,38 @@ The final commit SHA is `f022ebcd51f4b272b4f7a78cee6a178e7be59107`; it was
 pushed to `origin/main` and read back at the same SHA with a clean worktree.
 No production database, provider, manager service, physical worktree,
 deployment, or next-phase work was started.
+
+### 10.8 Receipt current-authority correction
+
+The residual PVX-1806 review gap was reproduced against the real public
+`RuntimeControlStore` API and a temporary SQLite database. Before the fix,
+retrying `assign_attempt` while another transaction held a pending safety
+handoff for the same assignment returned the historical receipt with
+`current_authority_valid=True`; closing and reopening SQLite did not change
+that result. The red reproduction was not a reviewer-only store or a mocked
+database.
+
+The minimal correction keeps the committed receipt and idempotency semantics,
+but passes the existing transaction's internal handoff token through the
+shared `_existing_command`, `_receipt_from_row`, and `_save_receipt` boundary.
+Receipt reconstruction now reads `runtime_safety_handoffs` for the receipt's
+assignment. A foreign or missing matching token makes the current snapshot
+false; a matching token from the owner-authorized transaction preserves the
+successful mutation result. No public trust flag, owner rule, guard lifecycle,
+lease rule, or protected-write authorization was added or weakened.
+
+The repository-resident regression covers a pending foreign guard, SQLite
+close/reopen, unchanged assignment/allocation/event/receipt/outbox counts,
+preserved guard identity, an independent assignment, and the current
+transaction's own successful handoff. The corrective run was:
+
+```text
+python3 -m pytest -q test_runtime_control.py test_pvx1806_remediation.py
+107 passed in 2.80s
+```
+
+The earlier red evidence remains in the historical review record. The current
+receipt rule is now: original committed result is historical fact; current
+authority is an as-of read of assignment lifecycle, lease, and pending guard
+ownership. The `close()` cleanup budget remains separately bounded from the
+request I/O deadline used by the Rust protocol session.

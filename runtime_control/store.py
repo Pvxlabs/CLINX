@@ -570,6 +570,7 @@ class RuntimeControlStore:
         key: str,
         fingerprint: str,
         now: str,
+        handoff_token: str | None = None,
     ) -> CommandReceipt | None:
         row = conn.execute(
             "SELECT * FROM runtime_command_receipts WHERE idempotency_scope=? AND idempotency_key=?",
@@ -581,7 +582,13 @@ class RuntimeControlStore:
             raise RuntimeIdempotencyConflict(
                 f"idempotency key {scope}/{key} has different semantics"
             )
-        return self._receipt_from_row(conn, row, duplicate=True, now=now)
+        return self._receipt_from_row(
+            conn,
+            row,
+            duplicate=True,
+            now=now,
+            handoff_token=handoff_token,
+        )
 
     def _receipt_from_row(
         self,
@@ -590,6 +597,7 @@ class RuntimeControlStore:
         *,
         duplicate: bool,
         now: str,
+        handoff_token: str | None = None,
     ) -> CommandReceipt:
         result = json.loads(row["result_json"])
         authority: bool | None = None
@@ -599,10 +607,18 @@ class RuntimeControlStore:
                 "SELECT lifecycle,lease_expires_at FROM runtime_assignments WHERE assignment_id=?",
                 (assignment_id,),
             ).fetchone()
+            pending_handoff = conn.execute(
+                "SELECT handoff_token FROM runtime_safety_handoffs WHERE handoff_key=?",
+                (assignment_id,),
+            ).fetchone()
             authority = bool(
                 assignment is not None
                 and assignment["lifecycle"] == "ACTIVE"
                 and decode_time(assignment["lease_expires_at"]) > decode_time(now)
+                and (
+                    pending_handoff is None
+                    or pending_handoff["handoff_token"] == handoff_token
+                )
             )
         return CommandReceipt(
             command_id=row["command_id"],
@@ -624,6 +640,7 @@ class RuntimeControlStore:
         fingerprint: str,
         result: Mapping[str, Any],
         now: str,
+        handoff_token: str | None = None,
     ) -> CommandReceipt:
         receipt_id = _new_id("rcr")
         conn.execute(
@@ -638,7 +655,13 @@ class RuntimeControlStore:
         ).fetchone()
         assert row is not None
         self._fault("after_receipt")
-        return self._receipt_from_row(conn, row, duplicate=False, now=now)
+        return self._receipt_from_row(
+            conn,
+            row,
+            duplicate=False,
+            now=now,
+            handoff_token=handoff_token,
+        )
 
     def _append_event(
         self,
@@ -1464,7 +1487,14 @@ class RuntimeControlStore:
         }
         fingerprint = _hash(semantic)
         with self._transaction(safety_key=assignment_id) as (conn, now, handoff_token):
-            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            existing = self._existing_command(
+                conn,
+                scope=scope,
+                key=key,
+                fingerprint=fingerprint,
+                now=now,
+                handoff_token=handoff_token,
+            )
             if existing:
                 return existing
             row, _ = self._owner_rows(
@@ -1500,7 +1530,8 @@ class RuntimeControlStore:
             )
             return self._save_receipt(
                 conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
-                result={"assignment_id": assignment_id, "lease_expires_at": expires, "resource_epoch": resource_epoch}, now=now
+                result={"assignment_id": assignment_id, "lease_expires_at": expires, "resource_epoch": resource_epoch}, now=now,
+                handoff_token=handoff_token,
             )
 
     def release_assignment(
@@ -1576,7 +1607,14 @@ class RuntimeControlStore:
         }
         fingerprint = _hash(semantic)
         with self._transaction(safety_key=assignment_id) as (conn, now, handoff_token):
-            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            existing = self._existing_command(
+                conn,
+                scope=scope,
+                key=key,
+                fingerprint=fingerprint,
+                now=now,
+                handoff_token=handoff_token,
+            )
             if existing:
                 return existing
             row, _ = self._owner_rows(
@@ -1612,7 +1650,8 @@ class RuntimeControlStore:
             )
             return self._save_receipt(
                 conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
-                result={"assignment_id": assignment_id, "resource_key": resource_key, "resource_epoch": resource_epoch, "lifecycle": lifecycle}, now=now
+                result={"assignment_id": assignment_id, "resource_key": resource_key, "resource_epoch": resource_epoch, "lifecycle": lifecycle}, now=now,
+                handoff_token=handoff_token,
             )
 
     def reconcile_expired_once(self, *, limit: int = 100, command_id: str | None = None) -> tuple[str, ...]:
@@ -1784,7 +1823,14 @@ class RuntimeControlStore:
                 evidence_id = _new_id("evidence")
             semantic = {**request_semantic, "evidence_id": evidence_id}
             fingerprint = _hash(semantic)
-            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            existing = self._existing_command(
+                conn,
+                scope=scope,
+                key=key,
+                fingerprint=fingerprint,
+                now=now,
+                handoff_token=handoff_token,
+            )
             if existing:
                 return existing
             self._owner_rows(
@@ -1812,7 +1858,8 @@ class RuntimeControlStore:
             )
             return self._save_receipt(
                 conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
-                result={"evidence_id": evidence_id, "assignment_id": assignment_id, "attempt_id": attempt_id}, now=now
+                result={"evidence_id": evidence_id, "assignment_id": assignment_id, "attempt_id": attempt_id}, now=now,
+                handoff_token=handoff_token,
             )
 
     def mutate_protected_resource(
@@ -1840,7 +1887,14 @@ class RuntimeControlStore:
         }
         fingerprint = _hash(semantic)
         with self._transaction(safety_key=assignment_id) as (conn, now, handoff_token):
-            existing = self._existing_command(conn, scope=scope, key=key, fingerprint=fingerprint, now=now)
+            existing = self._existing_command(
+                conn,
+                scope=scope,
+                key=key,
+                fingerprint=fingerprint,
+                now=now,
+                handoff_token=handoff_token,
+            )
             if existing:
                 return existing
             self._owner_rows(
@@ -1869,7 +1923,8 @@ class RuntimeControlStore:
             )
             return self._save_receipt(
                 conn, command_id=command, scope=scope, key=key, fingerprint=fingerprint,
-                result={"resource_key": resource_key, "resource_epoch": resource_epoch, "version": expected_version + 1}, now=now
+                result={"resource_key": resource_key, "resource_epoch": resource_epoch, "version": expected_version + 1}, now=now,
+                handoff_token=handoff_token,
             )
 
     def get_worker(self, worker_id: str) -> WorkerRecord:

@@ -1375,3 +1375,112 @@ def test_history_receipt_is_not_replayed_while_assignment_guard_is_pending(tmp_p
     assert store.get_safety_handoff(owner[0]) is not None
     with closing(sqlite3.connect(store.path)) as conn:
         assert conn.execute("SELECT COUNT(*) FROM runtime_evidence").fetchone()[0] == 1
+
+
+def test_assignment_retry_receipt_rechecks_pending_guard_across_reopen(tmp_path):
+    store, _, first, owner_a = _assigned(tmp_path, lease_seconds=30)
+    store.register_attempt("execution-1", "attempt-2", 1, command_id="setup-attempt-2")
+    second = store.assign_attempt(
+        "attempt-2",
+        "worker-1",
+        "incarnation-1",
+        "resource-2",
+        command_id="assign-2",
+    )
+    owner_b = (
+        second.assignment_id,
+        "worker-1",
+        "incarnation-1",
+        "attempt-2",
+        "resource-2",
+        second.resource_epoch,
+    )
+
+    blocker = RuntimeControlStore(store.path, clock=ManualClock(BASE))
+    blocker._begin_safety_handoff(owner_a[0])
+    guard_before = blocker.get_safety_handoff(owner_a[0])
+    assert guard_before is not None
+    with closing(sqlite3.connect(store.path)) as conn:
+        counts_before = tuple(
+            conn.execute(
+                "SELECT (SELECT COUNT(*) FROM runtime_assignments),"
+                "(SELECT COUNT(*) FROM runtime_allocations),"
+                "(SELECT COUNT(*) FROM runtime_events),"
+                "(SELECT COUNT(*) FROM runtime_command_receipts),"
+                "(SELECT COUNT(*) FROM runtime_outbox)"
+            ).fetchone()
+        )
+
+    duplicate = store.assign_attempt(
+        "attempt-1",
+        "worker-1",
+        "incarnation-1",
+        "resource-1",
+        lease_seconds=30,
+        command_id="setup-assignment",
+    )
+    assert duplicate.duplicate is True
+    assert duplicate.assignment_id == first.assignment_id
+    assert duplicate.current_authority_valid is False
+    assert blocker.get_safety_handoff(owner_a[0]) == guard_before
+
+    reopened = RuntimeControlStore(store.path, clock=ManualClock(BASE))
+    reopened_duplicate = reopened.assign_attempt(
+        "attempt-1",
+        "worker-1",
+        "incarnation-1",
+        "resource-1",
+        lease_seconds=30,
+        command_id="setup-assignment",
+    )
+    assert reopened_duplicate.duplicate is True
+    assert reopened_duplicate.current_authority_valid is False
+    assert reopened.get_safety_handoff(owner_a[0]) == guard_before
+
+    independent_duplicate = store.assign_attempt(
+        "attempt-2",
+        "worker-1",
+        "incarnation-1",
+        "resource-2",
+        command_id="assign-2",
+    )
+    assert independent_duplicate.duplicate is True
+    assert independent_duplicate.assignment_id == owner_b[0]
+    assert independent_duplicate.current_authority_valid is True
+
+    with closing(sqlite3.connect(store.path)) as conn:
+        counts_after = tuple(
+            conn.execute(
+                "SELECT (SELECT COUNT(*) FROM runtime_assignments),"
+                "(SELECT COUNT(*) FROM runtime_allocations),"
+                "(SELECT COUNT(*) FROM runtime_events),"
+                "(SELECT COUNT(*) FROM runtime_command_receipts),"
+                "(SELECT COUNT(*) FROM runtime_outbox)"
+            ).fetchone()
+        )
+    assert counts_after == counts_before
+    assert store.get_assignment(owner_a[0]).version == 0
+    assert store.get_assignment(owner_b[0]).version == 0
+
+
+def test_owner_receipt_keeps_authority_for_its_own_handoff(tmp_path):
+    store, _, _, owner = _assigned(tmp_path, lease_seconds=30)
+    receipt = store.renew_assignment(
+        *owner,
+        lease_seconds=30,
+        expected_version=0,
+        command_id="owner-mutation",
+    )
+    assert receipt.duplicate is False
+    assert receipt.current_authority_valid is True
+
+    duplicate = store.renew_assignment(
+        *owner,
+        lease_seconds=30,
+        expected_version=0,
+        command_id="owner-mutation",
+    )
+    assert duplicate.duplicate is True
+    assert duplicate.current_authority_valid is True
+    assert store.get_safety_handoff(owner[0]) is None
+    assert store.get_assignment(owner[0]).version == 1
