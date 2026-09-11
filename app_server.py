@@ -114,6 +114,50 @@ class JSONRPCTransport(Protocol):
     def close(self) -> None: ...
 
 
+def transport_lifecycle_state(transport: Any) -> str:
+    """Return local lifecycle evidence as ``available``, ``unavailable`` or ``unknown``.
+
+    This probe only reports state already exposed by the transport; it never
+    sends traffic or treats missing attributes as proof of availability.
+    """
+    explicit = getattr(transport, "transport_lifecycle_state", None)
+    if callable(explicit):
+        try:
+            state = explicit()
+        except Exception:
+            return "unknown"
+        if state in {"available", "unavailable", "unknown"}:
+            return state
+    missing = object()
+    closed = getattr(transport, "closed", missing)
+    connected = getattr(transport, "connected", missing)
+    if closed is True or connected is False:
+        return "unavailable"
+    if closed is not missing and closed is not False:
+        return "unknown"
+    if connected is not missing and connected is not True:
+        return "unknown"
+    process = getattr(transport, "_process", missing)
+    if process is not missing:
+        if process is None:
+            return "unavailable"
+        poll = getattr(process, "poll", None)
+        if callable(poll):
+            try:
+                return "unavailable" if poll() is not None else "available"
+            except Exception:
+                return "unknown"
+        return "unknown"
+    if connected is True or closed is False:
+        return "available"
+    connected_flag = getattr(transport, "_connected", missing)
+    if connected_flag is True:
+        return "available"
+    if connected_flag is False:
+        return "unavailable"
+    return "unknown"
+
+
 class ProcessStdioTransport:
     """Exchange line-delimited JSON with a child process over stdio."""
 
@@ -985,16 +1029,10 @@ class CodexAppServerClient:
 
     def _dynamic_transport_is_available(self) -> bool:
         """Use transport lifecycle evidence before running a staged callback."""
-        closed = getattr(self.transport, "closed", None)
-        if closed is True:
-            return False
-        connected = getattr(self.transport, "connected", None)
-        if connected is False:
-            return False
-        process = getattr(self.transport, "_process", None)
-        if process is None and hasattr(self.transport, "_process"):
-            return False
-        return True
+        state = transport_lifecycle_state(self.transport)
+        # Strict dynamic-tool admission is fail-closed when local evidence is
+        # unavailable. Legacy V1 callers do not enter this staged path.
+        return state == "available"
 
     def supervise_turn(self, thread_id: str, turn_id: str) -> None:
         """Keep the initiating client connected for dynamic tool calls."""

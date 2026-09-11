@@ -122,11 +122,16 @@ class StagedBatchResponseFailureTransport(StrictPVX1807Transport):
     def __init__(self, failed_response_ids: set[str] | None = None) -> None:
         self.failed_response_ids = set(failed_response_ids or ())
         self.failed_responses: set[str] = set()
+        self.close_after_response: str | None = None
+        self.close_on_start_reply = False
+        self.turn_start_request_id: Any = None
         super().__init__()
 
     def send(self, message: dict[str, Any]) -> None:
         self.sent.append(dict(message))
         request_id = message.get("id")
+        if message.get("method") == "turn/start":
+            self.turn_start_request_id = request_id
         if (
             "result" in message
             and isinstance(request_id, str)
@@ -137,6 +142,20 @@ class StagedBatchResponseFailureTransport(StrictPVX1807Transport):
             raise AppServerTransportError(f"fixture response failed for {request_id}")
         if self.on_send is not None:
             self.on_send(message, self)
+        if "result" in message and request_id == self.close_after_response:
+            self.close_after_response = None
+            self.close()
+
+    def receive(self, timeout_seconds: float) -> dict[str, Any]:
+        message = super().receive(timeout_seconds)
+        if (
+            self.close_on_start_reply
+            and message.get("id") == self.turn_start_request_id
+            and "result" in message
+        ):
+            self.close_on_start_reply = False
+            self.close()
+        return message
 
 
 def make_staged_client(
@@ -613,6 +632,140 @@ def test_pa04_staged_batch_adapter_failure_has_explicit_continue_entry(tmp_path)
         assert len([message for message in transport.sent if message.get("method") == "turn/start"]) == 1
     finally:
         adapter.close()
+
+
+@pytest.mark.parametrize("position", ["before_first_callback", "after_cached_response"])
+def test_pa04_wrapped_transport_lifecycle_blocks_callbacks_and_preserves_tail(tmp_path, position):
+    transport = StagedBatchResponseFailureTransport()
+    transport.tool_before_reply = True
+    transport.batch_tool_ids = ("r1", "r2")
+    adapter = CodexProviderAdapter(transport, timeout_seconds=0.01, max_events=16)
+    calls: list[tuple[str, bool]] = []
+    session = adapter.create_session(cwd=str(tmp_path), clinx_session_id="clinx-session-lifecycle")
+    context = OperationContext(
+        "execution-lifecycle",
+        "attempt-lifecycle",
+        session.clinx_session_id,
+        "op-lifecycle",
+        session.connection_generation,
+    )
+    try:
+        if position == "before_first_callback":
+            transport.close_on_start_reply = True
+        else:
+            transport.failed_response_ids = {"r1"}
+        with pytest.raises(SideEffectUnknown):
+            adapter.start_turn(
+                session,
+                context,
+                "batch",
+                cwd=str(tmp_path),
+                dynamic_tool=DynamicToolConfiguration(
+                    "fixture",
+                    "execute",
+                    lambda params: calls.append((params["arguments"]["request"], transport.closed)) or {"ok": True},
+                ),
+            )
+        if position == "after_cached_response":
+            assert calls == [("r1", False)]
+            assert adapter.client._server_request_records[(str, "r1")].state == "response_pending"
+            transport.close_after_response = "r1"
+            with pytest.raises(SideEffectUnknown):
+                adapter.resume_dynamic_tool_batch(session, context)
+            assert adapter.client._server_request_records[(str, "r1")].state == "responded"
+
+        assert not any(closed for _, closed in calls)
+        assert calls == ([] if position == "before_first_callback" else [("r1", False)])
+        assert context.operation_id not in adapter._operations
+        assert context.operation_id in adapter._pending_dynamic_batches
+        expected_tail = ["r1", "r2"] if position == "before_first_callback" else ["r2"]
+        assert [request[1]["id"] for request in adapter.client._dynamic_staged_requests] == expected_tail
+
+        transport.closed = False
+        transport.connected = True
+        resumed = adapter.resume_dynamic_tool_batch(session, context)
+        assert resumed.outcome.code.value == "accepted"
+        assert calls == [("r1", False), ("r2", False)]
+        assert len([message for message in transport.sent if message.get("method") == "turn/start"]) == 1
+    finally:
+        adapter.close()
+
+
+@pytest.mark.parametrize("position", ["before_first_callback", "after_cached_response"])
+def test_pa04_direct_transport_lifecycle_matches_wrapped_contract(position):
+    transport = StagedBatchResponseFailureTransport()
+    calls: list[tuple[str, bool]] = []
+    client = make_staged_client(transport, calls=[])
+    client.clear_dynamic_tool()
+    client.configure_dynamic_tool(
+        namespace="fixture",
+        name="execute",
+        thread_id=transport.thread,
+        handler=lambda params: calls.append((params["arguments"]["request"], transport.closed)) or {"ok": True},
+    )
+    try:
+        for request_id in ("r1", "r2"):
+            client._send_server_response(transport.tool("turn-1", request_id))
+        if position == "before_first_callback":
+            transport.close()
+        else:
+            transport.failed_response_ids = {"r1"}
+            with pytest.raises(AppServerTransportError):
+                client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+            assert client._server_request_records[(str, "r1")].state == "response_pending"
+            transport.close_after_response = "r1"
+        with pytest.raises(AppServerTransportError):
+            client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+
+        assert not any(closed for _, closed in calls)
+        assert calls == ([] if position == "before_first_callback" else [("r1", False)])
+        if position == "after_cached_response":
+            assert client._server_request_records[(str, "r1")].state == "responded"
+        expected_tail = ["r1", "r2"] if position == "before_first_callback" else ["r2"]
+        assert [request[1]["id"] for request in client._dynamic_staged_requests] == expected_tail
+    finally:
+        client.close()
+
+
+def test_pa04_unknown_transport_lifecycle_does_not_authorize_strict_callback():
+    class UnknownLifecycleTransport:
+        def send(self, _message: dict[str, Any]) -> None:
+            raise AssertionError("strict callback admission must not probe by sending")
+
+        def receive(self, _timeout_seconds: float) -> dict[str, Any]:
+            raise AssertionError("strict callback admission must not probe by receiving")
+
+        def close(self) -> None:
+            pass
+
+    transport = UnknownLifecycleTransport()
+    calls: list[str] = []
+    client = CodexAppServerClient(transport, strict_dynamic_tool_binding=True)
+    client.configure_dynamic_tool(
+        namespace="fixture",
+        name="execute",
+        thread_id="provider-thread-a",
+        handler=lambda params: calls.append(params["arguments"]["request"]) or {"ok": True},
+    )
+    request = {
+        "id": "r1",
+        "method": "item/tool/call",
+        "params": {
+            "namespace": "fixture",
+            "tool": "execute",
+            "threadId": "provider-thread-a",
+            "turnId": "turn-1",
+            "arguments": {"request": "r1"},
+        },
+    }
+    try:
+        client._send_server_response(request)
+        with pytest.raises(AppServerTransportError):
+            client.attach_dynamic_tool_turn("provider-thread-a", "turn-1")
+        assert calls == []
+        assert [item[1]["id"] for item in client._dynamic_staged_requests] == ["r1"]
+    finally:
+        client.close()
 
 
 def test_pa04_retire_and_close_fence_staged_requests_from_new_handlers():

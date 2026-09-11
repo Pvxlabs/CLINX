@@ -18,6 +18,7 @@ from app_server import (
     AppServerTransportError,
     CodexAppServerClient,
     JSONRPCTransport,
+    transport_lifecycle_state,
 )
 
 from .contracts import (
@@ -62,6 +63,10 @@ class _RecordingTransport:
         connect = getattr(self.inner, "connect", None)
         if callable(connect):
             connect()
+
+    def transport_lifecycle_state(self) -> str:
+        """Preserve the wrapped transport's local lifecycle evidence."""
+        return transport_lifecycle_state(self.inner)
 
     def send(self, message: dict[str, Any]) -> None:
         self.last_method = message.get("method") if isinstance(message.get("method"), str) else None
