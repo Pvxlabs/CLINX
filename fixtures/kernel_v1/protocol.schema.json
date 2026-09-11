@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clinx.local/contracts/kernel/CLINX_KERNEL_V1.schema.json",
+  "title": "CLINX_KERNEL_V1 experimental request envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_id",
+    "protocol_version",
+    "operation",
+    "payload"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "protocol_version": {
+      "const": "CLINX_KERNEL_V1"
+    },
+    "operation": {
+      "enum": [
+        "evaluate_ownership",
+        "replay_assignment"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "x-clinx-bounds": {
+    "authority": "NON_AUTHORITATIVE",
+    "max_frame_bytes": 1048576,
+    "max_response_bytes": 1048576,
+    "max_stderr_bytes": 65536,
+    "max_events": 1024,
+    "max_json_depth": 32,
+    "max_requests_per_process": 4096,
+    "max_safe_integer": 9007199254740991,
+    "timestamp": "UTC ISO-8601 with exactly six fractional digits",
+    "duplicate_object_fields": "REJECT",
+    "unknown_envelope_fields": "REJECT",
+    "stdout": "NDJSON protocol only",
+    "stderr": "bounded diagnostics only"
+  }
+}

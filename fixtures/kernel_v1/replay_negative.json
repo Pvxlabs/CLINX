@@ -1,0 +1,16 @@
+{
+  "contract_version": "CLINX_KERNEL_V1",
+  "cases": [
+    {"name": "version_gap", "source": "current_grant_renew_release", "event_indexes": [0, 1], "patches": [{"path": "1.sequence", "value": 3}], "rehash": false, "expected_error": "EVENT_SEQUENCE_GAP"},
+    {"name": "bad_payload_hash", "source": "current_grant_renew_release", "event_indexes": [0], "patches": [{"path": "0.payload_hash", "value": "0000000000000000000000000000000000000000000000000000000000000000"}], "rehash": false, "expected_error": "EVENT_PAYLOAD_HASH_MISMATCH"},
+    {"name": "unknown_family", "source": "current_grant_renew_release", "event_indexes": [0], "patches": [{"path": "0.event_family", "value": "RUNTIME_WORKER_V2"}], "rehash": false, "expected_error": "EVENT_FAMILY_SCHEMA_UNSUPPORTED"},
+    {"name": "unknown_schema", "source": "current_grant_renew_release", "event_indexes": [0], "patches": [{"path": "0.schema_version", "value": 2}], "rehash": false, "expected_error": "EVENT_FAMILY_SCHEMA_UNSUPPORTED"},
+    {"name": "unknown_type", "source": "current_grant_renew_release", "event_indexes": [0], "patches": [{"path": "0.event_type", "value": "AssignmentSkipped"}], "rehash": false, "expected_error": "EVENT_TYPE_INVALID"},
+    {"name": "mixed_stream", "source": "current_grant_renew_release", "event_indexes": [0, 1], "patches": [{"path": "1.stream_id", "value": "asn-other"}], "rehash": false, "expected_error": "EVENT_STREAM_MIXED"},
+    {"name": "recorded_before_occurred", "source": "current_grant_renew_release", "event_indexes": [0], "patches": [{"path": "0.recorded_at", "value": "2026-09-11T11:59:59.000000+00:00"}], "rehash": false, "expected_error": "EVENT_RECORDED_BEFORE_OCCURRED"},
+    {"name": "illegal_recovery", "source": "legacy_expire_recover", "event_indexes": [0, 2], "patches": [{"path": "1.sequence", "value": 2}], "rehash": false, "expected_error": "ASSIGNMENT_TRANSITION_INVALID"},
+    {"name": "identity_change", "source": "current_grant_renew_release", "event_indexes": [0, 1], "patches": [{"path": "1.payload.state.assignment.worker_id", "value": "worker-other"}, {"path": "1.payload.state.allocation.worker_id", "value": "worker-other"}], "rehash": true, "expected_error": "ASSIGNMENT_IDENTITY_INVALID"},
+    {"name": "assignment_version_jump", "source": "current_grant_renew_release", "event_indexes": [0, 1], "patches": [{"path": "1.payload.state.assignment.version", "value": 2}], "rehash": true, "expected_error": "ASSIGNMENT_VERSION_INVALID"},
+    {"name": "unknown_state_version", "source": "current_grant_renew_release", "event_indexes": [0], "patches": [{"path": "0.payload.state.state_version", "value": 2}], "rehash": true, "expected_error": "ASSIGNMENT_STATE_INVALID"}
+  ]
+}

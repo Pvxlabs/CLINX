@@ -1,0 +1,199 @@
+{
+  "contract_version": "CLINX_KERNEL_V1",
+  "base": {
+    "snapshot": {
+      "execution": {
+        "execution_id": "exe-1",
+        "task_id": "task-1",
+        "lifecycle": "REQUESTED"
+      },
+      "attempt": {
+        "attempt_id": "att-1",
+        "execution_id": "exe-1",
+        "lifecycle": "ASSIGNED"
+      },
+      "worker": {
+        "worker_id": "worker-1",
+        "lifecycle": "REGISTERED",
+        "current_incarnation_id": "inc-1"
+      },
+      "incarnation": {
+        "incarnation_id": "inc-1",
+        "worker_id": "worker-1",
+        "lifecycle": "ACTIVE"
+      },
+      "assignment": {
+        "assignment_id": "asn-1",
+        "attempt_id": "att-1",
+        "worker_id": "worker-1",
+        "incarnation_id": "inc-1",
+        "resource_key": "res-1",
+        "resource_epoch": 3,
+        "lifecycle": "ACTIVE",
+        "version": 2,
+        "lease_expires_at": "2026-09-11T12:00:10.000000+00:00"
+      },
+      "allocation": {
+        "allocation_id": "alloc-1",
+        "assignment_id": "asn-1",
+        "attempt_id": "att-1",
+        "worker_id": "worker-1",
+        "incarnation_id": "inc-1",
+        "resource_key": "res-1",
+        "resource_epoch": 3,
+        "lifecycle": "ACTIVE",
+        "version": 2,
+        "expires_at": "2026-09-11T12:00:10.000000+00:00"
+      },
+      "resource": {
+        "resource_key": "res-1",
+        "fencing_epoch": 3,
+        "version": 4
+      },
+      "clock": {
+        "source": "COORDINATOR_TRUSTED",
+        "now": "2026-09-11T12:00:09.000000+00:00",
+        "watermark": "2026-09-11T12:00:09.000000+00:00"
+      },
+      "safety_handoff": {
+        "state": "VERIFIED",
+        "assignment_id": "asn-1",
+        "worker_id": "worker-1",
+        "incarnation_id": "inc-1",
+        "attempt_id": "att-1",
+        "resource_key": "res-1",
+        "resource_epoch": 3
+      }
+    },
+    "request": {
+      "execution_id": "exe-1",
+      "attempt_id": "att-1",
+      "worker_id": "worker-1",
+      "incarnation_id": "inc-1",
+      "assignment_id": "asn-1",
+      "allocation_id": "alloc-1",
+      "resource_key": "res-1",
+      "resource_epoch": 3,
+      "expected_assignment_version": 2,
+      "expected_allocation_version": 2,
+      "expected_resource_version": 4
+    }
+  },
+  "cases": [
+    {
+      "name": "exact_owner_before_expiry",
+      "patches": [],
+      "expected": {
+        "authority": "NON_AUTHORITATIVE",
+        "decision": "ALLOW_CANDIDATE",
+        "reason_code": "OWNERSHIP_SNAPSHOT_MATCHES",
+        "details": {
+          "assignment_version": 2,
+          "allocation_version": 2,
+          "resource_version": 4,
+          "resource_epoch": 3,
+          "receipt_used_as_authority": false
+        }
+      }
+    },
+    {
+      "name": "same_task_other_execution",
+      "patches": [{"path": "snapshot.execution.execution_id", "value": "exe-2"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "EXECUTION_ID_MISMATCH", "details": {"failed_field": "execution.execution_id"}}
+    },
+    {
+      "name": "attempt_bound_to_other_execution",
+      "patches": [{"path": "snapshot.attempt.execution_id", "value": "exe-2"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "ATTEMPT_EXECUTION_MISMATCH", "details": {"failed_field": "attempt.execution_id"}}
+    },
+    {
+      "name": "wrong_worker",
+      "patches": [{"path": "request.worker_id", "value": "worker-2"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "WORKER_ID_MISMATCH", "details": {"failed_field": "worker.worker_id"}}
+    },
+    {
+      "name": "superseded_incarnation",
+      "patches": [{"path": "snapshot.worker.current_incarnation_id", "value": "inc-2"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "WORKER_INCARNATION_NOT_CURRENT", "details": {"failed_field": "worker.current_incarnation_id"}}
+    },
+    {
+      "name": "wrong_assignment_identity",
+      "patches": [{"path": "request.assignment_id", "value": "asn-old"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "ASSIGNMENT_IDENTITY_MISMATCH", "details": {"failed_field": "assignment.assignment_id"}}
+    },
+    {
+      "name": "stale_assignment_epoch",
+      "patches": [{"path": "snapshot.assignment.resource_epoch", "value": 2}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "ASSIGNMENT_EPOCH_MISMATCH", "details": {"failed_field": "assignment.resource_epoch"}}
+    },
+    {
+      "name": "quarantined_allocation",
+      "patches": [{"path": "snapshot.allocation.lifecycle", "value": "QUARANTINED"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "ALLOCATION_NOT_ACTIVE", "details": {"failed_field": "allocation.lifecycle"}}
+    },
+    {
+      "name": "stale_assignment_version",
+      "patches": [{"path": "request.expected_assignment_version", "value": 1}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "ASSIGNMENT_VERSION_MISMATCH", "details": {"failed_field": "assignment.version"}}
+    },
+    {
+      "name": "resource_epoch_changed",
+      "patches": [{"path": "snapshot.resource.fencing_epoch", "value": 4}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "RESOURCE_EPOCH_MISMATCH", "details": {"failed_field": "resource.fencing_epoch"}}
+    },
+    {
+      "name": "exact_expiry_boundary",
+      "patches": [
+        {"path": "snapshot.clock.now", "value": "2026-09-11T12:00:10.000000+00:00"},
+        {"path": "snapshot.clock.watermark", "value": "2026-09-11T12:00:10.000000+00:00"}
+      ],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "LEASE_EXPIRED", "details": {"failed_field": "assignment.lease_expires_at"}}
+    },
+    {
+      "name": "after_expiry",
+      "patches": [
+        {"path": "snapshot.clock.now", "value": "2026-09-11T12:00:11.000000+00:00"},
+        {"path": "snapshot.clock.watermark", "value": "2026-09-11T12:00:11.000000+00:00"}
+      ],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "LEASE_EXPIRED", "details": {"failed_field": "assignment.lease_expires_at"}}
+    },
+    {
+      "name": "clock_watermark_regression",
+      "patches": [{"path": "snapshot.clock.watermark", "value": "2026-09-11T12:00:09.500000+00:00"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "CLOCK_WATERMARK_REGRESSION", "details": {"failed_field": "clock.now"}}
+    },
+    {
+      "name": "untrusted_clock",
+      "patches": [{"path": "snapshot.clock.source", "value": "WORKER_REPORTED"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "CLOCK_SOURCE_UNTRUSTED", "details": {"failed_field": "clock.source"}}
+    },
+    {
+      "name": "pending_safety_handoff",
+      "patches": [{"path": "snapshot.safety_handoff.state", "value": "PENDING"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "SAFETY_HANDOFF_NOT_VERIFIED", "details": {"failed_field": "safety_handoff.state"}}
+    },
+    {
+      "name": "handoff_for_other_owner",
+      "patches": [{"path": "snapshot.safety_handoff.assignment_id", "value": "asn-old"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "SAFETY_HANDOFF_OWNER_MISMATCH", "details": {"failed_field": "safety_handoff.assignment_id"}}
+    },
+    {
+      "name": "unknown_epoch_evidence",
+      "patches": [{"path": "snapshot.assignment.resource_epoch", "value": "UNKNOWN"}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "INSUFFICIENT_EVIDENCE", "reason_code": "EVIDENCE_INCOMPLETE", "details": {"missing_or_unknown": ["assignment.resource_epoch"]}}
+    },
+    {
+      "name": "null_allocation_identity",
+      "patches": [{"path": "snapshot.allocation.allocation_id", "value": null}],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "INSUFFICIENT_EVIDENCE", "reason_code": "EVIDENCE_INCOMPLETE", "details": {"missing_or_unknown": ["allocation.allocation_id"]}}
+    },
+    {
+      "name": "old_receipt_does_not_restore_authority",
+      "patches": [
+        {"path": "snapshot.assignment.lifecycle", "value": "REVOKED"},
+        {"path": "snapshot.receipt", "value": {"original_success": true, "current_authority_valid": false}}
+      ],
+      "expected": {"authority": "NON_AUTHORITATIVE", "decision": "REJECT_CANDIDATE", "reason_code": "ASSIGNMENT_NOT_ACTIVE", "details": {"failed_field": "assignment.lifecycle"}}
+    }
+  ]
+}

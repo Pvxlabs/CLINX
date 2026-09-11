@@ -1,0 +1,179 @@
+{
+  "contract_version": "CLINX_KERNEL_V1",
+  "hash_policy": "SHA256_CANONICAL_PAYLOAD means the test mechanically hashes the unchanged manually authored payload",
+  "traces": [
+    {
+      "name": "current_grant_renew_release",
+      "events": [
+        {
+          "event_id": "event-current-1",
+          "stream_type": "assignment",
+          "stream_id": "asn-current",
+          "sequence": 1,
+          "event_family": "RUNTIME_WORKER_V1",
+          "event_type": "AssignmentGranted",
+          "schema_version": 1,
+          "occurred_at": "2026-09-11T12:00:00.000000+00:00",
+          "recorded_at": "2026-09-11T12:00:00.000000+00:00",
+          "payload": {
+            "assignment_id": "asn-current",
+            "lifecycle": "ACTIVE",
+            "producer_extension": "not projected",
+            "state": {
+              "state_version": 1,
+              "assignment": {
+                "assignment_id": "asn-current",
+                "attempt_id": "att-current",
+                "worker_id": "worker-current",
+                "incarnation_id": "inc-current",
+                "resource_key": "res-current",
+                "resource_epoch": 7,
+                "lifecycle": "ACTIVE",
+                "version": 0,
+                "lease_expires_at": "2026-09-11T12:00:20.000000+00:00",
+                "created_at": "2026-09-11T12:00:00.000000+00:00",
+                "released_at": null,
+                "producer_note": "not projected"
+              },
+              "allocation": {
+                "allocation_id": "alloc-current",
+                "assignment_id": "asn-current",
+                "attempt_id": "att-current",
+                "worker_id": "worker-current",
+                "incarnation_id": "inc-current",
+                "resource_key": "res-current",
+                "resource_epoch": 7,
+                "lifecycle": "ACTIVE",
+                "version": 0,
+                "expires_at": "2026-09-11T12:00:20.000000+00:00",
+                "release_reason": null
+              },
+              "attempt": {
+                "attempt_id": "att-current",
+                "lifecycle": "ASSIGNED",
+                "version": 1
+              },
+              "recovery": null
+            }
+          },
+          "payload_hash": "SHA256_CANONICAL_PAYLOAD",
+          "global_position": 10
+        },
+        {
+          "event_id": "event-current-2",
+          "stream_type": "assignment",
+          "stream_id": "asn-current",
+          "sequence": 2,
+          "event_family": "RUNTIME_WORKER_V1",
+          "event_type": "AssignmentRenewed",
+          "schema_version": 1,
+          "occurred_at": "2026-09-11T12:00:05.000000+00:00",
+          "recorded_at": "2026-09-11T12:00:05.000000+00:00",
+          "payload": {
+            "assignment_id": "asn-current",
+            "lifecycle": "ACTIVE",
+            "state": {
+              "state_version": 1,
+              "assignment": {
+                "assignment_id": "asn-current",
+                "attempt_id": "att-current",
+                "worker_id": "worker-current",
+                "incarnation_id": "inc-current",
+                "resource_key": "res-current",
+                "resource_epoch": 7,
+                "lifecycle": "ACTIVE",
+                "version": 1,
+                "lease_expires_at": "2026-09-11T12:00:30.000000+00:00",
+                "created_at": "2026-09-11T12:00:00.000000+00:00",
+                "released_at": null
+              },
+              "allocation": {
+                "allocation_id": "alloc-current",
+                "assignment_id": "asn-current",
+                "attempt_id": "att-current",
+                "worker_id": "worker-current",
+                "incarnation_id": "inc-current",
+                "resource_key": "res-current",
+                "resource_epoch": 7,
+                "lifecycle": "ACTIVE",
+                "version": 1,
+                "expires_at": "2026-09-11T12:00:30.000000+00:00",
+                "release_reason": null
+              },
+              "attempt": {
+                "attempt_id": "att-current",
+                "lifecycle": "ASSIGNED",
+                "version": 1
+              },
+              "recovery": null
+            }
+          },
+          "payload_hash": "SHA256_CANONICAL_PAYLOAD",
+          "global_position": 20
+        },
+        {
+          "event_id": "event-current-3",
+          "stream_type": "assignment",
+          "stream_id": "asn-current",
+          "sequence": 3,
+          "event_family": "RUNTIME_WORKER_V1",
+          "event_type": "AssignmentReleased",
+          "schema_version": 1,
+          "occurred_at": "2026-09-11T12:00:08.000000+00:00",
+          "recorded_at": "2026-09-11T12:00:08.000000+00:00",
+          "payload": {
+            "assignment_id": "asn-current",
+            "lifecycle": "RELEASED",
+            "reason": "manual release",
+            "state": {
+              "state_version": 1,
+              "assignment": {
+                "assignment_id": "asn-current",
+                "attempt_id": "att-current",
+                "worker_id": "worker-current",
+                "incarnation_id": "inc-current",
+                "resource_key": "res-current",
+                "resource_epoch": 7,
+                "lifecycle": "RELEASED",
+                "version": 2,
+                "lease_expires_at": "2026-09-11T12:00:30.000000+00:00",
+                "created_at": "2026-09-11T12:00:00.000000+00:00",
+                "released_at": "2026-09-11T12:00:08.000000+00:00"
+              },
+              "allocation": {
+                "allocation_id": "alloc-current",
+                "assignment_id": "asn-current",
+                "attempt_id": "att-current",
+                "worker_id": "worker-current",
+                "incarnation_id": "inc-current",
+                "resource_key": "res-current",
+                "resource_epoch": 7,
+                "lifecycle": "RELEASED",
+                "version": 2,
+                "expires_at": "2026-09-11T12:00:30.000000+00:00",
+                "release_reason": "manual release"
+              },
+              "attempt": {
+                "attempt_id": "att-current",
+                "lifecycle": "RELEASED",
+                "version": 2
+              },
+              "recovery": null
+            }
+          },
+          "payload_hash": "SHA256_CANONICAL_PAYLOAD",
+          "global_position": 30
+        }
+      ],
+      "expected_prefixes": [
+        {"event_type": "AssignmentGranted", "assignment_lifecycle": "ACTIVE", "assignment_version": 0, "allocation_lifecycle": "ACTIVE", "allocation_version": 0, "attempt_lifecycle": "ASSIGNED", "attempt_version": 1, "recovery_state": null, "recovery_attempts": null},
+        {"event_type": "AssignmentRenewed", "assignment_lifecycle": "ACTIVE", "assignment_version": 1, "allocation_lifecycle": "ACTIVE", "allocation_version": 1, "attempt_lifecycle": "ASSIGNED", "attempt_version": 1, "recovery_state": null, "recovery_attempts": null},
+        {"event_type": "AssignmentReleased", "assignment_lifecycle": "RELEASED", "assignment_version": 2, "allocation_lifecycle": "RELEASED", "allocation_version": 2, "attempt_lifecycle": "RELEASED", "attempt_version": 2, "recovery_state": null, "recovery_attempts": null}
+      ],
+      "expected_not_covered_fields": [
+        "payload.producer_extension",
+        "state.assignment.producer_note"
+      ]
+    }
+  ]
+}

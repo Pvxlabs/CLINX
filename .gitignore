@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 bridge.toml.local
 .env
+kernel/target/

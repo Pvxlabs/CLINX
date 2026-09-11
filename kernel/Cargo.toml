@@ -1,0 +1,26 @@
+[package]
+name = "clinx-decision-kernel"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+
+[lib]
+name = "clinx_decision_kernel"
+path = "src/lib.rs"
+
+[[bin]]
+name = "clinx-kernel-eval"
+path = "src/bin/clinx-kernel-eval.rs"
+
+[[bin]]
+name = "clinx-kernel-bench"
+path = "src/bin/clinx-kernel-bench.rs"
+
+[dependencies]
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
+sha2 = "0.10.9"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
