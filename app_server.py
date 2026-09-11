@@ -50,6 +50,11 @@ class AppServerRemoteError(AppServerError):
         self.error = error
 
 
+def _is_transport_timeout(exc: AppServerTransportError) -> bool:
+    """Distinguish an empty non-blocking poll from a closed transport."""
+    return "timed out" in str(exc).casefold() or "timeout" in str(exc).casefold()
+
+
 def _process_group_id(process: Any) -> int | None:
     pid = getattr(process, "pid", None)
     if not isinstance(pid, int) or pid <= 0:
@@ -643,6 +648,8 @@ class CodexAppServerClient:
             or not namespace.strip()
             or not isinstance(name, str)
             or not name.strip()
+            or not isinstance(thread_id, str)
+            or not thread_id.strip()
             or not callable(handler)
         ):
             raise AppServerProtocolError("dynamic tool configuration is invalid")
@@ -650,6 +657,14 @@ class CodexAppServerClient:
         self._dynamic_tool_name = name.strip()
         self._dynamic_thread_id = thread_id
         self._dynamic_tool_handler = handler
+
+    def clear_dynamic_tool(self) -> None:
+        """Remove a prior tool binding before the next operation."""
+        self._dynamic_tool_namespace = None
+        self._dynamic_tool_name = None
+        self._dynamic_thread_id = None
+        self._dynamic_turn_id = None
+        self._dynamic_tool_handler = None
 
     def attach_dynamic_tool_turn(self, thread_id: str, turn_id: str) -> None:
         """Bind a configured dynamic tool to one exact turn.
@@ -666,6 +681,8 @@ class CodexAppServerClient:
             or not turn_id.strip()
         ):
             raise AppServerProtocolError("dynamic tool turn attachment is invalid")
+        if self._dynamic_thread_id != thread_id:
+            raise AppServerProtocolError("dynamic tool thread identity changed")
         self._dynamic_thread_id = thread_id
         self._dynamic_turn_id = turn_id
 
@@ -773,8 +790,8 @@ class CodexAppServerClient:
                 break
             try:
                 message = self.transport.receive(remaining)
-            except AppServerTransportError:
-                if result or timeout_seconds == 0:
+            except AppServerTransportError as exc:
+                if _is_transport_timeout(exc) and (result or timeout_seconds == 0):
                     break
                 raise
             if "method" in message and "id" in message:
