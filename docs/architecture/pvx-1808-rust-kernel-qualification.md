@@ -17,8 +17,8 @@ change to the V1 live authority.
 | --- | --- |
 | Checkout | `/home/pvxlabs/dev/clinx-pvx1807-remediation` |
 | Branch | `pvx-1808-kernel-prototype` |
-| BASE | `3f5f0320eb579d6df2f4cd90def131078838d413` |
-| BASE tree | `60b81ea140b587e6cab871a8b0933e167c47c191` |
+| BASE | `ab818f974b44a996c79209b2d8e2ff05618e899b` |
+| BASE tree | `2069ba04332135541306a5593de2a10e968a716a` |
 | Main preservation anchor | `9a21bf19399e9c305f7fb1487feadc73a11da047` |
 | Contract | `CLINX_KERNEL_V1` |
 | Authority | V1 Python runtime-control remains the only live authority |
@@ -59,18 +59,35 @@ python3 -m pytest -q test_pvx1808_ownership_candidates.py
 
 python3 -m pytest -q test_pvx1808_benchmark_metrics.py
 1 passed                                  GREEN
+
+python3 -m pytest -q test_pvx1808_finite_number_candidates.py
+2 failed, 6 passed                         RED
+
+python3 -m pytest -q test_pvx1808_finite_number_candidates.py
+8 passed                                  GREEN
 ```
 
-K1 uses one monotonic deadline for non-blocking stdin writes, pipe delivery,
-stdout/stderr draining, and response reading. Timeout, protocol failure, and
-child failure perform bounded cleanup and permanently close the contaminated
-session. `restart()` explicitly creates a new process generation and clears
-buffers, request associations, and request count. Python rejects non-finite
-JSON, duplicate fields, invalid JSON, excessive nesting, and operation result
-shapes. Rust reads through bounded `BufRead::fill_buf`/`consume` chunks into a
-frame bounded at read time; delimiter handling preserves the next buffered
-frame. An oversized line receives one `FRAME_TOO_LARGE` response and the
-finite evaluator process exits.
+The finite-number RED result came from the real repository copy of the review
+candidate: `1e309` and `-1e9999` were converted to `inf`/`-inf` by the default
+JSON float parser and accepted inside a nested ownership result. The final
+fix uses a general `parse_float` finite-value check. It rejects those overflow
+values as `KernelProtocolError`, while retaining finite `1e308`, `-1e308`, and
+`1.5e-12`, plus the existing NaN/Infinity, integer, boolean, `NULL`, and
+`UNKNOWN` contracts. The invalid-response path closes the session; explicit
+restart preserves normal interaction.
+
+K1 uses one monotonic request deadline for non-blocking stdin writes, pipe
+delivery, stdout/stderr draining, and response reading. Timeout, protocol
+failure, and child failure permanently close the contaminated session. The
+`close()` operation itself has a separate bounded cleanup budget for wait,
+terminate, and kill; that cleanup budget is not claimed to share the request
+I/O timeout. `restart()` explicitly creates a new process generation and
+clears buffers, request associations, and request count. Python rejects
+non-finite JSON, duplicate fields, invalid JSON, excessive nesting, and
+operation result shapes. Rust reads through bounded `BufRead::fill_buf`/`consume`
+chunks into a frame bounded at read time; delimiter handling preserves the
+next buffered frame. An oversized line receives one `FRAME_TOO_LARGE` response
+and the finite evaluator process exits.
 
 K2 uses the runtime schema lifecycle sets, UTF-8 byte limits, positive
 ownership epochs, and separate non-negative versions/counters in both
@@ -158,13 +175,15 @@ frame growth, partial EOF, and preservation of the next frame.
 
 ```text
 python3 -m pytest -q test_kernel_conformance.py                 20 passed
-python3 -m pytest -q                                            540 passed, 66 subtests passed
+python3 -m pytest -q test_pvx1808_finite_number_candidates.py    8 passed
+python3 -m pytest -q                                            548 passed, 66 subtests passed
 ```
 
 The full result is from this checkout and includes the original repository
-regressions plus the eleven new protocol, ownership, runtime-trace, and
-benchmark provenance tests. The historical `529 passed / 66 subtests` count was not
-reused or recomputed as the final result.
+regressions plus the prior protocol, ownership, runtime-trace, and benchmark
+provenance tests and the eight finite-number tests. The historical
+`540 passed / 66 subtests` count was not reused or recomputed as the final
+result.
 
 ### Corrected Cost Measurement
 
@@ -213,6 +232,11 @@ this raw file and table are the K3 corrected record.
 | `END_TO_END_IO_DEADLINE` | `PASS` | Blocked stdin/write-backpressure subprocess plus bounded cleanup regression. |
 | `PROCESS_GENERATION_BUFFER_ISOLATION` | `PASS` | Explicit restart generation and stale-buffer discard regression. |
 | `FINITE_JSON_RESPONSE_VALIDATION` | `PASS` | NaN, duplicate, malformed, depth, unknown-field, and result-shape checks. |
+| `EXPONENT_OVERFLOW_REJECTED` | `PASS` | Nested `1e309` and `-1e9999` responses fail finite-number validation. |
+| `NESTED_RESPONSE_FINITE_VALIDATION` | `PASS` | Finite-value validation covers nested dictionaries and arrays. |
+| `FINITE_NUMBER_COMPATIBILITY` | `PASS` | Finite `1e308`, `-1e308`, and `1.5e-12` remain accepted. |
+| `INVALID_RESPONSE_SESSION_ISOLATION` | `PASS` | Invalid response closes the session and rejects implicit reuse. |
+| `EXPLICIT_RESTART_REGRESSION` | `PASS` | Explicit restart creates a clean generation with normal progress. |
 | `RUST_PREALLOCATION_FRAME_BOUND` | `PASS` | Bounded `BufRead` frame reader and four Rust boundary tests. |
 | `OWNERSHIP_INVALID_STATE_AND_EPOCH_REJECTION` | `PASS` | Schema lifecycle sets, invalid state, positive epoch, and stable codes. |
 | `UNICODE_BOUNDARY_DIFFERENTIAL` | `PASS` | UTF-8 byte boundary candidate against Python and Rust. |
@@ -223,8 +247,9 @@ this raw file and table are the K3 corrected record.
 | `BENCHMARK_METRIC_PROVENANCE` | `PASS` | Returned `elapsed_ns`/`iterations`, raw samples, hashes, bounds, commands, env. |
 | `COLD_HOT_BUILD_RSS_LABELS` | `PASS` | Cold/hot split, build labels, temporary clean target, same-workload RSS. |
 | `REPOSITORY_RESIDENT_REGRESSION` | `PASS` | New tests and corrected raw measurement fixture are discoverable in repo. |
+| `EXISTING_K1_K2_K3_REGRESSION` | `PASS` | Existing protocol, ownership, replay, SQLite, benchmark, and full-suite evidence retained. |
 | `PYTHON_DEFAULT_PATH_UNCHANGED` | `PASS` | Full regression remains green; Rust is explicit qualification-only code. |
-| `PVX1805_PVX1806_PVX1807_REGRESSION` | `PASS` | Full Python suite: 540 passed and 66 subtests passed. |
+| `PVX1805_PVX1806_PVX1807_REGRESSION` | `PASS` | Full Python suite: 548 passed and 66 subtests passed. |
 | `FULL_QUALIFICATION` | `PASS` | Rust checks, semantic, protocol, ownership, trace, regression, and K3 run. |
 | `LINEAR_SYNC` | `PASS` | Delivery comment `cf044387-9dbf-4510-856d-85e20fcd7758` appended; issue remains `In Review`. |
 
