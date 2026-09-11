@@ -66,6 +66,17 @@ class CorrelationStatus(str, Enum):
     UNKNOWN = "unknown"
     MISMATCH = "mismatch"
     STALE_GENERATION = "stale_generation"
+    HISTORICAL = "historical"
+
+
+class LifecycleState(str, Enum):
+    """Bounded adapter lifecycle states exposed for diagnostics."""
+
+    CREATED = "created"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    DISCONNECTED = "disconnected"
+    CLOSED = "closed"
 
 
 class EventKind(str, Enum):
@@ -201,6 +212,7 @@ class NormalizedEvent:
     local_sequence: int | None = None
     cursor: str | None = None
     terminal_observed: bool = False
+    terminal_status: str | None = None
     cancel_state: CancelState = CancelState.NOT_REQUESTED
     error_code: str | None = None
     evidence_reference: str | None = None
@@ -223,14 +235,17 @@ class NormalizedEvent:
             raise ValueError("local_sequence must be a non-negative integer")
         object.__setattr__(self, "native_event_id", _optional_text("native_event_id", self.native_event_id))
         object.__setattr__(self, "cursor", _optional_text("cursor", self.cursor))
+        object.__setattr__(self, "terminal_status", _optional_text("terminal_status", self.terminal_status))
         object.__setattr__(self, "error_code", _optional_text("error_code", self.error_code))
         object.__setattr__(self, "evidence_reference", _optional_text("evidence_reference", self.evidence_reference))
         object.__setattr__(self, "payload", _json_value(self.payload))
 
     @property
     def authority_eligible(self) -> bool:
-        return self.correlation is CorrelationStatus.EXACT and self.connection_generation == (
-            self.operation.connection_generation if self.operation else self.connection_generation
+        return (
+            self.operation is not None
+            and self.correlation is CorrelationStatus.EXACT
+            and self.connection_generation == self.operation.connection_generation
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -246,6 +261,7 @@ class NormalizedEvent:
             "local_sequence": self.local_sequence,
             "cursor": self.cursor,
             "terminal_observed": self.terminal_observed,
+            "terminal_status": self.terminal_status,
             "cancel_state": self.cancel_state.value,
             "error_code": self.error_code,
             "evidence_reference": self.evidence_reference,
@@ -281,4 +297,3 @@ class AdapterOperation:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "events", tuple(self.events))
-

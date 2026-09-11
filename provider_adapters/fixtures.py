@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from typing import Any
 
 from app_server import AppServerTransportError
@@ -46,6 +47,8 @@ class ScriptedTransport:
             self.on_send(message, self)
 
     def receive(self, timeout_seconds: float) -> dict[str, Any]:
+        if self.closed or not self.connected:
+            raise AppServerTransportError("scripted transport is closed")
         if self.incoming:
             return self.incoming.popleft()
         raise AppServerTransportError("timed out waiting for scripted message")
@@ -85,6 +88,13 @@ class SyntheticProviderAdapter:
             raise ValueError("unknown synthetic session")
         return session
 
+    def reconnect(self, session: ProviderSessionRef) -> ProviderSessionRef:
+        if session != self._session:
+            raise ValueError("unknown synthetic session")
+        self._generation += 1
+        self._session = replace(self._session, connection_generation=self._generation)
+        return self._session
+
     def start_turn(self, session: ProviderSessionRef, context: OperationContext, _prompt: str, **_kwargs: Any) -> AdapterOperation:
         if session != self._session:
             raise ValueError("unknown synthetic session")
@@ -93,7 +103,7 @@ class SyntheticProviderAdapter:
         self._events.append(NormalizedEvent(
             receipt_id=f"synthetic:{self._turn}:start",
             provider_id=self.provider_id,
-            connection_generation=1,
+            connection_generation=self._generation,
             kind=EventKind.TURN_STARTED,
             event_type="room.started",
             operation=context,

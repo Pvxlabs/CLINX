@@ -94,6 +94,39 @@ The adapter never infers exact ownership from a latest turn, latest result,
 timestamp order, or transcript text. Missing thread/turn correlation is
 explicitly `unknown`; mismatch and stale generation are separate statuses.
 
+## PVX-1807 Remediation Addendum
+
+This remediation was performed under an explicit operator instruction:
+
+```text
+AUTHORITY_SOURCE=USER_DIRECT_OPERATOR_INSTRUCTION
+EXECUTION_SCOPE=ISOLATED_DEVELOPMENT_COPY
+CLINX_MANAGED_EXECUTION_AUTHORITY=NOT_CLAIMED
+HISTORICAL_TASK_MUTATION=NOT_PERFORMED
+```
+
+The authorized copy is `/home/pvxlabs/dev/clinx-pvx1807-remediation`, created
+from fixed BASE `a85677228dea28e20339b25ee22d5ea9f3b04cfe` on branch
+`pvx-1807-remediation`. The original `/home/pvxlabs/dev/clinx` checkout was
+kept read-only for this task. No CLINX managed execution grant, canonical
+registration, runtime lease, or physical worktree takeover was inferred or
+created. Historical PVX-1800 task `task_322fd95b8e8a480387460c24e763d0a7`
+and its lease were not read, changed, cancelled, recovered, or released.
+
+The following remediation contracts are now explicit:
+
+| Contract | Remediation boundary |
+| --- | --- |
+| `PA-01` | Every provider call routes the opaque provider handle. Reconnect creates a new connection generation, resumes that exact handle, and rebinds the same execution/attempt/operation identity. Stale-generation evidence cannot advance the current operation. |
+| `PA-02` | Transport send completion is tracked per RPC request, including when a server tool request is handled in the middle of an RPC. A sent-but-unanswered start is `side_effect_outcome_unknown`, quarantines the whole adapter connection, and is never automatically resent. |
+| `PA-03` | Events are checked against the complete session/thread/turn/operation/generation context. Current exact terminal evidence moves the operation to historical-only observation; later matching events are `historical` and non-authoritative. Only the known terminal status schema is terminal. |
+| `PA-04` | Dynamic-tool handlers are bound to namespace, name, provider thread, current turn, operation closure, and connection generation. Continuations and reconnects do not reuse a prior turn binding. |
+| `PA-05` | Empty non-blocking polls remain `observed` with no events. A closed transport becomes `transport_loss` and a bounded `disconnected` lifecycle state; explicit `close()` is idempotent and `closed`. Event/native-id and operation history are bounded. |
+
+The adapter continues to be an evidence source only. These guards do not write
+Task, Execution, Attempt, lease, runtime-control, shadow-ledger, or Linear
+state and do not change the public MCP contract.
+
 ## Deliberate Non-Goals
 
 Cross-process provider recovery, durable subscriptions, external exactly-once

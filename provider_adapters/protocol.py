@@ -26,6 +26,8 @@ class ProviderAdapter(Protocol):
 
     def resume_session(self, session: ProviderSessionRef) -> ProviderSessionRef: ...
 
+    def reconnect(self, session: ProviderSessionRef) -> ProviderSessionRef: ...
+
     def start_turn(
         self,
         session: ProviderSessionRef,
@@ -59,4 +61,3 @@ class ProviderAdapter(Protocol):
     ) -> None: ...
 
     def close(self) -> None: ...
-
