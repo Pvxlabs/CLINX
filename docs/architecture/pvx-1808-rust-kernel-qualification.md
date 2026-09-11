@@ -226,7 +226,7 @@ this raw file and table are the K3 corrected record.
 | `PYTHON_DEFAULT_PATH_UNCHANGED` | `PASS` | Full regression remains green; Rust is explicit qualification-only code. |
 | `PVX1805_PVX1806_PVX1807_REGRESSION` | `PASS` | Full Python suite: 540 passed and 66 subtests passed. |
 | `FULL_QUALIFICATION` | `PASS` | Rust checks, semantic, protocol, ownership, trace, regression, and K3 run. |
-| `LINEAR_SYNC` | `PENDING_DELIVERY` | Comment is appended after feature branch push; issue remains `In Review`. |
+| `LINEAR_SYNC` | `PASS` | Delivery comment `cf044387-9dbf-4510-856d-85e20fcd7758` appended; issue remains `In Review`. |
 
 ## Production Boundary And Adoption
 
