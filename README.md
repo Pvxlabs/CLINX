@@ -64,6 +64,9 @@ The checked-in implementation and test suite currently cover:
   Linear to own execution state.
 - A safe MCP command plane with explicit approval and opaque execution
   references; the normal public catalog does not expose a generic `clinx_execute`.
+- An explicitly initialized, default-off V2 `runtime_control` foundation for
+  durable worker ownership and a qualification-only, non-authoritative Rust
+  decision/replay prototype. V1 remains the live authority.
 
 These are self-hosted and dogfooded capabilities, not a claim of production
 readiness. Runtime/provider behavior must still be qualified in the deployment

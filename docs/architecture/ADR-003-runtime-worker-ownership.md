@@ -107,6 +107,16 @@ conflict. A historical receipt includes `original_committed_result`, but its
 `current_authority_valid` value is recomputed from current rows; replaying a
 receipt cannot restore an expired or revoked permission.
 
+The current-authority snapshot also rechecks the assignment-scoped safety
+handoff table. If a pending handoff belongs to another transaction, or its
+internal token is not the token of the current owner-authorized transaction,
+the receipt reports `current_authority_valid=false` even when the assignment
+is still active and its lease has not expired. A transaction that has already
+validated its own matching handoff may preserve the successful receipt
+snapshot while that handoff is committed and cleared with the business
+mutation. This is a read-side snapshot rule only: receipt lookup never clears,
+renews, recovers, or authorizes a later protected mutation.
+
 Receipt lookup is not an authorization or recovery path: a new
 owner-authorized command must still obtain the assignment handoff described
 below.
