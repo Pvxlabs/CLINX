@@ -1,0 +1,1799 @@
+{
+  "benchmark_binary": "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+  "binary": "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-eval",
+  "contract_version": "CLINX_KERNEL_V1",
+  "environment": {
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "cpu": "x86_64",
+    "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+    "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+    "python": "Python 3.12.3",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+  },
+  "input_hashes": {
+    "ownership": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+    "replay": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24"
+  },
+  "interpretation": "Workloads are reported separately. No speedup, production throughput, P99, capacity, multi-machine consistency, or long-run stability claim is made.",
+  "method": "one warmup followed by five measured rounds; fixed input hashes; Rust returned elapsed_ns and iterations are retained separately from outer wall time",
+  "metrics": {
+    "build": {
+      "clean_build": {
+        "sample": {
+          "build_status": "CLEAN_BUILD",
+          "command": [
+            "cargo",
+            "build",
+            "--release",
+            "--locked"
+          ],
+          "elapsed_ns": 3921177579,
+          "environment": {
+            "CARGO_TARGET_DIR": "/tmp/pvx1808-target-4gejo9x1",
+            "build_mode": "CLEAN_BUILD",
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "perf_counter_end_ns": 293428323130939,
+          "perf_counter_start_ns": 293424401953360
+        },
+        "status": "CLEAN_BUILD"
+      },
+      "incremental_build": {
+        "samples": [],
+        "status": "NOT_MEASURED"
+      },
+      "up_to_date_build": {
+        "elapsed_ns": {
+          "max": 27079519,
+          "median": 25426784,
+          "min": 24794408,
+          "p95": 26900997.6,
+          "samples": 5,
+          "unit": "ns"
+        },
+        "measured": [
+          {
+            "build_status": "UP_TO_DATE_BUILD",
+            "command": [
+              "cargo",
+              "build",
+              "--release",
+              "--locked"
+            ],
+            "elapsed_ns": 27079519,
+            "environment": {
+              "build_mode": "UP_TO_DATE_BUILD",
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "perf_counter_end_ns": 293424182869892,
+            "perf_counter_start_ns": 293424155790373
+          },
+          {
+            "build_status": "UP_TO_DATE_BUILD",
+            "command": [
+              "cargo",
+              "build",
+              "--release",
+              "--locked"
+            ],
+            "elapsed_ns": 24794408,
+            "environment": {
+              "build_mode": "UP_TO_DATE_BUILD",
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "perf_counter_end_ns": 293424231606666,
+            "perf_counter_start_ns": 293424206812258
+          },
+          {
+            "build_status": "UP_TO_DATE_BUILD",
+            "command": [
+              "cargo",
+              "build",
+              "--release",
+              "--locked"
+            ],
+            "elapsed_ns": 26186912,
+            "environment": {
+              "build_mode": "UP_TO_DATE_BUILD",
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "perf_counter_end_ns": 293424281453259,
+            "perf_counter_start_ns": 293424255266347
+          },
+          {
+            "build_status": "UP_TO_DATE_BUILD",
+            "command": [
+              "cargo",
+              "build",
+              "--release",
+              "--locked"
+            ],
+            "elapsed_ns": 25426784,
+            "environment": {
+              "build_mode": "UP_TO_DATE_BUILD",
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "perf_counter_end_ns": 293424331542681,
+            "perf_counter_start_ns": 293424306115897
+          },
+          {
+            "build_status": "UP_TO_DATE_BUILD",
+            "command": [
+              "cargo",
+              "build",
+              "--release",
+              "--locked"
+            ],
+            "elapsed_ns": 24910226,
+            "environment": {
+              "build_mode": "UP_TO_DATE_BUILD",
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "perf_counter_end_ns": 293424378276195,
+            "perf_counter_start_ns": 293424353365969
+          }
+        ],
+        "status": "UP_TO_DATE_BUILD"
+      }
+    },
+    "cold_process_request": {
+      "max": 2596080,
+      "median": 2464602,
+      "min": 2402254,
+      "p95": 2588447.8,
+      "samples": 5,
+      "unit": "ns"
+    },
+    "hot_batch_16_requests": {
+      "max": 2347289,
+      "median": 2293838,
+      "min": 2101896,
+      "p95": 2346559.8,
+      "samples": 5,
+      "unit": "ns"
+    },
+    "python_bounded_encode_decode": {
+      "max": 199067,
+      "median": 187425,
+      "min": 171074,
+      "p95": 197628.2,
+      "samples": 5,
+      "unit": "ns"
+    },
+    "python_reference_ownership": {
+      "max": 203305,
+      "median": 170052,
+      "min": 142690,
+      "p95": 202583.6,
+      "samples": 5,
+      "unit": "ns"
+    },
+    "python_reference_replay": {
+      "max": 618440,
+      "median": 508802,
+      "min": 486259,
+      "p95": 601109.2,
+      "samples": 5,
+      "unit": "ns"
+    },
+    "python_to_rust_round_trip": {
+      "max": 2419025,
+      "median": 2370123,
+      "min": 1896407,
+      "p95": 2418195.4,
+      "samples": 5,
+      "unit": "ns"
+    },
+    "rss": {
+      "python": {
+        "max": 20736,
+        "median": 20736,
+        "min": 20736,
+        "p95": 20736.0,
+        "samples": 5,
+        "unit": "KB"
+      },
+      "rust": {
+        "max": 2112,
+        "median": 2112,
+        "min": 2112,
+        "p95": 2112.0,
+        "samples": 5,
+        "unit": "KB"
+      },
+      "status": "MEASURED",
+      "unit": "KB",
+      "workload": "same ownership JSON input, one evaluator operation, one fresh child process"
+    },
+    "rust_core": {
+      "iterations": 2000,
+      "meaning": "returned elapsed_ns is the in-process Rust loop; outer wall is a separate subprocess metric",
+      "outer_subprocess_wall_ns": {
+        "max": 13453016,
+        "median": 13255502,
+        "min": 13117280,
+        "p95": 13445918.6,
+        "samples": 5,
+        "unit": "ns"
+      },
+      "returned_elapsed_ns": {
+        "max": 12553804,
+        "median": 12396647,
+        "min": 12249860,
+        "p95": 12528678.6,
+        "samples": 5,
+        "unit": "ns"
+      }
+    },
+    "rust_parse_evaluate_serialize": {
+      "iterations": 2000,
+      "meaning": "returned elapsed_ns is the in-process Rust loop; outer wall is a separate subprocess metric",
+      "outer_subprocess_wall_ns": {
+        "max": 27428840,
+        "median": 25786964,
+        "min": 25700411,
+        "p95": 27117980.0,
+        "samples": 5,
+        "unit": "ns"
+      },
+      "returned_elapsed_ns": {
+        "max": 25942749,
+        "median": 24890869,
+        "min": 24698867,
+        "p95": 25761039.2,
+        "samples": 5,
+        "unit": "ns"
+      }
+    },
+    "rust_serde": {
+      "iterations": 2000,
+      "meaning": "returned elapsed_ns is the in-process Rust loop; outer wall is a separate subprocess metric",
+      "outer_subprocess_wall_ns": {
+        "max": 14817416,
+        "median": 14073870,
+        "min": 13836371,
+        "p95": 14706175.8,
+        "samples": 5,
+        "unit": "ns"
+      },
+      "returned_elapsed_ns": {
+        "max": 13375840,
+        "median": 12984821,
+        "min": 12663362,
+        "p95": 13371896.4,
+        "samples": 5,
+        "unit": "ns"
+      }
+    }
+  },
+  "raw_samples": {
+    "cold_process_request": {
+      "measured": [
+        {
+          "command": [
+            "<in-process>",
+            "cold_process_request"
+          ],
+          "elapsed_ns": 2402254,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+          "label": "cold_process_request",
+          "perf_counter_end_ns": 293429526309033,
+          "perf_counter_start_ns": 293429523906779,
+          "process_scope": "one fresh Rust evaluator subprocess per call",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "cold_process_request"
+          ],
+          "elapsed_ns": 2403496,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+          "label": "cold_process_request",
+          "perf_counter_end_ns": 293429550243814,
+          "perf_counter_start_ns": 293429547840318,
+          "process_scope": "one fresh Rust evaluator subprocess per call",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "cold_process_request"
+          ],
+          "elapsed_ns": 2557919,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+          "label": "cold_process_request",
+          "perf_counter_end_ns": 293429574125796,
+          "perf_counter_start_ns": 293429571567877,
+          "process_scope": "one fresh Rust evaluator subprocess per call",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "cold_process_request"
+          ],
+          "elapsed_ns": 2596080,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+          "label": "cold_process_request",
+          "perf_counter_end_ns": 293429598180864,
+          "perf_counter_start_ns": 293429595584784,
+          "process_scope": "one fresh Rust evaluator subprocess per call",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "cold_process_request"
+          ],
+          "elapsed_ns": 2464602,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+          "label": "cold_process_request",
+          "perf_counter_end_ns": 293429622345200,
+          "perf_counter_start_ns": 293429619880598,
+          "process_scope": "one fresh Rust evaluator subprocess per call",
+          "warmup": false
+        }
+      ],
+      "warmup": {
+        "command": [
+          "<in-process>",
+          "cold_process_request"
+        ],
+        "elapsed_ns": 2085635,
+        "environment": {
+          "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+          "cpu": "x86_64",
+          "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+          "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+          "python": "Python 3.12.3",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+        },
+        "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+        "label": "cold_process_request",
+        "perf_counter_end_ns": 293429502367899,
+        "perf_counter_start_ns": 293429500282264,
+        "process_scope": "one fresh Rust evaluator subprocess per call",
+        "warmup": true
+      }
+    },
+    "hot_batch_16_requests": {
+      "measured": [
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-eval"
+          ],
+          "elapsed_ns": 2101896,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "perf_counter_end_ns": 293429649194153,
+          "perf_counter_start_ns": 293429647092257,
+          "process_scope": "one already-started, one-request-warmed KernelSession",
+          "requests": 16,
+          "session_generation": 1
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-eval"
+          ],
+          "elapsed_ns": 2343643,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "perf_counter_end_ns": 293429672448137,
+          "perf_counter_start_ns": 293429670104494,
+          "process_scope": "one already-started, one-request-warmed KernelSession",
+          "requests": 16,
+          "session_generation": 1
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-eval"
+          ],
+          "elapsed_ns": 2293568,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "perf_counter_end_ns": 293429696543742,
+          "perf_counter_start_ns": 293429694250174,
+          "process_scope": "one already-started, one-request-warmed KernelSession",
+          "requests": 16,
+          "session_generation": 1
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-eval"
+          ],
+          "elapsed_ns": 2293838,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "perf_counter_end_ns": 293429721928906,
+          "perf_counter_start_ns": 293429719635068,
+          "process_scope": "one already-started, one-request-warmed KernelSession",
+          "requests": 16,
+          "session_generation": 1
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-eval"
+          ],
+          "elapsed_ns": 2347289,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "perf_counter_end_ns": 293429747306336,
+          "perf_counter_start_ns": 293429744959047,
+          "process_scope": "one already-started, one-request-warmed KernelSession",
+          "requests": 16,
+          "session_generation": 1
+        }
+      ],
+      "warmup": {
+        "process_scope": "one started and warmed KernelSession",
+        "requests": 1,
+        "session_generation": 1
+      }
+    },
+    "python_bounded_encode_decode": {
+      "measured": [
+        {
+          "command": [
+            "<in-process>",
+            "python_bounded_encode_decode"
+          ],
+          "elapsed_ns": 187425,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_bounded_encode_decode",
+          "perf_counter_end_ns": 293429795153577,
+          "perf_counter_start_ns": 293429794966152,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_bounded_encode_decode"
+          ],
+          "elapsed_ns": 182065,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_bounded_encode_decode",
+          "perf_counter_end_ns": 293429818197954,
+          "perf_counter_start_ns": 293429818015889,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_bounded_encode_decode"
+          ],
+          "elapsed_ns": 199067,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_bounded_encode_decode",
+          "perf_counter_end_ns": 293429841185724,
+          "perf_counter_start_ns": 293429840986657,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_bounded_encode_decode"
+          ],
+          "elapsed_ns": 191873,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_bounded_encode_decode",
+          "perf_counter_end_ns": 293429864097099,
+          "perf_counter_start_ns": 293429863905226,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_bounded_encode_decode"
+          ],
+          "elapsed_ns": 171074,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_bounded_encode_decode",
+          "perf_counter_end_ns": 293429886210796,
+          "perf_counter_start_ns": 293429886039722,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        }
+      ],
+      "warmup": {
+        "command": [
+          "<in-process>",
+          "python_bounded_encode_decode"
+        ],
+        "elapsed_ns": 176664,
+        "environment": {
+          "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+          "cpu": "x86_64",
+          "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+          "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+          "python": "Python 3.12.3",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+        },
+        "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+        "label": "python_bounded_encode_decode",
+        "perf_counter_end_ns": 293429772509426,
+        "perf_counter_start_ns": 293429772332762,
+        "process_scope": "python_parent_process",
+        "warmup": true
+      }
+    },
+    "python_reference_ownership": {
+      "measured": [
+        {
+          "command": [
+            "<in-process>",
+            "python_reference_ownership"
+          ],
+          "elapsed_ns": 147609,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_reference_ownership",
+          "perf_counter_end_ns": 293428389691254,
+          "perf_counter_start_ns": 293428389543645,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_reference_ownership"
+          ],
+          "elapsed_ns": 142690,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_reference_ownership",
+          "perf_counter_end_ns": 293428412564949,
+          "perf_counter_start_ns": 293428412422259,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_reference_ownership"
+          ],
+          "elapsed_ns": 170052,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_reference_ownership",
+          "perf_counter_end_ns": 293428434475632,
+          "perf_counter_start_ns": 293428434305580,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_reference_ownership"
+          ],
+          "elapsed_ns": 203305,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_reference_ownership",
+          "perf_counter_end_ns": 293428458596555,
+          "perf_counter_start_ns": 293428458393250,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_reference_ownership"
+          ],
+          "elapsed_ns": 199698,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_reference_ownership",
+          "perf_counter_end_ns": 293428483751244,
+          "perf_counter_start_ns": 293428483551546,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        }
+      ],
+      "warmup": {
+        "command": [
+          "<in-process>",
+          "python_reference_ownership"
+        ],
+        "elapsed_ns": 159772,
+        "environment": {
+          "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+          "cpu": "x86_64",
+          "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+          "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+          "python": "Python 3.12.3",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+        },
+        "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+        "label": "python_reference_ownership",
+        "perf_counter_end_ns": 293428363860667,
+        "perf_counter_start_ns": 293428363700895,
+        "process_scope": "python_parent_process",
+        "warmup": true
+      }
+    },
+    "python_reference_replay": {
+      "measured": [
+        {
+          "command": [
+            "<in-process>",
+            "python_reference_replay"
+          ],
+          "elapsed_ns": 531786,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+          "label": "python_reference_replay",
+          "perf_counter_end_ns": 293428528629829,
+          "perf_counter_start_ns": 293428528098043,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_reference_replay"
+          ],
+          "elapsed_ns": 508802,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+          "label": "python_reference_replay",
+          "perf_counter_end_ns": 293428549521404,
+          "perf_counter_start_ns": 293428549012602,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_reference_replay"
+          ],
+          "elapsed_ns": 486259,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+          "label": "python_reference_replay",
+          "perf_counter_end_ns": 293428569953430,
+          "perf_counter_start_ns": 293428569467171,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_reference_replay"
+          ],
+          "elapsed_ns": 618440,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+          "label": "python_reference_replay",
+          "perf_counter_end_ns": 293428592901826,
+          "perf_counter_start_ns": 293428592283386,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_reference_replay"
+          ],
+          "elapsed_ns": 500927,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+          "label": "python_reference_replay",
+          "perf_counter_end_ns": 293428615790819,
+          "perf_counter_start_ns": 293428615289892,
+          "process_scope": "python_parent_process",
+          "warmup": false
+        }
+      ],
+      "warmup": {
+        "command": [
+          "<in-process>",
+          "python_reference_replay"
+        ],
+        "elapsed_ns": 732515,
+        "environment": {
+          "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+          "cpu": "x86_64",
+          "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+          "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+          "python": "Python 3.12.3",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+        },
+        "input_sha256": "6dc8ad06b7968a200038b3bf0235ee2d74db7bd5ec09e4a4a06a955efc4e2a24",
+        "label": "python_reference_replay",
+        "perf_counter_end_ns": 293428507640068,
+        "perf_counter_start_ns": 293428506907553,
+        "process_scope": "python_parent_process",
+        "warmup": true
+      }
+    },
+    "python_to_rust_round_trip": {
+      "measured": [
+        {
+          "command": [
+            "<in-process>",
+            "python_to_rust_round_trip"
+          ],
+          "elapsed_ns": 2370123,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_to_rust_round_trip",
+          "perf_counter_end_ns": 293429381670467,
+          "perf_counter_start_ns": 293429379300344,
+          "process_scope": "one fresh Rust evaluator subprocess per call",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_to_rust_round_trip"
+          ],
+          "elapsed_ns": 2419025,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_to_rust_round_trip",
+          "perf_counter_end_ns": 293429407729967,
+          "perf_counter_start_ns": 293429405310942,
+          "process_scope": "one fresh Rust evaluator subprocess per call",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_to_rust_round_trip"
+          ],
+          "elapsed_ns": 2414877,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_to_rust_round_trip",
+          "perf_counter_end_ns": 293429432747576,
+          "perf_counter_start_ns": 293429430332699,
+          "process_scope": "one fresh Rust evaluator subprocess per call",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_to_rust_round_trip"
+          ],
+          "elapsed_ns": 2318075,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_to_rust_round_trip",
+          "perf_counter_end_ns": 293429455820187,
+          "perf_counter_start_ns": 293429453502112,
+          "process_scope": "one fresh Rust evaluator subprocess per call",
+          "warmup": false
+        },
+        {
+          "command": [
+            "<in-process>",
+            "python_to_rust_round_trip"
+          ],
+          "elapsed_ns": 1896407,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "label": "python_to_rust_round_trip",
+          "perf_counter_end_ns": 293429479107443,
+          "perf_counter_start_ns": 293429477211036,
+          "process_scope": "one fresh Rust evaluator subprocess per call",
+          "warmup": false
+        }
+      ],
+      "warmup": {
+        "command": [
+          "<in-process>",
+          "python_to_rust_round_trip"
+        ],
+        "elapsed_ns": 2248052,
+        "environment": {
+          "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+          "cpu": "x86_64",
+          "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+          "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+          "python": "Python 3.12.3",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+        },
+        "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+        "label": "python_to_rust_round_trip",
+        "perf_counter_end_ns": 293429357037826,
+        "perf_counter_start_ns": 293429354789774,
+        "process_scope": "one fresh Rust evaluator subprocess per call",
+        "warmup": true
+      }
+    },
+    "rss": {
+      "python": {
+        "measured": [
+          {
+            "command": [
+              "/usr/bin/time",
+              "-f",
+              "%M",
+              "python3",
+              "-c",
+              "import json, sys; from kernel_lab.reference import evaluate_ownership_reference; evaluate_ownership_reference(json.load(sys.stdin))"
+            ],
+            "environment": {
+              "PYTHONPATH": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+            "outer_wall_ns": 62054673,
+            "perf_counter_end_ns": 293430196983795,
+            "perf_counter_start_ns": 293430134929122,
+            "process_scope": "one fresh child process measured by /usr/bin/time %M",
+            "rss_kb": 20736
+          },
+          {
+            "command": [
+              "/usr/bin/time",
+              "-f",
+              "%M",
+              "python3",
+              "-c",
+              "import json, sys; from kernel_lab.reference import evaluate_ownership_reference; evaluate_ownership_reference(json.load(sys.stdin))"
+            ],
+            "environment": {
+              "PYTHONPATH": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+            "outer_wall_ns": 61400425,
+            "perf_counter_end_ns": 293430280972604,
+            "perf_counter_start_ns": 293430219572179,
+            "process_scope": "one fresh child process measured by /usr/bin/time %M",
+            "rss_kb": 20736
+          },
+          {
+            "command": [
+              "/usr/bin/time",
+              "-f",
+              "%M",
+              "python3",
+              "-c",
+              "import json, sys; from kernel_lab.reference import evaluate_ownership_reference; evaluate_ownership_reference(json.load(sys.stdin))"
+            ],
+            "environment": {
+              "PYTHONPATH": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+            "outer_wall_ns": 61235794,
+            "perf_counter_end_ns": 293430365244840,
+            "perf_counter_start_ns": 293430304009046,
+            "process_scope": "one fresh child process measured by /usr/bin/time %M",
+            "rss_kb": 20736
+          },
+          {
+            "command": [
+              "/usr/bin/time",
+              "-f",
+              "%M",
+              "python3",
+              "-c",
+              "import json, sys; from kernel_lab.reference import evaluate_ownership_reference; evaluate_ownership_reference(json.load(sys.stdin))"
+            ],
+            "environment": {
+              "PYTHONPATH": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+            "outer_wall_ns": 62650310,
+            "perf_counter_end_ns": 293430451099850,
+            "perf_counter_start_ns": 293430388449540,
+            "process_scope": "one fresh child process measured by /usr/bin/time %M",
+            "rss_kb": 20736
+          },
+          {
+            "command": [
+              "/usr/bin/time",
+              "-f",
+              "%M",
+              "python3",
+              "-c",
+              "import json, sys; from kernel_lab.reference import evaluate_ownership_reference; evaluate_ownership_reference(json.load(sys.stdin))"
+            ],
+            "environment": {
+              "PYTHONPATH": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+            "outer_wall_ns": 61007752,
+            "perf_counter_end_ns": 293430536167239,
+            "perf_counter_start_ns": 293430475159487,
+            "process_scope": "one fresh child process measured by /usr/bin/time %M",
+            "rss_kb": 20736
+          }
+        ],
+        "warmup": {
+          "command": [
+            "/usr/bin/time",
+            "-f",
+            "%M",
+            "python3",
+            "-c",
+            "import json, sys; from kernel_lab.reference import evaluate_ownership_reference; evaluate_ownership_reference(json.load(sys.stdin))"
+          ],
+          "environment": {
+            "PYTHONPATH": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "outer_wall_ns": 61559376,
+          "perf_counter_end_ns": 293429994367268,
+          "perf_counter_start_ns": 293429932807892,
+          "process_scope": "one fresh child process measured by /usr/bin/time %M",
+          "rss_kb": 20736
+        }
+      },
+      "rust": {
+        "measured": [
+          {
+            "command": [
+              "/usr/bin/time",
+              "-f",
+              "%M",
+              "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+              "core",
+              "1"
+            ],
+            "environment": {
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+            "outer_wall_ns": 1896628,
+            "perf_counter_end_ns": 293430019216058,
+            "perf_counter_start_ns": 293430017319430,
+            "process_scope": "one fresh child process measured by /usr/bin/time %M",
+            "rss_kb": 2112
+          },
+          {
+            "command": [
+              "/usr/bin/time",
+              "-f",
+              "%M",
+              "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+              "core",
+              "1"
+            ],
+            "environment": {
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+            "outer_wall_ns": 1772703,
+            "perf_counter_end_ns": 293430042733550,
+            "perf_counter_start_ns": 293430040960847,
+            "process_scope": "one fresh child process measured by /usr/bin/time %M",
+            "rss_kb": 2112
+          },
+          {
+            "command": [
+              "/usr/bin/time",
+              "-f",
+              "%M",
+              "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+              "core",
+              "1"
+            ],
+            "environment": {
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+            "outer_wall_ns": 1713992,
+            "perf_counter_end_ns": 293430065806110,
+            "perf_counter_start_ns": 293430064092118,
+            "process_scope": "one fresh child process measured by /usr/bin/time %M",
+            "rss_kb": 2112
+          },
+          {
+            "command": [
+              "/usr/bin/time",
+              "-f",
+              "%M",
+              "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+              "core",
+              "1"
+            ],
+            "environment": {
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+            "outer_wall_ns": 1705846,
+            "perf_counter_end_ns": 293430088937221,
+            "perf_counter_start_ns": 293430087231375,
+            "process_scope": "one fresh child process measured by /usr/bin/time %M",
+            "rss_kb": 2112
+          },
+          {
+            "command": [
+              "/usr/bin/time",
+              "-f",
+              "%M",
+              "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+              "core",
+              "1"
+            ],
+            "environment": {
+              "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+              "cpu": "x86_64",
+              "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+              "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+              "python": "Python 3.12.3",
+              "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+            },
+            "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+            "outer_wall_ns": 1732287,
+            "perf_counter_end_ns": 293430113348955,
+            "perf_counter_start_ns": 293430111616668,
+            "process_scope": "one fresh child process measured by /usr/bin/time %M",
+            "rss_kb": 2112
+          }
+        ],
+        "warmup": {
+          "command": [
+            "/usr/bin/time",
+            "-f",
+            "%M",
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "core",
+            "1"
+          ],
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "outer_wall_ns": 1782301,
+          "perf_counter_end_ns": 293429911492715,
+          "perf_counter_start_ns": 293429909710414,
+          "process_scope": "one fresh child process measured by /usr/bin/time %M",
+          "rss_kb": 2112
+        }
+      },
+      "status": "MEASURED",
+      "workload": "same ownership JSON input, one evaluator operation, one fresh child process"
+    },
+    "rust_core": {
+      "iterations": 2000,
+      "measured": [
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "core",
+            "2000"
+          ],
+          "elapsed_ns_returned": 12396647,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "core",
+          "outer_wall_ns": 13234543,
+          "perf_counter_end_ns": 293428685195194,
+          "perf_counter_start_ns": 293428671960651,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "core",
+            "2000"
+          ],
+          "elapsed_ns_returned": 12553804,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "core",
+          "outer_wall_ns": 13453016,
+          "perf_counter_end_ns": 293428719369172,
+          "perf_counter_start_ns": 293428705916156,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "core",
+            "2000"
+          ],
+          "elapsed_ns_returned": 12428177,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "core",
+          "outer_wall_ns": 13255502,
+          "perf_counter_end_ns": 293428753376254,
+          "perf_counter_start_ns": 293428740120752,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "core",
+            "2000"
+          ],
+          "elapsed_ns_returned": 12249860,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "core",
+          "outer_wall_ns": 13117280,
+          "perf_counter_end_ns": 293428787552256,
+          "perf_counter_start_ns": 293428774434976,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "core",
+            "2000"
+          ],
+          "elapsed_ns_returned": 12389083,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "core",
+          "outer_wall_ns": 13417529,
+          "perf_counter_end_ns": 293428825281940,
+          "perf_counter_start_ns": 293428811864411,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        }
+      ],
+      "mode": "core",
+      "warmup": {
+        "command": [
+          "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+          "core",
+          "2000"
+        ],
+        "elapsed_ns_returned": 12348005,
+        "environment": {
+          "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+          "cpu": "x86_64",
+          "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+          "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+          "python": "Python 3.12.3",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+        },
+        "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+        "iterations": 2000,
+        "mode": "core",
+        "outer_wall_ns": 13200909,
+        "perf_counter_end_ns": 293428650315130,
+        "perf_counter_start_ns": 293428637114221,
+        "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+      }
+    },
+    "rust_parse_evaluate_serialize": {
+      "iterations": 2000,
+      "measured": [
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "parse_evaluate_serialize",
+            "2000"
+          ],
+          "elapsed_ns_returned": 25942749,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "parse_evaluate_serialize",
+          "outer_wall_ns": 27428840,
+          "perf_counter_end_ns": 293428923462824,
+          "perf_counter_start_ns": 293428896033984,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "parse_evaluate_serialize",
+            "2000"
+          ],
+          "elapsed_ns_returned": 24698867,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "parse_evaluate_serialize",
+          "outer_wall_ns": 25700411,
+          "perf_counter_end_ns": 293428971789771,
+          "perf_counter_start_ns": 293428946089360,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "parse_evaluate_serialize",
+            "2000"
+          ],
+          "elapsed_ns_returned": 24890869,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "parse_evaluate_serialize",
+          "outer_wall_ns": 25737300,
+          "perf_counter_end_ns": 293429019419931,
+          "perf_counter_start_ns": 293428993682631,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "parse_evaluate_serialize",
+            "2000"
+          ],
+          "elapsed_ns_returned": 25034200,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "parse_evaluate_serialize",
+          "outer_wall_ns": 25874540,
+          "perf_counter_end_ns": 293429067218900,
+          "perf_counter_start_ns": 293429041344360,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "parse_evaluate_serialize",
+            "2000"
+          ],
+          "elapsed_ns_returned": 24715208,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "parse_evaluate_serialize",
+          "outer_wall_ns": 25786964,
+          "perf_counter_end_ns": 293429115047826,
+          "perf_counter_start_ns": 293429089260862,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        }
+      ],
+      "mode": "parse_evaluate_serialize",
+      "warmup": {
+        "command": [
+          "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+          "parse_evaluate_serialize",
+          "2000"
+        ],
+        "elapsed_ns_returned": 24776513,
+        "environment": {
+          "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+          "cpu": "x86_64",
+          "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+          "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+          "python": "Python 3.12.3",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+        },
+        "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+        "iterations": 2000,
+        "mode": "parse_evaluate_serialize",
+        "outer_wall_ns": 25859492,
+        "perf_counter_end_ns": 293428873632573,
+        "perf_counter_start_ns": 293428847773081,
+        "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+      }
+    },
+    "rust_serde": {
+      "iterations": 2000,
+      "measured": [
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "serde",
+            "2000"
+          ],
+          "elapsed_ns_returned": 13356122,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "serde",
+          "outer_wall_ns": 14817416,
+          "perf_counter_end_ns": 293429187773673,
+          "perf_counter_start_ns": 293429172956257,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "serde",
+            "2000"
+          ],
+          "elapsed_ns_returned": 13375840,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "serde",
+          "outer_wall_ns": 14261215,
+          "perf_counter_end_ns": 293429223572204,
+          "perf_counter_start_ns": 293429209310989,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "serde",
+            "2000"
+          ],
+          "elapsed_ns_returned": 12663362,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "serde",
+          "outer_wall_ns": 13836371,
+          "perf_counter_end_ns": 293429258173310,
+          "perf_counter_start_ns": 293429244336939,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "serde",
+            "2000"
+          ],
+          "elapsed_ns_returned": 12984821,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "serde",
+          "outer_wall_ns": 13975273,
+          "perf_counter_end_ns": 293429295761375,
+          "perf_counter_start_ns": 293429281786102,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        },
+        {
+          "command": [
+            "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+            "serde",
+            "2000"
+          ],
+          "elapsed_ns_returned": 12909798,
+          "environment": {
+            "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+            "cpu": "x86_64",
+            "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+            "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+            "python": "Python 3.12.3",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+          },
+          "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+          "iterations": 2000,
+          "mode": "serde",
+          "outer_wall_ns": 14073870,
+          "perf_counter_end_ns": 293429331507677,
+          "perf_counter_start_ns": 293429317433807,
+          "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+        }
+      ],
+      "mode": "serde",
+      "warmup": {
+        "command": [
+          "/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench",
+          "serde",
+          "2000"
+        ],
+        "elapsed_ns_returned": 12835057,
+        "environment": {
+          "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+          "cpu": "x86_64",
+          "cwd": "/home/pvxlabs/dev/clinx-pvx1807-remediation",
+          "os": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+          "python": "Python 3.12.3",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+        },
+        "input_sha256": "c89a9ca92c73e4d2f5076a106c96163e47661f5e12d3a6031814b5306519ba2e",
+        "iterations": 2000,
+        "mode": "serde",
+        "outer_wall_ns": 13824949,
+        "perf_counter_end_ns": 293429151321916,
+        "perf_counter_start_ns": 293429137496967,
+        "process_scope": "one fresh Rust benchmark subprocess; returned elapsed is in-process loop only"
+      }
+    }
+  },
+  "rounds": 5
+}

@@ -9,7 +9,7 @@
 
 PVX-1808 is a local, isolated-development prototype in
 `/home/pvxlabs/dev/clinx-pvx1807-remediation`, based on
-`9a21bf19399e9c305f7fb1487feadc73a11da047` and branch
+`3f5f0320eb579d6df2f4cd90def131078838d413` and branch
 `pvx-1808-kernel-prototype`. The direct operator instruction authorizes the
 implementation, qualification, ordinary commit, and feature-branch push in
 that checkout. It does not authorize a CLINX managed execution grant, a
@@ -41,6 +41,15 @@ The protocol is `CLINX_KERNEL_V1`. It is represented by the checked-in schema
 at `fixtures/kernel_v1/protocol.schema.json`, Python validation in
 `kernel_lab/protocol.py`, and Rust validation in `kernel/src/lib.rs`.
 
+The final K1 correction uses a `BufRead::fill_buf`/`consume` reader in
+`clinx-kernel-eval`. It bounds the frame before copying bytes, preserves bytes
+after a delimiter for the next request, emits one bounded `FRAME_TOO_LARGE`
+failure, and exits rather than attempting unbounded discard. Python request
+deadlines cover non-blocking stdin delivery, stdout/stderr draining, response
+reading, and bounded cleanup. A failed or closed session is not implicitly
+reused: a new generation requires explicit `restart()` and has empty buffers,
+request count, and channel state.
+
 ## Contract matrix
 
 | Contract field or rule | Existing source responsibility | Experiment interface | Positive/negative evidence | Python entry | Rust entry | Explicitly not covered |
@@ -56,7 +65,7 @@ at `fixtures/kernel_v1/protocol.schema.json`, Python validation in
 | Assignment stream order | Runtime event sequence validation | Assignment stream ID and contiguous sequence | Version gaps, mixed streams, duplicate fields, bad order | `replay_assignment_reference` | `replay_assignment` | A business total order across independent streams |
 | Payload integrity and timestamps | Runtime event store and existing canonical payload hash | Canonical JSON payload hash, occurred/recorded UTC timestamps | Bad hash, invalid timestamp, recorded-before-occurred | `replay_assignment_reference` | `replay_assignment` | Rehashing or rewriting historical event bytes |
 | Assignment transitions | `runtime_control.replay.py` state reducer | Seven event types and state snapshots | Current golden, legacy traces, negative fixtures, SQLite traces | `replay_assignment_reference` | `replay_assignment` | Worker-associated streams, Provider wire events, projections |
-| Process and request bounds | New qualification boundary, not runtime authority | Bounded NDJSON request/response and child process | 19 conformance tests cover malformed input, limits, correlation, exit, timeout, and restart | `KernelSession` / `run_once` | `clinx-kernel-eval` | A daemon, service, queue, FFI, gRPC, or exactly-once network protocol |
+| Process and request bounds | New qualification boundary, not runtime authority | Bounded NDJSON request/response and child process | 20 conformance tests plus focused candidate tests cover malformed input, limits, correlation, exit, timeout, and restart | `KernelSession` / `run_once` | `clinx-kernel-eval` | A daemon, service, queue, FFI, gRPC, or exactly-once network protocol |
 
 ## Ownership decision contract
 
@@ -140,11 +149,30 @@ records the actual commands and results. The evidence has three independent
 layers:
 
 1. Human-authored golden and negative expectations in
-   `fixtures/kernel_v1/`.
+`fixtures/kernel_v1/`.
 2. Python reference versus the actual release Rust binary, comparing the
    complete semantic result and every replay prefix.
 3. Real temporary SQLite `RuntimeControlStore` traces, read back through its
-   public APIs and compared against both reducers and persisted state.
+public APIs and compared against both reducers and persisted state.
+
+K2 snapshot evidence now records the pending safety-handoff row, the actual
+runtime-control completion/clear result, and the SQLite coordinator watermark.
+`VERIFIED` is derived from that transaction boundary; no handoff state or
+`watermark=now` value is treated as a runtime readback when it is only a
+fixture value. Python and Rust use UTF-8 byte limits, schema lifecycle sets,
+positive ownership epochs, separate non-negative versions/counters, and the
+same stable invalid-input codes. Trace operations declare success, rejection,
+or no-op and only catch the declared `RuntimeControlError` category;
+unexpected `AssertionError`/`KeyError` failures escape qualification.
+
+K3 raw samples are checked in at
+`fixtures/kernel_v1/benchmark_samples.json`. Rust benchmark `elapsed_ns` and
+`iterations` are retained separately from subprocess wall time. The file
+contains one warmup and five measured rounds, input hashes, perf-counter
+boundaries, commands, environments, cold/hot session samples, an up-to-date
+build series, a temporary-target clean build, explicit
+`NOT_MEASURED` incremental build status, and same-workload `/usr/bin/time`
+RSS samples.
 
 The run used seeds `1808`, `18081`, `18082`, and `18083`, with 256 attempted
 operations per seed. It retained attempted/effective/rejected/no-op counts
@@ -194,10 +222,10 @@ NEXT_PHASE_STARTED=NO
 
 ## Recommendation
 
-`ADOPTION_RECOMMENDATION=CONTINUE_EVALUATION` is appropriate for the bounded
-prototype because the contract is versioned, both operations have independent
-golden and SQLite-backed differential evidence, and the existing regression
-suite remains green. This is not approval for production migration. Any
-future adoption decision still requires separate qualification of the live
-transaction boundary, process fencing, supervision and restart behavior,
-provider E2E, deployment/observability, load, and maintenance cost.
+`ADOPTION_RECOMMENDATION=DEFER` is the independent production recommendation.
+The bounded prototype implementation and qualification gates pass, but that
+does not qualify live authority. Production adoption still requires separate
+qualification of the live transaction boundary, process fencing, supervision
+and restart behavior, Provider E2E, deployment/observability, load, and
+maintenance cost. V1 remains the only live authority; adapter, worker-runtime,
+and shadow adoption remain disabled.

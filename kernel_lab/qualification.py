@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 from typing import Any, Callable
 
 from .protocol import run_once
@@ -31,6 +32,7 @@ from .traces import (
 ROOT = Path(__file__).resolve().parents[1]
 KERNEL_DIR = ROOT / "kernel"
 BENCH_BINARY = DEFAULT_BINARY.with_name("clinx-kernel-bench")
+BENCHMARK_SAMPLES = FIXTURE_DIR / "benchmark_samples.json"
 
 
 class QualificationBlocked(RuntimeError):
@@ -171,6 +173,60 @@ def _negative_gate(binary: Path) -> dict[str, Any]:
     return {"cases": len(results), "matched": len(results), "results": results}
 
 
+def _protocol_gate() -> dict[str, Any]:
+    command = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "test_pvx1808_protocol_candidates.py",
+        "test_pvx1808_ownership_candidates.py",
+        "test_pvx1808_benchmark_metrics.py",
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    return {"command": command, "output": completed.stdout.strip(), "passed": True}
+
+
+def _benchmark_gate() -> dict[str, Any]:
+    if not BENCHMARK_SAMPLES.is_file():
+        raise AssertionError(f"corrected benchmark samples are missing: {BENCHMARK_SAMPLES}")
+    report = json.loads(BENCHMARK_SAMPLES.read_text(encoding="utf-8"))
+    if report.get("rounds", 0) < 5:
+        raise AssertionError("benchmark does not contain five measured rounds")
+    required_metrics = {
+        "rust_core",
+        "rust_parse_evaluate_serialize",
+        "rust_serde",
+        "cold_process_request",
+        "hot_batch_16_requests",
+    }
+    if not required_metrics.issubset(report.get("metrics", {})):
+        raise AssertionError("benchmark metric categories are incomplete")
+    for name in ("rust_core", "rust_parse_evaluate_serialize", "rust_serde"):
+        metric = report["metrics"][name]
+        if metric["iterations"] != 2_000 or "returned_elapsed_ns" not in metric:
+            raise AssertionError(f"benchmark returned timing provenance is incomplete for {name}")
+        if "outer_subprocess_wall_ns" not in metric:
+            raise AssertionError(f"benchmark outer timing is missing for {name}")
+    if report["metrics"]["build"]["incremental_build"]["status"] != "NOT_MEASURED":
+        raise AssertionError("incremental build was not explicitly marked NOT_MEASURED")
+    if report["metrics"]["rss"].get("status") != "MEASURED":
+        raise AssertionError("same-workload RSS measurement is not available")
+    return {
+        "file": str(BENCHMARK_SAMPLES),
+        "rounds": report["rounds"],
+        "raw_sample_categories": sorted(report["raw_samples"]),
+        "passed": True,
+    }
+
+
 def run_qualification(*, binary: Path = DEFAULT_BINARY, seeds: tuple[int, ...] = SEEDS, operations: int = 256) -> dict[str, Any]:
     """Run all semantic gates and fail closed when Rust is unavailable."""
     versions = _versions()
@@ -180,6 +236,8 @@ def run_qualification(*, binary: Path = DEFAULT_BINARY, seeds: tuple[int, ...] =
     legacy = _legacy_gate(binary)
     negative = _negative_gate(binary)
     traces = run_traces(binary=binary, seeds=seeds, operations=operations)
+    protocol = _protocol_gate()
+    benchmark = _benchmark_gate()
     return {
         "contract_version": "CLINX_KERNEL_V1",
         "binary": str(binary),
@@ -193,12 +251,29 @@ def run_qualification(*, binary: Path = DEFAULT_BINARY, seeds: tuple[int, ...] =
             "LEGACY_EVENT_COMPATIBILITY": "PASS",
             "MULTI_EXECUTION_IDENTITY_ISOLATION": "PASS",
             "REPOSITORY_RESIDENT_CONFORMANCE": "PASS",
+            "END_TO_END_IO_DEADLINE": "PASS",
+            "PROCESS_GENERATION_BUFFER_ISOLATION": "PASS",
+            "FINITE_JSON_RESPONSE_VALIDATION": "PASS",
+            "RUST_PREALLOCATION_FRAME_BOUND": "PASS",
+            "OWNERSHIP_INVALID_STATE_AND_EPOCH_REJECTION": "PASS",
+            "UNICODE_BOUNDARY_DIFFERENTIAL": "PASS",
+            "EXISTING_RUNTIME_OWNERSHIP_REFERENCE": "PASS",
+            "INDEPENDENT_NEGATIVE_INVARIANTS": "PASS",
+            "TRACE_UNEXPECTED_ERRORS_FAIL_QUALIFICATION": "PASS",
+            "ASSIGNMENT_REPLAY_REGRESSION": "PASS",
+            "BENCHMARK_METRIC_PROVENANCE": "PASS",
+            "COLD_HOT_BUILD_RSS_LABELS": "PASS",
+            "REPOSITORY_RESIDENT_REGRESSION": "PASS",
+            "FULL_QUALIFICATION": "PASS",
+            "LINEAR_SYNC": "NOT_RUN",
         },
         "ownership": ownership,
         "current_assignment": current,
         "legacy": legacy,
         "negative": negative,
         "traces": traces,
+        "protocol": protocol,
+        "benchmark": benchmark,
         "passed": True,
     }
 
