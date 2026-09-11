@@ -518,10 +518,26 @@ def _parse_reasoning_efforts(value: Any, *, model_id: str) -> tuple[str, ...]:
 class CodexAppServerClient:
     """Synchronous JSON-RPC client with notification/event draining."""
 
-    def __init__(self, transport: JSONRPCTransport, timeout_seconds: float = 30.0):
+    def __init__(
+        self,
+        transport: JSONRPCTransport,
+        timeout_seconds: float = 30.0,
+        *,
+        max_received_events: int = 256,
+    ):
+        if not isinstance(max_received_events, int) or isinstance(max_received_events, bool) or max_received_events < 1:
+            raise AppServerProtocolError("max_received_events must be a positive integer")
         self.transport = transport
         self.timeout_seconds = timeout_seconds
         self.events: list[str] = []
+        # Raw notifications are retained only until an explicit adapter or
+        # caller drains them.  The existing V1 callers continue to use the
+        # method-name list above; this bounded observation surface lets an
+        # explicit provider adapter preserve event correlation without making
+        # wire dictionaries part of the provider-neutral contract.
+        self.received_events: list[dict[str, Any]] = []
+        self.max_received_events = max_received_events
+        self._received_event_overflow = False
         self.initialize_info: InitializeInfo | None = None
         self._dynamic_tool_handler: Callable[[dict[str, Any]], dict[str, Any]] | None = None
         self._dynamic_tool_namespace: str | None = None
@@ -530,6 +546,24 @@ class CodexAppServerClient:
         self._dynamic_turn_id: str | None = None
         self._detached = False
         self._supervisor: threading.Thread | None = None
+
+    def _record_event(self, message: dict[str, Any]) -> None:
+        method = message.get("method")
+        if isinstance(method, str):
+            self.events.append(method)
+        # Reserve one slot for an explicit overflow marker so the queue stays
+        # bounded while still making loss visible to an adapter.
+        if len(self.received_events) < self.max_received_events - 1 and not self._received_event_overflow:
+            self.received_events.append(dict(message))
+            return
+        if not self._received_event_overflow:
+            self._received_event_overflow = True
+            self.received_events.append(
+                {
+                    "method": "clinx/observation_overflow",
+                    "params": {"dropped": "bounded_event_buffer_exhausted"},
+                }
+            )
 
     def __enter__(self) -> "CodexAppServerClient":
         connect = getattr(self.transport, "connect", None)
@@ -546,6 +580,8 @@ class CodexAppServerClient:
 
     def _send_server_response(self, request: dict[str, Any]) -> None:
         method = request.get("method")
+        if isinstance(method, str):
+            self._record_event(request)
         if method == "item/tool/call" and self._dynamic_tool_handler is not None:
             params = request.get("params")
             try:
@@ -615,12 +651,27 @@ class CodexAppServerClient:
         self._dynamic_thread_id = thread_id
         self._dynamic_tool_handler = handler
 
-    def supervise_turn(self, thread_id: str, turn_id: str) -> None:
-        """Keep the initiating client connected for dynamic tool calls."""
+    def attach_dynamic_tool_turn(self, thread_id: str, turn_id: str) -> None:
+        """Bind a configured dynamic tool to one exact turn.
+
+        Observation-loop owners use this guard without starting the separate
+        reader thread used by ``supervise_turn``.
+        """
         if self._dynamic_tool_handler is None:
             raise AppServerProtocolError("dynamic tool handler is not configured")
+        if (
+            not isinstance(thread_id, str)
+            or not thread_id.strip()
+            or not isinstance(turn_id, str)
+            or not turn_id.strip()
+        ):
+            raise AppServerProtocolError("dynamic tool turn attachment is invalid")
         self._dynamic_thread_id = thread_id
         self._dynamic_turn_id = turn_id
+
+    def supervise_turn(self, thread_id: str, turn_id: str) -> None:
+        """Keep the initiating client connected for dynamic tool calls."""
+        self.attach_dynamic_tool_turn(thread_id, turn_id)
         self._detached = True
 
         def supervise() -> None:
@@ -632,7 +683,7 @@ class CodexAppServerClient:
                         continue
                     method = message.get("method")
                     if isinstance(method, str):
-                        self.events.append(method)
+                        self._record_event(message)
                     params = message.get("params")
                     if method == "turn/completed" and isinstance(params, dict):
                         turn = params.get("turn")
@@ -676,7 +727,7 @@ class CodexAppServerClient:
                 if "method" in message:
                     event_method = message["method"]
                     if isinstance(event_method, str):
-                        self.events.append(event_method)
+                        self._record_event(message)
                 continue
 
             if "error" in message:
@@ -687,6 +738,86 @@ class CodexAppServerClient:
             if "result" not in message:
                 raise AppServerProtocolError(f"{method} response has no result or error")
             return message["result"]
+
+    def drain_events(self, *, max_events: int = 32, timeout_seconds: float = 0.0) -> list[dict[str, Any]]:
+        """Drain bounded provider notifications from the current connection.
+
+        A zero timeout is a non-blocking read of already buffered transport
+        data.  Server requests are handled using the existing dynamic-tool
+        handler and are also returned so an adapter can retain their request
+        identity.  No event is silently discarded when the bound is reached.
+        """
+        if not isinstance(max_events, int) or isinstance(max_events, bool) or not 1 <= max_events <= 100:
+            raise AppServerProtocolError("max_events must be an integer from 1 to 100")
+        if timeout_seconds < 0:
+            raise AppServerProtocolError("timeout_seconds must not be negative")
+        result: list[dict[str, Any]] = []
+        if self._received_event_overflow:
+            self.received_events.clear()
+            return [
+                {
+                    "method": "clinx/observation_overflow",
+                    "params": {"dropped": "bounded_event_buffer_exhausted"},
+                }
+            ]
+        if self.received_events:
+            take = min(max_events, len(self.received_events))
+            result.extend(self.received_events[:take])
+            del self.received_events[:take]
+            if len(result) >= max_events or timeout_seconds == 0:
+                return result
+        deadline = time.monotonic() + timeout_seconds
+        while len(result) < max_events:
+            remaining = max(0.0, deadline - time.monotonic())
+            if timeout_seconds == 0 and result:
+                break
+            try:
+                message = self.transport.receive(remaining)
+            except AppServerTransportError:
+                if result or timeout_seconds == 0:
+                    break
+                raise
+            if "method" in message and "id" in message:
+                recorded_before = len(self.received_events)
+                self._send_server_response(message)
+                # _send_server_response records the request for callers that
+                # observe later.  This call already returns it in this batch,
+                # so do not expose it a second time on the next drain.
+                del self.received_events[recorded_before:]
+                result.append(dict(message))
+                if self._received_event_overflow:
+                    result.append(
+                        {
+                            "method": "clinx/observation_overflow",
+                            "params": {"dropped": "bounded_event_buffer_exhausted"},
+                        }
+                    )
+                    self.received_events.clear()
+                    break
+                continue
+            if isinstance(message.get("method"), str):
+                recorded_before = len(self.received_events)
+                self._record_event(message)
+                result.append(dict(message))
+                if self._received_event_overflow:
+                    result.append(
+                        {
+                            "method": "clinx/observation_overflow",
+                            "params": {"dropped": "bounded_event_buffer_exhausted"},
+                        }
+                    )
+                    self.received_events.clear()
+                    break
+                # This notification is already part of the returned batch;
+                # avoid replaying it on the next drain.  Notifications that
+                # arrived while an RPC was pending remain buffered because
+                # they were recorded outside this loop.
+                del self.received_events[recorded_before:]
+                if message["method"] == "clinx/observation_overflow":
+                    break
+            else:
+                raise AppServerProtocolError("unexpected non-event message while observing")
+        return result
 
     def initialize(
         self,
