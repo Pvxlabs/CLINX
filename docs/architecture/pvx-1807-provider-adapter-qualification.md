@@ -508,7 +508,9 @@ The resident remediation file ran `24 passed` in the focused command. The
 historical `496 passed` value remains comparison evidence only and is not
 reused as this round's full-suite result. The tests are ordinary pytest files;
 no temporary helper, absolute old-checkout `PYTHONPATH`, skipped case, or
-weakened assertion is required for a fresh checkout.
+weakened assertion is required for a fresh checkout. The final ordinary
+fresh-checkout command `python3 -m pytest -q` completed with `505 passed, 66
+subtests passed`.
 
 ### Batch qualification gates
 
@@ -524,7 +526,7 @@ weakened assertion is required for a fresh checkout.
 | `REPOSITORY_RESIDENT_REGRESSION` | `PASS` | `test_pvx1807_remediation.py` is pytest-discoverable |
 | `V1_DEFAULT_PATH_COMPATIBILITY` | `PASS` | Existing bridge/V1 regression and full suite |
 | `PVX1805_PVX1806_REGRESSION` | `PASS` | Existing compatibility and runtime/guard groups |
-| `FULL_SUITE` | `PASS` | Actual current result recorded at delivery |
+| `FULL_SUITE` | `PASS` | `python3 -m pytest -q`: `505 passed, 66 subtests passed` |
 | `LINEAR_SYNC` | `PASS` | Delivery comment `2c08287e-3c31-41d1-ae3f-3c08708b7adb`; issue remains `In Review` |
 
 Runtime boundaries remain unchanged:
