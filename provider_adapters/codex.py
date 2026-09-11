@@ -249,6 +249,7 @@ class CodexProviderAdapter:
                         recording,
                         self.timeout_seconds,
                         max_received_events=self.max_events,
+                        strict_dynamic_tool_binding=True,
                     )
                 else:
                     client = self._client_factory(recording, self.timeout_seconds)
@@ -561,6 +562,8 @@ class CodexProviderAdapter:
                 name=configuration.name,
                 thread_id=session.provider_handle,
                 handler=bound_handler,
+                operation_id=operation.operation_id if operation is not None else None,
+                connection_generation=self._generation if operation is not None else None,
             )
         except AppServerError as exc:
             if isinstance(exc, AppServerTransportError) and "timed out" not in str(exc).casefold():

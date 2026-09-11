@@ -166,6 +166,161 @@ fencing, second real provider, V2 cutover, production schema, production
 deployment, or canonical provider E2E was run. Whether this branch is merged
 to `main` is a separate review decision.
 
+## Tool Dispatch Continuation: BASE 44effc05
+
+This continuation uses the same user-direct isolated-development authority:
+
+```text
+AUTHORITY_SOURCE=USER_DIRECT_OPERATOR_INSTRUCTION
+EXECUTION_SCOPE=ISOLATED_DEVELOPMENT_COPY
+CLINX_MANAGED_EXECUTION_AUTHORITY=NOT_CLAIMED
+HISTORICAL_TASK_MUTATION=NOT_PERFORMED
+ISOLATED_DEVELOPMENT_AUTHORITY_VERIFIED=PASS
+BASE=44effc05d86417d110499dd286e5a17035c98a40
+MAIN=a85677228dea28e20339b25ee22d5ea9f3b04cfe
+```
+
+The review attachments are evidence and test instructions, not an execution
+authority. The original checkout `/home/pvxlabs/dev/clinx`, PVX-1800 task and
+lease, production databases, management services, and real Providers were
+outside this scope.
+
+### PA-04 contract
+
+The adapter constructs the real `CodexAppServerClient` with
+`strict_dynamic_tool_binding=True`. A trusted binding is formed only after the
+`turn/start` response returns the exact provider turn, while namespace, tool
+name, provider thread, operation closure, and connection generation are
+already captured by the adapter configuration. A valid pre-response request is
+stored in a bounded staging queue and is executed only after an exact turn
+match. A request whose turn differs from the response, belongs to a retired
+turn, uses a second unconfirmed turn, or fails namespace/name/thread/optional
+operation/generation validation receives a visible unsuccessful result and
+does not invoke the handler. The queue is finite; a provider that waits for a
+tool response before returning `turn/start` therefore yields a bounded
+unresolved outcome rather than an unbounded wait or speculative callback.
+
+V1 callers that construct `CodexAppServerClient` without the strict flag keep
+the established provisional behavior and response shape. This is an explicit
+compatibility boundary; the adapter path is the only caller opting into the
+pre-callback exact-binding contract.
+
+Tool request admission is separate from response delivery. Within the live
+client/binding scope, each typed request id moves through
+`admitted -> staged -> executing -> response_pending -> responded`. Integer
+`1` and string `"1"` are different ids. A method/params fingerprint is kept;
+reusing an id with different semantics is a protocol conflict. Admission is
+recorded before invoking the handler. Handler output, including handler
+failure, is cached before sending a response; a transport failure leaves the
+record pending and permits response redelivery only. It never re-enters the
+handler. A finite capacity rejects new ids explicitly instead of evicting
+active replay protection. Retirement clears current records, fences retired
+turn ids in a bounded window, and `close()` removes the handler. This is a
+same-process/live-binding guarantee, not a cross-process or network
+exactly-once claim.
+
+### Red/green evidence and source
+
+Before edits, the supplied complete candidate file was extracted to the
+isolated temporary directory `/tmp/pvx1807-tool-boundary.lF8LPT` and run with
+`PYTHONPATH=/home/pvxlabs/dev/clinx-pvx1807-remediation`:
+
+```text
+python3 -m pytest -q /tmp/pvx1807-tool-boundary.lF8LPT/test_pvx1807_tool_boundary_candidates.py
+4 failed, 1 passed
+```
+
+The same candidate run after the fix was `5 passed`. The red failures were the
+two pre-response callback crossovers, callback replay after response-send
+failure, and callback replay after request-capacity eviction. No real Host or
+shell command ran; handlers only recorded arguments.
+
+Actual imported source hashes after the fix:
+
+| File | SHA-256 |
+| --- | --- |
+| `app_server.py` | `21aa1988d74e6c0755cef1e217bec23858f729507ec11eaf05cf4e9678808c05` |
+| `provider_adapters/codex.py` | `9888c583b17a88538c5635128247283be955d1ce0ae063a4ced4bf0238105c4a` |
+| `provider_adapters/contracts.py` | `6d314b6a7ec363b7b5ada308e5198042420bddf2344410998a9217ddedfef7b6` |
+| `test_pvx1807_remediation.py` | `3709a193d5c9f9e7045d5ec28bfc66a1129ec05648e582b3dff060c9254e149f` |
+
+### Commands and results
+
+All commands were run from the isolated repository. `PYTHONNOUSERSITE=1` was
+used for the package runs; no absolute `PYTHONPATH` to the original checkout
+was used.
+
+```text
+PYTHONNOUSERSITE=1 PYTHONPATH=. python3 -m pytest -q test_pvx1807_remediation.py
+15 passed
+
+PYTHONNOUSERSITE=1 PYTHONPATH=. python3 -m pytest -q \
+  test_provider_adapters.py test_m13b.py test_bridge.py
+125 passed
+
+PYTHONNOUSERSITE=1 PYTHONPATH=. python3 -m pytest -q \
+  test_domain.py test_shadow_ledger.py test_pvx1805_v1_compatibility.py
+69 passed
+
+PYTHONNOUSERSITE=1 PYTHONPATH=. python3 -m pytest -q \
+  test_pvx1806_remediation.py test_runtime_control.py test_runtime_wiring.py
+108 passed
+
+PYTHONNOUSERSITE=1 PYTHONPATH=. python3 -m pytest -q
+496 passed
+
+PYTHONNOUSERSITE=1 PYTHONPATH=. python3 -m compileall -q .
+PASS
+git diff --check
+PASS
+```
+
+The full-suite result is the actual count for this checkout. The historical
+`493 passed / 66 subtests` and earlier `481 / 66` values remain comparison
+evidence only; they are not reused or double-counted. No test was skipped,
+deleted, weakened, or replaced by the reviewer harness.
+
+### Acceptance gates
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| `EXACT_BINDING_BEFORE_CALLBACK` | `PASS` | Strict adapter staging and exact post-response attach; resident mismatch and continuous-turn tests |
+| `UNKNOWN_PRE_RESPONSE_TURN_HAS_NO_SIDE_EFFECT` | `PASS` | `test_pa04_pre_response_turn_mismatch_has_no_callback_side_effect`; candidate red/green run |
+| `OLDER_THAN_PREVIOUS_TURN_ISOLATION` | `PASS` | Delayed turn-1 request is rejected before turn-3 handler; resident continuous-binding test |
+| `TOOL_REQUEST_ADMISSION_BEFORE_EXECUTION` | `PASS` | `_ServerRequestRecord` is created before handler invocation |
+| `RESPONSE_SEND_FAILURE_NO_HANDLER_REPLAY` | `PASS` | Response-failure resident test and candidate green run |
+| `REQUEST_CAPACITY_PRESERVES_NO_REPLAY` | `PASS` | Explicit capacity error retains earlier typed request records |
+| `REQUEST_ID_SCOPE_AND_CONFLICT` | `PASS` | Typed integer/string ids and changed-payload conflict resident test |
+| `VALID_TOOL_PROGRESS` | `PASS` | Exact turn-1 pre-response request is staged then delivered once; existing adapter test |
+| `REPOSITORY_RESIDENT_REGRESSION` | `PASS` | `test_pvx1807_remediation.py` is pytest-discoverable and ran 15 tests |
+| `V1_DEFAULT_PATH_COMPATIBILITY` | `PASS` | `test_m13b.py`, `test_bridge.py`, and full suite |
+| `PA01_PA02_PA03_PA05_REGRESSION` | `PASS` | Existing residual controls remain green in the 15-test remediation set and full suite |
+| `PVX1805_PVX1806_REGRESSION` | `PASS` | PVX-1805 compatibility and PVX-1806/runtime groups passed |
+| `FULL_SUITE` | `PASS` | `496 passed` |
+| `LINEAR_SYNC` | `NOT_PERFORMED` | Latest review was read; final SHA/branch comment is performed only after delivery push |
+
+The qualification remains scripted conformance and local evidence. It does
+not claim canonical Provider E2E, live takeover, physical process fencing,
+network exactly-once, or a V2 cutover. Runtime defaults remain unchanged:
+
+```text
+V1_LIVE_AUTHORITY=ON
+V2_LIVE_AUTHORITY_CUTOVER=NOT_PERFORMED
+PROVIDER_ADAPTER_LIVE_DEFAULT=OFF
+WORKER_RUNTIME_DEFAULT=OFF
+SHADOW_DEFAULT=OFF
+PUBLIC_MCP_CONTRACT=UNCHANGED
+PRODUCTION_DB_MIGRATION=NOT_PERFORMED
+PRODUCTION_DEPLOY=NOT_PERFORMED
+REAL_PROVIDER_TAKEOVER=NOT_RUN
+PHYSICAL_PROCESS_FENCING=NOT_QUALIFIED
+CANONICAL_PROVIDER_E2E=NOT_RUN
+CROSS_PROCESS_TOOL_EXACTLY_ONCE=NOT_QUALIFIED
+MAIN_BRANCH_PUSH=NOT_PERFORMED
+HISTORICAL_TASK_MUTATION=NOT_PERFORMED
+NEXT_PHASE_STARTED=NO
+```
+
 ## Residual Continuation: BASE 9521720
 
 This section records the follow-up remediation requested for the residual
