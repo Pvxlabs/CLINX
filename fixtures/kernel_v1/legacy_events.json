@@ -1,0 +1,42 @@
+{
+  "contract_version": "CLINX_KERNEL_V1",
+  "traces": [
+    {
+      "name": "legacy_expire_recover",
+      "events": [
+        {"event_id": "legacy-expire-1", "stream_type": "assignment", "stream_id": "asn-legacy-expire", "sequence": 1, "event_family": "RUNTIME_WORKER_V1", "event_type": "AssignmentGranted", "schema_version": 1, "occurred_at": "2026-09-11T13:00:00.000000+00:00", "recorded_at": "2026-09-11T13:00:00.000000+00:00", "payload": {"assignment_id": "asn-legacy-expire", "attempt_id": "att-legacy-expire", "worker_id": "worker-legacy", "incarnation_id": "inc-legacy", "resource_key": "res-legacy-expire", "resource_epoch": 2, "lease_expires_at": "2026-09-11T13:00:10.000000+00:00", "allocation_id": "alloc-legacy-expire"}, "payload_hash": "SHA256_CANONICAL_PAYLOAD", "global_position": 101},
+        {"event_id": "legacy-expire-2", "stream_type": "assignment", "stream_id": "asn-legacy-expire", "sequence": 2, "event_family": "RUNTIME_WORKER_V1", "event_type": "AssignmentExpired", "schema_version": 1, "occurred_at": "2026-09-11T13:00:10.000000+00:00", "recorded_at": "2026-09-11T13:00:10.000000+00:00", "payload": {"assignment_id": "asn-legacy-expire"}, "payload_hash": "SHA256_CANONICAL_PAYLOAD", "global_position": 103},
+        {"event_id": "legacy-expire-3", "stream_type": "assignment", "stream_id": "asn-legacy-expire", "sequence": 3, "event_family": "RUNTIME_WORKER_V1", "event_type": "AssignmentRecovered", "schema_version": 1, "occurred_at": "2026-09-11T13:00:11.000000+00:00", "recorded_at": "2026-09-11T13:00:11.000000+00:00", "payload": {"assignment_id": "asn-legacy-expire"}, "payload_hash": "SHA256_CANONICAL_PAYLOAD", "global_position": 108}
+      ],
+      "expected_prefixes": [
+        {"event_type": "AssignmentGranted", "assignment_lifecycle": "ACTIVE", "assignment_version": 0, "allocation_lifecycle": "ACTIVE", "allocation_version": 0, "attempt_lifecycle": "ASSIGNED", "attempt_version": 1, "recovery_state": null, "recovery_attempts": null},
+        {"event_type": "AssignmentExpired", "assignment_lifecycle": "EXPIRED", "assignment_version": 1, "allocation_lifecycle": "QUARANTINED", "allocation_version": 1, "attempt_lifecycle": "ASSIGNED", "attempt_version": 1, "recovery_state": "PENDING", "recovery_attempts": 0},
+        {"event_type": "AssignmentRecovered", "assignment_lifecycle": "RECOVERED", "assignment_version": 2, "allocation_lifecycle": "RELEASED", "allocation_version": 2, "attempt_lifecycle": "PENDING", "attempt_version": 2, "recovery_state": "DONE", "recovery_attempts": 1}
+      ]
+    },
+    {
+      "name": "legacy_orphan_recover",
+      "events": [
+        {"event_id": "legacy-orphan-1", "stream_type": "assignment", "stream_id": "asn-legacy-orphan", "sequence": 1, "event_family": "RUNTIME_WORKER_V1", "event_type": "AssignmentGranted", "schema_version": 1, "occurred_at": "2026-09-11T14:00:00.000000+00:00", "recorded_at": "2026-09-11T14:00:00.000000+00:00", "payload": {"assignment_id": "asn-legacy-orphan", "attempt_id": "att-legacy-orphan", "worker_id": "worker-legacy", "incarnation_id": "inc-legacy", "resource_key": "res-legacy-orphan", "resource_epoch": 5, "lease_expires_at": "2026-09-11T14:01:00.000000+00:00", "allocation_id": "alloc-legacy-orphan"}, "payload_hash": "SHA256_CANONICAL_PAYLOAD", "global_position": 201},
+        {"event_id": "legacy-orphan-2", "stream_type": "assignment", "stream_id": "asn-legacy-orphan", "sequence": 2, "event_family": "RUNTIME_WORKER_V1", "event_type": "AssignmentOrphaned", "schema_version": 1, "occurred_at": "2026-09-11T14:00:02.000000+00:00", "recorded_at": "2026-09-11T14:00:02.000000+00:00", "payload": {"assignment_id": "asn-legacy-orphan"}, "payload_hash": "SHA256_CANONICAL_PAYLOAD", "global_position": 207},
+        {"event_id": "legacy-orphan-3", "stream_type": "assignment", "stream_id": "asn-legacy-orphan", "sequence": 3, "event_family": "RUNTIME_WORKER_V1", "event_type": "AssignmentRecovered", "schema_version": 1, "occurred_at": "2026-09-11T14:00:03.000000+00:00", "recorded_at": "2026-09-11T14:00:03.000000+00:00", "payload": {"assignment_id": "asn-legacy-orphan"}, "payload_hash": "SHA256_CANONICAL_PAYLOAD", "global_position": 209}
+      ],
+      "expected_prefixes": [
+        {"event_type": "AssignmentGranted", "assignment_lifecycle": "ACTIVE", "assignment_version": 0, "allocation_lifecycle": "ACTIVE", "allocation_version": 0, "attempt_lifecycle": "ASSIGNED", "attempt_version": 1, "recovery_state": null, "recovery_attempts": null},
+        {"event_type": "AssignmentOrphaned", "assignment_lifecycle": "ORPHANED", "assignment_version": 1, "allocation_lifecycle": "QUARANTINED", "allocation_version": 0, "attempt_lifecycle": "ASSIGNED", "attempt_version": 1, "recovery_state": "PENDING", "recovery_attempts": 0},
+        {"event_type": "AssignmentRecovered", "assignment_lifecycle": "RECOVERED", "assignment_version": 2, "allocation_lifecycle": "RELEASED", "allocation_version": 1, "attempt_lifecycle": "PENDING", "attempt_version": 2, "recovery_state": "DONE", "recovery_attempts": 1}
+      ]
+    },
+    {
+      "name": "legacy_revoke",
+      "events": [
+        {"event_id": "legacy-revoke-1", "stream_type": "assignment", "stream_id": "asn-legacy-revoke", "sequence": 1, "event_family": "RUNTIME_WORKER_V1", "event_type": "AssignmentGranted", "schema_version": 1, "occurred_at": "2026-09-11T15:00:00.000000+00:00", "recorded_at": "2026-09-11T15:00:00.000000+00:00", "payload": {"assignment_id": "asn-legacy-revoke", "attempt_id": "att-legacy-revoke", "worker_id": "worker-legacy", "incarnation_id": "inc-legacy", "resource_key": "res-legacy-revoke", "resource_epoch": 1, "lease_expires_at": "2026-09-11T15:01:00.000000+00:00", "allocation_id": "alloc-legacy-revoke"}, "payload_hash": "SHA256_CANONICAL_PAYLOAD", "global_position": 301},
+        {"event_id": "legacy-revoke-2", "stream_type": "assignment", "stream_id": "asn-legacy-revoke", "sequence": 2, "event_family": "RUNTIME_WORKER_V1", "event_type": "AssignmentRevoked", "schema_version": 1, "occurred_at": "2026-09-11T15:00:03.000000+00:00", "recorded_at": "2026-09-11T15:00:03.000000+00:00", "payload": {"assignment_id": "asn-legacy-revoke", "reason": "manual revoke"}, "payload_hash": "SHA256_CANONICAL_PAYLOAD", "global_position": 304}
+      ],
+      "expected_prefixes": [
+        {"event_type": "AssignmentGranted", "assignment_lifecycle": "ACTIVE", "assignment_version": 0, "allocation_lifecycle": "ACTIVE", "allocation_version": 0, "attempt_lifecycle": "ASSIGNED", "attempt_version": 1, "recovery_state": null, "recovery_attempts": null},
+        {"event_type": "AssignmentRevoked", "assignment_lifecycle": "REVOKED", "assignment_version": 1, "allocation_lifecycle": "RELEASED", "allocation_version": 1, "attempt_lifecycle": "PENDING", "attempt_version": 2, "recovery_state": null, "recovery_attempts": null}
+      ]
+    }
+  ]
+}
