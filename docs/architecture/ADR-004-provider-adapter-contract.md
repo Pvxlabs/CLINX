@@ -257,3 +257,42 @@ redelivery, and retirement/close fencing. The pre-fix reconstructed candidate
 was `1 failed`; the fixed candidate is `1 passed`. The formal tests are
 resident in `test_pvx1807_remediation.py` and are discoverable from a fresh
 checkout.
+
+## Wrapped transport lifecycle evidence: BASE e2dbb9a0
+
+Strict staged callback admission now uses a three-state local lifecycle probe:
+`available`, `unavailable`, or `unknown`. The concrete transport produces the
+evidence from its existing `closed`/`connected`, `_connected`, or live
+`_process` state. `_RecordingTransport` delegates that probe to its wrapped
+transport, so send-boundary recording no longer hides an already-published
+closed state. `CodexAppServerClient` requires positive `available` evidence
+before each new staged callback; missing attributes are `unknown`, not proof
+that callback execution is safe. This is a local observation only and does not
+probe by sending a business request or claim protection from a failure that
+occurs after the check.
+
+The check runs again after cached-response redelivery. A successful resend of
+an already-executed request therefore does not authorize the next callback if
+the underlying transport has transitioned to `unavailable`. The cached request
+remains `responded`, the unexecuted tail remains `staged`, and the adapter keeps
+the operation in its pending batch registry instead of admitting it. A
+same-client `resume_dynamic_tool_batch` can continue after explicit transport
+recovery; it does not resend `turn/start`, and cached results do not re-enter
+their handlers. Unknown lifecycle evidence is fail-closed only for this strict
+staged callback path. The existing non-strict V1 request flow does not enter
+the staging flush and retains its prior behavior.
+
+The supplied real-package candidate was run against the isolated checkout. At
+BASE it produced `2 failed, 2 passed`: both direct-client controls passed, while
+the wrapped adapter called a handler after the inner transport had closed. The
+same candidate produced `4 passed` after lifecycle propagation. Repository
+tests in `test_pvx1807_remediation.py` cover both closed positions through the
+real adapter/wrapper, equivalent direct-client controls, cached response and
+tail state, same-client recovery, one `turn/start`, and unknown-state
+admission. The formal file passed `29 passed`; the complete suite passed `510
+passed, 66 subtests passed`.
+
+This remains scripted transport conformance. No live Provider, Host Executor,
+cross-process callback exactly-once guarantee, physical process fencing,
+runtime authority cutover, production database change, deployment, or main
+branch update is part of this decision.

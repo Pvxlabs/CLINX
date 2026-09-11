@@ -321,6 +321,124 @@ HISTORICAL_TASK_MUTATION=NOT_PERFORMED
 NEXT_PHASE_STARTED=NO
 ```
 
+## Wrapped transport lifecycle qualification: BASE e2dbb9a0
+
+This follow-up was performed under the existing direct operator instruction in
+the same isolated development copy. It is not a canonical CLINX runtime grant
+and did not mutate the original checkout, PVX-1800 task/lease, runtime state,
+or production systems.
+
+```text
+AUTHORITY_SOURCE=USER_DIRECT_OPERATOR_INSTRUCTION
+EXECUTION_SCOPE=ISOLATED_DEVELOPMENT_COPY
+CLINX_MANAGED_EXECUTION_AUTHORITY=NOT_CLAIMED
+HISTORICAL_TASK_MUTATION=NOT_PERFORMED
+BASE=e2dbb9a047cb2f27a2e85c612d13332de1204142
+MAIN=a85677228dea28e20339b25ee22d5ea9f3b04cfe
+```
+
+### Lifecycle ownership and continuation
+
+The lifecycle evidence chain is concrete transport -> `_RecordingTransport`
+-> `CodexAppServerClient` -> `CodexProviderAdapter`. The shared
+`transport_lifecycle_state` probe returns `available`, `unavailable`, or
+`unknown` from already-exposed local fields. `_RecordingTransport` forwards
+the inner result without synthesizing availability. Before every new staged
+callback the client requires positive availability evidence, including after
+redelivering a cached response. Known closed and unknown transports cannot
+start new callback work; no business request, handler, timeout, or Host command
+is used as a health probe.
+
+On a known closed transport, an executed request keeps its cached response
+state and the unexecuted tail remains reachable as `staged`. The adapter keeps
+the operation in `_pending_dynamic_batches` and does not register it as
+accepted. After controlled recovery of the same client and binding,
+`resume_dynamic_tool_batch` retries delivery or flushes the tail exactly once
+without resending `turn/start`. This does not transfer the guarantee to a new
+client or process and does not establish network exactly-once or physical
+fencing.
+
+### Red and green evidence
+
+The attachment ZIP contained the named candidate, extracted to an isolated
+temporary directory. The actual imported source paths at BASE were
+`/home/pvxlabs/dev/clinx-pvx1807-remediation/app_server.py` and
+`/home/pvxlabs/dev/clinx-pvx1807-remediation/provider_adapters/codex.py`.
+
+| Source | SHA-256 at BASE | SHA-256 after fix |
+| --- | --- | --- |
+| `app_server.py` | `f2ab41c2af940f45e1047cb2894e7e51135d1393dabd6085cf4d04e5632c0b26` | `9674fe045e8658d79bdd2bfd88bac9bf0cb2e9ffad407155948daabe8dfe10c5` |
+| `provider_adapters/codex.py` | `6fc98e4e6e0c9d4d954e86e9bf1093aac1174e7db132b93d8da4e251b49f5775` | `0e3a7eb0716b2dcd022fd4be12540c9bb3f99d713e86c5fe801d5fbbb73df3af` |
+
+Before implementation:
+
+```text
+PYTHONNOUSERSITE=1 PYTHONPATH=/home/pvxlabs/dev/clinx-pvx1807-remediation \
+  python3 -m pytest -q \
+  /tmp/pvx1807-transport-state-review.ESF4tc/test_pvx1807_transport_state_candidates.py
+2 failed, 2 passed
+```
+
+Both failures were wrapper paths: one called `r1` after close before the first
+callback, and one called `r2` after cached `r1` delivery closed the inner
+transport. Both direct-client controls passed. After implementation, the same
+command produced `4 passed`.
+
+### Repository regression mapping
+
+| Contract | Repository evidence | Result |
+| --- | --- | --- |
+| Wrapped close before first callback | `test_pa04_wrapped_transport_lifecycle_blocks_callbacks_and_preserves_tail[before_first_callback]` | PASS |
+| Wrapped close after cached response | `test_pa04_wrapped_transport_lifecycle_blocks_callbacks_and_preserves_tail[after_cached_response]` | PASS |
+| Direct/wrapped equivalence | `test_pa04_direct_transport_lifecycle_matches_wrapped_contract` | PASS (2 parameter cases) |
+| Unknown evidence is not authorization | `test_pa04_unknown_transport_lifecycle_does_not_authorize_strict_callback` | PASS |
+| Same-client continuation and no start resend | Wrapped lifecycle test plus `test_pa04_staged_batch_adapter_failure_has_explicit_continue_entry` | PASS |
+| Existing batch, typed-id, capacity, cache, wrong-turn and retirement controls | `test_pvx1807_remediation.py` | PASS |
+
+Actual regression commands and results:
+
+```text
+python3 -m pytest -q test_pvx1807_remediation.py
+29 passed
+python3 -m pytest -q test_pvx1807_remediation.py test_provider_adapters.py
+39 passed
+python3 -m pytest -q test_bridge.py test_pvx1805_v1_compatibility.py
+74 passed
+python3 -m pytest -q test_domain.py test_shadow_ledger.py
+60 passed
+python3 -m pytest -q test_pvx1806_remediation.py test_runtime_control.py test_runtime_wiring.py
+108 passed
+python3 -m pytest -q
+510 passed, 66 subtests passed
+```
+
+The historic `505 passed / 66 subtests` result is retained only as the prior
+baseline. No test was skipped, deleted, weakened, or counted as a substitute
+for the full suite.
+
+### Transport-state gates
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| `TRANSPORT_LIFECYCLE_SURVIVES_WRAPPING` | `PASS` | Explicit wrapper delegation and real adapter regression |
+| `KNOWN_CLOSED_BEFORE_FIRST_CALLBACK_REJECTED` | `PASS` | Callback count remains zero and both requests remain staged |
+| `KNOWN_CLOSED_AFTER_CACHED_RESPONSE_REJECTED` | `PASS` | Cached `r1` becomes responded; closed state blocks `r2` |
+| `SAME_CLIENT_CONTINUATION_RETAINS_TAIL` | `PASS` | Controlled recovery completes the preserved tail |
+| `NO_CALLBACK_REPLAY_OR_START_RESEND` | `PASS` | One callback per request and one wire `turn/start` |
+| `VALID_TRANSPORT_PROGRESS` | `PASS` | Existing normal and temporary-response-failure batch controls |
+| `DIRECT_AND_ADAPTER_CONTRACT_EQUIVALENCE` | `PASS` | Two direct and two wrapped position cases pass |
+| `REPOSITORY_RESIDENT_REGRESSION` | `PASS` | Default pytest discovers `test_pvx1807_remediation.py` |
+| `V1_DEFAULT_PATH_COMPATIBILITY` | `PASS` | Bridge/V1 compatibility group: `74 passed` |
+| `PVX1805_PVX1806_REGRESSION` | `PASS` | PVX-1805 plus PVX-1806/runtime groups pass |
+| `FULL_SUITE` | `PASS` | `510 passed, 66 subtests passed` |
+| `LINEAR_SYNC` | `PENDING` | Final SHA and remote readback are recorded after commit/push |
+
+The qualification remains local scripted conformance, not canonical Provider
+E2E. V1 remains the only live authority; provider adapter, worker runtime, and
+shadow defaults remain off. No production migration, deployment, real
+Provider takeover, cross-process exactly-once qualification, main push,
+historical task mutation, or next phase was performed.
+
 ## Residual Continuation: BASE 9521720
 
 This section records the follow-up remediation requested for the residual
