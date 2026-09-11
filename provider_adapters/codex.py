@@ -56,6 +56,7 @@ class _RecordingTransport:
         self.last_send_started = False
         self.last_send_completed = False
         self._request_records: deque[_RequestSend] = deque(maxlen=128)
+        self._request_sequence = 0
 
     def connect(self) -> None:
         connect = getattr(self.inner, "connect", None)
@@ -67,27 +68,51 @@ class _RecordingTransport:
         self.last_send_started = True
         self.last_send_completed = False
         is_request = isinstance(message.get("method"), str) and "id" in message
-        record = _RequestSend(message.get("method") if is_request else None)
+        request_id = str(message.get("id")) if is_request else None
+        record = _RequestSend(request_id, message.get("method") if is_request else None)
         if is_request:
+            self._request_sequence += 1
+            record.sequence = self._request_sequence
             self._request_records.append(record)
+            record.state = "sending"
         try:
             self.inner.send(message)
-        except Exception:
+        except Exception as exc:
+            record.state = "definitely_unsent" if self._definitely_unsent(exc) else "possibly_sent"
+            record.error = str(exc)
             raise
         else:
             self.last_send_completed = True
-            record.completed = True
+            record.state = "sent_awaiting_response"
+
+    @staticmethod
+    def _definitely_unsent(exc: Exception) -> bool:
+        text = str(exc).casefold()
+        return any(marker in text for marker in ("not connected", "not open", "connection is closed", "transport is closed"))
+
+    def mark_request_result(self, request_id: str, state: str) -> None:
+        for record in reversed(self._request_records):
+            if record.request_id == str(request_id):
+                record.state = state
+                return
+
+    def checkpoint(self) -> int:
+        return self._request_sequence
+
+    def request_state(self, method: str, *, after: int | None = None) -> str | None:
+        for record in reversed(self._request_records):
+            if record.method == method and (after is None or record.sequence > after):
+                return record.state
 
     def request_was_sent(self, method: str) -> bool:
-        """Return send completion for the latest request of one RPC method.
-
-        Responses to server-initiated requests do not overwrite this evidence,
-        which keeps ambiguous side-effect classification request-scoped.
-        """
-        for record in reversed(self._request_records):
-            if record.method == method:
-                return record.completed
-        return False
+        """Return whether the latest request crossed or may have crossed send()."""
+        return self.request_state(method) in {
+            "possibly_sent",
+            "sent_awaiting_response",
+            "accepted",
+            "explicit_rejection",
+            "unknown",
+        }
 
     def receive(self, timeout_seconds: float) -> dict[str, Any]:
         return self.inner.receive(timeout_seconds)
@@ -98,8 +123,11 @@ class _RecordingTransport:
 
 @dataclass
 class _RequestSend:
+    request_id: str | None
     method: str | None
-    completed: bool = False
+    state: str = "not_started"
+    error: str | None = None
+    sequence: int = 0
 
 
 class CodexProviderAdapter:
@@ -129,6 +157,7 @@ class CodexProviderAdapter:
         max_payload_bytes: int = DEFAULT_MAX_PAYLOAD_BYTES,
         max_seen_native_ids: int = 4096,
         max_operation_history: int = 1024,
+        max_sessions: int = 64,
     ):
         if transport is None and transport_factory is None:
             raise ValueError("transport or transport_factory is required")
@@ -142,6 +171,8 @@ class CodexProviderAdapter:
             raise ValueError("max_seen_native_ids must be between 1 and 100000")
         if not 1 <= int(max_operation_history) <= 100_000:
             raise ValueError("max_operation_history must be between 1 and 100000")
+        if not 1 <= int(max_sessions) <= 10_000:
+            raise ValueError("max_sessions must be between 1 and 10000")
         self._initial_transport = transport
         self._transport_factory = transport_factory
         self._client_factory = client_factory
@@ -153,6 +184,7 @@ class CodexProviderAdapter:
         self.max_payload_bytes = int(max_payload_bytes)
         self.max_seen_native_ids = int(max_seen_native_ids)
         self.max_operation_history = int(max_operation_history)
+        self.max_sessions = int(max_sessions)
         self._client: CodexAppServerClient | None = None
         self._recording_transport: _RecordingTransport | None = None
         self._initialized = False
@@ -272,9 +304,27 @@ class CodexProviderAdapter:
         return registered, turn_id
 
     @staticmethod
-    def _map_error(exc: AppServerError, recording: _RecordingTransport | None, method: str) -> AdapterError:
+    def _map_error(
+        exc: AppServerError,
+        recording: _RecordingTransport | None,
+        method: str,
+        *,
+        after: int | None = None,
+    ) -> AdapterError:
+        state = recording.request_state(method, after=after) if recording is not None else None
+        if isinstance(exc, AppServerRemoteError):
+            return ProtocolError(str(exc))
+        if isinstance(exc, AppServerProtocolError) and state in {
+            "possibly_sent",
+            "sent_awaiting_response",
+            "unknown",
+            "accepted",
+        }:
+            return SideEffectUnknown(
+                f"{method} response was malformed after the request was sent; provider outcome is unknown"
+            )
         if isinstance(exc, AppServerTransportError):
-            if recording is not None and recording.request_was_sent(method):
+            if state in {"possibly_sent", "sent_awaiting_response", "unknown"}:
                 return SideEffectUnknown(
                     f"{method} response was lost after the request was sent; provider outcome is unknown"
                 )
@@ -288,10 +338,11 @@ class CodexProviderAdapter:
     def discover_capabilities(self) -> Capabilities:
         with self._lock:
             client = self._ensure_client()
+            request_checkpoint = self._recording_transport.checkpoint() if self._recording_transport is not None else None
             try:
                 payload = client.model_list()
             except AppServerError as exc:
-                mapped = self._map_error(exc, self._recording_transport, "model/list")
+                mapped = self._map_error(exc, self._recording_transport, "model/list", after=request_checkpoint)
                 if isinstance(exc, AppServerTransportError) and "timed out" not in str(exc).casefold():
                     self._mark_disconnected()
                 return Capabilities(
@@ -332,6 +383,10 @@ class CodexProviderAdapter:
                 pass
 
     def _remember_operation(self, context: OperationContext, turn_id: str) -> None:
+        if context.operation_id not in self._operations and len(self._operations) >= self.max_operation_history:
+            raise AdapterBusy(
+                "operation admission capacity exhausted; retired identities are not replayable"
+            )
         self._operations[context.operation_id] = (context, turn_id)
         self._terminal_operations.discard(context.operation_id)
         try:
@@ -339,17 +394,9 @@ class CodexProviderAdapter:
         except ValueError:
             pass
         self._operation_order.append(context.operation_id)
-        while len(self._operation_order) > self.max_operation_history:
-            candidate = self._operation_order.popleft()
-            if candidate == context.operation_id or candidate == self._active_operation_id:
-                self._operation_order.append(candidate)
-                break
-            if candidate in self._terminal_operations:
-                self._terminal_operations.discard(candidate)
-                self._operations.pop(candidate, None)
-            else:
-                self._operation_order.append(candidate)
-                break
+        # Operation identities are admission protection, not expendable
+        # diagnostics. Once the finite guarantee window is full, callers get
+        # an explicit rejection instead of allowing an old id to replay.
 
     def _rebind_operations(self, session_id: str, generation: int) -> None:
         """Keep execution/attempt/operation ids while moving to a new connection."""
@@ -371,7 +418,12 @@ class CodexProviderAdapter:
         clinx_session_id: str | None = None,
     ) -> ProviderSessionRef:
         with self._lock:
+            if clinx_session_id is not None and clinx_session_id in self._sessions:
+                raise CorrelationError("provider session id is already registered")
+            if len(self._sessions) >= self.max_sessions:
+                raise AdapterBusy("session admission capacity exhausted")
             client = self._ensure_client()
+            request_checkpoint = self._recording_transport.checkpoint() if self._recording_transport is not None else None
             try:
                 thread = client.thread_start(
                     cwd=cwd,
@@ -383,7 +435,7 @@ class CodexProviderAdapter:
                     dynamic_tools=dynamic_tools,
                 )
             except AppServerError as exc:
-                mapped = self._map_error(exc, self._recording_transport, "thread/start")
+                mapped = self._map_error(exc, self._recording_transport, "thread/start", after=request_checkpoint)
                 if isinstance(exc, AppServerTransportError) and "timed out" not in str(exc).casefold():
                     self._mark_disconnected()
                 raise mapped from exc
@@ -408,10 +460,11 @@ class CodexProviderAdapter:
             client = self._ensure_client()
             if not session.provider_handle:
                 raise ProtocolError("provider session has no resumable handle")
+            request_checkpoint = self._recording_transport.checkpoint() if self._recording_transport is not None else None
             try:
                 client.thread_resume(session.provider_handle)
             except AppServerError as exc:
-                mapped = self._map_error(exc, self._recording_transport, "thread/resume")
+                mapped = self._map_error(exc, self._recording_transport, "thread/resume", after=request_checkpoint)
                 if isinstance(mapped, SideEffectUnknown):
                     self._ambiguous_sessions.add(session.clinx_session_id)
                 if isinstance(exc, AppServerTransportError) and "timed out" not in str(exc).casefold():
@@ -472,6 +525,9 @@ class CodexProviderAdapter:
     ) -> None:
         with self._lock:
             session = self._require_session(session)
+            clear = getattr(self._ensure_client(), "clear_dynamic_tool", None)
+            if callable(clear):
+                clear()
             self._configure_dynamic_tool(session, configuration, operation=None)
 
     def _configure_dynamic_tool(
@@ -539,7 +595,14 @@ class CodexProviderAdapter:
                 raise AdapterBusy("turn start would duplicate an existing operation")
             if context.operation_id in self._ambiguous_operations:
                 raise SideEffectUnknown("ambiguous turn start cannot be resent without provider recovery")
+            if len(self._operations) >= self.max_operation_history:
+                raise AdapterBusy(
+                    "operation admission capacity exhausted; retired identities are not replayable"
+                )
             if dynamic_tool is not None:
+                clear = getattr(self._ensure_client(), "clear_dynamic_tool", None)
+                if callable(clear):
+                    clear()
                 self._configure_dynamic_tool(session, dynamic_tool, operation=context)
             else:
                 self._dynamic_configurations.pop(session.clinx_session_id, None)
@@ -548,6 +611,7 @@ class CodexProviderAdapter:
                 if callable(clear):
                     clear()
             client = self._ensure_client()
+            request_checkpoint = self._recording_transport.checkpoint() if self._recording_transport is not None else None
             try:
                 info = client.turn_start(
                     session.provider_handle or "",
@@ -560,10 +624,19 @@ class CodexProviderAdapter:
                     writable_roots=writable_roots,
                 )
             except AppServerError as exc:
-                mapped = self._map_error(exc, self._recording_transport, "turn/start")
+                mapped = self._map_error(exc, self._recording_transport, "turn/start", after=request_checkpoint)
                 if isinstance(mapped, SideEffectUnknown):
                     self._ambiguous_operations.add(context.operation_id)
-                if isinstance(exc, AppServerTransportError) and "timed out" not in str(exc).casefold():
+                else:
+                    self._operation_dynamic_configurations.pop(context.operation_id, None)
+                if (
+                    isinstance(exc, AppServerTransportError)
+                    and "timed out" not in str(exc).casefold()
+                    and not (
+                        self._recording_transport is not None
+                        and self._recording_transport.request_state("turn/start", after=request_checkpoint) == "definitely_unsent"
+                    )
+                ):
                     self._mark_disconnected()
                 raise mapped from exc
             if dynamic_tool is not None:
@@ -607,11 +680,21 @@ class CodexProviderAdapter:
     ) -> AdapterOperation:
         with self._lock:
             registered, _turn_id = self._require_context(context)
+            if self._active_operation_id is not None and self._active_operation_id != registered.operation_id:
+                raise AdapterBusy("observer does not own the active provider operation")
             client = self._ensure_client()
             limit = self.max_events if max_events is None else max_events
             try:
                 raw_events = client.drain_events(max_events=limit, timeout_seconds=timeout_seconds)
             except AppServerTransportError as exc:
+                partial = getattr(exc, "events", ())
+                if partial:
+                    normalized = self._finish_observation(registered, partial)
+                    mapped = TransportLoss(str(exc))
+                    mapped.events = normalized.events
+                    if "timed out" not in str(exc).casefold():
+                        self._mark_disconnected()
+                    raise mapped from exc
                 if "timed out" in str(exc).casefold() and timeout_seconds > 0:
                     raise TimeoutError(str(exc)) from exc
                 if "timed out" not in str(exc).casefold():
@@ -619,20 +702,30 @@ class CodexProviderAdapter:
                 raise TransportLoss(str(exc)) from exc
             except AppServerProtocolError as exc:
                 raise ProtocolError(str(exc)) from exc
-            normalized = tuple(self.normalize_event(raw, registered) for raw in raw_events)
-            if any(event.event_type == "clinx/observation_overflow" for event in normalized):
-                raise ProtocolError("bounded provider observation buffer overflowed")
-            exact_terminal = [event for event in normalized if event.terminal_observed and event.authority_eligible]
-            if exact_terminal:
-                self._active_operation_id = None
-                self._terminal_operations.add(registered.operation_id)
-            confirmed_cancel = any(event.cancel_state is CancelState.CONFIRMED for event in exact_terminal)
-            outcome = Outcome(
-                OutcomeCode.CANCEL_CONFIRMED if confirmed_cancel else OutcomeCode.OBSERVED,
-                side_effect_state="provider_evidence_only",
-                detail="no events observed" if not normalized else None,
-            )
-            return AdapterOperation(outcome, context=registered, events=normalized)
+            return self._finish_observation(registered, raw_events)
+
+    def _finish_observation(
+        self,
+        registered: OperationContext,
+        raw_events: Any,
+    ) -> AdapterOperation:
+        normalized = tuple(self.normalize_event(raw, registered) for raw in raw_events)
+        if any(event.event_type == "clinx/observation_overflow" for event in normalized):
+            raise ProtocolError("bounded provider observation buffer overflowed")
+        exact_terminal = [event for event in normalized if event.terminal_observed and event.authority_eligible]
+        if exact_terminal:
+            self._active_operation_id = None
+            self._terminal_operations.add(registered.operation_id)
+            clear = getattr(self._client, "clear_dynamic_tool", None)
+            if callable(clear):
+                clear()
+        confirmed_cancel = any(event.cancel_state is CancelState.CONFIRMED for event in exact_terminal)
+        outcome = Outcome(
+            OutcomeCode.CANCEL_CONFIRMED if confirmed_cancel else OutcomeCode.OBSERVED,
+            side_effect_state="provider_evidence_only",
+            detail="no events observed" if not normalized else None,
+        )
+        return AdapterOperation(outcome, context=registered, events=normalized)
 
     def interrupt(self, context: OperationContext) -> AdapterOperation:
         with self._lock:
@@ -648,10 +741,11 @@ class CodexProviderAdapter:
                     context=registered,
                 )
             client = self._ensure_client()
+            request_checkpoint = self._recording_transport.checkpoint() if self._recording_transport is not None else None
             try:
                 client.turn_interrupt(session.provider_handle, turn_id)
             except AppServerError as exc:
-                mapped = self._map_error(exc, self._recording_transport, "turn/interrupt")
+                mapped = self._map_error(exc, self._recording_transport, "turn/interrupt", after=request_checkpoint)
                 if isinstance(mapped, SideEffectUnknown):
                     self._cancel_requested.add(context.operation_id)
                     raise TimeoutError("interrupt response was lost; cancellation is not confirmed") from exc
@@ -670,6 +764,11 @@ class CodexProviderAdapter:
         with self._lock:
             if context is not None and not isinstance(context, OperationContext):
                 raise TypeError("context must be OperationContext")
+            validated_registered = None
+            if context is not None:
+                # Validate the caller's complete registered identity before
+                # consuming sequence/dedup state or interpreting the event.
+                validated_registered, _ = self._require_context(context)
             self._event_sequence += 1
             sequence = self._event_sequence
             method = raw.get("method")
@@ -688,16 +787,45 @@ class CodexProviderAdapter:
             event_generation = supplied_generation if generation_valid and supplied_generation is not None else self._generation
             correlation = CorrelationStatus.UNKNOWN
             event_operation: OperationContext | None = None
+            identity_mismatch = False
             if context is not None:
                 registered_entry = self._operations.get(context.operation_id)
-                registered = registered_entry[0] if registered_entry else None
+                registered = validated_registered if validated_registered is not None else (
+                    registered_entry[0] if registered_entry else None
+                )
                 expected_turn = registered_entry[1] if registered_entry else None
                 expected_session = self._sessions.get(context.session_id)
                 expected_thread = expected_session.provider_handle if expected_session else None
+                supplied_context = params.get("context") if isinstance(params.get("context"), Mapping) else {}
+                supplied_assignment = params.get("assignmentId") or params.get("assignment_id")
+                if supplied_assignment is None:
+                    supplied_assignment = supplied_context.get("assignmentId") or supplied_context.get("assignment_id")
+                if supplied_assignment is None:
+                    assignment = params.get("assignment")
+                    if isinstance(assignment, Mapping):
+                        supplied_assignment = assignment.get("id") or assignment.get("assignmentId") or assignment.get("assignment_id")
+                    elif assignment is not None:
+                        supplied_assignment = assignment
+                identity_fields = (
+                    (("executionId", "execution_id"), "execution_id"),
+                    (("attemptId", "attempt_id"), "attempt_id"),
+                    (("sessionId", "session_id"), "session_id"),
+                    (("operationId", "operation_id"), "operation_id"),
+                )
+                for aliases, field in identity_fields:
+                    supplied = next((params.get(key) for key in aliases if params.get(key) is not None), None)
+                    if supplied is None:
+                        supplied = next((supplied_context.get(key) for key in aliases if supplied_context.get(key) is not None), None)
+                    if supplied is not None and supplied != getattr(context, field):
+                        identity_mismatch = True
+                if supplied_assignment is not None and supplied_assignment != context.assignment_id:
+                    identity_mismatch = True
                 if not generation_valid:
                     correlation = CorrelationStatus.UNKNOWN
                 elif event_generation != context.connection_generation:
                     correlation = CorrelationStatus.STALE_GENERATION
+                elif identity_mismatch:
+                    correlation = CorrelationStatus.MISMATCH
                 elif registered is None or expected_thread is None:
                     correlation = CorrelationStatus.MISMATCH
                 elif not isinstance(thread_id, str) or not thread_id.strip() or not isinstance(turn_id, str) or not turn_id.strip():
@@ -748,7 +876,7 @@ class CodexProviderAdapter:
                 error_code = str(params.get("code") or status or "provider_error")
             payload = self._bounded_payload(params)
             duplicate = native_id is not None and native_id in self._seen_native_ids
-            if native_id is not None:
+            if native_id is not None and not (context is not None and identity_mismatch):
                 self._seen_native_ids.add(native_id)
                 self._seen_native_order.append(native_id)
                 while len(self._seen_native_order) > self.max_seen_native_ids:

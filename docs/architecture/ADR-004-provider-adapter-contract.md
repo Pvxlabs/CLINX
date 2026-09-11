@@ -134,3 +134,36 @@ delivery, authenticated command boundaries, a second real provider, a new
 scheduler/RPC service, production outbox consumption, V2 live cutover, and
 physical process fencing are outside PVX-1807. The synthetic adapter fixture
 proves the abstraction only; it is not a second provider integration.
+
+## Residual Remediation: 9521720
+
+The residual PA-02 through PA-05 work was performed under the user's direct
+operator instruction for the same isolated development copy. This is not a
+canonical CLINX runtime grant:
+
+```text
+AUTHORITY_SOURCE=USER_DIRECT_OPERATOR_INSTRUCTION
+EXECUTION_SCOPE=ISOLATED_DEVELOPMENT_COPY
+CLINX_MANAGED_EXECUTION_AUTHORITY=NOT_CLAIMED
+HISTORICAL_TASK_MUTATION=NOT_PERFORMED
+```
+
+The remediation branch was based exactly on
+`9521720a40842b8e3f44f11f05cba6c08a80fa20`; `main` remains at
+`a85677228dea28e20339b25ee22d5ea9f3b04cfe`. The original checkout and the
+PVX-1800 task/lease were not modified or claimed.
+
+The residual contracts are implemented as follows:
+
+| Contract | Implementation boundary |
+| --- | --- |
+| `PA-02` | `_RecordingTransport` records each JSON-RPC request id and classifies `definitely_unsent`, `possibly_sent`, `sent_awaiting_response`, `explicit_rejection`, `accepted`, and `unknown`. Post-send exceptions quarantine the operation and the adapter connection; reconnect and a new operation id cannot replay it. Explicit pre-send loss and remote rejection remain recoverable. |
+| `PA-03` | `observe` rejects a non-owner while another operation is active before draining. `normalize_event` validates the complete registered execution/attempt/session/operation/generation/assignment context before changing sequence or dedup state. Only an exact current known terminal can release the active slot. |
+| `PA-04` | Dynamic-tool configuration retires the prior turn, rejects late requests for that turn, provisionally binds one new pre-response turn, validates the returned turn, and suppresses duplicate server request ids. Namespace, name, provider thread, operation closure, and generation remain bound. |
+| `PA-05` | Operation and session identity histories use bounded admission with explicit `AdapterBusy` capacity rejection rather than unsafe eviction. Client method history, received-event buffer, native ids, request records, and server-response ids are bounded. `drain_events` attaches already consumed events to a hard-EOF exception so evidence is retained. |
+
+Formal repository coverage is in `test_pvx1807_remediation.py`. It uses the
+real `CodexAppServerClient` with a strict scripted transport and records wire
+request ids, handler calls, responses, terminal evidence, and lifecycle
+transitions. It does not claim live-provider or external exactly-once
+qualification.

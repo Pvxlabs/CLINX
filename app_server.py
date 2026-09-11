@@ -529,9 +529,12 @@ class CodexAppServerClient:
         timeout_seconds: float = 30.0,
         *,
         max_received_events: int = 256,
+        max_method_history: int = 256,
     ):
         if not isinstance(max_received_events, int) or isinstance(max_received_events, bool) or max_received_events < 1:
             raise AppServerProtocolError("max_received_events must be a positive integer")
+        if not isinstance(max_method_history, int) or isinstance(max_method_history, bool) or max_method_history < 1:
+            raise AppServerProtocolError("max_method_history must be a positive integer")
         self.transport = transport
         self.timeout_seconds = timeout_seconds
         self.events: list[str] = []
@@ -542,6 +545,7 @@ class CodexAppServerClient:
         # wire dictionaries part of the provider-neutral contract.
         self.received_events: list[dict[str, Any]] = []
         self.max_received_events = max_received_events
+        self.max_method_history = max_method_history
         self._received_event_overflow = False
         self.initialize_info: InitializeInfo | None = None
         self._dynamic_tool_handler: Callable[[dict[str, Any]], dict[str, Any]] | None = None
@@ -549,6 +553,9 @@ class CodexAppServerClient:
         self._dynamic_tool_name: str | None = None
         self._dynamic_thread_id: str | None = None
         self._dynamic_turn_id: str | None = None
+        self._dynamic_previous_turn_id: str | None = None
+        self._dynamic_provisional_turn_id: str | None = None
+        self._served_server_request_ids: list[str] = []
         self._detached = False
         self._supervisor: threading.Thread | None = None
 
@@ -556,6 +563,8 @@ class CodexAppServerClient:
         method = message.get("method")
         if isinstance(method, str):
             self.events.append(method)
+            if len(self.events) > self.max_method_history:
+                del self.events[: len(self.events) - self.max_method_history]
         # Reserve one slot for an explicit overflow marker so the queue stays
         # bounded while still making loss visible to an adapter.
         if len(self.received_events) < self.max_received_events - 1 and not self._received_event_overflow:
@@ -584,6 +593,10 @@ class CodexAppServerClient:
         self.transport.close()
 
     def _send_server_response(self, request: dict[str, Any]) -> None:
+        request_id = request.get("id")
+        request_key = str(request_id) if isinstance(request_id, (str, int)) else None
+        if request_key is not None and request_key in self._served_server_request_ids:
+            return
         method = request.get("method")
         if isinstance(method, str):
             self._record_event(request)
@@ -598,8 +611,21 @@ class CodexAppServerClient:
                     raise AppServerProtocolError("dynamic tool name is not registered")
                 if params.get("threadId") != self._dynamic_thread_id:
                     raise AppServerProtocolError("dynamic tool thread identity changed")
-                if self._dynamic_turn_id is not None and params.get("turnId") != self._dynamic_turn_id:
+                supplied_turn = params.get("turnId")
+                if self._dynamic_turn_id is not None and supplied_turn != self._dynamic_turn_id:
                     raise AppServerProtocolError("dynamic tool turn identity changed")
+                if self._dynamic_turn_id is None:
+                    if not isinstance(supplied_turn, str) or not supplied_turn.strip():
+                        raise AppServerProtocolError("dynamic tool turn identity is missing")
+                    # A request for the retired turn is never allowed to reach
+                    # the newly configured handler.  A different turn is a
+                    # bounded provisional binding until turn/start returns.
+                    if self._dynamic_previous_turn_id is not None and supplied_turn == self._dynamic_previous_turn_id:
+                        raise AppServerProtocolError("dynamic tool turn identity changed")
+                    if self._dynamic_provisional_turn_id is None:
+                        self._dynamic_provisional_turn_id = supplied_turn
+                    elif supplied_turn != self._dynamic_provisional_turn_id:
+                        raise AppServerProtocolError("dynamic tool has multiple provisional turns")
                 result = self._dynamic_tool_handler(params)
                 response = {
                     "success": True,
@@ -621,19 +647,27 @@ class CodexAppServerClient:
                         ),
                     }],
                 }
-            self.transport.send({"id": request.get("id"), "result": response})
+            self.transport.send({"id": request_id, "result": response})
+            if request_key is not None:
+                self._served_server_request_ids.append(request_key)
+                if len(self._served_server_request_ids) > self.max_received_events:
+                    del self._served_server_request_ids[: len(self._served_server_request_ids) - self.max_received_events]
             return
         # Approval and user-input requests remain unsupported. Reply explicitly
         # so no server request can leave the transport waiting indefinitely.
         self.transport.send(
             {
-                "id": request.get("id"),
+                "id": request_id,
                 "error": {
                     "code": -32601,
                     "message": "linear-local-codex-bridge does not handle server requests",
                 },
             }
         )
+        if request_key is not None:
+            self._served_server_request_ids.append(request_key)
+            if len(self._served_server_request_ids) > self.max_received_events:
+                del self._served_server_request_ids[: len(self._served_server_request_ids) - self.max_received_events]
 
     def configure_dynamic_tool(
         self,
@@ -657,13 +691,19 @@ class CodexAppServerClient:
         self._dynamic_tool_name = name.strip()
         self._dynamic_thread_id = thread_id
         self._dynamic_tool_handler = handler
+        self._dynamic_turn_id = None
+        self._dynamic_provisional_turn_id = None
 
     def clear_dynamic_tool(self) -> None:
         """Remove a prior tool binding before the next operation."""
+        retired_turn = self._dynamic_turn_id or self._dynamic_provisional_turn_id
+        if retired_turn is not None:
+            self._dynamic_previous_turn_id = retired_turn
         self._dynamic_tool_namespace = None
         self._dynamic_tool_name = None
         self._dynamic_thread_id = None
         self._dynamic_turn_id = None
+        self._dynamic_provisional_turn_id = None
         self._dynamic_tool_handler = None
 
     def attach_dynamic_tool_turn(self, thread_id: str, turn_id: str) -> None:
@@ -683,8 +723,12 @@ class CodexAppServerClient:
             raise AppServerProtocolError("dynamic tool turn attachment is invalid")
         if self._dynamic_thread_id != thread_id:
             raise AppServerProtocolError("dynamic tool thread identity changed")
+        if self._dynamic_provisional_turn_id is not None and self._dynamic_provisional_turn_id != turn_id:
+            raise AppServerProtocolError("dynamic tool provisional turn did not match response")
         self._dynamic_thread_id = thread_id
         self._dynamic_turn_id = turn_id
+        self._dynamic_previous_turn_id = None
+        self._dynamic_provisional_turn_id = None
 
     def supervise_turn(self, thread_id: str, turn_id: str) -> None:
         """Keep the initiating client connected for dynamic tool calls."""
@@ -751,9 +795,18 @@ class CodexAppServerClient:
                 error = message["error"]
                 if not isinstance(error, dict):
                     error = {"message": str(error)}
+                mark = getattr(self.transport, "mark_request_result", None)
+                if callable(mark):
+                    mark(request_id, "explicit_rejection")
                 raise AppServerRemoteError(method, error)
             if "result" not in message:
+                mark = getattr(self.transport, "mark_request_result", None)
+                if callable(mark):
+                    mark(request_id, "unknown")
                 raise AppServerProtocolError(f"{method} response has no result or error")
+            mark = getattr(self.transport, "mark_request_result", None)
+            if callable(mark):
+                mark(request_id, "accepted")
             return message["result"]
 
     def drain_events(self, *, max_events: int = 32, timeout_seconds: float = 0.0) -> list[dict[str, Any]]:
@@ -793,6 +846,8 @@ class CodexAppServerClient:
             except AppServerTransportError as exc:
                 if _is_transport_timeout(exc) and (result or timeout_seconds == 0):
                     break
+                if result:
+                    setattr(exc, "events", tuple(result))
                 raise
             if "method" in message and "id" in message:
                 recorded_before = len(self.received_events)
