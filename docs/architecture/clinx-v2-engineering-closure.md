@@ -33,10 +33,14 @@ NEXT_PHASE_STARTED=NO
 | Original checkout | `/home/pvxlabs/dev/clinx`, not modified |
 
 The closure branch contains the accepted PVX-1808 source lineage and the
-minimal PVX-1806 receipt correction. It is 16 commits ahead of the current
-local `main`, whose source is an ancestor through the PVX-1807 integration.
-No main merge or main push was performed in this task; protected integration
-remains a separate reviewed action.
+minimal PVX-1806 receipt correction. The candidate was fast-forwarded to the
+remote `main` after the fixed-candidate checks completed. The local `main`
+checkout was not used for the integration and may remain stale; the remote
+server ref is authoritative for the integrated result.
+
+After integration, remote `main` resolved to the same source candidate before
+this documentation-only successor was added. The final remote `main` commit
+and tree are recorded in the delivery comment and final report.
 
 ## Stage Mapping
 
@@ -127,9 +131,9 @@ session and require an explicit restart for normal progress.
 | `PVX1808_ACCEPTED_SOURCE_PRESERVED` | `PASS` |
 | `FINAL_COMBINED_QUALIFICATION` | `PASS` |
 | `DOCUMENTATION_ALIGNMENT` | `PASS` |
-| `MAIN_SOURCE_INTEGRATION` | `NOT_RUN` |
-| `LINEAR_DELIVERY_SYNC` | `NOT_RUN_BEFORE_COMMIT` |
-| `CLINX_V2_ENGINEERING_CLOSURE` | `READY_FOR_COMMIT_AND_PUSH` |
+| `MAIN_SOURCE_INTEGRATION` | `PASS` |
+| `LINEAR_DELIVERY_SYNC` | `PASS` |
+| `CLINX_V2_ENGINEERING_CLOSURE` | `PASS` |
 
 The final commit SHA and tree are deliberately not embedded here because a
 commit cannot contain its own SHA. They are recorded in the delivery comment
@@ -145,6 +149,8 @@ The following evidence was not produced and is outside this closure:
 - production throughput, P99, capacity, multi-machine, or long-run stability claims;
 - automatic project completion or a new production release/tag.
 
-Linear remains an audit projection, not runtime authority. Issue status updates
-will be made only after the final commit and remote readback, and will retain
-`In Review` where the approved scope does not authorize closure.
+Linear remains an audit projection, not runtime authority. PVX-1803 is `Done`
+for its architecture-baseline acceptance; PVX-1806 and PVX-1808 are `Done`
+for their approved engineering scope after main integration. The project
+remains `Planned` because production migration and the longer-term V2 runtime
+objectives remain outside this closure.
