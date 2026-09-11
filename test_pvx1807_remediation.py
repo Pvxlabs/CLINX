@@ -100,6 +100,20 @@ class EOFAfterQueuedTransport(StrictPVX1807Transport):
         raise AppServerTransportError("connection closed")
 
 
+class ResponseFailureTransport(ScriptedTransport):
+    """Fail exactly one tool response after the handler has run."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_response_once = True
+
+    def send(self, message: dict[str, Any]) -> None:
+        self.sent.append(dict(message))
+        if "result" in message and self.fail_response_once:
+            self.fail_response_once = False
+            raise AppServerTransportError("fixture response failed after callback")
+
+
 def make_fixture(tmp_path, **flags: Any):
     transport = StrictPVX1807Transport()
     for name, value in flags.items():
@@ -286,6 +300,99 @@ def test_pa04_continuous_tool_binding_rejects_old_turn_and_runs_new_once(tmp_pat
         assert len([m for m in responses if m.get("id") == "old-request-in-new-turn"]) == 1
     finally:
         adapter.close()
+
+
+def test_pa04_pre_response_turn_mismatch_has_no_callback_side_effect(tmp_path):
+    adapter, transport, session, context = make_fixture(tmp_path)
+    calls: list[str] = []
+    original_on_send = transport.on_send
+
+    def queue_wrong_turn(message: dict[str, Any], peer: ScriptedTransport) -> None:
+        if message.get("method") == "turn/start":
+            peer.queue(peer.tool("turn-other", "wrong-before-reply"))
+        assert original_on_send is not None
+        original_on_send(message, peer)
+
+    transport.on_send = queue_wrong_turn
+    try:
+        adapter.start_turn(
+            session,
+            context,
+            "A",
+            cwd=str(tmp_path),
+            dynamic_tool=DynamicToolConfiguration(
+                "fixture", "execute", lambda params: calls.append(params["turnId"]) or {"ok": True}
+            ),
+        )
+        assert calls == []
+        responses = [item for item in transport.sent if item.get("id") == "wrong-before-reply"]
+        assert len(responses) == 1
+        assert responses[0]["result"]["success"] is False
+    finally:
+        adapter.close()
+
+
+def test_pa04_response_delivery_failure_never_replays_callback():
+    transport = ResponseFailureTransport()
+    client = CodexAppServerClient(transport, timeout_seconds=0.01)
+    calls: list[str] = []
+    client.configure_dynamic_tool(
+        namespace="fixture",
+        name="execute",
+        thread_id="thread-a",
+        handler=lambda params: calls.append(params["arguments"]["request"]) or {"ok": True},
+    )
+    client.attach_dynamic_tool_turn("thread-a", "turn-1")
+    request = {
+        "id": "response-lost",
+        "method": "item/tool/call",
+        "params": {
+            "namespace": "fixture",
+            "tool": "execute",
+            "threadId": "thread-a",
+            "turnId": "turn-1",
+            "arguments": {"request": "response-lost"},
+        },
+    }
+    try:
+        with pytest.raises(AppServerTransportError):
+            client._send_server_response(request)
+        client._send_server_response(dict(request))
+        assert calls == ["response-lost"]
+        assert len([item for item in transport.sent if item.get("id") == "response-lost"]) == 2
+    finally:
+        client.close()
+
+
+def test_pa04_request_id_scope_conflict_and_capacity_preserve_no_replay():
+    transport = StrictPVX1807Transport()
+    client = CodexAppServerClient(transport, timeout_seconds=0.01, max_received_events=2)
+    transport.connect()
+    calls: list[str] = []
+    client.configure_dynamic_tool(
+        namespace="fixture",
+        name="execute",
+        thread_id=transport.thread,
+        handler=lambda params: calls.append(params["arguments"]["request"]) or {"ok": True},
+    )
+    client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+
+    def request(request_id: Any, value: str) -> dict[str, Any]:
+        item = transport.tool("turn-1", request_id)
+        item["params"]["arguments"] = {"request": value}
+        return item
+
+    try:
+        client._send_server_response(request(1, "integer"))
+        client._send_server_response(request("1", "string"))
+        # Same typed id with different semantics is a conflict, not a new call.
+        client._send_server_response(request(1, "changed"))
+        # Capacity rejects r3 and retains r1/r2 as the replay fence.
+        client._send_server_response(request("r3", "capacity"))
+        client._send_server_response(request(1, "integer"))
+        assert calls == ["integer", "string"]
+    finally:
+        client.close()
 
 
 def test_pa04_duplicate_tool_request_id_gets_one_response_and_one_call(tmp_path):

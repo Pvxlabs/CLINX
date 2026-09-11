@@ -167,3 +167,56 @@ real `CodexAppServerClient` with a strict scripted transport and records wire
 request ids, handler calls, responses, terminal evidence, and lifecycle
 transitions. It does not claim live-provider or external exactly-once
 qualification.
+
+## PA-04 Tool Dispatch Boundary: BASE 44effc05
+
+This follow-up closes the two PA-04 boundaries found by the 44effc05 review.
+It was performed under the same direct operator instruction and isolated
+development scope; it is not a canonical CLINX runtime grant and it did not
+read or mutate the historical PVX-1800 task or lease.
+
+`CodexProviderAdapter` constructs `CodexAppServerClient` with strict dynamic
+binding enabled. A strict binding is established only after the `turn/start`
+response supplies the exact provider turn. Before that response, a tool
+request with valid namespace, name, and provider thread is bounded in a
+staging queue. If the response turn differs, the staged request receives a
+visible unsuccessful tool result and its handler is never called. A late
+turn from a retired binding, a second unconfirmed turn, an invalid namespace,
+tool, thread, operation, or generation is rejected before callback. If the
+provider waits for a tool response before returning `turn/start`, the bounded
+staging window expires with an unresolved transport outcome; the client does
+not wait indefinitely or execute an unverified callback. Once the exact
+binding is attached, a matching request is delivered normally.
+
+The existing V1 `CodexAppServerClient` default remains compatibility mode for
+callers that do not opt into strict binding. Its dynamic request validation
+and response formatting are unchanged for the established V1 path; the
+adapter-specific strict flag makes the new ordering explicit rather than
+silently changing every V1 caller.
+
+Server-request delivery now has a narrow lifecycle per live client/binding:
+`admitted`, `staged`, `executing`, `response_pending`, and `responded`. The
+typed request key preserves the JSON type, so integer `1` and string `"1"`
+are different identities. The canonical request fingerprint is retained;
+reusing an id with different method/params is a protocol conflict. Admission
+is recorded before the handler runs. A completed callback result is cached
+before `transport.send`; a send failure leaves `response_pending` and a
+duplicate can retry that response without entering the handler again. A
+successful duplicate is already `responded` and is not re-executed. When the
+finite request capacity is full, new ids receive an explicit capacity error;
+active admission identities are never evicted to make room for a replay.
+
+Request records are scoped to the current binding and cleared on retirement;
+retired turn ids are retained in a bounded fence, and close retires the
+handler. These controls cover one live client and binding only. They do not
+claim network or cross-process exactly-once delivery and do not add a durable
+queue, database, daemon, or service.
+
+The repository regression is `test_pvx1807_remediation.py`. The 44effc05
+candidate red run was `4 failed, 1 passed` before the change and `5 passed`
+after it, using the real client and adapter with only a strict scripted
+transport. The formal suite includes pre-response mismatch, delayed retired
+turn isolation, response-send failure without callback replay, typed-id
+conflict, and capacity fencing. Source and test evidence is local to the
+isolated copy; no live Provider, Host Executor, production database, or
+runtime authority was used.
