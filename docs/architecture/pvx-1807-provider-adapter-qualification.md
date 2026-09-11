@@ -271,7 +271,7 @@ were skipped, removed, weakened, or counted twice.
 | `V1_DEFAULT_PATH_COMPATIBILITY` | `PASS` | Bridge, V1, and compatibility regression commands |
 | `PVX1805_PVX1806_REGRESSION` | `PASS` | PVX-1805 and PVX-1806/runtime command |
 | `FULL_SUITE` | `PASS` | `493 passed, 66 subtests passed` |
-| `LINEAR_SYNC` | `NOT_PERFORMED` | No Linear write interface was available; no status was fabricated |
+| `LINEAR_SYNC` | `PASS` | Linear comment `3cb780dd-f729-4b20-97b6-def9b397ff81` records BASE, feature branch, FINAL, remote readback, tests, and preserved boundaries; issue remains `In Review` |
 
 The qualification remains scripted conformance and local evidence only. It
 does not claim canonical provider E2E, live takeover, process fencing, or
