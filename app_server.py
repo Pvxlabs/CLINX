@@ -923,30 +923,78 @@ class CodexAppServerClient:
         self._dynamic_thread_id = thread_id
         self._dynamic_turn_id = turn_id
         self._dynamic_provisional_turn_id = None
-        if self.strict_dynamic_tool_binding and self._dynamic_staged_requests:
-            staged = self._dynamic_staged_requests
-            self._dynamic_staged_requests = []
-            for record, request in staged:
-                params = request.get("params")
-                supplied_turn = params.get("turnId") if isinstance(params, dict) else None
-                if supplied_turn != turn_id or supplied_turn in self._dynamic_retired_turn_ids:
-                    try:
-                        self._cache_and_send_server_response(
-                            request.get("id"),
-                            self._dynamic_failure_response(
-                                AppServerProtocolError("dynamic tool turn identity did not match start response")
-                            ),
-                            record,
-                        )
-                    except Exception:
-                        # The response remains pending in its record; the
-                        # caller can retry delivery with the same request id.
-                        raise
-                    continue
+        if self.strict_dynamic_tool_binding:
+            self._flush_dynamic_staged_requests(turn_id)
+
+    def _flush_dynamic_staged_requests(self, turn_id: str) -> None:
+        """Process a staged batch without stranding its unprocessed tail.
+
+        Each request leaves the queue only when it has a cached response (or
+        an explicit failure response).  A response-send error therefore
+        removes only the request whose result is pending; later staged
+        requests remain available to a repeated attach or explicit retry.
+        """
+        # Recover cached results before entering any new callback.  This keeps
+        # a transport outage from turning an unresolved prior response into a
+        # speculative callback for the next staged request.
+        for record in tuple(self._server_request_records.values()):
+            if record.state == "response_pending" and record.response is not None:
+                self._send_cached_server_response(record)
+        while self._dynamic_staged_requests:
+            if not self._dynamic_transport_is_available():
+                # Keep the current request and its tail staged.  A caller
+                # must restore the same transport before any callback can run.
+                raise AppServerTransportError(
+                    "dynamic tool batch cannot continue on an unavailable transport"
+                )
+            record, request = self._dynamic_staged_requests[0]
+            params = request.get("params")
+            supplied_turn = params.get("turnId") if isinstance(params, dict) else None
+            if supplied_turn != turn_id or supplied_turn in self._dynamic_retired_turn_ids:
+                response = self._dynamic_failure_response(
+                    AppServerProtocolError("dynamic tool turn identity did not match start response")
+                )
                 try:
-                    self._execute_dynamic_tool(request, record)
-                except Exception:
+                    self._cache_and_send_server_response(request.get("id"), response, record)
+                except AppServerTransportError:
+                    # The failure result is cached in the request registry;
+                    # duplicate delivery can retry it without callback work.
+                    self._dynamic_staged_requests.pop(0)
                     raise
+                self._dynamic_staged_requests.pop(0)
+                continue
+            try:
+                self._execute_dynamic_tool(request, record)
+            except AppServerTransportError:
+                # The current request is response_pending in the registry;
+                # leave the remaining tail staged for a later attach.
+                self._dynamic_staged_requests.pop(0)
+                raise
+            except Exception as exc:
+                # Validation should already have happened at admission, but
+                # preserve a visible result if binding data changes before
+                # this staged request is flushed.
+                try:
+                    self._cache_and_send_server_response(
+                        request.get("id"), self._dynamic_failure_response(exc), record
+                    )
+                except AppServerTransportError:
+                    self._dynamic_staged_requests.pop(0)
+                    raise
+            self._dynamic_staged_requests.pop(0)
+
+    def _dynamic_transport_is_available(self) -> bool:
+        """Use transport lifecycle evidence before running a staged callback."""
+        closed = getattr(self.transport, "closed", None)
+        if closed is True:
+            return False
+        connected = getattr(self.transport, "connected", None)
+        if connected is False:
+            return False
+        process = getattr(self.transport, "_process", None)
+        if process is None and hasattr(self.transport, "_process"):
+            return False
+        return True
 
     def supervise_turn(self, thread_id: str, turn_id: str) -> None:
         """Keep the initiating client connected for dynamic tool calls."""

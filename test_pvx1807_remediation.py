@@ -41,6 +41,7 @@ class StrictPVX1807Transport(ScriptedTransport):
         self.server_request_before_drop = False
         self.tool_before_reply = False
         self.stale_second_tool = False
+        self.batch_tool_ids: tuple[str, ...] = ()
         super().__init__(self._on_send)
 
     def _on_send(self, message: dict[str, Any], transport: ScriptedTransport) -> None:
@@ -68,7 +69,8 @@ class StrictPVX1807Transport(ScriptedTransport):
             if self.tool_before_reply:
                 if self.starts == 2 and self.stale_second_tool:
                     self.queue(self.tool("turn-1", "old-request-in-new-turn"))
-                self.queue(self.tool(f"turn-{self.starts}", f"tool-{self.starts}"))
+                request_ids = self.batch_tool_ids or (f"tool-{self.starts}",)
+                self.queue(*(self.tool(f"turn-{self.starts}", request_id) for request_id in request_ids))
             if self.malformed_reply:
                 self.queue({"id": request_id, "result": {"unexpected": True}})
             elif not self.drop_start:
@@ -88,7 +90,7 @@ class StrictPVX1807Transport(ScriptedTransport):
                 "tool": "execute",
                 "threadId": self.thread,
                 "turnId": turn_id,
-                "arguments": {},
+                "arguments": {"request": request_id},
             },
         }
 
@@ -112,6 +114,48 @@ class ResponseFailureTransport(ScriptedTransport):
         if "result" in message and self.fail_response_once:
             self.fail_response_once = False
             raise AppServerTransportError("fixture response failed after callback")
+
+
+class StagedBatchResponseFailureTransport(StrictPVX1807Transport):
+    """Fail selected staged-tool responses once, preserving the wire trace."""
+
+    def __init__(self, failed_response_ids: set[str] | None = None) -> None:
+        self.failed_response_ids = set(failed_response_ids or ())
+        self.failed_responses: set[str] = set()
+        super().__init__()
+
+    def send(self, message: dict[str, Any]) -> None:
+        self.sent.append(dict(message))
+        request_id = message.get("id")
+        if (
+            "result" in message
+            and isinstance(request_id, str)
+            and request_id in self.failed_response_ids
+            and request_id not in self.failed_responses
+        ):
+            self.failed_responses.add(request_id)
+            raise AppServerTransportError(f"fixture response failed for {request_id}")
+        if self.on_send is not None:
+            self.on_send(message, self)
+
+
+def make_staged_client(
+    transport: StagedBatchResponseFailureTransport,
+    calls: list[str],
+) -> CodexAppServerClient:
+    transport.connect()
+    client = CodexAppServerClient(
+        transport,
+        timeout_seconds=0.01,
+        strict_dynamic_tool_binding=True,
+    )
+    client.configure_dynamic_tool(
+        namespace="fixture",
+        name="execute",
+        thread_id=transport.thread,
+        handler=lambda params: calls.append(params["arguments"]["request"]) or {"ok": True},
+    )
+    return client
 
 
 def make_fixture(tmp_path, **flags: Any):
@@ -411,6 +455,197 @@ def test_pa04_duplicate_tool_request_id_gets_one_response_and_one_call(tmp_path)
         assert len([m for m in transport.sent if m.get("id") == "duplicate"]) == 1
     finally:
         adapter.close()
+
+
+def test_pa04_staged_single_and_double_request_progress(tmp_path):
+    for request_ids in (("r1",), ("r1", "r2")):
+        transport = StagedBatchResponseFailureTransport()
+        calls: list[str] = []
+        client = make_staged_client(transport, calls)
+        try:
+            requests = [transport.tool("turn-1", request_id) for request_id in request_ids]
+            for request in requests:
+                client._send_server_response(request)
+            assert calls == []
+            assert [request[1]["id"] for request in client._dynamic_staged_requests] == list(request_ids)
+            client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+            assert calls == list(request_ids)
+            assert not client._dynamic_staged_requests
+            assert all(
+                len([message for message in transport.sent if message.get("id") == request_id and "result" in message]) == 1
+                for request_id in request_ids
+            )
+        finally:
+            client.close()
+
+
+@pytest.mark.parametrize("failed_id", ["r1", "r2", "r3"])
+def test_pa04_staged_batch_failure_preserves_tail_and_response_cache(failed_id):
+    request_ids = ("r1", "r2", "r3")
+    transport = StagedBatchResponseFailureTransport({failed_id})
+    calls: list[str] = []
+    client = make_staged_client(transport, calls)
+    requests = {request_id: transport.tool("turn-1", request_id) for request_id in request_ids}
+    try:
+        for request_id in request_ids:
+            client._send_server_response(requests[request_id])
+        with pytest.raises(AppServerTransportError):
+            client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+
+        failed_index = request_ids.index(failed_id)
+        assert calls == list(request_ids[:failed_index + 1])
+        assert [request[1]["id"] for request in client._dynamic_staged_requests] == list(request_ids[failed_index + 1:])
+        failed_record = client._server_request_records[(str, failed_id)]
+        assert failed_record.state == "response_pending"
+        assert failed_record.response is not None
+
+        # Retry delivery of the failed result, then explicitly continue the
+        # remaining staged tail. Neither path may re-enter the callback.
+        client._send_server_response(dict(requests[failed_id]))
+        client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+        assert calls == list(request_ids)
+        assert not client._dynamic_staged_requests
+        for request_id in request_ids:
+            assert len([message for message in transport.sent if message.get("id") == request_id and "result" in message]) == (2 if request_id == failed_id else 1)
+    finally:
+        client.close()
+
+
+def test_pa04_staged_wrong_turn_failure_is_visible_and_retryable():
+    transport = StagedBatchResponseFailureTransport({"wrong"})
+    calls: list[str] = []
+    client = make_staged_client(transport, calls)
+    request = transport.tool("turn-other", "wrong")
+    try:
+        client._send_server_response(request)
+        with pytest.raises(AppServerTransportError):
+            client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+        assert calls == []
+        assert not client._dynamic_staged_requests
+        record = client._server_request_records[(str, "wrong")]
+        assert record.state == "response_pending"
+        client._send_server_response(dict(request))
+        assert calls == []
+        responses = [message for message in transport.sent if message.get("id") == "wrong" and "result" in message]
+        assert len(responses) == 2
+        assert responses[-1]["result"]["success"] is False
+    finally:
+        client.close()
+
+
+def test_pa04_staged_batch_does_not_callback_while_transport_is_unavailable():
+    transport = StagedBatchResponseFailureTransport({"r1"})
+    calls: list[str] = []
+    client = make_staged_client(transport, calls)
+    try:
+        requests = [transport.tool("turn-1", request_id) for request_id in ("r1", "r2")]
+        for request in requests:
+            client._send_server_response(request)
+        with pytest.raises(AppServerTransportError):
+            client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+        assert calls == ["r1"]
+
+        transport.closed = True
+        transport.connected = False
+        with pytest.raises(AppServerTransportError):
+            client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+        assert calls == ["r1"]
+        assert [request[1]["id"] for request in client._dynamic_staged_requests] == ["r2"]
+
+        transport.closed = False
+        transport.connected = True
+        client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+        assert calls == ["r1", "r2"]
+    finally:
+        client.close()
+
+
+def test_pa04_repeated_attach_retries_pending_result_then_flushes_tail():
+    transport = StagedBatchResponseFailureTransport({"r1"})
+    calls: list[str] = []
+    client = make_staged_client(transport, calls)
+    try:
+        for request_id in ("r1", "r2"):
+            client._send_server_response(transport.tool("turn-1", request_id))
+        with pytest.raises(AppServerTransportError):
+            client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+        assert calls == ["r1"]
+
+        transport.failed_response_ids.clear()
+        client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+        assert calls == ["r1", "r2"]
+        assert not client._dynamic_staged_requests
+        assert len([message for message in transport.sent if message.get("id") == "r1" and "result" in message]) == 2
+    finally:
+        client.close()
+
+
+def test_pa04_staged_batch_adapter_failure_has_explicit_continue_entry(tmp_path):
+    transport = StagedBatchResponseFailureTransport({"r1"})
+    transport.tool_before_reply = True
+    transport.batch_tool_ids = ("r1", "r2")
+    adapter = CodexProviderAdapter(transport, timeout_seconds=0.01)
+    calls: list[str] = []
+    session = adapter.create_session(cwd=str(tmp_path), clinx_session_id="clinx-session-batch")
+    context = OperationContext("execution-batch", "attempt-batch", session.clinx_session_id, "op-batch", session.connection_generation)
+    try:
+        with pytest.raises(SideEffectUnknown):
+            adapter.start_turn(
+                session,
+                context,
+                "batch",
+                cwd=str(tmp_path),
+                dynamic_tool=DynamicToolConfiguration(
+                    "fixture", "execute", lambda params: calls.append(params["arguments"]["request"]) or {"ok": True}
+                ),
+            )
+        assert calls == ["r1"]
+        assert [request[1]["id"] for request in adapter.client._dynamic_staged_requests] == ["r2"]
+
+        # The adapter surfaced the uncertain attach, then exposes an explicit
+        # same-binding continuation without resending turn/start.
+        transport.failed_response_ids.clear()
+        resumed = adapter.resume_dynamic_tool_batch(session, context)
+        assert resumed.outcome.code.value == "accepted"
+        assert calls == ["r1", "r2"]
+        assert not adapter.client._dynamic_staged_requests
+        assert adapter._operations[context.operation_id][1] == "turn-1"
+        assert len([message for message in transport.sent if message.get("method") == "turn/start"]) == 1
+    finally:
+        adapter.close()
+
+
+def test_pa04_retire_and_close_fence_staged_requests_from_new_handlers():
+    transport = StagedBatchResponseFailureTransport()
+    calls: list[str] = []
+    client = make_staged_client(transport, calls)
+    old_request = transport.tool("turn-old", "old")
+    try:
+        client._send_server_response(old_request)
+        client.clear_dynamic_tool()
+        client.configure_dynamic_tool(
+            namespace="fixture",
+            name="execute",
+            thread_id=transport.thread,
+            handler=lambda params: calls.append("new:" + params["arguments"]["request"]) or {"ok": True},
+        )
+        client.attach_dynamic_tool_turn(transport.thread, "turn-new")
+        client._send_server_response(dict(old_request))
+        assert calls == []
+        assert transport.sent[-1]["result"]["success"] is False
+
+        client.close()
+        replacement_transport = StagedBatchResponseFailureTransport()
+        replacement = make_staged_client(replacement_transport, calls)
+        try:
+            replacement.attach_dynamic_tool_turn(replacement_transport.thread, "turn-new")
+            replacement._send_server_response(dict(old_request))
+            assert calls == []
+        finally:
+            replacement.close()
+    finally:
+        if not transport.closed:
+            client.close()
 
 
 def test_pa05_capacity_rejection_preserves_no_replay(tmp_path):
