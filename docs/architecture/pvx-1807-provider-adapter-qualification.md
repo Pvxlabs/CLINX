@@ -431,3 +431,118 @@ were skipped, removed, weakened, or counted twice.
 The qualification remains scripted conformance and local evidence only. It
 does not claim canonical provider E2E, live takeover, process fencing, or
 external exactly-once delivery.
+
+## Strict staging batch continuation: BASE ac8483d9
+
+This continuation was performed under the same direct operator instruction in
+the isolated development copy. It is not a canonical CLINX runtime grant and
+does not mutate the original checkout, PVX-1800 task/lease, runtime state, or
+production systems.
+
+```text
+AUTHORITY_SOURCE=USER_DIRECT_OPERATOR_INSTRUCTION
+EXECUTION_SCOPE=ISOLATED_DEVELOPMENT_COPY
+CLINX_MANAGED_EXECUTION_AUTHORITY=NOT_CLAIMED
+HISTORICAL_TASK_MUTATION=NOT_PERFORMED
+BASE=ac8483d909508fe404c2c7f1c3d94e4c3c7338a0
+MAIN=a85677228dea28e20339b25ee22d5ea9f3b04cfe
+```
+
+### Batch invariant and interruption semantics
+
+Strict staging admits valid same-turn requests before the `turn/start`
+response, but does not invoke a handler until the response establishes the
+exact binding. After attachment, the queue is flushed in arrival order with a
+single current request in flight. The current request is removed only after a
+response is cached. If response delivery fails, that request is
+`response_pending` and its cached result is the only retryable work; the
+unprocessed tail stays `staged` and remains reachable through a repeated
+same-binding attach. A duplicate request can redeliver a cached result but
+cannot invoke the handler again. Capacity remains finite and admission
+identities are not evicted.
+
+An unavailable transport never causes speculative callback execution. A
+mismatched staged turn is returned as an explicit unsuccessful tool result;
+if its delivery fails, the failure remains cached for typed-id redelivery.
+The adapter's `resume_dynamic_tool_batch` is the operation-level continuation
+entry: it redelivers pending cached results and flushes the tail before
+registering the accepted operation, and never resends `turn/start`.
+Retirement and close clear the active queue and fence old turn ids, so a late
+request cannot reach a subsequent handler. The guarantee ends with the live
+client/binding; no cross-process or network exactly-once behavior is claimed.
+
+### Red/green evidence and repository mapping
+
+The named external candidate file was not present in the supplied attachment
+set or `/tmp`. An equivalent independent candidate was reconstructed under
+`/tmp/pvx1807-staged-batch-candidates/` against the actual isolated package.
+Before the fix it reproduced the stranded-tail counterexample:
+
+```text
+PYTHONPATH=/home/pvxlabs/dev/clinx-pvx1807-remediation python3 -m pytest -q \
+  /tmp/pvx1807-staged-batch-candidates/test_pvx1807_staged_batch_candidates.py
+1 failed
+```
+
+After the fix the same candidate passed:
+
+```text
+PYTHONPATH=/home/pvxlabs/dev/clinx-pvx1807-remediation python3 -m pytest -q \
+  /tmp/pvx1807-staged-batch-candidates/test_pvx1807_staged_batch_candidates.py
+1 passed
+```
+
+Formal tests are in `test_pvx1807_remediation.py` and use the real client and
+adapter with only a scripted transport and recording-only handlers:
+
+| Contract | Repository evidence | Result |
+| --- | --- | --- |
+| Single/two-request normal progress | `test_pa04_staged_single_and_double_request_progress` | PASS |
+| First, middle, and last response failure | `test_pa04_staged_batch_failure_preserves_tail_and_response_cache` | PASS (3 parameter cases) |
+| Mismatched-turn failure delivery | `test_pa04_staged_wrong_turn_failure_is_visible_and_retryable` | PASS |
+| Adapter/client continuation path | `test_pa04_staged_batch_adapter_failure_has_explicit_continue_entry` (`resume_dynamic_tool_batch`) | PASS |
+| Retirement/close fencing | `test_pa04_retire_and_close_fence_staged_requests_from_new_handlers` | PASS |
+| Existing PA-04, PA-01/02/03/05 controls | `test_pvx1807_remediation.py` | PASS |
+
+The resident remediation file ran `24 passed` in the focused command. The
+historical `496 passed` value remains comparison evidence only and is not
+reused as this round's full-suite result. The tests are ordinary pytest files;
+no temporary helper, absolute old-checkout `PYTHONPATH`, skipped case, or
+weakened assertion is required for a fresh checkout.
+
+### Batch qualification gates
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| `STAGED_REQUEST_OWNERSHIP_CONSISTENCY` | `PASS` | Queue and typed registry remain aligned across interruption; resident batch tests |
+| `BATCH_SEND_FAILURE_NO_STRANDED_REQUEST` | `PASS` | First/middle/last failure cases preserve the unprocessed tail |
+| `RETRY_NO_CALLBACK_REPLAY` | `PASS` | Cached response redelivery and repeated attach keep one callback per id |
+| `UNEXECUTED_REQUEST_PROGRESS_OR_EXPLICIT_REJECTION` | `PASS` | Tail completes after same-binding attach; wrong turn receives cached unsuccessful result |
+| `ADAPTER_CLIENT_FAILURE_CONTRACT_MATCH` | `PASS` | Real adapter -> client -> scripted transport test surfaces `SideEffectUnknown` and explicit client continuation |
+| `EXACT_BINDING_SAFETY_REGRESSION` | `PASS` | Existing strict pre-response and turn/namespace/thread/generation tests remain green |
+| `REQUEST_SCOPE_CAPACITY_REGRESSION` | `PASS` | Existing typed-id conflict and finite-capacity tests remain green |
+| `REPOSITORY_RESIDENT_REGRESSION` | `PASS` | `test_pvx1807_remediation.py` is pytest-discoverable |
+| `V1_DEFAULT_PATH_COMPATIBILITY` | `PASS` | Existing bridge/V1 regression and full suite |
+| `PVX1805_PVX1806_REGRESSION` | `PASS` | Existing compatibility and runtime/guard groups |
+| `FULL_SUITE` | `PASS` | Actual current result recorded at delivery |
+| `LINEAR_SYNC` | `NOT_PERFORMED` | No Linear connector was available in this turn; no status was fabricated |
+
+Runtime boundaries remain unchanged:
+
+```text
+V1_LIVE_AUTHORITY=ON
+V2_LIVE_AUTHORITY_CUTOVER=NOT_PERFORMED
+PROVIDER_ADAPTER_LIVE_DEFAULT=OFF
+WORKER_RUNTIME_DEFAULT=OFF
+SHADOW_DEFAULT=OFF
+PUBLIC_MCP_CONTRACT=UNCHANGED
+PRODUCTION_DB_MIGRATION=NOT_PERFORMED
+PRODUCTION_DEPLOY=NOT_PERFORMED
+REAL_PROVIDER_TAKEOVER=NOT_RUN
+PHYSICAL_PROCESS_FENCING=NOT_QUALIFIED
+CANONICAL_PROVIDER_E2E=NOT_RUN
+CROSS_PROCESS_TOOL_EXACTLY_ONCE=NOT_QUALIFIED
+MAIN_BRANCH_PUSH=NOT_PERFORMED
+HISTORICAL_TASK_MUTATION=NOT_PERFORMED
+NEXT_PHASE_STARTED=NO
+```

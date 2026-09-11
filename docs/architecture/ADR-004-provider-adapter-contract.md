@@ -220,3 +220,40 @@ turn isolation, response-send failure without callback replay, typed-id
 conflict, and capacity fencing. Source and test evidence is local to the
 isolated copy; no live Provider, Host Executor, production database, or
 runtime authority was used.
+
+## Strict staging batch continuation: BASE ac8483d9
+
+The strict dynamic-tool staging queue is a bounded continuation surface for
+requests admitted before the exact `turn/start` response. The client records
+each request in the typed request registry before callback admission. Once the
+response confirms the exact turn, staged requests are flushed in arrival order
+one at a time. The current request is removed only after its result is cached;
+an unprocessed tail remains staged and therefore always has a continuation
+path. A response-send failure leaves the request in `response_pending` in the
+registry, while a repeated attach or duplicate request may redeliver only the
+cached result. It cannot re-enter the handler.
+
+An explicit same-binding `attach_dynamic_tool_turn` is the client-level
+continuation entry after a batch interruption. The adapter exposes the same
+bounded operation as `resume_dynamic_tool_batch`, which records the accepted
+turn only after the client has redelivered pending results and flushed the
+staged tail; it never resends `turn/start`. If the transport is unavailable,
+the client does not continue executing callbacks speculatively; the pending
+request and any staged tail are evidence for an explicit recovery decision. A
+mismatched staged turn receives an unsuccessful, cached tool result before
+callback. If delivery of that failure also fails, the request remains
+`response_pending` and can be retried by typed request id. Retirement or close
+clears the active queue, fences the retired turn, and prevents old requests
+from reaching a new handler.
+
+This is a same-process, live-client/binding guarantee. It does not provide a
+durable queue, cross-process recovery, network exactly-once delivery, or
+automatic replay after creating a new client. The repository regression uses a
+real `CodexProviderAdapter` -> `CodexAppServerClient` path with a strict
+scripted transport and recording-only handlers. It covers one/two-request
+normal batches, three-request batches interrupted at the first, middle, and
+last response, mismatched-turn failure delivery, repeated attach and response
+redelivery, and retirement/close fencing. The pre-fix reconstructed candidate
+was `1 failed`; the fixed candidate is `1 passed`. The formal tests are
+resident in `test_pvx1807_remediation.py` and are discoverable from a fresh
+checkout.

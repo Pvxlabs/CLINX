@@ -205,6 +205,7 @@ class CodexProviderAdapter:
         self._seen_native_order: deque[str] = deque()
         self._dynamic_configurations: dict[str, DynamicToolConfiguration] = {}
         self._operation_dynamic_configurations: dict[str, DynamicToolConfiguration] = {}
+        self._pending_dynamic_batches: dict[str, tuple[ProviderSessionRef, OperationContext, str]] = {}
 
     @property
     def connection_generation(self) -> int:
@@ -484,6 +485,9 @@ class CodexProviderAdapter:
             old_client = self._client
             self._client = None
             self._recording_transport = None
+            # Strict staged requests belong to the old live client/binding;
+            # they are not silently transferred across a reconnect.
+            self._pending_dynamic_batches.clear()
             self._initialized = False
             self._lifecycle = LifecycleState.DISCONNECTED
             self._closed = False
@@ -647,6 +651,7 @@ class CodexProviderAdapter:
                     client.attach_dynamic_tool_turn(session.provider_handle or "", info.turn_id)
                 except AppServerError as exc:
                     self._ambiguous_operations.add(context.operation_id)
+                    self._pending_dynamic_batches[context.operation_id] = (session, context, info.turn_id)
                     raise SideEffectUnknown(
                         "turn was accepted but dynamic-tool turn attachment failed; provider outcome is unknown"
                     ) from exc
@@ -654,6 +659,50 @@ class CodexProviderAdapter:
             self._active_operation_id = context.operation_id
             return AdapterOperation(
                 Outcome(OutcomeCode.ACCEPTED, provider_reference=info.turn_id, side_effect_state="request_accepted"),
+                session=session,
+                context=context,
+            )
+
+    def resume_dynamic_tool_batch(
+        self,
+        session: ProviderSessionRef,
+        context: OperationContext,
+    ) -> AdapterOperation:
+        """Continue an interrupted strict-tool batch on the same binding.
+
+        The initial turn/start is never resent.  The client first redelivers
+        any cached response that is still pending, then flushes the remaining
+        staged requests.  Operation admission is recorded only after that
+        continuation succeeds, so an unresolved transport result remains
+        explicitly quarantined.
+        """
+        with self._lock:
+            session = self._require_session(session)
+            pending = self._pending_dynamic_batches.get(context.operation_id)
+            if pending is None:
+                raise CorrelationError("dynamic tool batch continuation is not registered")
+            pending_session, pending_context, turn_id = pending
+            if pending_session.clinx_session_id != session.clinx_session_id or pending_context != context:
+                raise CorrelationError("dynamic tool batch continuation context changed")
+            try:
+                self._ensure_client().attach_dynamic_tool_turn(session.provider_handle or "", turn_id)
+            except AppServerTransportError as exc:
+                raise SideEffectUnknown(
+                    "dynamic-tool batch continuation response delivery is unresolved"
+                ) from exc
+            except AppServerError as exc:
+                raise ProtocolError(str(exc)) from exc
+            self._remember_operation(context, turn_id)
+            self._active_operation_id = context.operation_id
+            self._pending_dynamic_batches.pop(context.operation_id, None)
+            self._ambiguous_operations.discard(context.operation_id)
+            return AdapterOperation(
+                Outcome(
+                    OutcomeCode.ACCEPTED,
+                    provider_reference=turn_id,
+                    side_effect_state="request_accepted",
+                    detail="strict dynamic-tool batch continuation completed",
+                ),
                 session=session,
                 context=context,
             )
@@ -930,6 +979,7 @@ class CodexProviderAdapter:
             self._closed = True
             self._initialized = False
             self._lifecycle = LifecycleState.CLOSED
+            self._pending_dynamic_batches.clear()
             client, self._client = self._client, None
             self._recording_transport = None
             if client is not None:
