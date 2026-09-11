@@ -431,7 +431,7 @@ for the full suite.
 | `V1_DEFAULT_PATH_COMPATIBILITY` | `PASS` | Bridge/V1 compatibility group: `74 passed` |
 | `PVX1805_PVX1806_REGRESSION` | `PASS` | PVX-1805 plus PVX-1806/runtime groups pass |
 | `FULL_SUITE` | `PASS` | `510 passed, 66 subtests passed` |
-| `LINEAR_SYNC` | `PENDING` | Final SHA and remote readback are recorded after commit/push |
+| `LINEAR_SYNC` | `PASS` | Delivery comment `21817f24-8d9b-4db3-b60c-8bab073d749e`; issue remains `In Review` |
 
 The qualification remains local scripted conformance, not canonical Provider
 E2E. V1 remains the only live authority; provider adapter, worker runtime, and
