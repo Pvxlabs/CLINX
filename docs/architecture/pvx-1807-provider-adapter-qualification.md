@@ -525,7 +525,7 @@ weakened assertion is required for a fresh checkout.
 | `V1_DEFAULT_PATH_COMPATIBILITY` | `PASS` | Existing bridge/V1 regression and full suite |
 | `PVX1805_PVX1806_REGRESSION` | `PASS` | Existing compatibility and runtime/guard groups |
 | `FULL_SUITE` | `PASS` | Actual current result recorded at delivery |
-| `LINEAR_SYNC` | `NOT_PERFORMED` | No Linear connector was available in this turn; no status was fabricated |
+| `LINEAR_SYNC` | `PASS` | Delivery comment `2c08287e-3c31-41d1-ae3f-3c08708b7adb`; issue remains `In Review` |
 
 Runtime boundaries remain unchanged:
 
