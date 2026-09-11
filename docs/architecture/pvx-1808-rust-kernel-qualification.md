@@ -2,253 +2,233 @@
 
 ## Result
 
-`ADOPTION_RECOMMENDATION=CONTINUE_EVALUATION`
+`IMPLEMENTATION_QUALIFICATION=PASS`
 
-This result qualifies the bounded, non-authoritative prototype only. It does
-not approve a production language migration, authority cutover, provider
-takeover, or default runtime integration.
+`ADOPTION_RECOMMENDATION=DEFER`
 
-## Scope, baseline, and authority
+The implementation result applies only to the isolated, non-authoritative
+decision/replay prototype. It is not approval for Rust authority, a production
+language migration, provider takeover, default runtime integration, or a
+change to the V1 live authority.
+
+## Scope and Baseline
 
 | Item | Value |
 | --- | --- |
 | Checkout | `/home/pvxlabs/dev/clinx-pvx1807-remediation` |
 | Branch | `pvx-1808-kernel-prototype` |
-| BASE | `9a21bf19399e9c305f7fb1487feadc73a11da047` |
-| BASE TREE | `2c15902c8ec9ea77570d0746b66242a98065ce64` |
+| BASE | `3f5f0320eb579d6df2f4cd90def131078838d413` |
+| BASE tree | `60b81ea140b587e6cab871a8b0933e167c47c191` |
+| Main preservation anchor | `9a21bf19399e9c305f7fb1487feadc73a11da047` |
 | Contract | `CLINX_KERNEL_V1` |
-| Scope | Non-authoritative ownership decision and assignment replay |
-| Authority source | Direct operator instruction for isolated development copy |
+| Authority | V1 Python runtime-control remains the only live authority |
+| Rust result | `NON_AUTHORITATIVE` decision/replay evidence only |
 | Original checkout | `/home/pvxlabs/dev/clinx`, not modified |
-| PVX-1800 task/lease | Not read or modified |
-| Production/managed execution | Not used |
+| Production DB / service / Provider / Host | Not accessed, restarted, started, or mutated |
 
-The supplied SPEC and pasted request were treated as technical execution
-instructions for this checkout, not as production or managed-execution
-authority. The implementation stayed within `kernel/`, `kernel_lab/`,
-`fixtures/kernel_v1/`, `test_kernel_conformance.py`, `.gitignore`, and the two
-new architecture documents.
+The attached SPEC and pasted request were treated as technical instructions
+for this isolated checkout. They did not grant managed execution, production
+access, authority cutover, or permission to modify the original checkout.
 
-## Delivered implementation
+## Reproduction And Correction
 
-| Area | Files | Boundary |
+The review reproduction was executed against the repository-resident files
+and the actual release binary after the initial implementation:
+
+```text
+python3 -m pytest -q test_pvx1808_protocol_candidates.py
+3 failed, 1 passed                         RED
+
+python3 -m pytest -q test_pvx1808_ownership_candidates.py
+3 failed, 1 passed                         RED
+```
+
+The protocol failures were deadline coverage for blocked stdin, stale
+generation/buffer reuse after close, and Python acceptance of `NaN`. The
+ownership failures were character-count versus UTF-8-byte limits, invalid
+lifecycle acceptance, and zero active ownership epochs.
+
+The corrected repository-resident tests are now:
+
+```text
+python3 -m pytest -q test_pvx1808_protocol_candidates.py
+4 passed                                  GREEN
+
+python3 -m pytest -q test_pvx1808_ownership_candidates.py
+5 passed                                  GREEN
+
+python3 -m pytest -q test_pvx1808_benchmark_metrics.py
+1 passed                                  GREEN
+```
+
+K1 uses one monotonic deadline for non-blocking stdin writes, pipe delivery,
+stdout/stderr draining, and response reading. Timeout, protocol failure, and
+child failure perform bounded cleanup and permanently close the contaminated
+session. `restart()` explicitly creates a new process generation and clears
+buffers, request associations, and request count. Python rejects non-finite
+JSON, duplicate fields, invalid JSON, excessive nesting, and operation result
+shapes. Rust reads through bounded `BufRead::fill_buf`/`consume` chunks into a
+frame bounded at read time; delimiter handling preserves the next buffered
+frame. An oversized line receives one `FRAME_TOO_LARGE` response and the
+finite evaluator process exits.
+
+K2 uses the runtime schema lifecycle sets, UTF-8 byte limits, positive
+ownership epochs, and separate non-negative versions/counters in both
+languages. `UNKNOWN` and `NULL` remain `INSUFFICIENT_EVIDENCE`; an unrecognized
+lifecycle is `INVALID_INPUT`; legal non-live lifecycle values are structured
+rejections. The trace harness calls the actual temporary SQLite
+`RuntimeControlStore`, reads actual entities and assignment events, creates a
+real pending safety handoff, completes and clears it at the existing
+runtime-control boundary, and reads back the coordinator watermark. Its
+`VERIFIED` snapshot state is derived from that completion, not hand-filled.
+Each trace operation declares the expected `success`, `rejected`, or `no_op`
+outcome and its allowed runtime error category. Unexpected exceptions escape.
+
+K3 separates the Rust benchmark's returned in-process `elapsed_ns` from the
+outer subprocess wall time and keeps `iterations`. It separately measures
+`core`, `parse_evaluate_serialize`, and `serde`, and separately records cold
+process requests and a pre-started, warmed session batch. Repeated unchanged
+builds are labeled `UP_TO_DATE_BUILD`; one clean build uses a temporary
+`CARGO_TARGET_DIR`; incremental build is explicitly `NOT_MEASURED`. Python
+and Rust RSS use the same ownership JSON workload and one fresh child process
+under `/usr/bin/time %M`. Raw samples are checked in rather than retained only
+in `/tmp`:
+
+```text
+fixtures/kernel_v1/benchmark_samples.json
+```
+
+## Contract And Evidence Mapping
+
+The finite evidence path is:
+
+```text
+existing runtime-control validation
+  -> runtime snapshot fields and actual transaction readback
+  -> independent expected decision
+  -> ownership/replay golden expectation
+  -> Python reference
+  -> actual Rust release binary
+```
+
+Existing `runtime_control` rules were not altered to make Rust agree. The
+assignment replay path continues to compare every prefix against the existing
+reducer, temporary SQLite persisted state, and independent expected values.
+Legacy events and historical hashes remain in place.
+
+The Rust binary was imported only by qualification modules and tests. No
+normal V1, bridge, MCP, Finalizer, Provider adapter, TaskRegistry, or worker
+runtime path imports it. `ALLOW_CANDIDATE` cannot grant a lease, guard,
+write-point permission, or recovery authority.
+
+## Qualification Evidence
+
+### Semantic and Runtime Evidence
+
+```text
+19/19 ownership golden cases matched independent expected values,
+Python reference, and actual Rust release binary.
+11/11 replay negative fixtures rejected with the same stable error code.
+Current and all three legacy assignment traces matched every prefix.
+Seeds: 1808, 18081, 18082, 18083.
+Operations per seed: 256 attempted, each operation declaration retained.
+Per seed: 7 success, 218 rejected, 31 no-op, 26 total runtime events.
+Handoff evidence: pending row read back, committed and cleared.
+Watermark evidence: SQLite readback, not watermark=now fixture synthesis.
+```
+
+### Rust And Python Checks
+
+```text
+cargo fmt --all -- --check                                      PASS
+cargo check --locked                                          PASS
+cargo test --locked                                           PASS
+cargo clippy --all-targets --all-features --locked -- -D warnings PASS
+cargo build --release --locked                                 PASS
+python3 -m compileall -q .                                     PASS
+git diff --check                                               PASS
+```
+
+Rust test detail: library 3 tests, evaluator frame-reader 4 tests, benchmark
+binary test target has no unit tests, and doc tests passed. The evaluator frame
+reader tests cover the inclusive delimiter boundary, oversized content without
+frame growth, partial EOF, and preservation of the next frame.
+
+### Regression
+
+```text
+python3 -m pytest -q test_kernel_conformance.py                 20 passed
+python3 -m pytest -q                                            540 passed, 66 subtests passed
+```
+
+The full result is from this checkout and includes the original repository
+regressions plus the eleven new protocol, ownership, runtime-trace, and
+benchmark provenance tests. The historical `529 passed / 66 subtests` count was not
+reused or recomputed as the final result.
+
+### Corrected Cost Measurement
+
+Source and raw result: `fixtures/kernel_v1/benchmark_samples.json`. The run
+used Python 3.12.3, rustc 1.98.1, cargo 1.98.1, Linux 6.8.0-139-generic,
+x86_64, and five measured rounds after one warmup for each timed workload.
+The following are summary medians from the checked-in raw sample set:
+
+| Workload | Iterations | Returned/core median ns | Outer wall median ns | Meaning |
+| --- | ---: | ---: | ---: | --- |
+| Rust `core` | 2,000 | 12,396,647 | 13,255,502 | Evaluate already-parsed input; returned field is in-process |
+| Rust `parse_evaluate_serialize` | 2,000 | 24,890,869 | 25,786,964 | Full parse, evaluate, serialize loop |
+| Rust `serde` | 2,000 | 12,984,821 | 14,073,870 | Parse and serialize only |
+
+| Workload | Median ns | P95 ns | Max ns |
+| --- | ---: | ---: | ---: |
+| Python ownership reference | 170,052 | 202,583.6 | 203,305 |
+| Python replay reference | 508,802 | 601,109.2 | 618,440 |
+| Python to Rust round trip | 2,370,123 | 2,418,195.4 | 2,419,025 |
+| Cold process request | 2,464,602 | 2,588,447.8 | 2,596,080 |
+| Warm session batch, 16 requests | 2,293,838 | 2,346,559.8 | 2,347,289 |
+| Python bounded encode/decode | 187,425 | 197,628.2 | 199,067 |
+
+Build labels and memory:
+
+```text
+UP_TO_DATE_BUILD: five measured rounds, median 25,426,784 ns
+CLEAN_BUILD: one temporary-target sample, 3,921,177,579 ns
+INCREMENTAL_BUILD: NOT_MEASURED
+RSS: same ownership workload, one fresh child under /usr/bin/time %M
+Rust RSS median: 2,112 KB
+Python RSS median: 20,736 KB
+```
+
+The Rust rows are 2,000-iteration benchmark-binary measurements and are not
+comparable to one Python call or a subprocess request. No speedup threshold
+was assumed. These measurements do not support production throughput, P99,
+capacity, multi-machine, or long-run stability conclusions. The previous
+measurement record remains historical evidence with its old core/wall labels;
+this raw file and table are the K3 corrected record.
+
+## Acceptance Gates
+
+| Gate | Status | Evidence / boundary |
 | --- | --- | --- |
-| Rust library and evaluation CLI | [`kernel/src/lib.rs`](../../kernel/src/lib.rs), [`kernel/src/bin/clinx-kernel-eval.rs`](../../kernel/src/bin/clinx-kernel-eval.rs) | Pure typed ownership decision and assignment replay |
-| Rust controlled benchmark | [`kernel/src/bin/clinx-kernel-bench.rs`](../../kernel/src/bin/clinx-kernel-bench.rs) | Local measurement only |
-| Python protocol and session driver | [`kernel_lab/protocol.py`](../../kernel_lab/protocol.py) | Bounded NDJSON subprocess boundary |
-| Python reference and SQLite traces | [`kernel_lab/reference.py`](../../kernel_lab/reference.py), [`kernel_lab/traces.py`](../../kernel_lab/traces.py) | Existing reducer comparison and real temporary store traces |
-| Qualification and cost measurement | [`kernel_lab/qualification.py`](../../kernel_lab/qualification.py), [`kernel_lab/benchmark.py`](../../kernel_lab/benchmark.py) | Fail-closed semantic gates and separated workloads |
-| Versioned fixtures | [`fixtures/kernel_v1/protocol.schema.json`](../../fixtures/kernel_v1/protocol.schema.json), `assignment_golden.json`, `ownership_golden.json`, `legacy_events.json`, `replay_negative.json` | Repository-resident contract evidence |
-| Conformance tests | [`test_kernel_conformance.py`](../../test_kernel_conformance.py) | Actual Python reference versus actual Rust binary |
+| `END_TO_END_IO_DEADLINE` | `PASS` | Blocked stdin/write-backpressure subprocess plus bounded cleanup regression. |
+| `PROCESS_GENERATION_BUFFER_ISOLATION` | `PASS` | Explicit restart generation and stale-buffer discard regression. |
+| `FINITE_JSON_RESPONSE_VALIDATION` | `PASS` | NaN, duplicate, malformed, depth, unknown-field, and result-shape checks. |
+| `RUST_PREALLOCATION_FRAME_BOUND` | `PASS` | Bounded `BufRead` frame reader and four Rust boundary tests. |
+| `OWNERSHIP_INVALID_STATE_AND_EPOCH_REJECTION` | `PASS` | Schema lifecycle sets, invalid state, positive epoch, and stable codes. |
+| `UNICODE_BOUNDARY_DIFFERENTIAL` | `PASS` | UTF-8 byte boundary candidate against Python and Rust. |
+| `EXISTING_RUNTIME_OWNERSHIP_REFERENCE` | `PASS` | Actual temporary SQLite store, runtime transaction boundary, and watermark readback. |
+| `INDEPENDENT_NEGATIVE_INVARIANTS` | `PASS` | 11 authored negative replay fixtures plus ownership negatives. |
+| `TRACE_UNEXPECTED_ERRORS_FAIL_QUALIFICATION` | `PASS` | Only declared `RuntimeControlError` is caught; unexpected exceptions escape. |
+| `ASSIGNMENT_REPLAY_REGRESSION` | `PASS` | Current, legacy, golden, SQLite, and every-prefix comparisons. |
+| `BENCHMARK_METRIC_PROVENANCE` | `PASS` | Returned `elapsed_ns`/`iterations`, raw samples, hashes, bounds, commands, env. |
+| `COLD_HOT_BUILD_RSS_LABELS` | `PASS` | Cold/hot split, build labels, temporary clean target, same-workload RSS. |
+| `REPOSITORY_RESIDENT_REGRESSION` | `PASS` | New tests and corrected raw measurement fixture are discoverable in repo. |
+| `PYTHON_DEFAULT_PATH_UNCHANGED` | `PASS` | Full regression remains green; Rust is explicit qualification-only code. |
+| `PVX1805_PVX1806_PVX1807_REGRESSION` | `PASS` | Full Python suite: 540 passed and 66 subtests passed. |
+| `FULL_QUALIFICATION` | `PASS` | Rust checks, semantic, protocol, ownership, trace, regression, and K3 run. |
+| `LINEAR_SYNC` | `PENDING_DELIVERY` | Comment is appended after feature branch push; issue remains `In Review`. |
 
-## Semantic contract and evidence
-
-### Ownership
-
-`evaluate_ownership` consumes a coordinator-trusted snapshot and a complete
-request. It checks execution/attempt, worker/incarnation, assignment,
-allocation/resource, epoch, expected versions, lifecycle, lease expiry,
-trusted time/watermark, and verified safety handoff. Missing or `UNKNOWN`
-fields return `INSUFFICIENT_EVIDENCE`; mismatches return
-`REJECT_CANDIDATE`; only an exact live match returns `ALLOW_CANDIDATE`.
-Results always carry `authority=NON_AUTHORITATIVE`.
-
-The ownership fixture contains 19 manually expected cases. All 19 matched the
-independent Python reference, the actual Rust release binary, and the frozen
-expected result: `19/19 PASS`. The equality boundary is covered explicitly:
-`now == expires_at` is not live. The cases also cover wrong worker and
-incarnation, stale epochs and versions, inactive resources, pending or
-mismatched safety handoff, incomplete evidence, old receipts, and multiple
-executions for one task.
-
-### Assignment replay
-
-`replay_assignment` implements only the `RUNTIME_WORKER_V1` assignment slice:
-
-```text
-AssignmentGranted
-AssignmentRenewed
-AssignmentReleased
-AssignmentRevoked
-AssignmentExpired
-AssignmentOrphaned
-AssignmentRecovered
-```
-
-Replay validates event envelope fields, event family/schema, assignment stream
-identity, contiguous sequence, timestamps, canonical payload hash, identity,
-versions, dependent lifecycles, and legal predecessors. Every prefix is
-compared, not only the final state. The implementation keeps assignment,
-allocation, attempt, and recovery versions distinct; it does not invent a
-cross-stream business order.
-
-The current grant-renew-release golden has all prefixes matched. Three legacy
-traces (`expire -> recover`, `orphan -> recover`, and `revoke`) all matched
-their explicit legacy expectations. Eleven negative fixtures all failed in
-both implementations with the expected stable error code. The Python
-reference error mapping was tightened during qualification so an unknown
-state payload version is consistently `ASSIGNMENT_STATE_INVALID` in both
-languages.
-
-### SQLite trace layer
-
-The trace harness uses the public `RuntimeControlStore` API with a real,
-temporary SQLite database and an injected `ManualClock`. It reads the stored
-assignment events and final persisted fields, then compares each stream prefix
-with the Python reducer and actual Rust binary.
-
-Seeds `1808`, `18081`, `18082`, and `18083` each ran 256 attempted operations.
-Each seed produced:
-
-```text
-attempted=256
-effective=8
-rejected=217
-no_op=31
-assignment_streams=5
-```
-
-The active owner snapshot was accepted by both the ownership oracle and Rust;
-all assignment streams matched their temporary SQLite persisted state. The
-trace is a repeatable finite qualification workload, not a production load or
-capacity certification.
-
-## Protocol and process qualification
-
-The actual Rust binary and Python driver use `CLINX_KERNEL_V1` NDJSON. The
-protocol rejects duplicate fields, unknown envelope fields, bad JSON,
-unsupported versions, unknown operations, unsafe integer values, and frames
-over 1 MiB. The Python side bounds responses, stderr, event count, process
-requests, and timeout. The child process writes protocol only to stdout and
-bounded diagnostics to stderr.
-
-`python3 -m pytest -q test_kernel_conformance.py` completed with:
-
-```text
-19 passed
-```
-
-Those tests include actual-binary malformed JSON, duplicate-field and
-unknown-field rejection; unsupported protocol and operation; integer and
-frame bounds; response/stderr bounds; truncated output; wrong response ID;
-timeout; exit-before-response; exit-after-response; restart replay;
-request correlation; batch isolation; and client-side frame bounds. No test
-starts a real Provider, Host executor, management service, or production
-worker.
-
-## Rust and Python implementation checks
-
-The following Rust checks passed during implementation. The document pass
-does not change Rust sources; the Python/documentation post-checks are
-recorded separately below.
-
-```text
-cargo fmt --all -- --check                         PASS
-cargo check --locked                              PASS
-cargo test --locked                               3 passed; doc tests passed
-cargo clippy --all-targets --all-features --locked -- -D warnings
-                                                   PASS
-cargo build --release --locked                    PASS
-python3 -m compileall -q .                        PASS
-git diff --check                                  PASS
-```
-
-Release artifacts used by qualification:
-
-```text
-/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-eval
-/home/pvxlabs/dev/clinx-pvx1807-remediation/kernel/target/release/clinx-kernel-bench
-```
-
-The release evaluator artifact was 893,224 bytes and the benchmark artifact
-was 659,056 bytes in the recorded measurement.
-
-## Existing regression
-
-The current checkout's original test suite was rerun rather than relying on
-the historical 510 passed / 66 subtests baseline. The final post-document
-command and result are recorded below:
-
-```text
-python3 -m pytest -q test_kernel_conformance.py
-19 passed
-
-python3 -m pytest -q
-529 passed, 66 subtests passed in 10.11s
-
-python3 -m compileall -q .
-PASS
-
-git diff --check
-PASS
-```
-
-The full suite includes the V1, Domain, Shadow, PVX-1805 compatibility,
-PVX-1806 runtime/guard, and PVX-1807 adapter/conformance regressions. The
-current count is evidence for this checkout only; historical counts remain
-historical and were not reused to manufacture the result.
-
-## Controlled cost measurement
-
-The benchmark ran after semantic qualification, with one warmup and five
-measured rounds per workload. Inputs and iteration counts were fixed. Times
-are wall-clock `perf_counter_ns` measurements. The raw measurement was
-captured at `/tmp/pvx1808-benchmark.json`; the table below records its values
-in the repository report.
-
-Environment:
-
-```text
-Python 3.12.3
-rustc 1.98.1 (48a229cea 2026-09-01)
-cargo 1.98.1 (797e8a9bc 2026-08-05)
-Linux 6.8.0-139-generic x86_64 with glibc 2.39
-24 CPUs reported by the host
-```
-
-| Workload | Samples | Median | P95 | Max | Unit/qualification meaning |
-| --- | ---: | ---: | ---: | ---: | --- |
-| Release compile | 5 | 26,534,629 | 27,223,020.2 | 27,343,499 | ns per `cargo build --release --locked` |
-| Python ownership reference | 5 | 96,545 | 108,143.2 | 110,211 | ns per one reference decision |
-| Python replay reference | 5 | 678,400 | 692,328.8 | 693,429 | ns per one fixture replay |
-| Rust core | 5 | 13,108,379 | 14,038,561.6 | 14,251,219 | ns per 2,000 in-process core iterations |
-| Rust serde | 5 | 25,358,885 | 26,853,755.6 | 27,195,294 | ns per 2,000 serde iterations |
-| Python to Rust round trip | 5 | 2,622,836 | 2,694,443.0 | 2,711,215 | ns per one subprocess request |
-| Cold start | 5 | 2,344,864 | 2,554,517.2 | 2,563,242 | ns per new-process replay request |
-| Hot batch, 16 requests | 5 | 3,268,754 | 3,832,752.4 | 3,862,822 | ns for one process and 16 requests |
-| Python serialization/parsing | 5 | 33,284 | 37,618.2 | 38,634 | ns per bounded encode/decode |
-| Rust RSS | 5 | 2,112 | n/a | 2,112 | KB, `/usr/bin/time` max RSS |
-| Python child `ru_maxrss` | 1 aggregate | 29,568 | n/a | 29,568 | KB, process children aggregate |
-
-The Rust core and Rust serde rows are benchmark-binary measurements over
-2,000 iterations; they are not directly comparable to one Python call or to
-the process round-trip rows. The results do not support a production
-throughput, P99, capacity, multi-machine consistency, or long-run stability
-claim. No speedup threshold was assumed.
-
-## Qualification gates
-
-| Gate | Status | Evidence or boundary |
-| --- | --- | --- |
-| `SOURCE_BASELINE_VERIFIED` | `PASS` | Fixed BASE and BASE TREE verified in the authorized independent checkout. |
-| `LANGUAGE_NEUTRAL_CONTRACT_VERSIONED` | `PASS` | `CLINX_KERNEL_V1` schema, bounded protocol, explicit integer/time/unknown-field rules, and both-language validation. |
-| `RUST_BINARY_BUILT_AND_EXECUTED` | `PASS` | Locked release build, evaluator and benchmark artifacts, actual binary conformance and qualification runs. |
-| `OWNERSHIP_DECISION_DIFFERENTIAL` | `PASS` | 19/19 ownership golden cases matched Python, Rust, and independent expected values. |
-| `ASSIGNMENT_REPLAY_DIFFERENTIAL` | `PASS` | Every current and legacy replay prefix matched the Python reference and expected state. |
-| `INDEPENDENT_GOLDEN_INVARIANTS` | `PASS` | Human-authored expected values were checked independently; no implementation updated a fixture. |
-| `INVALID_INPUT_FAILS_CLOSED` | `PASS` | 11 negative fixtures plus malformed protocol, bounds, unknown schema, identity, hash, timestamp, and transition failures. |
-| `LEGACY_EVENT_COMPATIBILITY` | `PASS` | Three legacy traces preserve explicit upcast/unknown behavior and match both implementations. |
-| `MULTI_EXECUTION_IDENTITY_ISOLATION` | `PASS` | Ownership fixtures and SQLite traces reject cross-execution/attempt identity crossover. |
-| `BOUNDED_PROTOCOL_AND_FAILURE_HANDLING` | `PASS` | 19 focused conformance tests cover correlation, limits, timeout, truncation, exits, stderr, restart, and batch isolation. |
-| `PURE_KERNEL_NO_SIDE_EFFECTS` | `PASS` | Rust operations consume self-contained input only; no database, clock, provider, lease, guard, command, or filesystem authority path. |
-| `PYTHON_DEFAULT_PATH_UNCHANGED` | `PASS` | New modules are explicit qualification dependencies; full existing suite remains green. |
-| `PVX1805_PVX1806_PVX1807_REGRESSION` | `PASS` | Full suite includes the accepted V1, compatibility, runtime/guard, and provider-adapter regressions. |
-| `REPOSITORY_RESIDENT_CONFORMANCE` | `PASS` | Fixtures, driver, reference, Rust source, and `test_kernel_conformance.py` are checked into the branch. |
-| `COST_MEASUREMENT_RECORDED` | `PASS` | One warmup plus five rounds, fixed inputs, separated workloads, environment and RSS method recorded above. |
-| `FULL_QUALIFICATION` | `PASS` | Semantic gates, actual SQLite traces, protocol tests, Rust checks, full Python regression, and cost measurement completed. |
-| `LINEAR_SYNC` | `NOT_RUN` | No Linear mutation was performed; final delivery records `LINEAR_SYNC=NOT_PERFORMED`. |
-
-## Fixed production boundary
+## Production Boundary And Adoption
 
 ```text
 V1_LIVE_AUTHORITY=ON
@@ -264,29 +244,24 @@ PRODUCTION_DEPLOY=NOT_PERFORMED
 SERVICE_RESTART=NOT_PERFORMED
 REAL_PROVIDER_TAKEOVER=NOT_RUN
 CANONICAL_PROVIDER_E2E=NOT_RUN
-PHYSICAL_PROCESS_FENCING=NOT_QUALIFIED
-CROSS_PROCESS_TOOL_EXACTLY_ONCE=NOT_QUALIFIED
-TRANSACTION_ATOMICITY_BY_RUST=NOT_QUALIFIED
 MAIN_BRANCH_PUSH=NOT_PERFORMED
 ORIGINAL_CHECKOUT_MUTATION=NOT_PERFORMED
 HISTORICAL_TASK_MUTATION=NOT_PERFORMED
 NEXT_PHASE_STARTED=NO
-LINEAR_SYNC=NOT_PERFORMED
 ```
 
-## Residual non-goals and next evidence
+`ADOPTION_RECOMMENDATION=DEFER` is independent of the implementation gate.
+The prototype is sufficiently corrected for bounded continued evaluation,
+but it is not evidence for production adoption. A later decision would need
+live transaction/write-point fencing, process supervision and physical
+fencing, Provider E2E, deployment/observability, load/tail behavior, and
+maintenance evidence. No adapter, worker runtime, or shadow path is enabled by
+this qualification.
 
-The recommendation to continue evaluation is intentionally narrow. Before
-any production adoption, a separate task must qualify real transaction/write
-point fencing, process supervision and crash/restart boundaries, Provider live
-E2E and canonical wire behavior, deployment and observability, load and tail
-latency, multi-machine behavior, and ongoing maintenance cost. This branch
-does not claim any of those conditions.
+## Delivery
 
-## Delivery record
-
-The branch is limited to one ordinary commit and one feature-branch push. No
-main push, force push, merge, deployment, service restart, PVX-1800 mutation,
-or next phase was performed. The final commit, tree, clean status, and remote
-readback are recorded in the delivery response after the post-document
-verification completes.
+The final ordinary commit SHA, final tree, clean worktree, feature-branch
+remote readback, and Linear comment ID are recorded in the delivery response
+after the final verification and push. No main push, force push, merge,
+deployment, service restart, Provider/Host start, production DB access, or
+PVX-1800 operation is part of this task.

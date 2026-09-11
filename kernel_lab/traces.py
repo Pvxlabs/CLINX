@@ -12,6 +12,7 @@ import datetime as dt
 import hashlib
 import json
 from pathlib import Path
+import sqlite3
 import tempfile
 from typing import Any, Callable
 
@@ -119,7 +120,31 @@ def _read_released_at(store: RuntimeControlStore, assignment_id: str) -> str | N
     return row[0] if row else None
 
 
-def _make_snapshot(store: RuntimeControlStore, assignment_id: str, now: dt.datetime) -> dict[str, Any]:
+def _read_clock_watermark(store: RuntimeControlStore) -> str:
+    with sqlite3.connect(store.path) as connection:
+        row = connection.execute(
+            "SELECT last_coordinator_time FROM runtime_clock_state WHERE state_id=1"
+        ).fetchone()
+    if row is None:
+        raise AssertionError("runtime clock watermark was not persisted")
+    return str(row[0])
+
+
+def _make_snapshot(
+    store: RuntimeControlStore, assignment_id: str, now: dt.datetime
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    # A verified handoff is derived from the actual runtime-control two-phase
+    # boundary.  It is never manufactured by copying a fixture value.
+    token, observed_at = store._begin_safety_handoff(assignment_id)
+    pending = store.get_safety_handoff(assignment_id)
+    if pending is None or pending["handoff_token"] != token or pending["observed_at"] != observed_at:
+        raise AssertionError("runtime safety handoff was not durably observed as pending")
+    completion_error = store._complete_safety_handoff(assignment_id, token, observed_at)
+    if completion_error is not None:
+        raise completion_error
+    if store.get_safety_handoff(assignment_id) is not None:
+        raise AssertionError("runtime safety handoff was not cleared after completion")
+    watermark = _read_clock_watermark(store)
     assignment = store.get_assignment(assignment_id)
     allocation = store.get_allocation(assignment.allocation_id or "")
     attempt = store.get_attempt(assignment.attempt_id)
@@ -128,7 +153,7 @@ def _make_snapshot(store: RuntimeControlStore, assignment_id: str, now: dt.datet
     incarnation = store.get_incarnation(assignment.incarnation_id)
     resource = store.get_protected_resource(assignment.resource_key)
     timestamp = now.isoformat(timespec="microseconds")
-    return {
+    snapshot = {
         "execution": {
             "execution_id": execution.execution_id,
             "task_id": execution.task_id,
@@ -177,7 +202,7 @@ def _make_snapshot(store: RuntimeControlStore, assignment_id: str, now: dt.datet
             "fencing_epoch": resource.fencing_epoch,
             "version": resource.version,
         },
-        "clock": {"source": "COORDINATOR_TRUSTED", "now": timestamp, "watermark": timestamp},
+        "clock": {"source": "COORDINATOR_TRUSTED", "now": timestamp, "watermark": watermark},
         "safety_handoff": {
             "state": "VERIFIED",
             "assignment_id": assignment.assignment_id,
@@ -187,6 +212,29 @@ def _make_snapshot(store: RuntimeControlStore, assignment_id: str, now: dt.datet
             "resource_key": assignment.resource_key,
             "resource_epoch": assignment.resource_epoch,
         },
+    }
+    return snapshot, {
+        "source": "actual_runtime_control_store",
+        "handoff": {
+            "pending_readback": pending,
+            "completion": "COMMITTED_AND_CLEARED",
+            "state_derived_for_snapshot": "VERIFIED",
+        },
+        "clock": {
+            "observed_at": observed_at,
+            "watermark_readback": watermark,
+            "snapshot_now": timestamp,
+        },
+        "synthetic_fixture_fields": [],
+        "snapshot_fields_read_from_runtime": [
+            "execution",
+            "attempt",
+            "worker",
+            "incarnation",
+            "assignment",
+            "allocation",
+            "resource",
+        ],
     }
 
 
@@ -224,46 +272,80 @@ def _setup(store: RuntimeControlStore, seed: int) -> dict[str, Any]:
     return {"worker": f"worker-{seed}", "inc1": f"inc-{seed}-1"}
 
 
-def _invoke(counter: dict[str, int], store: RuntimeControlStore, operation: Callable[[], Any]) -> None:
+def _invoke(
+    counter: dict[str, Any],
+    store: RuntimeControlStore,
+    operation: Callable[[], Any],
+    *,
+    label: str,
+    expected: str,
+    allowed_errors: tuple[type[RuntimeControlError], ...],
+) -> None:
     counter["attempted"] += 1
     before = store.count_events()
     try:
         operation()
-    except (RuntimeControlError, ValueError, KeyError, AssertionError):
+    except allowed_errors as error:
+        if expected != "rejected":
+            raise AssertionError(f"{label} raised an error but expected {expected}: {error}") from error
         counter["rejected"] += 1
+        counter["operations"].append({
+            "label": label,
+            "expected": expected,
+            "actual": "rejected",
+            "allowed_error_types": [item.__name__ for item in allowed_errors],
+            "error_type": type(error).__name__,
+            "error": str(error),
+        })
+        return
+    except Exception:
+        # AssertionError, KeyError, and all other unexpected failures must
+        # escape and fail the qualification rather than becoming rejections.
+        raise
     else:
-        if store.count_events() == before:
+        actual = "no_op" if store.count_events() == before else "success"
+        if actual != expected:
+            raise AssertionError(f"{label} produced {actual}, expected {expected}")
+        if actual == "no_op":
             counter["no_op"] += 1
         else:
             counter["effective"] += 1
+        counter["operations"].append({
+            "label": label,
+            "expected": expected,
+            "actual": actual,
+            "allowed_error_types": [item.__name__ for item in allowed_errors],
+        })
 
 
 def _exercise_store(store: RuntimeControlStore, clock: ManualClock, seed: int, identities: dict[str, str], operations: int) -> tuple[dict[str, int], list[str]]:
-    counts = {"attempted": 0, "effective": 0, "rejected": 0, "no_op": 0}
+    counts: dict[str, Any] = {
+        "attempted": 0, "effective": 0, "rejected": 0, "no_op": 0, "operations": []
+    }
     worker, inc1 = identities["worker"], identities["inc1"]
     assignments: list[str] = []
 
     release = store.assign_attempt(f"attempt-{seed}-release", worker, inc1, f"resource-{seed}-release", lease_seconds=30, assignment_id=f"asn-{seed}-release", command_id=f"{seed}-assign-release")
     assignments.append(release.assignment_id)
-    _invoke(counts, store, lambda: store.renew_assignment(release.assignment_id, worker, inc1, f"attempt-{seed}-release", f"resource-{seed}-release", release.resource_epoch, lease_seconds=40, expected_version=0, command_id=f"{seed}-renew-release"))
-    _invoke(counts, store, lambda: store.release_assignment(release.assignment_id, worker, inc1, f"attempt-{seed}-release", f"resource-{seed}-release", release.resource_epoch, expected_version=1, command_id=f"{seed}-release"))
+    _invoke(counts, store, lambda: store.renew_assignment(release.assignment_id, worker, inc1, f"attempt-{seed}-release", f"resource-{seed}-release", release.resource_epoch, lease_seconds=40, expected_version=0, command_id=f"{seed}-renew-release"), label="renew_active_assignment", expected="success", allowed_errors=(RuntimeControlError,))
+    _invoke(counts, store, lambda: store.release_assignment(release.assignment_id, worker, inc1, f"attempt-{seed}-release", f"resource-{seed}-release", release.resource_epoch, expected_version=1, command_id=f"{seed}-release"), label="release_current_assignment", expected="success", allowed_errors=(RuntimeControlError,))
 
     revoke = store.assign_attempt(f"attempt-{seed}-revoke", worker, inc1, f"resource-{seed}-revoke", lease_seconds=30, assignment_id=f"asn-{seed}-revoke", command_id=f"{seed}-assign-revoke")
     assignments.append(revoke.assignment_id)
-    _invoke(counts, store, lambda: store.revoke_assignment(revoke.assignment_id, worker, inc1, f"attempt-{seed}-revoke", f"resource-{seed}-revoke", revoke.resource_epoch, expected_version=0, command_id=f"{seed}-revoke"))
+    _invoke(counts, store, lambda: store.revoke_assignment(revoke.assignment_id, worker, inc1, f"attempt-{seed}-revoke", f"resource-{seed}-revoke", revoke.resource_epoch, expected_version=0, command_id=f"{seed}-revoke"), label="revoke_current_assignment", expected="success", allowed_errors=(RuntimeControlError,))
 
     expire = store.assign_attempt(f"attempt-{seed}-expire", worker, inc1, f"resource-{seed}-expire", lease_seconds=1, assignment_id=f"asn-{seed}-expire", command_id=f"{seed}-assign-expire")
     assignments.append(expire.assignment_id)
-    _invoke(counts, store, lambda: store.recover_assignment(expire.assignment_id, old_process_stopped=False, side_effect_fence_verified=False, command_id=f"{seed}-illegal-recover"))
+    _invoke(counts, store, lambda: store.recover_assignment(expire.assignment_id, old_process_stopped=False, side_effect_fence_verified=False, command_id=f"{seed}-illegal-recover"), label="recover_without_fencing_evidence", expected="rejected", allowed_errors=(RuntimeControlError,))
     clock.advance(2)
-    _invoke(counts, store, lambda: store.reconcile_expired_once(command_id=f"{seed}-expiry"))
-    _invoke(counts, store, lambda: store.recover_assignment(expire.assignment_id, old_process_stopped=True, side_effect_fence_verified=True, command_id=f"{seed}-recover-expire"))
+    _invoke(counts, store, lambda: store.reconcile_expired_once(command_id=f"{seed}-expiry"), label="reconcile_expired_assignment", expected="success", allowed_errors=(RuntimeControlError,))
+    _invoke(counts, store, lambda: store.recover_assignment(expire.assignment_id, old_process_stopped=True, side_effect_fence_verified=True, command_id=f"{seed}-recover-expire"), label="recover_expired_assignment", expected="success", allowed_errors=(RuntimeControlError,))
 
     orphan = store.assign_attempt(f"attempt-{seed}-orphan", worker, inc1, f"resource-{seed}-orphan", lease_seconds=30, assignment_id=f"asn-{seed}-orphan", command_id=f"{seed}-assign-orphan")
     assignments.append(orphan.assignment_id)
     inc2 = f"inc-{seed}-2"
-    _invoke(counts, store, lambda: store.register_incarnation(worker, incarnation_id=inc2, generation=2, command_id=f"{seed}-inc-2"))
-    _invoke(counts, store, lambda: store.recover_assignment(orphan.assignment_id, old_process_stopped=True, side_effect_fence_verified=True, command_id=f"{seed}-recover-orphan"))
+    _invoke(counts, store, lambda: store.register_incarnation(worker, incarnation_id=inc2, generation=2, command_id=f"{seed}-inc-2"), label="register_new_incarnation", expected="success", allowed_errors=(RuntimeControlError,))
+    _invoke(counts, store, lambda: store.recover_assignment(orphan.assignment_id, old_process_stopped=True, side_effect_fence_verified=True, command_id=f"{seed}-recover-orphan"), label="recover_orphaned_assignment", expected="success", allowed_errors=(RuntimeControlError,))
 
     owner = store.assign_attempt(f"attempt-{seed}-owner", worker, inc2, f"resource-{seed}-owner", lease_seconds=300, assignment_id=f"asn-{seed}-owner", command_id=f"{seed}-assign-owner")
     assignments.append(owner.assignment_id)
@@ -273,21 +355,21 @@ def _exercise_store(store: RuntimeControlStore, clock: ManualClock, seed: int, i
     for index in range(max(0, operations - counts["attempted"])):
         mode = (index + seed) % 8
         if mode == 0:
-            _invoke(counts, store, lambda: store.renew_assignment(owner.assignment_id, "wrong-worker", inc2, f"attempt-{seed}-owner", f"resource-{seed}-owner", owner.resource_epoch, command_id=f"{seed}-wrong-{index}"))
+            _invoke(counts, store, lambda: store.renew_assignment(owner.assignment_id, "wrong-worker", inc2, f"attempt-{seed}-owner", f"resource-{seed}-owner", owner.resource_epoch, command_id=f"{seed}-wrong-{index}"), label=f"wrong_worker_{index}", expected="rejected", allowed_errors=(RuntimeControlError,))
         elif mode == 1:
-            _invoke(counts, store, lambda: store.renew_assignment(owner.assignment_id, worker, inc2, f"attempt-{seed}-owner", f"resource-{seed}-owner", owner.resource_epoch, expected_version=0, command_id=f"{seed}-stale-{index}"))
+            _invoke(counts, store, lambda: store.renew_assignment(owner.assignment_id, worker, inc2, f"attempt-{seed}-owner", f"resource-{seed}-owner", owner.resource_epoch, expected_version=99, command_id=f"{seed}-stale-{index}"), label=f"stale_version_{index}", expected="rejected", allowed_errors=(RuntimeControlError,))
         elif mode == 2:
-            _invoke(counts, store, lambda: store.recover_assignment(owner.assignment_id, old_process_stopped=True, side_effect_fence_verified=True, command_id=f"{seed}-bad-recover-{index}"))
+            _invoke(counts, store, lambda: store.recover_assignment(owner.assignment_id, old_process_stopped=True, side_effect_fence_verified=True, command_id=f"{seed}-bad-recover-{index}"), label=f"recover_active_owner_{index}", expected="rejected", allowed_errors=(RuntimeControlError,))
         elif mode == 3:
-            _invoke(counts, store, lambda: store.assign_attempt(f"attempt-{seed}-release", worker, inc2, f"resource-{seed}-owner", command_id=f"{seed}-busy-{index}"))
+            _invoke(counts, store, lambda: store.assign_attempt(f"attempt-{seed}-release", worker, inc2, f"resource-{seed}-owner", command_id=f"{seed}-busy-{index}"), label=f"assign_busy_resource_{index}", expected="rejected", allowed_errors=(RuntimeControlError,))
         elif mode == 4:
-            _invoke(counts, store, lambda: store.reconcile_expired_once(command_id=f"{seed}-empty-expiry-{index}"))
+            _invoke(counts, store, lambda: store.reconcile_expired_once(command_id=f"{seed}-empty-expiry-{index}"), label=f"reconcile_empty_{index}", expected="no_op", allowed_errors=(RuntimeControlError,))
         elif mode == 5:
-            _invoke(counts, store, lambda: store.assign_attempt(f"attempt-{seed}-owner", worker, inc2, f"resource-{seed}-owner", command_id=f"{seed}-duplicate-{index}"))
+            _invoke(counts, store, lambda: store.assign_attempt(f"attempt-{seed}-owner", worker, inc2, f"resource-{seed}-owner", command_id=f"{seed}-duplicate-{index}"), label=f"assign_duplicate_attempt_{index}", expected="rejected", allowed_errors=(RuntimeControlError,))
         elif mode == 6:
-            _invoke(counts, store, lambda: store.release_assignment(owner.assignment_id, worker, inc2, f"attempt-{seed}-owner", f"resource-{seed}-owner", owner.resource_epoch, expected_version=99, command_id=f"{seed}-version-{index}"))
+            _invoke(counts, store, lambda: store.release_assignment(owner.assignment_id, worker, inc2, f"attempt-{seed}-owner", f"resource-{seed}-owner", owner.resource_epoch, expected_version=99, command_id=f"{seed}-version-{index}"), label=f"release_wrong_version_{index}", expected="rejected", allowed_errors=(RuntimeControlError,))
         else:
-            _invoke(counts, store, lambda: store.revoke_assignment(release.assignment_id, worker, inc1, f"attempt-{seed}-release", f"resource-{seed}-release", release.resource_epoch, command_id=f"{seed}-released-{index}"))
+            _invoke(counts, store, lambda: store.revoke_assignment(release.assignment_id, worker, inc1, f"attempt-{seed}-release", f"resource-{seed}-release", release.resource_epoch, command_id=f"{seed}-released-{index}"), label=f"revoke_released_assignment_{index}", expected="rejected", allowed_errors=(RuntimeControlError,))
     return counts, assignments
 
 
@@ -323,14 +405,20 @@ def run_seed(seed: int, *, binary: Path = DEFAULT_BINARY, operations: int = 256)
             rust = run_once(binary, "replay_assignment", {"events": events}, request_id=f"final-{assignment_id}")
             if not rust["ok"] or normalize(rust["result"]["state"]) != normalize(persisted):
                 raise AssertionError(f"persisted state mismatch for {assignment_id}")
-        snapshot = _make_snapshot(store, assignments[-1], clock.now())
+        snapshot, ownership_evidence = _make_snapshot(store, assignments[-1], clock.now())
         request = _make_request(store, assignments[-1])
         ownership = run_once(binary, "evaluate_ownership", {"snapshot": snapshot, "request": request}, request_id=f"ownership-{seed}")
         if not ownership["ok"] or ownership["result"]["decision"] != "ALLOW_CANDIDATE":
             raise AssertionError(f"ownership trace did not allow active owner: {ownership}")
         counts["total_events"] = store.count_events()
         counts["assignment_streams"] = len(assignments)
-        return {"seed": seed, "operations": counts, "assignment_streams": streams, "ownership": ownership["result"]}
+        return {
+            "seed": seed,
+            "operations": counts,
+            "assignment_streams": streams,
+            "ownership": ownership["result"],
+            "ownership_evidence": ownership_evidence,
+        }
 
 
 def run_traces(*, binary: Path = DEFAULT_BINARY, seeds: tuple[int, ...] = SEEDS, operations: int = 256) -> dict[str, Any]:

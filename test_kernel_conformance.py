@@ -22,6 +22,7 @@ from kernel_lab.protocol import (
     KernelSession,
     PROTOCOL_VERSION,
     run_once,
+    strict_json_loads,
 )
 from kernel_lab.reference import KernelReferenceError, evaluate_ownership_reference, replay_assignment_reference
 from kernel_lab.traces import (
@@ -86,7 +87,7 @@ def _fake_process(mode: str):
         elif mode == 'exit_before':
             raise SystemExit(7)
         elif mode == 'exit_after':
-            sys.stdout.write('{{"request_id":"x","protocol_version":"CLINX_KERNEL_V1","ok":true,"authority":"NON_AUTHORITATIVE","result":{{}}}}\\n')
+            sys.stdout.write('{{"request_id":"x","protocol_version":"CLINX_KERNEL_V1","ok":true,"authority":"NON_AUTHORITATIVE","result":{{"event_family":"RUNTIME_WORKER_V1","event_types":[],"not_covered_fields":[],"state":null,"states":{{}},"stream_version":0}}}}\\n')
             sys.stdout.flush()
             raise SystemExit(0)
         else:
@@ -237,3 +238,9 @@ def test_protocol_request_bounds_are_enforced_client_side():
     with pytest.raises(KernelProtocolError):
         run_once(_binary(), "replay_assignment", {"events": [], "padding": "x" * MAX_FRAME_BYTES}, request_id="too-large")
     assert PROTOCOL_VERSION == "CLINX_KERNEL_V1"
+
+
+def test_python_response_depth_bound_is_finite():
+    raw = (b"[" * 41) + b"0" + (b"]" * 41)
+    with pytest.raises(KernelProtocolError):
+        strict_json_loads(raw)

@@ -9,8 +9,15 @@ use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<String> = env::args().collect();
-    if arguments.len() != 3 || !matches!(arguments[1].as_str(), "core" | "serde") {
-        return Err("usage: clinx-kernel-bench <core|serde> <iterations>".into());
+    if arguments.len() != 3
+        || !matches!(
+            arguments[1].as_str(),
+            "core" | "parse_evaluate_serialize" | "serde"
+        )
+    {
+        return Err(
+            "usage: clinx-kernel-bench <core|parse_evaluate_serialize|serde> <iterations>".into(),
+        );
     }
     let mode = &arguments[1];
     let iterations: u64 = arguments[2].parse()?;
@@ -26,11 +33,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..iterations {
         let result = if mode == "core" {
             evaluate_ownership(black_box(&parsed))?
-        } else {
+        } else if mode == "parse_evaluate_serialize" {
             let roundtrip: Value = serde_json::from_str(black_box(&encoded))?;
             let result = evaluate_ownership(&roundtrip)?;
             black_box(serde_json::to_vec(&result)?);
             result
+        } else {
+            let roundtrip: Value = serde_json::from_str(black_box(&encoded))?;
+            black_box(serde_json::to_vec(&roundtrip)?);
+            roundtrip
         };
         black_box(result);
     }

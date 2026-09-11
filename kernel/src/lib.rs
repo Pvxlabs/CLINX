@@ -17,6 +17,22 @@ pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 const EVENT_FAMILY: &str = "RUNTIME_WORKER_V1";
 
+fn lifecycle_allowed(path: &str, value: &str) -> bool {
+    match path {
+        "execution.lifecycle" => matches!(value, "REQUESTED" | "CANCELLED" | "TERMINAL"),
+        "attempt.lifecycle" => matches!(value, "PENDING" | "ASSIGNED" | "RELEASED" | "TERMINAL"),
+        "worker.lifecycle" => matches!(value, "REGISTERED" | "DRAINING" | "RETIRED"),
+        "incarnation.lifecycle" => matches!(value, "ACTIVE" | "SUPERSEDED" | "REVOKED"),
+        "assignment.lifecycle" => matches!(
+            value,
+            "ACTIVE" | "EXPIRED" | "ORPHANED" | "REVOKED" | "RECOVERED" | "RELEASED"
+        ),
+        "allocation.lifecycle" => matches!(value, "ACTIVE" | "QUARANTINED" | "RELEASED"),
+        "safety_handoff.state" => matches!(value, "PENDING" | "VERIFIED"),
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProtocolRequest {
@@ -236,11 +252,17 @@ pub fn execute_request(request: ProtocolRequest) -> ProtocolResponse {
 }
 
 fn json_depth(value: &Value) -> usize {
-    match value {
-        Value::Array(values) => 1 + values.iter().map(json_depth).max().unwrap_or(0),
-        Value::Object(values) => 1 + values.values().map(json_depth).max().unwrap_or(0),
-        _ => 1,
+    let mut deepest = 1;
+    let mut pending = vec![(value, 1_usize)];
+    while let Some((current, depth)) = pending.pop() {
+        deepest = deepest.max(depth);
+        match current {
+            Value::Array(values) => pending.extend(values.iter().map(|item| (item, depth + 1))),
+            Value::Object(values) => pending.extend(values.values().map(|item| (item, depth + 1))),
+            _ => {}
+        }
     }
+    deepest
 }
 
 fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>, KernelError> {
@@ -472,6 +494,31 @@ pub fn evaluate_ownership(payload: &Value) -> Result<Value, KernelError> {
     for path in required_text_paths {
         required_text(snapshot, path, &mut missing)?;
     }
+    for path in [
+        "execution.lifecycle",
+        "attempt.lifecycle",
+        "worker.lifecycle",
+        "incarnation.lifecycle",
+        "assignment.lifecycle",
+        "allocation.lifecycle",
+        "safety_handoff.state",
+    ] {
+        let Some(value) = path_value(snapshot, path) else {
+            continue;
+        };
+        if value.is_null() || value.as_str() == Some("UNKNOWN") {
+            continue;
+        }
+        let lifecycle = value
+            .as_str()
+            .ok_or_else(|| KernelError::new("INVALID_INPUT", format!("{path} must be text")))?;
+        if !lifecycle_allowed(path, lifecycle) {
+            return Err(KernelError::new(
+                "INVALID_INPUT",
+                format!("{path} has an unknown lifecycle value"),
+            ));
+        }
+    }
     for path in required_integer_paths {
         required_integer(snapshot, path, &mut missing)?;
     }
@@ -499,6 +546,26 @@ pub fn evaluate_ownership(payload: &Value) -> Result<Value, KernelError> {
     let si = |path: &str| path_value(snapshot, path).and_then(Value::as_u64).unwrap();
     let ri = |path: &str| path_value(request, path).and_then(Value::as_u64).unwrap();
 
+    for path in [
+        "assignment.resource_epoch",
+        "allocation.resource_epoch",
+        "resource.fencing_epoch",
+        "safety_handoff.resource_epoch",
+    ] {
+        if si(path) == 0 {
+            return Err(KernelError::new(
+                "INVALID_INPUT",
+                format!("{path} must be positive"),
+            ));
+        }
+    }
+    if ri("resource_epoch") == 0 {
+        return Err(KernelError::new(
+            "INVALID_INPUT",
+            "resource_epoch must be positive",
+        ));
+    }
+
     let reject = |reason: &str, path: &str| {
         ownership_decision("REJECT_CANDIDATE", reason, json!({"failed_field": path}))
     };
@@ -506,7 +573,7 @@ pub fn evaluate_ownership(payload: &Value) -> Result<Value, KernelError> {
     if s("execution.execution_id") != r("execution_id") {
         return Ok(reject("EXECUTION_ID_MISMATCH", "execution.execution_id"));
     }
-    if s("execution.lifecycle") == "TERMINAL" {
+    if s("execution.lifecycle") != "REQUESTED" {
         return Ok(reject("EXECUTION_NOT_LIVE", "execution.lifecycle"));
     }
     if s("attempt.execution_id") != s("execution.execution_id")

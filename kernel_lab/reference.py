@@ -18,6 +18,23 @@ MAX_JSON_DEPTH = 32
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 EVENT_FAMILY = "RUNTIME_WORKER_V1"
 
+_LIFECYCLE_FIELDS = {
+    "execution.lifecycle": frozenset({"REQUESTED", "CANCELLED", "TERMINAL"}),
+    "attempt.lifecycle": frozenset({"PENDING", "ASSIGNED", "RELEASED", "TERMINAL"}),
+    "worker.lifecycle": frozenset({"REGISTERED", "DRAINING", "RETIRED"}),
+    "incarnation.lifecycle": frozenset({"ACTIVE", "SUPERSEDED", "REVOKED"}),
+    "assignment.lifecycle": frozenset({"ACTIVE", "EXPIRED", "ORPHANED", "REVOKED", "RECOVERED", "RELEASED"}),
+    "allocation.lifecycle": frozenset({"ACTIVE", "QUARANTINED", "RELEASED"}),
+    "safety_handoff.state": frozenset({"PENDING", "VERIFIED"}),
+}
+
+_EPOCH_FIELDS = (
+    "assignment.resource_epoch",
+    "allocation.resource_epoch",
+    "resource.fencing_epoch",
+    "safety_handoff.resource_epoch",
+)
+
 _TIMESTAMP = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}\+00:00$"
 )
@@ -70,11 +87,16 @@ def _valid_timestamp(value: Any) -> bool:
 
 
 def _json_depth(value: Any) -> int:
-    if isinstance(value, Mapping):
-        return 1 + max((_json_depth(item) for item in value.values()), default=0)
-    if isinstance(value, list):
-        return 1 + max((_json_depth(item) for item in value), default=0)
-    return 1
+    deepest = 1
+    pending: list[tuple[Any, int]] = [(value, 1)]
+    while pending:
+        current, depth = pending.pop()
+        deepest = max(deepest, depth)
+        if isinstance(current, Mapping):
+            pending.extend((item, depth + 1) for item in current.values())
+        elif isinstance(current, list):
+            pending.extend((item, depth + 1) for item in current)
+    return deepest
 
 
 def _decision(decision: str, reason_code: str, details: Mapping[str, Any]) -> dict[str, Any]:
@@ -166,8 +188,16 @@ def evaluate_ownership_reference(payload: Mapping[str, Any]) -> dict[str, Any]:
         value = _path(snapshot, path)
         if value is None or value == "UNKNOWN":
             missing.append(path)
-        elif not isinstance(value, str) or not value or len(value) > 512:
+        elif not isinstance(value, str) or not value or len(value.encode("utf-8")) > 512:
             raise _fail("INVALID_INPUT", f"{path} must contain 1..512 bytes")
+    for path, allowed in _LIFECYCLE_FIELDS.items():
+        value = _path(snapshot, path)
+        if value is None or value == "UNKNOWN":
+            continue
+        if not isinstance(value, str) or not value or len(value.encode("utf-8")) > 512:
+            raise _fail("INVALID_INPUT", f"{path} must contain 1..512 bytes")
+        if value not in allowed:
+            raise _fail("INVALID_INPUT", f"{path} has an unknown lifecycle value")
     for path in integer_paths:
         value = _path(snapshot, path)
         if value is None or value == "UNKNOWN":
@@ -186,7 +216,7 @@ def evaluate_ownership_reference(payload: Mapping[str, Any]) -> dict[str, Any]:
         value = _path(request, path)
         if value is None or value == "UNKNOWN":
             missing.append(path)
-        elif not isinstance(value, str) or not value or len(value) > 512:
+        elif not isinstance(value, str) or not value or len(value.encode("utf-8")) > 512:
             raise _fail("INVALID_INPUT", f"{path} must contain 1..512 bytes")
     for path in request_integer_paths:
         value = _path(request, path)
@@ -203,6 +233,11 @@ def evaluate_ownership_reference(payload: Mapping[str, Any]) -> dict[str, Any]:
             {"missing_or_unknown": sorted(set(missing))},
         )
 
+    for path in _EPOCH_FIELDS + ("resource_epoch",):
+        value = _path(snapshot, path) if "." in path else _path(request, path)
+        if value == 0:
+            raise _fail("INVALID_INPUT", f"{path} must be positive")
+
     s = lambda path: _path(snapshot, path)
     r = lambda path: _path(request, path)
 
@@ -211,7 +246,7 @@ def evaluate_ownership_reference(payload: Mapping[str, Any]) -> dict[str, Any]:
 
     ordered_checks: tuple[tuple[bool, str, str], ...] = (
         (s("execution.execution_id") != r("execution_id"), "EXECUTION_ID_MISMATCH", "execution.execution_id"),
-        (s("execution.lifecycle") == "TERMINAL", "EXECUTION_NOT_LIVE", "execution.lifecycle"),
+        (s("execution.lifecycle") != "REQUESTED", "EXECUTION_NOT_LIVE", "execution.lifecycle"),
         (
             s("attempt.execution_id") != s("execution.execution_id")
             or s("attempt.attempt_id") != r("attempt_id"),
