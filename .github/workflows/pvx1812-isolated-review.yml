@@ -1,0 +1,31 @@
+name: PVX-1812 isolated source verification
+on:
+  push:
+    branches: [fix/pvx1812-completion-handoff]
+    paths: [.github/workflows/pvx1812-isolated-review.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Export fixed public source without credentials or runtime data
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          git archive --format=tar.gz 1db732a841af906153e2333ece2c85d4450b3daa > evidence/clinx-baseline.tar.gz
+          git bundle create evidence/clinx-source.bundle --all
+          git rev-parse HEAD > evidence/source-head.txt
+          sha256sum evidence/clinx-baseline.tar.gz evidence/clinx-source.bundle > evidence/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pvx1812-isolated-source
+          path: evidence/
+          retention-days: 3
+          if-no-files-found: error
