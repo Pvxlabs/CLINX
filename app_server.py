@@ -13,6 +13,7 @@ import dataclasses
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import select
@@ -626,6 +627,8 @@ class CodexAppServerClient:
         self._served_server_request_ids: list[Any] = []
         self._detached = False
         self._supervisor: threading.Thread | None = None
+        self._completion_handoff: Callable[[dict[str, Any]], None] | None = None
+        self._completion_identity: tuple[str, str] | None = None
 
     def _record_event(self, message: dict[str, Any]) -> None:
         method = message.get("method")
@@ -1034,31 +1037,74 @@ class CodexAppServerClient:
         # unavailable. Legacy V1 callers do not enter this staged path.
         return state == "available"
 
+    def configure_completion_handoff(
+        self, thread_id: str, turn_id: str,
+        handler: Callable[[dict[str, Any]], None],
+    ) -> None:
+        """Bind a durable delivery callback, not a second transport reader."""
+        if not thread_id or not turn_id or not callable(handler):
+            raise AppServerProtocolError("completion handoff requires exact identity")
+        self._completion_identity = (thread_id, turn_id)
+        self._completion_handoff = handler
+
     def supervise_turn(self, thread_id: str, turn_id: str) -> None:
-        """Keep the initiating client connected for dynamic tool calls."""
+        """Keep the initiating connection alive and deliver exact completion."""
         self.attach_dynamic_tool_turn(thread_id, turn_id)
+        if self._completion_handoff is not None and self._completion_identity != (thread_id, turn_id):
+            raise AppServerProtocolError("completion handoff identity changed")
         self._detached = True
+        handoff = self._completion_handoff
+        # _request(turn/start) may already have consumed a very fast terminal
+        # notification. Do not replay server requests: their Host callbacks
+        # have already been admitted/handled by _request.
+        buffered = tuple(message for message in self.received_events
+                         if "id" not in message and message.get("method") == "turn/completed")
+
+        def terminal(message: dict[str, Any]) -> bool:
+            params = message.get("params")
+            if message.get("method") != "turn/completed" or not isinstance(params, dict):
+                return False
+            turn = params.get("turn")
+            observed = turn.get("id") if isinstance(turn, dict) else params.get("turnId")
+            if params.get("threadId") != thread_id or observed != turn_id:
+                return False
+            if handoff is not None:
+                handoff(message)  # persist/wake only; never re-enter this transport
+            return True
 
         def supervise() -> None:
             try:
+                if any(terminal(message) for message in buffered):
+                    return
                 while True:
                     message = self.transport.receive(max(self.timeout_seconds, 300.0))
                     if "method" in message and "id" in message:
                         self._send_server_response(message)
                         continue
-                    method = message.get("method")
-                    if isinstance(method, str):
+                    if isinstance(message.get("method"), str):
                         self._record_event(message)
-                    params = message.get("params")
-                    if method == "turn/completed" and isinstance(params, dict):
-                        turn = params.get("turn")
-                        observed = turn.get("id") if isinstance(turn, dict) else params.get("turnId")
-                        if observed in {None, turn_id}:
-                            break
-            except AppServerError:
-                pass
+                    if terminal(message):
+                        break
+            except Exception as exc:
+                logging.getLogger(__name__).error(
+                    "managed turn observation interrupted: %s", type(exc).__name__
+                )
+                if handoff is not None:
+                    try:
+                        handoff({"method": "clinx/observation_error", "params": {
+                            "threadId": thread_id, "turnId": turn_id,
+                            "errorType": type(exc).__name__,
+                        }})
+                    except Exception as delivery_error:
+                        # The pre-registered durable job remains PENDING and
+                        # is retried by the service after restart as well.
+                        logging.getLogger(__name__).error(
+                            "completion wakeup failed: %s", type(delivery_error).__name__
+                        )
             finally:
                 self._detached = False
+                self._completion_handoff = None
+                self._completion_identity = None
                 self.close()
 
         self._supervisor = threading.Thread(

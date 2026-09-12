@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from completion_runtime import serialized_execution, serialized_prepared_start
 from app_server import AppServerError
 from execution_semantics import RoutingIdentity, parse_routing_identity
 from execution_policy import (
@@ -483,6 +484,7 @@ class ExecutionFinalizer:
             retry_required=True,
         )
 
+    @serialized_execution
     def finalize_cancellation(self, execution_ref: str) -> Any:
         """Own the cancellation terminal transition and lease release."""
         return self.registry.finalize_cancellation(execution_ref)
@@ -633,6 +635,7 @@ class ExecutionFinalizer:
                 result=result, terminal_state="BLOCKED", retry_required=True
             )
 
+    @serialized_execution
     def finalize(
         self,
         *,
@@ -666,7 +669,7 @@ class ExecutionFinalizer:
                 )
             terminal_state = execution.get("stage") if active is None else None
             result = self._from_record(existing, terminal_state=terminal_state)
-            if active is not None or retained_recovery:
+            if active is not None or retained_recovery or self.registry.has_execution_lease(execution_ref):
                 decision = self._decision(
                     execution_ref,
                     raw_result or existing.raw_result,
@@ -1745,6 +1748,7 @@ class ClinxIntegration:
             "read_only": False,
         }
 
+    @serialized_prepared_start
     def start_execution(
         self,
         *,
