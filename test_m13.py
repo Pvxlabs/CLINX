@@ -667,6 +667,101 @@ class M13LifecycleRoutingTests(unittest.TestCase):
             self.assertEqual(stored.next_state, "COMPLETED")
             self.assertIn("exit_code=0", stored.validation)
 
+    def test_completed_turn_without_marker_accepts_recovered_host_validation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_host_recovered")
+
+            def host(ref, started_at):
+                registry.begin_host_execution(
+                    host_execution_ref=ref,
+                    task_id=task.task_id,
+                    execution_ref="exec_host_recovered",
+                    routing_identity_json=task.routing_identity_json,
+                    execution_policy_json="{}",
+                    host="p620", surface="host_executor",
+                    operation_class="DEVELOPMENT_MUTATION", capability="HOST_FILESYSTEM",
+                    operation="development_command", argv_json='["python3","-m","unittest"]',
+                    cwd_identity="clinx", started_at=started_at,
+                    result_state="RUNNING", timeout_seconds=30,
+                    executor_instance="test",
+                )
+
+            host("hostexec_failed", "2026-01-01T00:00:01+00:00")
+            registry.complete_host_execution(
+                "hostexec_failed", completed_at="2026-01-01T00:00:02+00:00",
+                duration_ms=1, exit_code=1, result_state="COMMAND_FAILED",
+            )
+            host("hostexec_validation", "2026-01-01T00:00:03+00:00")
+            registry.complete_host_execution(
+                "hostexec_validation", completed_at="2026-01-01T00:00:04+00:00",
+                duration_ms=1, exit_code=0, result_state="SUCCEEDED",
+            )
+            dispatcher = self._dispatcher(root, registry, [])
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "completed",
+                        "items": [{"type": "agentMessage", "text": "workflow finished"}],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_host_recovered")
+
+            self.assertEqual(reconciled["state"], "COMPLETED")
+            stored = registry.get_execution_result("exec_host_recovered")
+            self.assertIsNotNone(stored)
+            self.assertEqual(stored.status, "PASS")
+            self.assertIn("hostexec_failed=COMMAND_FAILED/exit_code=1", stored.validation)
+            self.assertIn("hostexec_validation=SUCCEEDED/exit_code=0", stored.validation)
+
+    def test_completed_turn_without_marker_does_not_ignore_latest_host_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            registry = TaskRegistry(root / "tasks.sqlite3")
+            task = self._active_task(registry, execution_ref="exec_host_latest_failed")
+
+            for ref, started_at, exit_code, result_state in (
+                ("hostexec_success", "2026-01-01T00:00:01+00:00", 0, "SUCCEEDED"),
+                ("hostexec_failed", "2026-01-01T00:00:03+00:00", 1, "COMMAND_FAILED"),
+            ):
+                registry.begin_host_execution(
+                    host_execution_ref=ref,
+                    task_id=task.task_id,
+                    execution_ref="exec_host_latest_failed",
+                    routing_identity_json=task.routing_identity_json,
+                    execution_policy_json="{}",
+                    host="p620", surface="host_executor",
+                    operation_class="DEVELOPMENT_MUTATION", capability="HOST_FILESYSTEM",
+                    operation="development_command", argv_json='["python3","-m","unittest"]',
+                    cwd_identity="clinx", started_at=started_at,
+                    result_state="RUNNING", timeout_seconds=30,
+                    executor_instance="test",
+                )
+                registry.complete_host_execution(
+                    ref, completed_at=started_at, duration_ms=1,
+                    exit_code=exit_code, result_state=result_state,
+                )
+            dispatcher = self._dispatcher(root, registry, [])
+
+            class Provider(self.FakeProvider):
+                def thread_turns_list(self, _thread_id, **_kwargs):
+                    return {"data": [{
+                        "id": "turn-lifecycle", "status": "completed",
+                        "items": [{"type": "agentMessage", "text": "workflow incomplete"}],
+                    }]}
+
+            dispatcher.client_factory = lambda target: Provider(target)
+            reconciled = dispatcher.reconcile_execution("exec_host_latest_failed")
+
+            self.assertEqual(reconciled["state"], "BLOCKED")
+            self.assertEqual(
+                registry.get_execution_result("exec_host_latest_failed").status,
+                "BLOCKED",
+            )
+
     def test_finalizer_orders_result_terminal_release_then_projection(self):
         result_text = (
             "CLINX_EXECUTION_RESULT\nSTATUS=PASS\nSUMMARY=ordered finalization\n"
