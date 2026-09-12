@@ -525,9 +525,14 @@ class ExecutionFinalizer:
             item for item in host_evidence
             if item.get("result_state") == "SUCCEEDED" and item.get("exit_code") == 0
         ]
-        host_succeeded = bool(host_evidence) and all(
-            item.get("result_state") == "SUCCEEDED" and item.get("exit_code") == 0
-            for item in host_evidence
+        # A managed agent may recover from a failed command.  For a missing
+        # provider marker, the latest exact host operation is the terminal
+        # validation signal; retain earlier failures in the evidence summary.
+        latest_host_evidence = host_evidence[0] if host_evidence else None
+        host_succeeded = bool(successful_host_evidence) and bool(
+            latest_host_evidence
+            and latest_host_evidence.get("result_state") == "SUCCEEDED"
+            and latest_host_evidence.get("exit_code") == 0
         )
         host_summary = ", ".join(
             f"{item.get('host_execution_ref', 'UNKNOWN')}="
@@ -606,7 +611,8 @@ class ExecutionFinalizer:
                 "STATUS=PASS\n"
                 "SUMMARY=Host execution evidence succeeded; provider terminal output omitted the result marker.\n"
                 "CHANGED_FILES=UNKNOWN (provider marker absent)\n"
-                "VALIDATION=Exact host execution evidence for this execution completed with exit_code=0.\n"
+                f"VALIDATION=Latest exact host execution succeeded with exit_code=0; "
+                f"all exact host evidence retained: {host_summary}.\n"
                 "BLOCKERS=NONE\n"
                 "NEXT_STATE=COMPLETED"
             )
