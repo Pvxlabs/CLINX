@@ -2553,6 +2553,11 @@ class TaskRegistry:
         self.release_execution(task.task_id, execution_ref, retain_history=True)
         return task
 
+    def has_execution_lease(self, execution_ref: str) -> bool:
+        with self._connect() as conn:
+            return conn.execute("SELECT 1 FROM worktree_leases WHERE execution_ref=? LIMIT 1",
+                                (execution_ref,)).fetchone() is not None
+
     def reconcile_terminal(
         self,
         execution_ref: str,
@@ -2569,6 +2574,18 @@ class TaskRegistry:
         }:
             raise TaskRegistryError(f"Unsupported terminal reconciliation state: {state}")
         active = self.get_active_execution(execution_ref)
+        if active is None:
+            # A prior finalizer may have committed terminal state before
+            # releasing the exact lease. RECOVERY_REQUIRED rows can also be
+            # retained in executions rather than execution_history.
+            with self._connect() as conn:
+                residual = conn.execute("SELECT * FROM executions WHERE execution_ref=?", (execution_ref,)).fetchone()
+            result = self.get_execution_result(execution_ref)
+            if residual is not None and result is not None:
+                current = self.get_task(residual["task_id"])
+                if result.task_id != current.task_id or result.turn_id != current.turn_id:
+                    raise TaskRegistryError("residual completion identity mismatch")
+                active = dict(residual)
         if active is None:
             with self._connect() as conn:
                 retained = conn.execute(
@@ -3348,12 +3365,14 @@ class TaskRegistry:
             lease = None
             if row is not None:
                 lease = conn.execute(
-                    "SELECT worktree_key FROM worktree_leases WHERE worktree_key=?",
+                    "SELECT worktree_key,task_id,execution_ref FROM worktree_leases WHERE worktree_key=?",
                     (row["worktree_key"],),
                 ).fetchone()
+                if lease is not None and (lease["task_id"] != task_id or lease["execution_ref"] != row["execution_ref"]):
+                    raise TaskRegistryError("lease release does not own the exact execution")
                 conn.execute(
-                    "DELETE FROM worktree_leases WHERE worktree_key=?",
-                    (row["worktree_key"],),
+                    "DELETE FROM worktree_leases WHERE worktree_key=? AND task_id=? AND execution_ref IS ?",
+                    (row["worktree_key"], task_id, row["execution_ref"]),
                 )
             released_at = _now()
             if retain_history and execution_ref:
@@ -3457,6 +3476,7 @@ class TaskRegistry:
     def execution(
         self, task_id: str, issue_id: str | None = None, *,
         execution_ref: str | None = None, retain: bool = False,
+        preserve_uncertain: bool = False,
     ) -> Iterator[TaskRecord]:
         task = self.get_task(task_id)
         if task.status == "ARCHIVED":
@@ -3541,7 +3561,24 @@ class TaskRegistry:
                 }
             except UnknownTaskError:
                 terminal = True
-            if not retain or not completed or terminal:
+            keep_uncertain = False
+            if preserve_uncertain and retain and not completed and execution_ref:
+                # Once an exact accepted turn is persisted, local handoff
+                # failure cannot prove the provider stopped. Retain its lease
+                # and keep the execution outside the global terminal sweep.
+                with self._connect() as conn:
+                    owned = conn.execute(
+                        "SELECT turn_id,execution_state FROM executions WHERE task_id=? AND execution_ref=?",
+                        (task_id, execution_ref),
+                    ).fetchone()
+                    keep_uncertain = bool(owned is not None and owned["turn_id"]
+                        and owned["execution_state"] in {
+                            "TURN_STARTED", "CODEX_RUNNING", "TRANSPORT_UNCERTAIN", "RECOVERY_REQUIRED"
+                        })
+                    if keep_uncertain:
+                        conn.execute("UPDATE executions SET stage='TRANSPORT_UNCERTAIN' WHERE task_id=? AND execution_ref=?",
+                                     (task_id, execution_ref))
+            if not keep_uncertain and (not retain or not completed or terminal):
                 self.release_execution(
                     task_id,
                     execution_ref,

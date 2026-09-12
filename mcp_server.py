@@ -882,25 +882,34 @@ def build_server(
 def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None) -> None:
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    for line in stdin:
-        if not line.strip():
-            continue
-        try:
-            request = json.loads(line)
-            response = server.handle(request)
-            if response is not None:
-                stdout.write(json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n")
+    dispatcher = getattr(getattr(server, "integration", None), "dispatcher", None)
+    start_completion = getattr(dispatcher, "start_completion_runtime", None)
+    stop_completion = getattr(dispatcher, "stop_completion_runtime", None)
+    if callable(start_completion):
+        start_completion()
+    try:
+        for line in stdin:
+            if not line.strip():
+                continue
+            try:
+                request = json.loads(line)
+                response = server.handle(request)
+                if response is not None:
+                    stdout.write(json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n")
+                    stdout.flush()
+            except json.JSONDecodeError as exc:
+                response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(exc)}}
+                stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
                 stdout.flush()
-        except json.JSONDecodeError as exc:
-            response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(exc)}}
-            stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
-            stdout.flush()
-        except MCPRequestError as exc:
-            response = {"jsonrpc": "2.0", "id": None, "error": {"code": exc.code, "message": str(exc)}}
-            if exc.data is not None:
-                response["error"]["data"] = _public_json(exc.data)
-            stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
-            stdout.flush()
+            except MCPRequestError as exc:
+                response = {"jsonrpc": "2.0", "id": None, "error": {"code": exc.code, "message": str(exc)}}
+                if exc.data is not None:
+                    response["error"]["data"] = _public_json(exc.data)
+                stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
+                stdout.flush()
+    finally:
+        if callable(stop_completion):
+            stop_completion()
 
 
 def main(argv: list[str] | None = None) -> int:

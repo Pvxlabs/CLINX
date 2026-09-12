@@ -28,6 +28,8 @@ import urllib.request
 import uuid
 from typing import Any
 
+from completion_runtime import CompletionIdentity, CompletionRuntime, serialized_execution
+
 from app_server import (
     AppServerError,
     CodexAppServerClient,
@@ -2146,6 +2148,7 @@ class TaskDispatcher:
         task_registry: TaskRegistry | None = None,
         client_factory=None,
         linear=None,
+        initialize_host_executor: bool = True,
     ):
         self.cfg = cfg
         self.workspaces = WorkspaceRegistry(cfg.workspaces)
@@ -2156,11 +2159,12 @@ class TaskDispatcher:
         self.client_factory = client_factory or (
             lambda target: _default_app_server_client(cfg, target)
         )
-        self.host_executor = HostExecutor(cfg.host_executor, self.tasks)
+        self.host_executor = HostExecutor(cfg.host_executor, self.tasks) if initialize_host_executor else None
         self.linear = linear
         self.projects = DynamicProjectResolver(self.workspaces, cfg.projects)
         self.last_task_id: str | None = None
         self.last_execution_ref: str | None = None
+        self._completion_runtime: CompletionRuntime | None = None
 
     @staticmethod
     def _turn_text(value: Any, *, assistant_only: bool = False) -> str:
@@ -2418,6 +2422,40 @@ class TaskDispatcher:
             or fallback
         )
 
+    def _managed_host_spec(self, policy: ExecutionPolicy) -> dict[str, Any]:
+        spec = self.host_executor.dynamic_tool_spec()
+        properties = spec["tools"][0]["inputSchema"]["properties"]
+        properties["operation_class"]["enum"] = list(policy.operation_classes)
+        properties["capability"]["enum"] = list(policy.required_capabilities)
+        return spec
+
+    @staticmethod
+    def _managed_host_prompt(prompt: str, policy: ExecutionPolicy) -> str:
+        if policy.execution_surface != HOST_EXECUTOR:
+            return prompt
+        contract = {
+            "role": "already-approved execution worker; not the CLINX operator",
+            "tool": "clinx.clinx_host_operation",
+            "operation_classes": list(policy.operation_classes),
+            "capabilities": list(policy.required_capabilities),
+            "development_example": {
+                "operation_class": "DEVELOPMENT_MUTATION",
+                "capability": "LOCAL_HOST_PROCESS", "operation": "development_command",
+                "arguments": {"argv": ["python3", "-m", "unittest", "-q"]},
+            } if DEVELOPMENT_MUTATION in policy.operation_classes else None,
+        }
+        return (
+            "CLINX MANAGED EXECUTION CONTRACT\n"
+            + json.dumps(contract, sort_keys=True) + "\n"
+            "Use only the Host capability already bound to this execution for host work. "
+            "Do not call clinx_prepare_execution, clinx_start_execution, cancellation, "
+            "or reconciliation to create or operate another execution. Those are outer "
+            "operator actions; approval for this execution does not approve nested work. "
+            "Do not guess capability names or pass raw task, execution, host or cwd identities. "
+            "Report unavailable tools as blockers, not as a reason to start nested work.\n"
+            "END CLINX MANAGED EXECUTION CONTRACT\n\nCURRENT REQUEST:\n" + prompt
+        )
+
     def _configure_host_turn(
         self,
         *,
@@ -2450,6 +2488,15 @@ class TaskDispatcher:
             }
             if set(values).difference(allowed):
                 raise DispatchContractError("host operation contains unsupported fields")
+            for field in ("operation_class", "capability", "operation"):
+                if field in values and (not isinstance(values[field], str) or not values[field].strip()):
+                    raise DispatchContractError(f"host operation {field} must be non-empty text")
+            if not isinstance(values.get("arguments", {}), dict):
+                raise DispatchContractError("host operation arguments must be an object")
+            if values.get("operation_class", DEVELOPMENT_MUTATION) not in policy.operation_classes:
+                raise DispatchContractError("host operation class is not approved for this execution")
+            if values.get("capability", "LOCAL_HOST_PROCESS") not in policy.required_capabilities:
+                raise DispatchContractError("host capability is not approved for this execution")
             request = HostExecutionRequest(
                 task_ref=task_id,
                 execution_ref=execution_ref,
@@ -2464,7 +2511,10 @@ class TaskDispatcher:
             )
             return executor.execute(request)
 
-        spec = executor.dynamic_tool_spec()
+        if callable(getattr(client, "configure_completion_handoff", None)):
+            # Initialize durable delivery before the external turn/start side effect.
+            self.start_completion_runtime()
+        spec = self._managed_host_spec(policy)
         configure(
             namespace=spec["name"],
             name=spec["tools"][0]["name"],
@@ -2518,7 +2568,7 @@ class TaskDispatcher:
             started = client.thread_start(
                 cwd=str(project.repo), model=executable_model,
                 sandbox=self.cfg.sandbox, ephemeral=False,
-                dynamic_tools=[self.host_executor.dynamic_tool_spec()],
+                dynamic_tools=[self._managed_host_spec(policy)],
             )
             new_thread_id = started.get("id")
             new_session_id = started.get("sessionId")
@@ -2566,6 +2616,36 @@ class TaskDispatcher:
                     }, sort_keys=True),
                 )
             return migrated
+
+    def start_completion_runtime(self) -> CompletionRuntime:
+        if getattr(self, "_completion_runtime", None) is None:
+            self._completion_runtime = CompletionRuntime(self.tasks, self.reconcile_execution)
+        self._completion_runtime.start()
+        return self._completion_runtime
+
+    def stop_completion_runtime(self) -> None:
+        if self._completion_runtime is not None:
+            self._completion_runtime.stop()
+
+    def _register_managed_completion(self, client: Any, *, task_id: str,
+                                     execution_ref: str | None, thread_id: str,
+                                     turn_id: str) -> None:
+        configure = getattr(client, "configure_completion_handoff", None)
+        if not callable(configure):
+            # Legacy injected test providers have no live observer. The real
+            # CodexAppServerClient always implements the delivery contract.
+            return
+        if not execution_ref:
+            raise DispatchContractError("managed completion requires exact execution identity")
+        runtime = self.start_completion_runtime()
+        identity = CompletionIdentity(execution_ref, task_id, thread_id, turn_id)
+        runtime.register(identity)
+        configure(thread_id, turn_id, lambda message: runtime.notify(identity, message))
+
+    def recover_execution_completion(self, execution_ref: str) -> dict[str, Any]:
+        # Explicit maintenance operation. No global lease sweep or new turn.
+        runtime = CompletionRuntime(self.tasks, self.reconcile_execution)
+        return runtime.recover(execution_ref)
 
     @staticmethod
     def _supervise_host_turn(
@@ -2675,6 +2755,7 @@ class TaskDispatcher:
                 network_access=network_access, supplied=routing_identity,
                 execution_policy=policy,
             )
+            prompt = self._managed_host_prompt(prompt, policy)
             task = self.tasks.create_task(
                 host=host or workspace.alias,
                 workspace_alias=workspace.alias,
@@ -2693,11 +2774,13 @@ class TaskDispatcher:
             self.last_task_id = task.task_id
             with self.tasks.execution(
                 task.task_id, issue_id, execution_ref=execution_ref,
-                retain=bool(execution_ref and execution_ref.startswith("exec_"))
+                retain=bool(execution_ref and execution_ref.startswith("exec_")),
+            preserve_uncertain=True,
             ) as leased:
                 self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
                 target = self._new_target(workspace, project, route)
                 client = self.client_factory(target)
+                turn = None
                 try:
                     self._execution_state(leased.task_id, "DISPATCHING", current_stage="identity guard")
                     with client:
@@ -2720,7 +2803,7 @@ class TaskDispatcher:
                             sandbox=self.cfg.sandbox,
                             ephemeral=False,
                             dynamic_tools=(
-                                [self.host_executor.dynamic_tool_spec()]
+                                [self._managed_host_spec(policy)]
                                 if policy.execution_surface == HOST_EXECUTOR
                                 else None
                             ),
@@ -2801,12 +2884,6 @@ class TaskDispatcher:
                                 reasoning_effort=executable_reasoning,
                                 approval_policy=self.cfg.approval,
                             )
-                        self._supervise_host_turn(
-                            client,
-                            policy=policy,
-                            thread_id=new_thread_id,
-                            turn_id=turn.turn_id,
-                        )
                         self._execution_state(
                             leased.task_id,
                             "CODEX_RUNNING",
@@ -2815,6 +2892,17 @@ class TaskDispatcher:
                             codex_running=True,
                             turn_id=turn.turn_id,
                             retry_required=False,
+                        )
+                        if policy.execution_surface == HOST_EXECUTOR:
+                            self._register_managed_completion(
+                                client, task_id=leased.task_id, execution_ref=execution_ref,
+                                thread_id=new_thread_id, turn_id=turn.turn_id,
+                            )
+                        self._supervise_host_turn(
+                            client,
+                            policy=policy,
+                            thread_id=new_thread_id,
+                            turn_id=turn.turn_id,
                         )
                 except IdentityGuardError:
                     self._finalize_pre_turn_failure(
@@ -2832,12 +2920,21 @@ class TaskDispatcher:
                     )
                     raise
                 except Exception as exc:
-                    self._finalize_pre_turn_failure(
-                        task_id=leased.task_id,
-                        execution_ref=execution_ref,
-                        evidence=str(exc)[:4000],
-                        failure_code="DISPATCH_FAILURE",
-                    )
+                    if turn is not None:
+                        # Provider has accepted work. A local delivery failure is not
+                        # a pre-turn rejection and must not release its live lease.
+                        self._execution_state(
+                            leased.task_id, "RECOVERY_REQUIRED", current_stage="completion handoff",
+                            current_blocker="completion handoff requires recovery", codex_running=False,
+                            turn_id=turn.turn_id, retry_required=True,
+                            failure_code="COMPLETION_HANDOFF_FAILED",
+                            failure_evidence=type(exc).__name__,
+                        )
+                    else:
+                        self._finalize_pre_turn_failure(
+                            task_id=leased.task_id, execution_ref=execution_ref,
+                            evidence=str(exc)[:4000], failure_code="DISPATCH_FAILURE",
+                        )
                     raise
             if issue_id:
                 self.tasks.record_linear_execution(
@@ -2927,14 +3024,17 @@ class TaskDispatcher:
                 + "\nEND CLINX MIGRATION CONTEXT\n\nCURRENT REQUEST:\n"
                 + prompt
             )
+        managed_prompt = self._managed_host_prompt(managed_prompt, policy)
         with self.tasks.execution(
             task.task_id, issue_id, execution_ref=execution_ref,
-            retain=bool(execution_ref and execution_ref.startswith("exec_"))
+            retain=bool(execution_ref and execution_ref.startswith("exec_")),
+            preserve_uncertain=True,
         ) as leased:
             self.last_task_id = leased.task_id
             self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
             target = self._target(workspace, project, binding, route)
             client = self.client_factory(target)
+            turn = None
             try:
                 self._execution_state(leased.task_id, "DISPATCHING", current_stage="identity guard")
                 with client:
@@ -3013,12 +3113,6 @@ class TaskDispatcher:
                             checkpoint_id=migration_context.checkpoint_id,
                             timestamp=migration_context.timestamp,
                         )
-                    self._supervise_host_turn(
-                        client,
-                        policy=policy,
-                        thread_id=binding.thread_id,
-                        turn_id=turn.turn_id,
-                    )
                     self._execution_state(
                         leased.task_id,
                         "CODEX_RUNNING",
@@ -3027,6 +3121,17 @@ class TaskDispatcher:
                         codex_running=True,
                         turn_id=turn.turn_id,
                         retry_required=False,
+                    )
+                    if policy.execution_surface == HOST_EXECUTOR:
+                        self._register_managed_completion(
+                            client, task_id=leased.task_id, execution_ref=execution_ref,
+                            thread_id=binding.thread_id, turn_id=turn.turn_id,
+                        )
+                    self._supervise_host_turn(
+                        client,
+                        policy=policy,
+                        thread_id=binding.thread_id,
+                        turn_id=turn.turn_id,
                     )
             except IdentityGuardError:
                 self._finalize_pre_turn_failure(
@@ -3044,12 +3149,21 @@ class TaskDispatcher:
                 )
                 raise
             except Exception as exc:
-                self._finalize_pre_turn_failure(
-                    task_id=leased.task_id,
-                    execution_ref=execution_ref,
-                    evidence=str(exc)[:4000],
-                    failure_code="DISPATCH_FAILURE",
-                )
+                if turn is not None:
+                    # Provider has accepted work. A local delivery failure is not
+                    # a pre-turn rejection and must not release its live lease.
+                    self._execution_state(
+                        leased.task_id, "RECOVERY_REQUIRED", current_stage="completion handoff",
+                        current_blocker="completion handoff requires recovery", codex_running=False,
+                        turn_id=turn.turn_id, retry_required=True,
+                        failure_code="COMPLETION_HANDOFF_FAILED",
+                        failure_evidence=type(exc).__name__,
+                    )
+                else:
+                    self._finalize_pre_turn_failure(
+                        task_id=leased.task_id, execution_ref=execution_ref,
+                        evidence=str(exc)[:4000], failure_code="DISPATCH_FAILURE",
+                    )
                 raise
         if issue_id:
             self.tasks.record_linear_execution(execution_ref or issue_id, leased.task_id)
@@ -3408,8 +3522,10 @@ class TaskDispatcher:
             return "PROVIDER_DISCONNECTED"
         return None
 
+    @serialized_execution
     def reconcile_execution(
-        self, execution_ref: str | None = None, *, task_id: str | None = None
+        self, execution_ref: str | None = None, *, task_id: str | None = None,
+        reclaim_stale: bool = True,
     ) -> dict[str, Any]:
         """Perform one bounded provider read and converge durable execution truth.
 
@@ -3417,7 +3533,8 @@ class TaskDispatcher:
         execution and lease have no opaque execution identity.  It is never a
         substitute for an identity when a live execution exists.
         """
-        self.tasks.reclaim_stale_worktree_leases()
+        if reclaim_stale:
+            self.tasks.reclaim_stale_worktree_leases()
         active = self.tasks.get_active_execution(execution_ref) if execution_ref else None
         orphaned = False
         retained_recovery = False
@@ -3436,6 +3553,14 @@ class TaskDispatcher:
                 return {"state": "UNKNOWN", "authoritative": False}
         elif active is None:
             retained = self.tasks.get_execution_record(execution_ref or "")
+            if retained is not None:
+                persisted = self.tasks.get_execution_result(execution_ref or "")
+                if persisted is not None:
+                    recovered = ExecutionFinalizer(self.tasks, getattr(self, "linear", None)).finalize(
+                        execution_ref=execution_ref, task_id=persisted.task_id,
+                        turn_id=persisted.turn_id, raw_result=persisted.raw_result,
+                    )
+                    return {"state": recovered.terminal_state, "authoritative": True, "finalized": True}
             if retained is None or retained.get("stage") != "RECOVERY_REQUIRED":
                 return {"state": "UNKNOWN", "authoritative": False}
             task = self.tasks.get_task(retained["task_id"])
@@ -3558,6 +3683,19 @@ class TaskDispatcher:
                 page = client.thread_turns_list(
                     binding.thread_id, limit=20, sort_direction="desc", items_view="summary"
                 )
+                cursor_seen: set[str] = set()
+                for _ in range(4):
+                    if not exact_turn_id or any(isinstance(item, dict) and item.get("id") == exact_turn_id
+                                                for item in page.get("data", ())):
+                        break
+                    cursor = page.get("nextCursor")
+                    if not isinstance(cursor, str) or not cursor or cursor in cursor_seen:
+                        break
+                    cursor_seen.add(cursor)
+                    page = client.thread_turns_list(
+                        binding.thread_id, limit=20, cursor=cursor,
+                        sort_direction="desc", items_view="summary",
+                    )
                 if not exact_turn_id:
                     rows = page.get("data")
                     if not isinstance(rows, list):
@@ -3626,7 +3764,7 @@ class TaskDispatcher:
             # A child exit/closed byte channel is definitive disconnect
             # evidence for this exact execution. Generic reachability failure
             # remains retryable observation uncertainty.
-            if "exit " in evidence.casefold() or "transport closed" in evidence.casefold():
+            if reclaim_stale and ("exit " in evidence.casefold() or "transport closed" in evidence.casefold()):
                 return finalize_provider(
                     "PROVIDER_DISCONNECTED", evidence,
                 )
@@ -6439,6 +6577,8 @@ def build_parser() -> argparse.ArgumentParser:
     tasks_topic.add_argument("--limit", type=int, default=TopicStatusReader.MAX_LIMIT)
     tasks_topic.add_argument("--recent-turns", type=int, default=TopicStatusReader.INITIAL_TURNS)
     tasks_topic.add_argument("--max-bytes", type=int, default=TopicStatusReader.MAX_TOPIC_BYTES)
+    recover = sub.add_parser("recover-execution", help="Recover one exact completion; never start a turn")
+    recover.add_argument("execution_ref")
     sub.add_parser("once", help="Poll once and execute at most max_batch issues")
     sub.add_parser("run", help="Run foreground polling loop")
     return parser
@@ -6453,6 +6593,15 @@ def main() -> int:
     except Exception as e:
         print(f"CONFIG_ERROR: {e}", file=sys.stderr)
         return 2
+
+    if args.command == "recover-execution":
+        try:
+            result = TaskDispatcher(cfg, initialize_host_executor=False).recover_execution_completion(args.execution_ref)
+            print(json.dumps(result, sort_keys=True))
+            return 0 if result.get("completion_delivery") == "DONE" else 1
+        except Exception as exc:
+            print(f"RECOVERY_BLOCKED: {type(exc).__name__}", file=sys.stderr)
+            return 1
 
     if args.command == "self-project-check":
         return self_project_check(cfg)
@@ -6613,6 +6762,8 @@ def main() -> int:
         with SingleInstanceLock(lock_path):
             bridge = Bridge(cfg, linear)
             bridge.initialize()
+            if args.command == "run":
+                bridge._m5_dispatcher().start_completion_runtime()
 
             if args.command == "once":
                 bridge.poll_once()
