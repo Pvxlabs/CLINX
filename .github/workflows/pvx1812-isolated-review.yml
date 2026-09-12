@@ -29,10 +29,14 @@ jobs:
           git write-tree > "$RUNNER_TEMP/evidence/tested-tree.txt"
           git diff --cached --stat > "$RUNNER_TEMP/evidence/changed-files.txt"
           cp "$RUNNER_TEMP/candidate.patch" "$RUNNER_TEMP/evidence/"
-      - name: Prepare explicit Python and Rust toolchains
+      - name: Prepare explicit Python and Rust toolchains and existing cwd fixture
         shell: bash
         run: |
           set -euo pipefail
+          # Existing test_tunnel_child uses this absolute cwd. Empty CI fixture only;
+          # no connection, credentials, services or production data from P620.
+          sudo install -d -m 755 /home/pvxlabs
+          printf 'Empty /home/pvxlabs directory supplied for existing cwd-independence test. No test assertions changed.\n' > "$RUNNER_TEMP/evidence/ci-fixture.txt"
           /usr/bin/python3.12 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/python" -m pip install --disable-pip-version-check pytest==9.0.2
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
