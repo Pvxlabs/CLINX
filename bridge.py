@@ -2473,6 +2473,13 @@ class TaskDispatcher:
                 "capability": "LOCAL_HOST_PROCESS", "operation": "development_command",
                 "arguments": {"argv": ["python3", "-m", "unittest", "-q"]},
             } if DEVELOPMENT_MUTATION in policy.operation_classes else None,
+            "read_only_examples": ([
+                {"operation_class": "READ_ONLY_HOST", "capability": "LOCAL_HOST_PROCESS",
+                 "operation": "host_identity", "arguments": {}},
+                {"operation_class": "READ_ONLY_HOST", "capability": "LOCAL_HOST_PROCESS",
+                 "operation": "working_directory", "arguments": {}},
+            ] if "READ_ONLY_HOST" in policy.operation_classes
+               and "LOCAL_HOST_PROCESS" in policy.required_capabilities else None),
         }
         return (
             "CLINX MANAGED EXECUTION CONTRACT\n"
@@ -2483,6 +2490,11 @@ class TaskDispatcher:
             "operator actions; approval for this execution does not approve nested work. "
             "Do not guess capability names or pass raw task, execution, host or cwd identities. "
             "Report unavailable tools as blockers, not as a reason to start nested work.\n"
+            "At the end return exactly one multiline result with every field: "
+            "CLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<one concise paragraph>\n"
+            "CHANGED_FILES=<comma-separated paths or NONE>\nVALIDATION=<tests/checks and outcomes>\n"
+            "BLOCKERS=<NONE or exact blocker>\nNEXT_STATE=<IN_REVIEW|BLOCKED|COMPLETED>. "
+            "Each field must be on its own line.\n"
             "END CLINX MANAGED EXECUTION CONTRACT\n\nCURRENT REQUEST:\n" + prompt
         )
 
