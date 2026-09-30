@@ -58,6 +58,7 @@ class RegisteredTarget:
     operation_classes: tuple[str, ...]
     dns_name: str | None = None
     url: str | None = None
+    commands: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -454,16 +455,34 @@ class HostExecutor:
                     target.alias,
                 )
 
+        if capability == "GIT":
+            if operation == "push_current_branch":
+                if request.operation_class != DEVELOPMENT_MUTATION:
+                    raise AuthorityDenied("git push requires DEVELOPMENT_MUTATION")
+                self._arguments(arguments, optional=("remote",))
+                remote = str(arguments.get("remote", "origin")).strip()
+                if remote != "origin":
+                    raise TargetNotRegistered("git push remote must be registered origin")
+                branch = request.route.workspace.project_alias
+                # Project identity supplies the registered branch; resolve it from the checkout
+                # without accepting a caller-provided refspec.
+                proc = subprocess.run(("git", "branch", "--show-current"), cwd=request.project_root, capture_output=True, text=True)
+                current = proc.stdout.strip() if proc.returncode == 0 else ""
+                if not current or not re.fullmatch(r"[A-Za-z0-9._/-]+", current):
+                    raise TargetNotRegistered("current git branch is unavailable")
+                return _Command(("git", "push", "origin", current), remote, True)
+
         if capability == "SSH":
             self._arguments(arguments, required=("target",))
             alias = self._text_argument(arguments, "target")
             target = self._registered_target(
                 self.config.ssh_targets, alias, request.operation_class
             )
-            remote = {
-                "remote_hostname": "hostname",
-                "remote_uptime": "uptime",
-                "remote_true": "true",
+            configured = dict(target.commands).get(operation)
+            remote = configured or {
+                "remote_hostname": ("hostname",),
+                "remote_uptime": ("uptime",),
+                "remote_true": ("true",),
             }.get(operation)
             if remote:
                 timeout = min(
@@ -472,7 +491,7 @@ class HostExecutor:
                 return _Command(
                     (
                         "ssh", "-T", "-o", "BatchMode=yes", "-o",
-                        f"ConnectTimeout={max(1, timeout)}", "--", target.alias, remote,
+                        f"ConnectTimeout={max(1, timeout)}", "--", target.alias, *remote,
                     ),
                     target.alias,
                 )

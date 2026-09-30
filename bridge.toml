@@ -45,7 +45,14 @@ default_timeout_seconds = 30
 max_timeout_seconds = 120
 max_output_bytes = 65536
 services = ["clinx.service", "clinx-tunnel.service"]
-ssh_targets = ["orion-core", "orion-data"]
+
+[host_executor.ssh_target_commands.orion-core]
+operation_classes = ["PRODUCTION_READ_ONLY"]
+commands.production_deploy_status = ["sudo", "-n", "orion-deploy", "status"]
+
+[host_executor.ssh_target_commands.orion-data]
+operation_classes = ["PRODUCTION_READ_ONLY"]
+commands.gateway_ready = ["curl", "--fail", "--silent", "--show-error", "--max-time", "10", "http://172.26.9.38:18110/ready"]
 
 [host_executor.network_targets.public_https]
 dns_name = "example.com"

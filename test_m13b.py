@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,7 @@ from host_executor import (
     HostExecutionRequest,
     HostExecutor,
     HostExecutorConfig,
+    HostExecutorError,
     RegisteredTarget,
     TargetNotRegistered,
     _Command,
@@ -722,6 +724,56 @@ class HostExecutorFixture(unittest.TestCase):
             )
             with self.assertRaisesRegex(TargetNotRegistered, "cwd does not match"):
                 self.executor.execute(request)
+        finally:
+            context.__exit__(None, None, None)
+
+    def test_git_push_current_branch_is_fixed_to_origin_and_current_branch(self):
+        task, ref, route, policy, context = self.bound(
+            capabilities=("GIT",), classes=(DEVELOPMENT_MUTATION,)
+        )
+        try:
+            with mock.patch("host_executor.subprocess.run") as run:
+                run.return_value = SimpleNamespace(returncode=0, stdout="master\n")
+                request = self.request(
+                    task, ref, route, policy, "GIT", "push_current_branch",
+                    {"remote": "origin"}, operation_class=DEVELOPMENT_MUTATION,
+                )
+                command = self.executor._command(request)
+            self.assertEqual(command.argv, ("git", "push", "origin", "master"))
+            self.assertTrue(command.mutating)
+            with self.assertRaisesRegex(TargetNotRegistered, "registered origin"):
+                self.executor._command(self.request(
+                    task, ref, route, policy, "GIT", "push_current_branch",
+                    {"remote": "evil"}, operation_class=DEVELOPMENT_MUTATION,
+                ))
+        finally:
+            context.__exit__(None, None, None)
+
+    def test_registered_ssh_command_uses_fixed_argv(self):
+        executor = HostExecutor(
+            dataclasses.replace(
+                self.config,
+                ssh_targets=(RegisteredTarget(
+                    "orion-core", (PRODUCTION_READ_ONLY,),
+                    commands=(("production_deploy_status", ("sudo", "-n", "orion-deploy", "status")),),
+                ),),
+            ), self.registry,
+        )
+        task, ref, route, policy, context = self.bound(
+            capabilities=("SSH",), classes=(PRODUCTION_READ_ONLY,)
+        )
+        try:
+            request = self.request(
+                task, ref, route, policy, "SSH", "production_deploy_status",
+                {"target": "orion-core"}, operation_class=PRODUCTION_READ_ONLY,
+            )
+            argv = executor._command(request).argv
+            self.assertEqual(argv[-6:], ("--", "orion-core", "sudo", "-n", "orion-deploy", "status"))
+            with self.assertRaisesRegex(HostExecutorError, "not supported"):
+                executor._command(self.request(
+                    task, ref, route, policy, "SSH", "arbitrary_command",
+                    {"target": "orion-core"}, operation_class=PRODUCTION_READ_ONLY,
+                ))
         finally:
             context.__exit__(None, None, None)
 
