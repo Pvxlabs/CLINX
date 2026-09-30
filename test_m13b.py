@@ -731,6 +731,51 @@ class HostExecutorFixture(unittest.TestCase):
         finally:
             context.__exit__(None, None, None)
 
+    def test_registered_production_local_command_is_exact_and_class_bounded(self):
+        command = ("/repo/scripts/adopt", "--host", "orion-core", "--source-sha", "a" * 40, "apply")
+        executor = HostExecutor(
+            dataclasses.replace(
+                self.config,
+                local_commands=(RegisteredTarget(
+                    "orion_controller_apply", (PRODUCTION_MUTATION,),
+                    commands=(("orion_controller_apply", command),),
+                ),),
+            ), self.registry,
+        )
+        policy = build_execution_policy(
+            execution_surface=HOST_EXECUTOR,
+            required_capabilities=["LOCAL_HOST_PROCESS"],
+            operation_classes=[PRODUCTION_MUTATION],
+            production_mutation_intent=True,
+        )
+        route = host_route(self.root, policy)
+        task = self.registry.create_task(
+            host="p620", workspace_alias="p620", project_alias="pilot",
+            project_name="Pilot", cwd=str(self.root), repository_origin=None,
+            branch="main", title="M13-B production command", routing_identity=route,
+            execution_policy=policy,
+        )
+        context = self.registry.execution(task.task_id, execution_ref="exec_prod", retain=True)
+        context.__enter__()
+        ref = "exec_prod"
+        try:
+            request = self.request(
+                task, ref, route, policy, "LOCAL_HOST_PROCESS",
+                "registered_command:orion_controller_apply", {},
+                operation_class=PRODUCTION_MUTATION,
+            )
+            resolved = executor._command(request)
+            self.assertEqual(resolved.argv, command)
+            self.assertTrue(resolved.mutating)
+            with self.assertRaisesRegex(TargetNotRegistered, "not registered"):
+                executor._command(self.request(
+                    task, ref, route, policy, "LOCAL_HOST_PROCESS",
+                    "registered_command:missing", {},
+                    operation_class=PRODUCTION_MUTATION,
+                ))
+        finally:
+            context.__exit__(None, None, None)
+
     def test_git_push_current_branch_is_fixed_to_origin_and_current_branch(self):
         task, ref, route, policy, context = self.bound(
             capabilities=("GIT",), classes=(DEVELOPMENT_MUTATION,)

@@ -26,6 +26,7 @@ from execution_policy import (
     DEVELOPMENT_CAPABILITIES,
     HOST_EXECUTOR,
     PRODUCTION_MUTATION,
+    PRODUCTION_READ_ONLY,
     ExecutionPolicy,
 )
 from execution_semantics import RoutingIdentity, normalize_host
@@ -71,6 +72,7 @@ class HostExecutorConfig:
     services: tuple[RegisteredTarget, ...] = ()
     ssh_targets: tuple[RegisteredTarget, ...] = ()
     network_targets: tuple[RegisteredTarget, ...] = ()
+    local_commands: tuple[RegisteredTarget, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -437,6 +439,17 @@ class HostExecutor:
                     ),
                     target.alias,
                 )
+
+        if capability == "LOCAL_HOST_PROCESS" and operation.startswith("registered_command:"):
+            self._arguments(arguments)
+            alias = operation.split(":", 1)[1]
+            target = self._registered_target(
+                self.config.local_commands, alias, request.operation_class
+            )
+            command = dict(target.commands).get(alias)
+            if not command:
+                raise TargetNotRegistered("registered local command is unavailable")
+            return _Command(tuple(command), alias, request.operation_class != PRODUCTION_READ_ONLY)
 
         if capability == "OUTBOUND_NETWORK":
             self._arguments(arguments, required=("target",))
