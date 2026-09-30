@@ -74,7 +74,9 @@ from host_executor import (
     HostExecutorConfig,
     RegisteredTarget,
 )
-from m9_integration import ExecutionFinalizer, ExecutionResultService, parse_codex_result
+from m9_integration import (
+    ExecutionFinalizer, ExecutionResultService, ResultParseError, parse_codex_result
+)
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 BRIDGE_VERSION = "1.0.0-m6"
@@ -1468,6 +1470,34 @@ def wait_for_codex_result(
     raise BridgeError(
         f"Timed out waiting for exact Codex turn completion: thread={thread_id} turn={turn_id}"
     )
+
+
+def read_codex_completion_result(thread_id: str, turn_id: str) -> str | None:
+    """Read one exact native Codex completion event without waiting."""
+    root = Path.home() / ".codex" / "sessions"
+    if not isinstance(thread_id, str) or not isinstance(turn_id, str):
+        return None
+    for path in root.glob("**/*.jsonl"):
+        if thread_id not in path.name:
+            continue
+        try:
+            with path.open(encoding="utf-8") as stream:
+                for line in stream:
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    payload = row.get("payload")
+                    if row.get("type") != "event_msg" or not isinstance(payload, dict):
+                        continue
+                    if payload.get("type") != "task_complete" or payload.get("turn_id") != turn_id:
+                        continue
+                    value = payload.get("last_agent_message")
+                    if isinstance(value, str) and value.strip():
+                        return value
+        except OSError:
+            continue
+    return None
 
 
 def _thread_field(thread: dict[str, Any], name: str) -> Any:
@@ -3720,12 +3750,26 @@ class TaskDispatcher:
                      if isinstance(item, dict) and item.get("id") == exact_turn_id),
                     None,
                 )
-                if candidate is not None and not candidate.get("items") and hasattr(client, "thread_items_list"):
-                    item_page = client.thread_items_list(
-                        binding.thread_id, turn_id=exact_turn_id, limit=100,
-                        sort_direction="desc",
+                if candidate is not None and hasattr(client, "thread_items_list"):
+                    summary_text = self._turn_text(
+                        candidate.get("items", candidate), assistant_only=True
                     )
-                    bounded_items = [item for item in item_page.get("data", ()) if isinstance(item, dict)]
+                    summary_has_result = False
+                    if summary_text:
+                        try:
+                            parse_codex_result(summary_text)
+                        except Exception:
+                            pass
+                        else:
+                            summary_has_result = True
+                    if not summary_has_result:
+                        item_page = client.thread_items_list(
+                            binding.thread_id, turn_id=exact_turn_id, limit=100,
+                            sort_direction="desc",
+                        )
+                        bounded_items = [
+                            item for item in item_page.get("data", ()) if isinstance(item, dict)
+                        ]
         except DispatchContractError as exc:
             evidence = str(exc)
             if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
@@ -3822,6 +3866,20 @@ class TaskDispatcher:
             raw_result = self._turn_text(row.get("items", row), assistant_only=True)
             if not raw_result and bounded_items:
                 raw_result = self._turn_text(bounded_items, assistant_only=True)
+            if raw_result:
+                try:
+                    parse_codex_result(raw_result)
+                except ResultParseError:
+                    raw_result = None
+            if not raw_result:
+                session_result = read_codex_completion_result(binding.thread_id, exact_turn_id)
+                if session_result:
+                    try:
+                        parse_codex_result(session_result)
+                    except ResultParseError:
+                        pass
+                    else:
+                        raw_result = session_result
 
             return finalize_provider(provider_outcome, status, raw_result)
         return {"state": "CODEX_RUNNING", "authoritative": False, "status": status}
