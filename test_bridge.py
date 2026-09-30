@@ -1671,7 +1671,8 @@ class AppServerClientTests(unittest.TestCase):
             client_version="1.0.0-m0",
         )
         client.thread_read("durable-thread")
-        client.thread_resume("durable-thread")
+        resume_spec = [{"type": "namespace", "name": "clinx", "tools": []}]
+        client.thread_resume("durable-thread", dynamic_tools=resume_spec)
         turn = client.turn_start(
             "durable-thread",
             "DISPATCHER_M0_PROBE_PASS",
@@ -1683,6 +1684,8 @@ class AppServerClientTests(unittest.TestCase):
 
         initialize_request = transport.sent[0]
         self.assertEqual(initialize_request["method"], "initialize")
+        resume_request = next(item for item in transport.sent if item["method"] == "thread/resume")
+        self.assertEqual(resume_request["params"]["dynamicTools"], resume_spec)
         self.assertEqual(initialize_request["params"]["clientInfo"]["name"], "bridge")
         self.assertEqual(transport.sent[1], {"method": "initialized"})
 
@@ -1695,7 +1698,10 @@ class AppServerClientTests(unittest.TestCase):
 
         resumes = [item for item in transport.sent if item.get("method") == "thread/resume"]
         self.assertEqual(len(resumes), 1)
-        self.assertEqual(resumes[0]["params"], {"threadId": "durable-thread"})
+        self.assertEqual(
+            resumes[0]["params"],
+            {"threadId": "durable-thread", "dynamicTools": resume_spec},
+        )
 
         turn_request = next(item for item in transport.sent if item.get("method") == "turn/start")
         self.assertEqual(turn_request["params"]["threadId"], "durable-thread")

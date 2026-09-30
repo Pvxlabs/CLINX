@@ -299,8 +299,8 @@ class ProviderThreadMigrationTests(unittest.TestCase):
                 "canAcceptDirectInput": True, "status": {"type": self.status},
             }
 
-        def thread_resume(self, thread_id):
-            self.calls.append(("thread/resume", thread_id))
+        def thread_resume(self, thread_id, *, dynamic_tools=None):
+            self.calls.append(("thread/resume", thread_id, {"dynamicTools": dynamic_tools}))
             return self.thread_read(thread_id)
 
         def turn_start(self, thread_id, prompt, **kwargs):
@@ -405,6 +405,10 @@ class ProviderThreadMigrationTests(unittest.TestCase):
             self.assertEqual(result.thread_id, "successor-thread")
             self.assertIn("thread/resume", methods)
             self.assertLess(methods.index("thread/resume"), methods.index("configure_dynamic_tool"))
+            resumed = next(call for call in provider.calls if call[0] == "thread/resume")
+            self.assertEqual(
+                resumed[2]["dynamicTools"][0]["name"], HostExecutor.DYNAMIC_TOOL_NAMESPACE
+            )
             configured = next(call[1] for call in provider.calls if call[0] == "configure_dynamic_tool")
             self.assertEqual(configured["namespace"], HostExecutor.DYNAMIC_TOOL_NAMESPACE)
 

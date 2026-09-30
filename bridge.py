@@ -3125,7 +3125,9 @@ class TaskDispatcher:
                         # current app-server connection. Existing loaded threads still
                         # need resume so this connection, rather than the thread/start
                         # connection, owns the listener for the managed turn.
-                        client.thread_resume(binding.thread_id)
+                        client.thread_resume(
+                            binding.thread_id, dynamic_tools=[self._managed_host_spec(policy)]
+                        )
                         thread = self._read_and_guard(client, target, initialize_info)
                         turn_start_guard(thread)
                     self.tasks.mark_verified(
