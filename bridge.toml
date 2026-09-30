@@ -91,7 +91,7 @@ read_only = true
 [projects.clinx]
 linear_name = "CLINX"
 workspace = "p620"
-cwd = "/home/pvxlabs/dev/clinx"
+cwd = "/home/pvxlabs/dev/clinx-pvx1807-remediation"
 branch = "main"
 read_only = false
 unexpected_origin_policy = "FAIL"
