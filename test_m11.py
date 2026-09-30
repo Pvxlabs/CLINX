@@ -128,6 +128,20 @@ class M11PrepareExecutionTests(unittest.TestCase):
         })
         self.assertEqual(result["status"]["tool"], "clinx_get_status")
 
+    def test_capabilities_initialize_enabled_host_executor_before_first_host_task(self):
+        executor = SimpleNamespace(capabilities=lambda: {
+            "available": True, "default": False, "capabilities": {"host_process": "AVAILABLE"}
+        })
+        dispatcher = SimpleNamespace(
+            host_executor=None,
+            cfg=SimpleNamespace(host_executor=SimpleNamespace(enabled=True)),
+            ensure_host_executor=lambda: executor,
+        )
+        integration = ClinxIntegration(_cfg(), None, dispatcher, None, None)
+        result = integration.get_capabilities()
+        self.assertTrue(result["host_executor_available"])
+        self.assertTrue(result["execution_surfaces"]["HOST_EXECUTOR"]["available"])
+
     def test_explicit_boolean_approval_is_required(self):
         with tempfile.TemporaryDirectory() as td:
             integration, _registry, _task, _dispatcher, _context = self._integration(Path(td))

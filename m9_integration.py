@@ -1224,6 +1224,12 @@ class ClinxIntegration:
     def get_capabilities(self) -> dict[str, Any]:
         """Describe the separated CLINX command, Codex execution, and Linear audit planes."""
         host_executor = getattr(self.dispatcher, "host_executor", None)
+        if (
+            host_executor is None
+            and self.dispatcher is not None
+            and self.dispatcher.cfg.host_executor.enabled
+        ):
+            host_executor = self.dispatcher.ensure_host_executor()
         host_capabilities = (
             host_executor.capabilities() if host_executor is not None else {
                 "available": False,
