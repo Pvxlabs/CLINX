@@ -1,0 +1,788 @@
+{
+  "synthetic_fixture": true,
+  "examples": [
+    {
+      "name": "health",
+      "request": {
+        "method": "GET",
+        "path": "/v1/health"
+      },
+      "response": {
+        "schema_version": "1",
+        "status": "OK",
+        "read_only": true,
+        "observed_at": "2026-09-30T17:54:48.288358+00:00",
+        "authority_liveness": "UNKNOWN",
+        "auth_mode": "OBSERVER_BEARER",
+        "events_transport": "POLLING"
+      }
+    },
+    {
+      "name": "active",
+      "request": {
+        "method": "GET",
+        "path": "/v1/tasks?state=active"
+      },
+      "response": {
+        "schema_version": "1",
+        "observed_at": "2026-09-30T17:54:48.293140+00:00",
+        "items": [
+          {
+            "schema_version": "1",
+            "task_ref": "task_02356039be0649999aca49166e9980e7",
+            "execution_ref": "exec_fixture",
+            "project": "fixture",
+            "title": "Observer fixture",
+            "host": "p620",
+            "state": "CODEX_RUNNING",
+            "stage": "CODEX_RUNNING",
+            "execution_state": "CODEX_RUNNING",
+            "execution_stage": "CODEX_RUNNING",
+            "model": {
+              "logical": null,
+              "resolved": null
+            },
+            "reasoning": null,
+            "current_activity": {
+              "kind": "PERSISTED_STAGE",
+              "label": "CODEX_RUNNING",
+              "observed_at": "2026-09-30T17:54:48.290615+00:00"
+            },
+            "blocker": null,
+            "timestamps": {
+              "created_at": "2026-09-30T17:54:48.286607+00:00",
+              "updated_at": "2026-09-30T17:54:48.290754+00:00",
+              "last_progress_at": "2026-09-30T17:54:48.290615+00:00",
+              "started_at": "2026-09-30T17:54:48.288784+00:00",
+              "completed_at": null,
+              "observed_at": "2026-09-30T17:54:48.293140+00:00"
+            },
+            "elapsed_seconds": 0,
+            "codex_running": true,
+            "retry_required": false,
+            "mutation_boundary": {
+              "observer_read_only": true,
+              "allowed_actions": [],
+              "execution_operation_classes": null,
+              "execution_surface": null,
+              "authority_status": "UNKNOWN"
+            },
+            "routing": {
+              "host": {
+                "identifier": "p620",
+                "status": "KNOWN"
+              },
+              "surface": {
+                "identifier": "unknown",
+                "status": "UNKNOWN"
+              },
+              "provider": {
+                "identifier": "unknown",
+                "status": "UNKNOWN"
+              },
+              "transport": {
+                "identifier": "unknown",
+                "status": "UNKNOWN"
+              }
+            },
+            "phases": [],
+            "progress_percent": null,
+            "progress_basis": "NO_PERSISTED_DENOMINATOR",
+            "recent_events": {
+              "items": [
+                {
+                  "cursor": "f939bf0fec4a1849.2",
+                  "event_ref": "evt_a7d4ff7aab1746708caccba0d38b707f",
+                  "kind": "V1ExecutionProgressObserved",
+                  "execution_ref": "exec_fixture",
+                  "occurred_at": "2026-09-30T17:54:48.290615+00:00",
+                  "recorded_at": "2026-09-30T17:54:48.291278+00:00"
+                },
+                {
+                  "cursor": "f939bf0fec4a1849.1",
+                  "event_ref": "evt_9c441ca161904b35a163439d968dd549",
+                  "kind": "V1ExecutionClaimObserved",
+                  "execution_ref": "exec_fixture",
+                  "occurred_at": "2026-09-30T17:54:48.288784+00:00",
+                  "recorded_at": "2026-09-30T17:54:48.289316+00:00"
+                }
+              ],
+              "next_cursor": "f939bf0fec4a1849.2",
+              "has_more": false,
+              "coverage": "PARTIAL"
+            },
+            "host_operations": [],
+            "host_operations_has_more": false,
+            "final_result": null,
+            "artifacts": [],
+            "artifacts_status": "NO_SAFE_ARTIFACT_REGISTRY",
+            "menu_state": "RUNNING"
+          }
+        ],
+        "next_offset": null,
+        "has_more": false
+      }
+    },
+    {
+      "name": "running_detail",
+      "request": {
+        "method": "GET",
+        "path": "/v1/tasks/task_02356039be0649999aca49166e9980e7"
+      },
+      "response": {
+        "schema_version": "1",
+        "task_ref": "task_02356039be0649999aca49166e9980e7",
+        "execution_ref": "exec_fixture",
+        "project": "fixture",
+        "title": "Observer fixture",
+        "host": "p620",
+        "state": "CODEX_RUNNING",
+        "stage": "CODEX_RUNNING",
+        "execution_state": "CODEX_RUNNING",
+        "execution_stage": "CODEX_RUNNING",
+        "model": {
+          "logical": null,
+          "resolved": null
+        },
+        "reasoning": null,
+        "current_activity": {
+          "kind": "PERSISTED_STAGE",
+          "label": "CODEX_RUNNING",
+          "observed_at": "2026-09-30T17:54:48.290615+00:00"
+        },
+        "blocker": null,
+        "timestamps": {
+          "created_at": "2026-09-30T17:54:48.286607+00:00",
+          "updated_at": "2026-09-30T17:54:48.290754+00:00",
+          "last_progress_at": "2026-09-30T17:54:48.290615+00:00",
+          "started_at": "2026-09-30T17:54:48.288784+00:00",
+          "completed_at": null,
+          "observed_at": "2026-09-30T17:54:48.294533+00:00"
+        },
+        "elapsed_seconds": 0,
+        "codex_running": true,
+        "retry_required": false,
+        "mutation_boundary": {
+          "observer_read_only": true,
+          "allowed_actions": [],
+          "execution_operation_classes": null,
+          "execution_surface": null,
+          "authority_status": "UNKNOWN"
+        },
+        "routing": {
+          "host": {
+            "identifier": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "identifier": "unknown",
+            "status": "UNKNOWN"
+          },
+          "provider": {
+            "identifier": "unknown",
+            "status": "UNKNOWN"
+          },
+          "transport": {
+            "identifier": "unknown",
+            "status": "UNKNOWN"
+          }
+        },
+        "phases": [],
+        "progress_percent": null,
+        "progress_basis": "NO_PERSISTED_DENOMINATOR",
+        "recent_events": {
+          "items": [
+            {
+              "cursor": "f939bf0fec4a1849.2",
+              "event_ref": "evt_a7d4ff7aab1746708caccba0d38b707f",
+              "kind": "V1ExecutionProgressObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.290615+00:00",
+              "recorded_at": "2026-09-30T17:54:48.291278+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.1",
+              "event_ref": "evt_9c441ca161904b35a163439d968dd549",
+              "kind": "V1ExecutionClaimObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.288784+00:00",
+              "recorded_at": "2026-09-30T17:54:48.289316+00:00"
+            }
+          ],
+          "next_cursor": "f939bf0fec4a1849.2",
+          "has_more": false,
+          "coverage": "PARTIAL"
+        },
+        "host_operations": [],
+        "host_operations_has_more": false,
+        "final_result": null,
+        "artifacts": [],
+        "artifacts_status": "NO_SAFE_ARTIFACT_REGISTRY",
+        "menu_state": "RUNNING"
+      }
+    },
+    {
+      "name": "events",
+      "request": {
+        "method": "GET",
+        "path": "/v1/tasks/task_02356039be0649999aca49166e9980e7/events"
+      },
+      "response": {
+        "schema_version": "1",
+        "task_ref": "task_02356039be0649999aca49166e9980e7",
+        "observed_at": "2026-09-30T17:54:48.295309+00:00",
+        "items": [
+          {
+            "cursor": "f939bf0fec4a1849.1",
+            "event_ref": "evt_9c441ca161904b35a163439d968dd549",
+            "kind": "V1ExecutionClaimObserved",
+            "execution_ref": "exec_fixture",
+            "occurred_at": "2026-09-30T17:54:48.288784+00:00",
+            "recorded_at": "2026-09-30T17:54:48.289316+00:00"
+          },
+          {
+            "cursor": "f939bf0fec4a1849.2",
+            "event_ref": "evt_a7d4ff7aab1746708caccba0d38b707f",
+            "kind": "V1ExecutionProgressObserved",
+            "execution_ref": "exec_fixture",
+            "occurred_at": "2026-09-30T17:54:48.290615+00:00",
+            "recorded_at": "2026-09-30T17:54:48.291278+00:00"
+          }
+        ],
+        "next_cursor": "f939bf0fec4a1849.2",
+        "has_more": false,
+        "coverage": "PARTIAL"
+      }
+    },
+    {
+      "name": "pass_detail",
+      "request": {
+        "method": "GET",
+        "path": "/v1/tasks/task_02356039be0649999aca49166e9980e7"
+      },
+      "response": {
+        "schema_version": "1",
+        "task_ref": "task_02356039be0649999aca49166e9980e7",
+        "execution_ref": "exec_fixture",
+        "project": "fixture",
+        "title": "Observer fixture",
+        "host": "p620",
+        "state": "COMPLETED",
+        "stage": "COMPLETED",
+        "execution_state": "COMPLETED",
+        "execution_stage": "COMPLETED",
+        "model": {
+          "logical": null,
+          "resolved": null
+        },
+        "reasoning": null,
+        "current_activity": {
+          "kind": "PERSISTED_STAGE",
+          "label": "COMPLETED",
+          "observed_at": "2026-09-30T17:54:48.296687+00:00"
+        },
+        "blocker": null,
+        "timestamps": {
+          "created_at": "2026-09-30T17:54:48.286607+00:00",
+          "updated_at": "2026-09-30T17:54:48.296760+00:00",
+          "last_progress_at": "2026-09-30T17:54:48.296687+00:00",
+          "started_at": "2026-09-30T17:54:48.288784+00:00",
+          "completed_at": "2026-09-30T17:54:48.298261+00:00",
+          "observed_at": "2026-09-30T17:54:48.299377+00:00"
+        },
+        "elapsed_seconds": 0,
+        "codex_running": false,
+        "retry_required": false,
+        "mutation_boundary": {
+          "observer_read_only": true,
+          "allowed_actions": [],
+          "execution_operation_classes": null,
+          "execution_surface": null,
+          "authority_status": "UNKNOWN"
+        },
+        "routing": {
+          "host": {
+            "identifier": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "identifier": "unknown",
+            "status": "UNKNOWN"
+          },
+          "provider": {
+            "identifier": "unknown",
+            "status": "UNKNOWN"
+          },
+          "transport": {
+            "identifier": "unknown",
+            "status": "UNKNOWN"
+          }
+        },
+        "phases": [],
+        "progress_percent": null,
+        "progress_basis": "NO_PERSISTED_DENOMINATOR",
+        "recent_events": {
+          "items": [
+            {
+              "cursor": "f939bf0fec4a1849.4",
+              "event_ref": "evt_71134277195349428a2c1a84d2e42b8e",
+              "kind": "V1LeaseReleasedObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.298261+00:00",
+              "recorded_at": "2026-09-30T17:54:48.298550+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.3",
+              "event_ref": "evt_1e21458f92b24ae9b6729e96616dee4b",
+              "kind": "V1TerminalStateObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.296687+00:00",
+              "recorded_at": "2026-09-30T17:54:48.297211+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.2",
+              "event_ref": "evt_a7d4ff7aab1746708caccba0d38b707f",
+              "kind": "V1ExecutionProgressObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.290615+00:00",
+              "recorded_at": "2026-09-30T17:54:48.291278+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.1",
+              "event_ref": "evt_9c441ca161904b35a163439d968dd549",
+              "kind": "V1ExecutionClaimObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.288784+00:00",
+              "recorded_at": "2026-09-30T17:54:48.289316+00:00"
+            }
+          ],
+          "next_cursor": "f939bf0fec4a1849.4",
+          "has_more": false,
+          "coverage": "PARTIAL"
+        },
+        "host_operations": [],
+        "host_operations_has_more": false,
+        "final_result": {
+          "status": "PASS",
+          "summary": "Done",
+          "validation": "fixture validation",
+          "blockers": "NONE",
+          "next_state": "IN_REVIEW",
+          "execution_ref": "exec_fixture",
+          "received_at": "2026-09-30T17:00:00+00:00",
+          "changed_files": null,
+          "text_truncated": false,
+          "redaction": "PATHS_AND_RAW_RESULT_OMITTED"
+        },
+        "artifacts": [],
+        "artifacts_status": "NO_SAFE_ARTIFACT_REGISTRY",
+        "menu_state": "PASS"
+      }
+    },
+    {
+      "name": "recent",
+      "request": {
+        "method": "GET",
+        "path": "/v1/tasks?state=recent"
+      },
+      "response": {
+        "schema_version": "1",
+        "observed_at": "2026-09-30T17:54:48.300074+00:00",
+        "items": [
+          {
+            "schema_version": "1",
+            "task_ref": "task_02356039be0649999aca49166e9980e7",
+            "execution_ref": "exec_fixture",
+            "project": "fixture",
+            "title": "Observer fixture",
+            "host": "p620",
+            "state": "COMPLETED",
+            "stage": "COMPLETED",
+            "execution_state": "COMPLETED",
+            "execution_stage": "COMPLETED",
+            "model": {
+              "logical": null,
+              "resolved": null
+            },
+            "reasoning": null,
+            "current_activity": {
+              "kind": "PERSISTED_STAGE",
+              "label": "COMPLETED",
+              "observed_at": "2026-09-30T17:54:48.296687+00:00"
+            },
+            "blocker": null,
+            "timestamps": {
+              "created_at": "2026-09-30T17:54:48.286607+00:00",
+              "updated_at": "2026-09-30T17:54:48.296760+00:00",
+              "last_progress_at": "2026-09-30T17:54:48.296687+00:00",
+              "started_at": "2026-09-30T17:54:48.288784+00:00",
+              "completed_at": "2026-09-30T17:54:48.298261+00:00",
+              "observed_at": "2026-09-30T17:54:48.300074+00:00"
+            },
+            "elapsed_seconds": 0,
+            "codex_running": false,
+            "retry_required": false,
+            "mutation_boundary": {
+              "observer_read_only": true,
+              "allowed_actions": [],
+              "execution_operation_classes": null,
+              "execution_surface": null,
+              "authority_status": "UNKNOWN"
+            },
+            "routing": {
+              "host": {
+                "identifier": "p620",
+                "status": "KNOWN"
+              },
+              "surface": {
+                "identifier": "unknown",
+                "status": "UNKNOWN"
+              },
+              "provider": {
+                "identifier": "unknown",
+                "status": "UNKNOWN"
+              },
+              "transport": {
+                "identifier": "unknown",
+                "status": "UNKNOWN"
+              }
+            },
+            "phases": [],
+            "progress_percent": null,
+            "progress_basis": "NO_PERSISTED_DENOMINATOR",
+            "recent_events": {
+              "items": [
+                {
+                  "cursor": "f939bf0fec4a1849.4",
+                  "event_ref": "evt_71134277195349428a2c1a84d2e42b8e",
+                  "kind": "V1LeaseReleasedObserved",
+                  "execution_ref": "exec_fixture",
+                  "occurred_at": "2026-09-30T17:54:48.298261+00:00",
+                  "recorded_at": "2026-09-30T17:54:48.298550+00:00"
+                },
+                {
+                  "cursor": "f939bf0fec4a1849.3",
+                  "event_ref": "evt_1e21458f92b24ae9b6729e96616dee4b",
+                  "kind": "V1TerminalStateObserved",
+                  "execution_ref": "exec_fixture",
+                  "occurred_at": "2026-09-30T17:54:48.296687+00:00",
+                  "recorded_at": "2026-09-30T17:54:48.297211+00:00"
+                },
+                {
+                  "cursor": "f939bf0fec4a1849.2",
+                  "event_ref": "evt_a7d4ff7aab1746708caccba0d38b707f",
+                  "kind": "V1ExecutionProgressObserved",
+                  "execution_ref": "exec_fixture",
+                  "occurred_at": "2026-09-30T17:54:48.290615+00:00",
+                  "recorded_at": "2026-09-30T17:54:48.291278+00:00"
+                },
+                {
+                  "cursor": "f939bf0fec4a1849.1",
+                  "event_ref": "evt_9c441ca161904b35a163439d968dd549",
+                  "kind": "V1ExecutionClaimObserved",
+                  "execution_ref": "exec_fixture",
+                  "occurred_at": "2026-09-30T17:54:48.288784+00:00",
+                  "recorded_at": "2026-09-30T17:54:48.289316+00:00"
+                }
+              ],
+              "next_cursor": "f939bf0fec4a1849.4",
+              "has_more": false,
+              "coverage": "PARTIAL"
+            },
+            "host_operations": [],
+            "host_operations_has_more": false,
+            "final_result": {
+              "status": "PASS",
+              "summary": "Done",
+              "validation": "fixture validation",
+              "blockers": "NONE",
+              "next_state": "IN_REVIEW",
+              "execution_ref": "exec_fixture",
+              "received_at": "2026-09-30T17:00:00+00:00",
+              "changed_files": null,
+              "text_truncated": false,
+              "redaction": "PATHS_AND_RAW_RESULT_OMITTED"
+            },
+            "artifacts": [],
+            "artifacts_status": "NO_SAFE_ARTIFACT_REGISTRY",
+            "menu_state": "PASS"
+          }
+        ],
+        "next_offset": null,
+        "has_more": false
+      }
+    },
+    {
+      "name": "blocked_detail",
+      "request": {
+        "method": "GET",
+        "path": "/v1/tasks/task_02356039be0649999aca49166e9980e7"
+      },
+      "response": {
+        "schema_version": "1",
+        "task_ref": "task_02356039be0649999aca49166e9980e7",
+        "execution_ref": "exec_fixture",
+        "project": "fixture",
+        "title": "Observer fixture",
+        "host": "p620",
+        "state": "BLOCKED",
+        "stage": "BLOCKED",
+        "execution_state": "COMPLETED",
+        "execution_stage": "COMPLETED",
+        "model": {
+          "logical": null,
+          "resolved": null
+        },
+        "reasoning": null,
+        "current_activity": {
+          "kind": "PERSISTED_STAGE",
+          "label": "BLOCKED",
+          "observed_at": "2026-09-30T17:54:48.301026+00:00"
+        },
+        "blocker": {
+          "code": "PERSISTED_BLOCKER",
+          "message": "Fixture gate missing"
+        },
+        "timestamps": {
+          "created_at": "2026-09-30T17:54:48.286607+00:00",
+          "updated_at": "2026-09-30T17:54:48.301096+00:00",
+          "last_progress_at": "2026-09-30T17:54:48.301026+00:00",
+          "started_at": "2026-09-30T17:54:48.288784+00:00",
+          "completed_at": "2026-09-30T17:54:48.298261+00:00",
+          "observed_at": "2026-09-30T17:54:48.302644+00:00"
+        },
+        "elapsed_seconds": 0,
+        "codex_running": false,
+        "retry_required": true,
+        "mutation_boundary": {
+          "observer_read_only": true,
+          "allowed_actions": [],
+          "execution_operation_classes": null,
+          "execution_surface": null,
+          "authority_status": "UNKNOWN"
+        },
+        "routing": {
+          "host": {
+            "identifier": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "identifier": "unknown",
+            "status": "UNKNOWN"
+          },
+          "provider": {
+            "identifier": "unknown",
+            "status": "UNKNOWN"
+          },
+          "transport": {
+            "identifier": "unknown",
+            "status": "UNKNOWN"
+          }
+        },
+        "phases": [],
+        "progress_percent": null,
+        "progress_basis": "NO_PERSISTED_DENOMINATOR",
+        "recent_events": {
+          "items": [
+            {
+              "cursor": "f939bf0fec4a1849.5",
+              "event_ref": "evt_644b5b93356149c3be72a87b0887ff12",
+              "kind": "V1TerminalStateObserved",
+              "execution_ref": null,
+              "occurred_at": "2026-09-30T17:54:48.301026+00:00",
+              "recorded_at": "2026-09-30T17:54:48.301510+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.4",
+              "event_ref": "evt_71134277195349428a2c1a84d2e42b8e",
+              "kind": "V1LeaseReleasedObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.298261+00:00",
+              "recorded_at": "2026-09-30T17:54:48.298550+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.3",
+              "event_ref": "evt_1e21458f92b24ae9b6729e96616dee4b",
+              "kind": "V1TerminalStateObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.296687+00:00",
+              "recorded_at": "2026-09-30T17:54:48.297211+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.2",
+              "event_ref": "evt_a7d4ff7aab1746708caccba0d38b707f",
+              "kind": "V1ExecutionProgressObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.290615+00:00",
+              "recorded_at": "2026-09-30T17:54:48.291278+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.1",
+              "event_ref": "evt_9c441ca161904b35a163439d968dd549",
+              "kind": "V1ExecutionClaimObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.288784+00:00",
+              "recorded_at": "2026-09-30T17:54:48.289316+00:00"
+            }
+          ],
+          "next_cursor": "f939bf0fec4a1849.5",
+          "has_more": false,
+          "coverage": "PARTIAL"
+        },
+        "host_operations": [],
+        "host_operations_has_more": false,
+        "final_result": {
+          "status": "PASS",
+          "summary": "Done",
+          "validation": "fixture validation",
+          "blockers": "NONE",
+          "next_state": "IN_REVIEW",
+          "execution_ref": "exec_fixture",
+          "received_at": "2026-09-30T17:00:00+00:00",
+          "changed_files": null,
+          "text_truncated": false,
+          "redaction": "PATHS_AND_RAW_RESULT_OMITTED"
+        },
+        "artifacts": [],
+        "artifacts_status": "NO_SAFE_ARTIFACT_REGISTRY",
+        "menu_state": "BLOCKED"
+      }
+    },
+    {
+      "name": "unknown_detail",
+      "request": {
+        "method": "GET",
+        "path": "/v1/tasks/task_02356039be0649999aca49166e9980e7"
+      },
+      "response": {
+        "schema_version": "1",
+        "task_ref": "task_02356039be0649999aca49166e9980e7",
+        "execution_ref": null,
+        "project": "fixture",
+        "title": "Observer fixture",
+        "host": "p620",
+        "state": "FUTURE_STATE",
+        "stage": "BLOCKED",
+        "execution_state": "UNKNOWN",
+        "execution_stage": "UNKNOWN",
+        "model": {
+          "logical": null,
+          "resolved": null
+        },
+        "reasoning": null,
+        "current_activity": {
+          "kind": "PERSISTED_STAGE",
+          "label": "BLOCKED",
+          "observed_at": "2026-09-30T17:54:48.301026+00:00"
+        },
+        "blocker": {
+          "code": "PERSISTED_BLOCKER",
+          "message": "Fixture gate missing"
+        },
+        "timestamps": {
+          "created_at": "2026-09-30T17:54:48.286607+00:00",
+          "updated_at": "2026-09-30T17:54:48.301096+00:00",
+          "last_progress_at": "2026-09-30T17:54:48.301026+00:00",
+          "started_at": null,
+          "completed_at": null,
+          "observed_at": "2026-09-30T17:54:48.303842+00:00"
+        },
+        "elapsed_seconds": null,
+        "codex_running": false,
+        "retry_required": false,
+        "mutation_boundary": {
+          "observer_read_only": true,
+          "allowed_actions": [],
+          "execution_operation_classes": null,
+          "execution_surface": null,
+          "authority_status": "UNKNOWN"
+        },
+        "routing": {
+          "host": {
+            "identifier": null,
+            "status": "UNKNOWN"
+          },
+          "surface": {
+            "identifier": null,
+            "status": "UNKNOWN"
+          },
+          "provider": {
+            "identifier": null,
+            "status": "UNKNOWN"
+          },
+          "transport": {
+            "identifier": null,
+            "status": "UNKNOWN"
+          }
+        },
+        "phases": [],
+        "progress_percent": null,
+        "progress_basis": "NO_PERSISTED_DENOMINATOR",
+        "recent_events": {
+          "items": [
+            {
+              "cursor": "f939bf0fec4a1849.5",
+              "event_ref": "evt_644b5b93356149c3be72a87b0887ff12",
+              "kind": "V1TerminalStateObserved",
+              "execution_ref": null,
+              "occurred_at": "2026-09-30T17:54:48.301026+00:00",
+              "recorded_at": "2026-09-30T17:54:48.301510+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.4",
+              "event_ref": "evt_71134277195349428a2c1a84d2e42b8e",
+              "kind": "V1LeaseReleasedObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.298261+00:00",
+              "recorded_at": "2026-09-30T17:54:48.298550+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.3",
+              "event_ref": "evt_1e21458f92b24ae9b6729e96616dee4b",
+              "kind": "V1TerminalStateObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.296687+00:00",
+              "recorded_at": "2026-09-30T17:54:48.297211+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.2",
+              "event_ref": "evt_a7d4ff7aab1746708caccba0d38b707f",
+              "kind": "V1ExecutionProgressObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.290615+00:00",
+              "recorded_at": "2026-09-30T17:54:48.291278+00:00"
+            },
+            {
+              "cursor": "f939bf0fec4a1849.1",
+              "event_ref": "evt_9c441ca161904b35a163439d968dd549",
+              "kind": "V1ExecutionClaimObserved",
+              "execution_ref": "exec_fixture",
+              "occurred_at": "2026-09-30T17:54:48.288784+00:00",
+              "recorded_at": "2026-09-30T17:54:48.289316+00:00"
+            }
+          ],
+          "next_cursor": "f939bf0fec4a1849.5",
+          "has_more": false,
+          "coverage": "PARTIAL"
+        },
+        "host_operations": [],
+        "host_operations_has_more": false,
+        "final_result": null,
+        "artifacts": [],
+        "artifacts_status": "NO_SAFE_ARTIFACT_REGISTRY",
+        "menu_state": "BLOCKED"
+      }
+    },
+    {
+      "name": "unauthorized",
+      "request": {
+        "method": "GET",
+        "path": "/v1/health"
+      },
+      "response": {
+        "schema_version": "1",
+        "error": "UNAUTHORIZED"
+      }
+    }
+  ]
+}

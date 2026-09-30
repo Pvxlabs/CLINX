@@ -1,0 +1,831 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:clinx:observer:v1",
+  "title": "CLINX Observer v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/task"
+    },
+    {
+      "$ref": "#/$defs/page"
+    },
+    {
+      "$ref": "#/$defs/health"
+    },
+    {
+      "$ref": "#/$defs/events"
+    },
+    {
+      "$ref": "#/$defs/error"
+    }
+  ],
+  "$defs": {
+    "component": {
+      "type": "object",
+      "properties": {
+        "identifier": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "model": {
+      "type": "object",
+      "properties": {
+        "logical": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolved": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "logical",
+        "resolved"
+      ],
+      "additionalProperties": false
+    },
+    "activity": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "PERSISTED_STAGE"
+        },
+        "label": {
+          "type": "string"
+        },
+        "observed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "kind",
+        "label",
+        "observed_at"
+      ],
+      "additionalProperties": false
+    },
+    "blocker": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "timestamps": {
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "last_progress_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "completed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "created_at",
+        "updated_at",
+        "last_progress_at",
+        "started_at",
+        "completed_at",
+        "observed_at"
+      ],
+      "additionalProperties": false
+    },
+    "boundary": {
+      "type": "object",
+      "properties": {
+        "observer_read_only": {
+          "const": true
+        },
+        "allowed_actions": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "execution_operation_classes": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "execution_surface": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "authority_status": {
+          "enum": [
+            "PERSISTED",
+            "UNKNOWN"
+          ]
+        }
+      },
+      "required": [
+        "observer_read_only",
+        "allowed_actions",
+        "execution_operation_classes",
+        "execution_surface",
+        "authority_status"
+      ],
+      "additionalProperties": false
+    },
+    "routing": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/component"
+        },
+        "surface": {
+          "$ref": "#/$defs/component"
+        },
+        "provider": {
+          "$ref": "#/$defs/component"
+        },
+        "transport": {
+          "$ref": "#/$defs/component"
+        }
+      },
+      "required": [
+        "host",
+        "surface",
+        "provider",
+        "transport"
+      ],
+      "additionalProperties": false
+    },
+    "phase": {
+      "type": "object",
+      "properties": {
+        "phase_ref": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "completed_units": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "total_units": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_ref": {
+          "type": "string"
+        },
+        "progress_percent": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "phase_ref",
+        "title",
+        "state",
+        "completed_units",
+        "total_units",
+        "unit",
+        "evidence_ref",
+        "progress_percent"
+      ],
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "string"
+        },
+        "event_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "execution_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "occurred_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "recorded_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "cursor",
+        "event_ref",
+        "kind",
+        "execution_ref",
+        "occurred_at",
+        "recorded_at"
+      ],
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "task_ref": {
+          "type": "string"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          },
+          "maxItems": 100
+        },
+        "next_cursor": {
+          "type": "string"
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "enum": [
+            "PARTIAL",
+            "UNAVAILABLE"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor",
+        "has_more",
+        "coverage"
+      ],
+      "additionalProperties": false
+    },
+    "operation": {
+      "type": "object",
+      "properties": {
+        "host_execution_ref": {
+          "type": "string"
+        },
+        "execution_ref": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "surface": {
+          "type": "string"
+        },
+        "operation_class": {
+          "type": "string"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "completed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "duration_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "result_state": {
+          "type": "string"
+        },
+        "timed_out": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "host_execution_ref",
+        "execution_ref",
+        "host",
+        "surface",
+        "operation_class",
+        "capability",
+        "operation",
+        "started_at",
+        "completed_at",
+        "duration_ms",
+        "exit_code",
+        "result_state",
+        "timed_out"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "PASS",
+            "BLOCKED"
+          ]
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "validation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "blockers": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "execution_ref": {
+          "type": "string"
+        },
+        "received_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "changed_files": {
+          "type": "null"
+        },
+        "text_truncated": {
+          "type": "boolean"
+        },
+        "redaction": {
+          "const": "PATHS_AND_RAW_RESULT_OMITTED"
+        }
+      },
+      "required": [
+        "status",
+        "summary",
+        "validation",
+        "blockers",
+        "next_state",
+        "execution_ref",
+        "received_at",
+        "changed_files",
+        "text_truncated",
+        "redaction"
+      ],
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "artifact_ref": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^/\\\\\\u0000-\\u001f]+$"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "byte_size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "execution_ref": {
+          "type": "string"
+        },
+        "classification": {
+          "const": "OBSERVER_SAFE"
+        }
+      },
+      "required": [
+        "artifact_ref",
+        "display_name",
+        "media_type",
+        "byte_size",
+        "sha256",
+        "created_at",
+        "execution_ref",
+        "classification"
+      ],
+      "additionalProperties": false
+    },
+    "task": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "task_ref": {
+          "type": "string"
+        },
+        "execution_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "execution_state": {
+          "type": "string"
+        },
+        "execution_stage": {
+          "type": "string"
+        },
+        "model": {
+          "$ref": "#/$defs/model"
+        },
+        "reasoning": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "current_activity": {
+          "$ref": "#/$defs/activity"
+        },
+        "blocker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/blocker"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timestamps": {
+          "$ref": "#/$defs/timestamps"
+        },
+        "elapsed_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "codex_running": {
+          "type": "boolean"
+        },
+        "retry_required": {
+          "type": "boolean"
+        },
+        "mutation_boundary": {
+          "$ref": "#/$defs/boundary"
+        },
+        "routing": {
+          "$ref": "#/$defs/routing"
+        },
+        "phases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/phase"
+          },
+          "maxItems": 50
+        },
+        "progress_percent": {
+          "type": "null"
+        },
+        "progress_basis": {
+          "const": "NO_PERSISTED_DENOMINATOR"
+        },
+        "recent_events": {
+          "$ref": "#/$defs/events"
+        },
+        "host_operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation"
+          },
+          "maxItems": 20
+        },
+        "host_operations_has_more": {
+          "type": "boolean"
+        },
+        "final_result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/result"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          },
+          "maxItems": 50
+        },
+        "artifacts_status": {
+          "enum": [
+            "NO_SAFE_ARTIFACT_REGISTRY",
+            "AVAILABLE"
+          ]
+        },
+        "menu_state": {
+          "enum": [
+            "IDLE",
+            "RUNNING",
+            "BLOCKED",
+            "PASS"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "task_ref",
+        "execution_ref",
+        "project",
+        "title",
+        "host",
+        "state",
+        "stage",
+        "execution_state",
+        "execution_stage",
+        "model",
+        "reasoning",
+        "current_activity",
+        "blocker",
+        "timestamps",
+        "elapsed_seconds",
+        "codex_running",
+        "retry_required",
+        "mutation_boundary",
+        "routing",
+        "phases",
+        "progress_percent",
+        "progress_basis",
+        "recent_events",
+        "host_operations",
+        "host_operations_has_more",
+        "final_result",
+        "artifacts",
+        "artifacts_status",
+        "menu_state"
+      ],
+      "additionalProperties": false
+    },
+    "health": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "status": {
+          "const": "OK"
+        },
+        "read_only": {
+          "const": true
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "authority_liveness": {
+          "const": "UNKNOWN"
+        },
+        "auth_mode": {
+          "const": "OBSERVER_BEARER"
+        },
+        "events_transport": {
+          "const": "POLLING"
+        }
+      },
+      "required": [
+        "schema_version",
+        "status",
+        "read_only",
+        "observed_at",
+        "authority_liveness",
+        "auth_mode",
+        "events_transport"
+      ],
+      "additionalProperties": false
+    },
+    "page": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/task"
+          },
+          "maxItems": 50
+        },
+        "next_offset": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema_version",
+        "observed_at",
+        "items",
+        "next_offset",
+        "has_more"
+      ],
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "error"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
