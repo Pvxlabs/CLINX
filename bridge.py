@@ -874,6 +874,21 @@ class BridgeConfig:
                 parsed_ssh.append(RegisteredTarget(str(alias), tuple(x.strip().upper() for x in classes), commands=tuple(parsed_commands)))
             ssh_targets=tuple(parsed_ssh)
 
+        local_commands: list[RegisteredTarget] = []
+        local_rows = host_executor_raw.get("local_commands", {})
+        if not isinstance(local_rows, dict):
+            raise BridgeError("[host_executor.local_commands] must contain tables")
+        for alias, row in local_rows.items():
+            if not isinstance(row, dict):
+                raise BridgeError(f"local command {alias!r} must be a table")
+            classes = row.get("operation_classes", [])
+            argv = row.get("argv")
+            if not isinstance(classes, list) or not classes or any(not isinstance(x,str) or not x.strip() for x in classes):
+                raise BridgeError("local command operation_classes must be a non-empty string array")
+            if not isinstance(argv, list) or not argv or any(not isinstance(x,str) or not x for x in argv):
+                raise BridgeError("local command argv must be a non-empty string array")
+            local_commands.append(RegisteredTarget(str(alias), tuple(x.strip().upper() for x in classes), commands=((str(alias), tuple(argv)),)))
+
         network_targets: list[RegisteredTarget] = []
         network_rows = host_executor_raw.get("network_targets", {})
         if not isinstance(network_rows, dict):
@@ -951,6 +966,7 @@ class BridgeConfig:
                 ),
                 ssh_targets=ssh_targets,
                 network_targets=tuple(network_targets),
+                local_commands=tuple(local_commands),
             ),
         )
 
