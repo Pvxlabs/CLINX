@@ -849,6 +849,31 @@ class BridgeConfig:
                 RegisteredTarget(item.strip(), default_classes) for item in values
             )
 
+        ssh_targets: tuple[RegisteredTarget, ...]
+        ssh_rows = host_executor_raw.get("ssh_target_commands")
+        if ssh_rows is None:
+            ssh_targets = target_list("ssh_targets", ("PRODUCTION_READ_ONLY",))
+        else:
+            if not isinstance(ssh_rows, dict):
+                raise BridgeError("[host_executor.ssh_target_commands] must contain tables")
+            parsed_ssh: list[RegisteredTarget] = []
+            for alias, row in ssh_rows.items():
+                if not isinstance(row, dict):
+                    raise BridgeError(f"ssh target {alias!r} must be a table")
+                classes = row.get("operation_classes", ["PRODUCTION_READ_ONLY"])
+                commands = row.get("commands", {})
+                if not isinstance(classes, list) or any(not isinstance(x, str) or not x.strip() for x in classes):
+                    raise BridgeError("ssh target operation_classes must be a string array")
+                if not isinstance(commands, dict):
+                    raise BridgeError("ssh target commands must be a table")
+                parsed_commands=[]
+                for name, argv in commands.items():
+                    if not isinstance(name,str) or not name.strip() or not isinstance(argv,list) or not argv or any(not isinstance(x,str) or not x for x in argv):
+                        raise BridgeError("ssh target command must be a named non-empty argv array")
+                    parsed_commands.append((name.strip(), tuple(argv)))
+                parsed_ssh.append(RegisteredTarget(str(alias), tuple(x.strip().upper() for x in classes), commands=tuple(parsed_commands)))
+            ssh_targets=tuple(parsed_ssh)
+
         network_targets: list[RegisteredTarget] = []
         network_rows = host_executor_raw.get("network_targets", {})
         if not isinstance(network_rows, dict):
@@ -924,7 +949,7 @@ class BridgeConfig:
                 services=target_list(
                     "services", ("READ_ONLY_HOST", "DEVELOPMENT_MUTATION")
                 ),
-                ssh_targets=target_list("ssh_targets", ("PRODUCTION_READ_ONLY",)),
+                ssh_targets=ssh_targets,
                 network_targets=tuple(network_targets),
             ),
         )
