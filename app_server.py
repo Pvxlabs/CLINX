@@ -1384,8 +1384,15 @@ class CodexAppServerClient:
         result = self._request("thread/start", params)
         return _thread_result(result, "thread/start")
 
-    def thread_resume(self, thread_id: str) -> dict[str, Any]:
-        result = self._request("thread/resume", {"threadId": thread_id})
+    def thread_resume(
+        self, thread_id: str, *, dynamic_tools: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"threadId": thread_id}
+        if dynamic_tools is not None:
+            if not isinstance(dynamic_tools, list) or not dynamic_tools:
+                raise AppServerProtocolError("dynamic_tools must be a non-empty array")
+            params["dynamicTools"] = dynamic_tools
+        result = self._request("thread/resume", params)
         return _thread_result(result, "thread/resume")
 
     def model_list(self) -> dict[str, Any]:
