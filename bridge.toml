@@ -85,13 +85,13 @@ repository_origin = "git@github.com:Pvxlabs/ORION.git"
 branch = "master"
 read_only = true
 
-# CLINX is a local-only self-hosted project on P620.  The missing origin is
-# intentional and is part of the identity contract; an unexpected origin is
-# a hard failure.
+# CLINX canonical runtime is self-hosted on P620 and tracked by the canonical
+# GitHub repository. Dispatch identity must match both checkout and origin.
 [projects.clinx]
 linear_name = "CLINX"
 workspace = "p620"
 cwd = "/home/pvxlabs/dev/clinx-pvx1807-remediation"
+repository_origin = "git@github.com:Pvxlabs/CLINX.git"
 branch = "main"
 read_only = false
 unexpected_origin_policy = "FAIL"
