@@ -1,0 +1,242 @@
+import SwiftUI
+
+/// Level 1 navigation: views, hosts and the chain.
+///
+/// At ≥ 1280pt the sidebar is a 200pt column; below that it collapses to the design's 52pt
+/// icon rail with counts (Developer Handoff — Window behavior).
+struct SidebarView: View {
+    @ObservedObject var store: MonitorStore
+    let rail: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !rail {
+                Text("Executions")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(DS.Palette.textTertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 4)
+                    .padding(.bottom, 4)
+            } else {
+                Spacer().frame(height: 6)
+            }
+
+            ForEach(Array(MonitorView.allCases.enumerated()), id: \.element.id) { index, view in
+                if index == 3 {
+                    Rectangle()
+                        .fill(DS.Palette.divider)
+                        .frame(width: rail ? 24 : nil, height: 1)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, rail ? 0 : 8)
+                }
+                SidebarItemView(store: store, view: view, rail: rail)
+            }
+
+            if !rail {
+                if !store.hostOptions.isEmpty {
+                    Text("Hosts")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(DS.Palette.textTertiary)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 16)
+                        .padding(.bottom, 4)
+
+                    ForEach(store.hostOptions) { host in
+                        HostRow(store: store, host: host)
+                    }
+                }
+
+                Text("Chain")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(DS.Palette.textTertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 16)
+                    .padding(.bottom, 4)
+
+                ChainRows(store: store)
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "eye").font(.system(size: 11))
+                    Text(store.syntheticScenario == nil ? "Read-only observer" : "Fixture · read-only")
+                        .font(DS.Font.micro)
+                }
+                .foregroundStyle(DS.Palette.textTertiary)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+                .padding(.top, 8)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(DS.Palette.divider).frame(height: 1).padding(.horizontal, 8)
+                }
+            } else {
+                Spacer()
+            }
+        }
+        .padding(.horizontal, rail ? 7 : 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct SidebarItemView: View {
+    @ObservedObject var store: MonitorStore
+    let view: MonitorView
+    let rail: Bool
+
+    @State private var hovering = false
+
+    private var active: Bool { store.view == view }
+    private var count: Int { store.counts[view] ?? 0 }
+    private var attention: MonitorStatus? {
+        guard (view == .blocked || view == .failed), count > 0 else { return nil }
+        return view == .blocked ? .blocked : .failed
+    }
+
+    var body: some View {
+        Button {
+            store.view = view
+        } label: {
+            if rail {
+                ZStack(alignment: .topTrailing) {
+                    glyph(size: 13)
+                        .frame(width: 38, height: 32)
+                        .foregroundStyle(active ? DS.Palette.accent : DS.Palette.textSecondary)
+                        .background(RoundedRectangle(cornerRadius: 6)
+                            .fill(active ? DS.Palette.selection : (hovering ? DS.Palette.hover : .clear)))
+                    if count > 0 {
+                        Text("\(count)")
+                            .font(.system(size: 9, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(attention?.color ?? DS.Palette.textTertiary)
+                            .padding(.top, 1)
+                            .padding(.trailing, 1)
+                    }
+                }
+                .padding(.bottom, 2)
+            } else {
+                HStack(spacing: 10) {
+                    glyph(size: 13)
+                        .frame(width: 16)
+                        .foregroundStyle(active ? DS.Palette.textPrimary : DS.Palette.textTertiary)
+                    Text(view.label)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(active ? DS.Palette.textPrimary : DS.Palette.textSecondary)
+                    Spacer(minLength: 6)
+                    countView
+                }
+                .padding(.horizontal, 8)
+                .frame(height: DS.Metric.sidebarItemHeight)
+                .background(RoundedRectangle(cornerRadius: 6)
+                    .fill(active ? DS.Palette.selection : (hovering ? DS.Palette.hover : .clear)))
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(rail ? "\(view.label) (\(count))  ⌘\(view.shortcutIndex)" : "⌘\(view.shortcutIndex)")
+        .accessibilityLabel("\(view.label), \(count) executions")
+    }
+
+    @ViewBuilder private var countView: some View {
+        if let attention {
+            Text("\(count)")
+                .font(.system(size: 11, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(attention.color)
+                .padding(.horizontal, 4)
+                .frame(minWidth: 18)
+                .background(RoundedRectangle(cornerRadius: 4).fill(attention.tint))
+        } else {
+            Text("\(count)")
+                .font(DS.Font.meta)
+                .monospacedDigit()
+                .foregroundStyle(DS.Palette.textTertiary)
+        }
+    }
+
+    @ViewBuilder private func glyph(size: CGFloat) -> some View {
+        switch view {
+        case .blocked: StatusGlyphView(glyph: .octagon, color: DS.Palette.warning, size: size)
+        case .failed: StatusGlyphView(glyph: .squareCross, color: DS.Palette.error, size: size)
+        case .completed: StatusGlyphView(glyph: .circleCheck, color: DS.Palette.success, size: size)
+        case .active: Image(systemName: "waveform.path.ecg").font(.system(size: size))
+        case .recent: Image(systemName: "clock").font(.system(size: size))
+        }
+    }
+}
+
+private struct HostRow: View {
+    @ObservedObject var store: MonitorStore
+    let host: FilterOption
+
+    private var active: Bool { store.hostFilter == host.name }
+
+    var body: some View {
+        Button {
+            store.hostFilter = active ? nil : host.name
+        } label: {
+            HStack(spacing: 8) {
+                Circle().fill(DS.Palette.success).frame(width: 6, height: 6)
+                Text(host.name)
+                    .font(DS.Font.mono(11))
+                    .foregroundStyle(DS.Palette.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text("\(host.count)")
+                    .font(DS.Font.micro)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.Palette.textTertiary)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: 5)
+                .fill(active ? DS.Palette.selection : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(active ? "Clear host filter" : "Filter by host \(host.name)")
+    }
+}
+
+private struct ChainRows: View {
+    @ObservedObject var store: MonitorStore
+
+    private struct Component: Identifiable {
+        let name: String
+        let status: String
+        var id: String { name }
+    }
+
+    private var components: [Component] {
+        guard let task = store.selected else {
+            return [Component(name: "Host", status: "ok"),
+                    Component(name: "Provider", status: "ok"),
+                    Component(name: "Worker", status: "ok")]
+        }
+        return [Component(name: "Host", status: task.routing.host.status),
+                Component(name: "Provider", status: task.routing.provider.status),
+                Component(name: "Worker", status: task.routing.transport.status)]
+    }
+
+    var body: some View {
+        ForEach(components) { component in
+            let healthy = ["READY", "OK", "HEALTHY", "SUCCEEDED"].contains(component.status.uppercased())
+            HStack(spacing: 8) {
+                if healthy {
+                    Circle().fill(DS.Palette.success).frame(width: 6, height: 6)
+                } else {
+                    Rectangle().fill(DS.Palette.warning).frame(width: 6, height: 6).rotationEffect(.degrees(45))
+                }
+                Text(component.name)
+                    .font(DS.Font.body)
+                    .foregroundStyle(DS.Palette.textSecondary)
+                Spacer(minLength: 4)
+                Text(healthy ? "ok" : component.status.lowercased())
+                    .font(DS.Font.micro)
+                    .foregroundStyle(DS.Palette.textTertiary)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+        }
+    }
+}
