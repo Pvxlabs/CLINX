@@ -962,7 +962,19 @@ class ClinxIntegration:
         host: str | None = None,
         recent_turns: int | None = None,
         max_bytes: int | None = None,
+        thread_id: str | None = None,
+        codex_uri: str | None = None,
+        execution_ref: str | None = None,
     ) -> dict[str, Any]:
+        if thread_id is not None or codex_uri is not None:
+            from thread_identity import ThreadIdentityReader
+            return ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader).read(
+                context=True, thread_id=thread_id, codex_uri=codex_uri,
+                task_ref=task_ref, query=query, host=host, project=project, execution_ref=execution_ref,
+                recent_turns=recent_turns if recent_turns is not None else 8, max_bytes=max_bytes if max_bytes is not None else 32000,
+            )
+        if execution_ref is not None:
+            raise M9IntegrationError("execution_ref requires an exact thread selector for context")
         task = self.context_reader.resolve_task(
             task_ref=task_ref,
             query=query,
@@ -1070,7 +1082,15 @@ class ClinxIntegration:
         query: str | None = None,
         project: str | None = None,
         host: str | None = None,
+        thread_id: str | None = None,
+        codex_uri: str | None = None,
     ) -> dict[str, Any]:
+        if thread_id is not None or codex_uri is not None:
+            from thread_identity import ThreadIdentityReader
+            return ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader).read(
+                context=False, thread_id=thread_id, codex_uri=codex_uri,
+                task_ref=task_ref, query=query, host=host, project=project, execution_ref=execution_ref,
+            )
         retained_recovery: dict[str, Any] | None = None
         if execution_ref:
             execution = self.registry.get_execution_result(execution_ref)
@@ -1301,6 +1321,7 @@ class ClinxIntegration:
                 "read_only": True,
             },
             "context_read_only": True,
+            "thread_lookup": {"selectors": ["thread_id", "codex_uri"], "exact": True, "read_only": True, "fuzzy_fallback": False, "context_sources": ["CODEX_LOCAL_SESSION", "CLINX_CHECKPOINT"], "provider_connection": "NOT_STARTED", "instructions": "Use exact selectors directly; never call clinx_find_task first or put IDs in query."},
             "execution_available": True,
             "command_plane": "CLINX",
             "prepare_tool": "clinx_prepare_execution",
