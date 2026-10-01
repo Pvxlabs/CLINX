@@ -143,6 +143,51 @@ private actor FixtureService: ObserverServing {
 }
 
 final class MonitorStoreTests: XCTestCase {
+    private func snapshot(state: String, execution: String = "exec_snapshot",
+                          observed: String = "2026-10-01T05:40:00Z") throws -> ObservedTask {
+        let original = try example("pass_detail", as: ObservedTask.self)
+        let encoded = try JSONEncoder.observerWire.encode(original)
+        var record = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        record["execution_ref"] = execution
+        record["state"] = state
+        record["execution_state"] = state
+        record["final_result"] = NSNull()
+        var timestamps = try XCTUnwrap(record["timestamps"] as? [String: Any])
+        timestamps["observed_at"] = observed
+        record["timestamps"] = timestamps
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(ObservedTask.self, from: JSONSerialization.data(withJSONObject: record))
+    }
+
+    @MainActor
+    func testNewBlockedDetailRefreshesTheSameExecutionRow() async throws {
+        let row = try snapshot(state: "FAILED")
+        let detail = try snapshot(state: "BLOCKED", observed: "2026-10-01T05:41:00Z")
+        let store = MonitorStore(service: SnapshotService(row: row, detail: detail))
+        await store.refresh()
+        XCTAssertEqual(store.active.first?.monitorStatus, .failed)
+        await store.select(row.taskRef)
+        XCTAssertEqual(store.selected?.monitorStatus, .blocked)
+        XCTAssertEqual(store.active.first?.monitorStatus, .blocked)
+        XCTAssertTrue(try XCTUnwrap(store.active.first).rowTail(status: .blocked).hasPrefix("Blocked "))
+    }
+
+    @MainActor
+    func testOldOrDifferentExecutionDetailCannotOverwriteNewerRow() async throws {
+        let row = try snapshot(state: "CODEX_RUNNING")
+        for detail in [
+            try snapshot(state: "BLOCKED", execution: "exec_older"),
+            try snapshot(state: "BLOCKED", observed: "2026-10-01T05:39:00Z")
+        ] {
+            let store = MonitorStore(service: SnapshotService(row: row, detail: detail))
+            await store.refresh()
+            await store.select(row.taskRef)
+            XCTAssertEqual(store.active.first?.monitorStatus, .running)
+            XCTAssertEqual(store.active.first?.executionRef, row.executionRef)
+        }
+    }
+
     @MainActor
     func testRefreshAndEventDeduplication() async throws {
         let service = try FixtureService()
@@ -157,4 +202,17 @@ final class MonitorStoreTests: XCTestCase {
         XCTAssertEqual(store.events.count, 2)
         XCTAssertEqual(store.eventCoverage, "PARTIAL")
     }
+}
+
+private actor SnapshotService: ObserverServing {
+    let row: ObservedTask
+    let detail: ObservedTask
+    init(row: ObservedTask, detail: ObservedTask) { self.row = row; self.detail = detail }
+    func health() async throws -> ObserverHealth { try example("health", as: ObserverHealth.self) }
+    func tasks(active: Bool, offset: Int) async throws -> TaskPage {
+        TaskPage(schemaVersion: "1", observedAt: row.timestamps.observedAt,
+                 items: active ? [row] : [], nextOffset: nil, hasMore: false)
+    }
+    func task(_ ref: String) async throws -> ObservedTask { detail }
+    func events(_ ref: String, after: String?) async throws -> EventPage { detail.recentEvents }
 }
