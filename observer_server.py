@@ -363,8 +363,9 @@ class ObserverHTTPServer(ThreadingHTTPServer):
     block_on_close = False
     request_queue_size = 16
 
-    def __init__(self, port, api):
+    def __init__(self, port, api, *, audit_methods=False):
         self.api = api
+        self.audit_methods = audit_methods
         self.slots = threading.BoundedSemaphore(16)
         super().__init__(("127.0.0.1", port), ObserverHandler)
 
@@ -436,6 +437,11 @@ class ObserverHandler(BaseHTTPRequestHandler):
         if status == 405:
             self.send_header("Allow", "GET")
         self.end_headers()
+        if self.server.audit_methods:
+            method = self.command if self.command in {
+                "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+            } else "OTHER"
+            print(json.dumps({"observer_http_method": method, "status": status}), flush=True)
         if self.command != "HEAD":
             self.wfile.write(body)
         self.close_connection = True
@@ -453,7 +459,8 @@ def main():
     store = ObserverStore(path)
     store.health()  # Fail closed; never initialize a missing registry.
     server = ObserverHTTPServer(int(os.environ.get("CLINX_OBSERVER_PORT", "8766")),
-                                ObserverAPI(store, lambda: os.environ.get("CLINX_OBSERVER_TOKEN")))
+                                ObserverAPI(store, lambda: os.environ.get("CLINX_OBSERVER_TOKEN")),
+                                audit_methods=os.environ.get("CLINX_OBSERVER_AUDIT_METHODS") == "1")
     server.serve_forever(poll_interval=0.5)
 
 
