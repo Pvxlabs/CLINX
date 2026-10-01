@@ -377,6 +377,9 @@ def _prepare_output_schema() -> dict[str, Any]:
 
 
 MCP_INSTRUCTIONS = (
+    "When a user supplies thread_id or codex://threads/..., call clinx_get_context or "
+    "clinx_get_status with the exact selector directly. Never call clinx_find_task first "
+    "or put the ID in query. Historical execution is separate from task_current_projection. "
     "CLINX MCP is the authoritative read-only context and execution-preparation "
     "plane. execution.available=true means the execution capability exists; "
     "direct_mcp_execution=true is intentional. Execution uses CLINX as the "
@@ -656,6 +659,47 @@ def _execute_tool_definition() -> dict[str, Any]:
 def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
     """Return the public catalog, with execution opt-in for internal use only."""
     tools = _read_only_tool_definitions()
+    from thread_identity import ID_PATTERN
+    for tool in tools:
+        if tool["name"] == "clinx_get_capabilities":
+            tool["outputSchema"]["properties"]["thread_lookup"] = {"type": "object"}
+        if tool["name"] not in {"clinx_get_context", "clinx_get_status"}:
+            continue
+        tool["description"] += (
+            " When the user supplies thread_id or codex://threads/..., use the exact "
+            "selector directly; do not call clinx_find_task first or put the ID in query. "
+            "Thread reads are read-only and separate historical execution from task_current_projection."
+        )
+        schema = tool["inputSchema"]
+        schema["properties"].update({
+            "thread_id": {"type": "string", "pattern": "^" + ID_PATTERN + "$"},
+            "codex_uri": {"type": "string", "pattern": "^codex://threads/" + ID_PATTERN + "$"},
+            "execution_ref": {"type": "string"},
+        })
+        legacy = schema.pop("anyOf")
+        if tool["name"] == "clinx_get_context":
+            legacy = [{"allOf": [{"anyOf": legacy}, {"not": {"required": ["execution_ref"]}}]}]
+        schema["anyOf"] = [
+            {"anyOf": legacy, "not": {"anyOf": [{"required": ["thread_id"]}, {"required": ["codex_uri"]}]}},
+            {"required": ["thread_id"], "not": {"anyOf": [{"required": [k]} for k in ("codex_uri", "task_ref", "query")]}},
+            {"required": ["codex_uri"], "not": {"anyOf": [{"required": [k]} for k in ("thread_id", "task_ref", "query")]}},
+        ]
+        nullable = {"type": ["string", "null"]}
+        thread_properties = {k: nullable for k in (
+            "queried_thread_id", "codex_uri", "lookup_status", "error_code", "unavailable_reason",
+            "task_ref", "task_key", "host", "project", "workspace", "provider", "current_thread_id",
+            "relationship", "predecessor_thread_id", "successor_thread_id", "adoption_source",
+            "execution_ref", "execution_state", "selection_reason", "selection_scope", "execution_turn_ref",
+            "status_source", "context_status", "context_source", "context_scope", "context_range",
+            "context_unavailable_reason", "last_user_intent", "last_codex_result", "observed_at",
+            "binding_status", "provider_existence",
+        )}
+        thread_properties.update({k: {"type": "boolean"} for k in ("is_current_thread", "context_truncated", "read_only")})
+        thread_properties.update({k: {"type": "array", "items": {"type": "string"}} for k in ("binding_sources", "other_execution_refs")})
+        thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "task_current_projection", "execution_result", "provenance")})
+        # Keep one strict root object for connector discovery and legacy clients.
+        tool["outputSchema"]["properties"].update(thread_properties)
+
     if include_execute:
         tools.append(_execute_tool_definition())
     return tools

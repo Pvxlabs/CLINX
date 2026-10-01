@@ -1071,6 +1071,9 @@ class TaskRegistry:
             if "turn_id" not in execution_columns:
                 conn.execute("ALTER TABLE executions ADD COLUMN turn_id TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_executions_ref ON executions(execution_ref)")
+            from thread_identity import INDEX_SQL
+            for index_sql in INDEX_SQL:
+                conn.execute(index_sql)
             migrations = {
                 "execution_state": "ALTER TABLE tasks ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'QUEUED'",
                 "current_stage": "ALTER TABLE tasks ADD COLUMN current_stage TEXT NOT NULL DEFAULT 'queued'",

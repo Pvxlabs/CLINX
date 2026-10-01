@@ -391,7 +391,10 @@ class M9MCPTests(unittest.TestCase):
                 for item in value:
                     yield from keys(item)
 
-        self.assertTrue(forbidden.isdisjoint(set(keys(tool_definitions()))))
+        self.assertTrue((forbidden - {"thread_id"}).isdisjoint(set(keys(tool_definitions()))))
+        for tool in tool_definitions():
+            if "thread_id" in tool["inputSchema"].get("properties", {}):
+                self.assertIn(tool["name"], {"clinx_get_context", "clinx_get_status"})
         response = self.server.handle({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "clinx_get_context", "arguments": {"task_ref": "task_public"}},
