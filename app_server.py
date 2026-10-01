@@ -634,6 +634,8 @@ class CodexAppServerClient:
         self._dynamic_registry_generation = 0
         self._delivery_ledger = None
         self.provider_endpoint: str | None = None
+        self._delivery_waiting_requests = []
+        self._flushing_delivery_waiters = False
 
     def _endpoint_identity(self) -> dict[str, Any] | None:
         if self.provider_endpoint is None:
@@ -647,7 +649,7 @@ class CodexAppServerClient:
 
     def _record_event(self, message: dict[str, Any]) -> None:
         if self._delivery_ledger is not None:
-            self._delivery_ledger.observe(message)
+            self._delivery_ledger.observe(message, owner=self._delivery_owner())
         method = message.get("method")
         if isinstance(method, str):
             self.events.append(method)
@@ -657,6 +659,7 @@ class CodexAppServerClient:
         # bounded while still making loss visible to an adapter.
         if len(self.received_events) < self.max_received_events - 1 and not self._received_event_overflow:
             self.received_events.append(dict(message))
+            self._flush_delivery_waiters()
             return
         if not self._received_event_overflow:
             self._received_event_overflow = True
@@ -666,6 +669,51 @@ class CodexAppServerClient:
                     "params": {"dropped": "bounded_event_buffer_exhausted"},
                 }
             )
+
+    def _delivery_owner(self):
+        return {"connection_id": self.connection_id, "listener_id": self._dynamic_listener_id,
+                "registry_generation": self._dynamic_registry_generation}
+
+    def _pending_owned_deliveries(self):
+        if self._delivery_ledger is None:
+            return []
+        from tool_delivery import ack_in_flight
+        owner = self._delivery_owner()
+        return [row for row in self._delivery_ledger.records(
+            self._delivery_ledger.registry, self._delivery_ledger.execution_ref)
+            if ack_in_flight(row) and all(json.loads(row['identity_json']).get(k) == v
+                                         for k, v in owner.items())]
+
+    def _flush_delivery_waiters(self):
+        if not self._delivery_waiting_requests or self._flushing_delivery_waiters or self._pending_owned_deliveries():
+            return
+        self._flushing_delivery_waiters = True
+        try:
+            while self._delivery_waiting_requests and not self._pending_owned_deliveries():
+                request, record = self._delivery_waiting_requests.pop(0)
+                self._execute_dynamic_tool(request, record)
+        finally:
+            self._flushing_delivery_waiters = False
+
+    def _receive(self, timeout_seconds):
+        # The single reader continues consuming ACKs. New Host calls are staged,
+        # never waited on inside a callback and never dispatched speculatively.
+        pending = self._pending_owned_deliveries()
+        remaining = min((row['response_sent_at'] + self.timeout_seconds - time.time()
+                         for row in pending), default=timeout_seconds)
+        if pending and remaining <= 0:
+            for row in pending:
+                self._delivery_ledger.failed(row['tool_call_id'])
+            self._flush_delivery_waiters()
+            raise AppServerTransportError("provider ACK deadline expired after Host execution")
+        try:
+            return self.transport.receive(min(timeout_seconds, max(0.0, remaining)))
+        except AppServerTransportError:
+            if pending and remaining <= timeout_seconds:
+                for row in pending:
+                    self._delivery_ledger.failed(row['tool_call_id'])
+                self._flush_delivery_waiters()
+            raise
 
     def __enter__(self) -> "CodexAppServerClient":
         connect = getattr(self.transport, "connect", None)
@@ -684,6 +732,7 @@ class CodexAppServerClient:
             self._delivery_ledger.disconnected()
         self._retire_dynamic_turns()
         self._dynamic_staged_requests.clear()
+        self._delivery_waiting_requests.clear()
         self._dynamic_tool_handler = None
         self._dynamic_tool_namespace = None
         self._dynamic_tool_name = None
@@ -802,6 +851,14 @@ class CodexAppServerClient:
             if handler is None:
                 raise AppServerProtocolError("dynamic tool handler is not configured")
             if ledger is not None:
+                pending = self._pending_owned_deliveries()
+                if pending and params.get("callId") not in {r['tool_call_id'] for r in pending}:
+                    if len(self._delivery_waiting_requests) >= self.max_received_events:
+                        raise AppServerProtocolError("dynamic tool ACK queue capacity exhausted")
+                    self._delivery_waiting_requests.append((request, record))
+                    if record is not None:
+                        record.state = "awaiting_prior_ack"
+                    return
                 call_id = ledger.admit(request, {
                     "connection_id": self.connection_id,
                     "listener_id": listener, "registry_generation": generation,
@@ -826,9 +883,15 @@ class CodexAppServerClient:
                 "failure_stage": ("HOST_TRANSPORT" if not completed else
                                   "HOST_EXECUTION" if result["exit_code"] != 0 else None),
                 "host_dispatched": True if completed else None,
+                "result_certainty": "KNOWN" if completed else "UNKNOWN",
                 "side_effect_certainty": "EXECUTED" if completed else "UNKNOWN",
                 "delivery_state": "PENDING",
-                "continuation_state": "AWAITING_PROVIDER_ACK" if completed else "RECONCILIATION_REQUIRED",
+                "delivery_state_scope": "RESPONSE_SNAPSHOT",
+                "ack_tracking": "CLINX_TRANSPORT_LEDGER",
+                "continuation_state": "SAFE_TO_CONTINUE" if completed else "RECONCILIATION_REQUIRED",
+                "execution_can_continue": completed, "reconciliation_required": not completed,
+                "next_call_admission": "PERSISTED_LEDGER",
+                "retry_scope": "ORIGINAL_OPERATION",
                 "retry_allowed": False, "retry_required": False}
             response = {
                 "success": True,
@@ -1004,6 +1067,7 @@ class CodexAppServerClient:
         self._dynamic_turn_id = None
         self._dynamic_provisional_turn_id = None
         self._dynamic_staged_requests.clear()
+        self._delivery_waiting_requests.clear()
         # Request IDs are scoped to the current binding. Retired turn ids stay
         # in a bounded fence so a late request cannot enter the new handler.
         self._server_request_records.clear()
@@ -1039,6 +1103,7 @@ class CodexAppServerClient:
         self._dynamic_operation_id = None
         self._dynamic_connection_generation = None
         self._dynamic_staged_requests.clear()
+        self._delivery_waiting_requests.clear()
         self._server_request_records.clear()
         self._dynamic_tool_handler = None
 
@@ -1172,7 +1237,7 @@ class CodexAppServerClient:
                 if any(terminal(message) for message in buffered):
                     return
                 while True:
-                    message = self.transport.receive(max(self.timeout_seconds, 300.0))
+                    message = self._receive(max(self.timeout_seconds, 300.0))
                     if "method" in message and "id" in message:
                         self._send_server_response(message)
                         continue
@@ -1221,7 +1286,7 @@ class CodexAppServerClient:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise AppServerTransportError(f"timed out waiting for {method} response")
-            message = self.transport.receive(remaining)
+            message = self._receive(remaining)
 
             # A server-initiated request has both id and method.  Handle it
             # before matching response ids because both sides share the id space.
@@ -1287,7 +1352,7 @@ class CodexAppServerClient:
             if timeout_seconds == 0 and result:
                 break
             try:
-                message = self.transport.receive(remaining)
+                message = self._receive(remaining)
             except AppServerTransportError as exc:
                 if _is_transport_timeout(exc) and (result or timeout_seconds == 0):
                     break
@@ -1461,8 +1526,9 @@ class CodexAppServerClient:
         ephemeral: bool = False,
         thread_source: str | None = None,
         dynamic_tools: list[dict[str, Any]] | None = None,
+        developer_instructions: str | None = None,
     ) -> dict[str, Any]:
-        """Create a durable thread for controlled pilot qualification."""
+        """Create a native thread with visible user content and separate policy."""
         params: dict[str, Any] = {"cwd": cwd, "ephemeral": ephemeral}
         if model is not None:
             params["model"] = model
@@ -1476,19 +1542,27 @@ class CodexAppServerClient:
             if not isinstance(dynamic_tools, list) or not dynamic_tools:
                 raise AppServerProtocolError("dynamic_tools must be a non-empty array")
             params["dynamicTools"] = dynamic_tools
+        if developer_instructions is not None:
+            params["developerInstructions"] = developer_instructions
         result = self._request("thread/start", params)
         return _thread_result(result, "thread/start")
 
     def thread_resume(
-        self, thread_id: str, *, dynamic_tools: list[dict[str, Any]] | None = None
+        self, thread_id: str, *, dynamic_tools: list[dict[str, Any]] | None = None,
+        developer_instructions: str | None = None
     ) -> dict[str, Any]:
         params: dict[str, Any] = {"threadId": thread_id}
         if dynamic_tools is not None:
             if not isinstance(dynamic_tools, list) or not dynamic_tools:
                 raise AppServerProtocolError("dynamic_tools must be a non-empty array")
             params["dynamicTools"] = dynamic_tools
+        if developer_instructions is not None:
+            params["developerInstructions"] = developer_instructions
         result = self._request("thread/resume", params)
         return _thread_result(result, "thread/resume")
+
+    def thread_name_set(self, thread_id: str, name: str) -> None:
+        self._request("thread/name/set", {"threadId": thread_id, "name": name})
 
     def model_list(self) -> dict[str, Any]:
         result = self._request("model/list", {})

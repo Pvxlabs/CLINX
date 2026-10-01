@@ -1406,7 +1406,7 @@ class M13ProjectionTests(unittest.TestCase):
 
             registry.reconcile_terminal("exec_b", "COMPLETED")
 
-    def test_status_retries_only_the_retained_recovery_execution(self):
+    def test_status_reads_retained_recovery_without_retry(self):
         class RecoveryDispatcher:
             def __init__(self):
                 self.execution_refs = []
@@ -1435,7 +1435,7 @@ class M13ProjectionTests(unittest.TestCase):
             status = integration.get_status(execution_ref="exec_recovery")
 
             self.assertEqual(status["execution_ref"], "exec_recovery")
-            self.assertEqual(dispatcher.execution_refs, ["exec_recovery"])
+            self.assertEqual(dispatcher.execution_refs, [])
 
     def test_user_marker_example_does_not_set_historical_current_state(self):
         reader = bridge.TopicStatusReader.__new__(bridge.TopicStatusReader)

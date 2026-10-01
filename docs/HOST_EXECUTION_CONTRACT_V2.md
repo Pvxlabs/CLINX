@@ -121,10 +121,16 @@ HostExecutor 的验证区间、bridge 的参数解析区间可提供明确的 no
 
 public failure response 与 ledger/status 公开 `failure_stage`、`host_dispatched`、
 `side_effect_certainty`、`delivery_state`、`continuation_state`、`retry_allowed` 等字段。
-成功命令的响应在 ACK 前只能标注 `AWAITING_PROVIDER_ACK`；不能预先宣称 DELIVERED。
-Provider 的 exact item/completed ACK 才能放行下一调用。对于完成未知的 Host，即使收到
-ACK 也不能解除 reconciliation。`retry_allowed=false` 指原 invocation 不可自动重跑，
-不妨碍 safe continuation 后的新合法调用。
+正常完成的响应保留 `delivery_state=PENDING`，并声明 `delivery_state_scope=RESPONSE_SNAPSHOT`、
+`ack_tracking=CLINX_TRANSPORT_LEDGER`、`execution_can_continue=true`、
+`continuation_state=SAFE_TO_CONTINUE`。这只授权 Worker 继续任务，绝不提前声明 DELIVERED。
+下一调用的实际 dispatch 仍以持久化 ledger 为准：同 owner 的短暂 ACK 在途先排队，
+单 reader 继续接收事件，exact item/completed 更新 ledger 后依次准入，支持同一批次多个调用。
+队列有容量上限；ACK 使用已有 request timeout 的有界期限，不 sleep、不阻塞事件接收、不循环等待当前响应。
+超时、断连、owner 更换或真正失败仍 fail closed；未知 Host completion 即使 ACK 成功也不放行。
+`retry_allowed=false` 和 `retry_scope=ORIGINAL_OPERATION` 禁止重放原调用，不禁止下一合法操作。
+ledger 的正常暂态为 `COMMAND_EXECUTED_RESULT_DELIVERY_PENDING`，不提前标记 delivery failure。
+命令非零退出、pre-dispatch 拒绝与可靠交付分别记录；Worker 不负责推断 ACK。
 
 | 稳定错误码 | 含义/阶段 |
 | --- | --- |

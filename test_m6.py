@@ -44,6 +44,9 @@ class FakeClient:
         self.calls = []
         self.initialize_info = app_server.InitializeInfo("codex", "0.152.1", "codex-cli 0.152.1")
 
+    def thread_name_set(self, thread_id, name):
+        self.calls.append(("thread/name/set", thread_id, name))
+
     def __enter__(self):
         return self
 
@@ -70,6 +73,10 @@ class FakeClient:
             "status": {"type": "idle"},
         }
         return self.thread
+
+    def thread_resume(self, thread_id, **kwargs):
+        self.calls.append(("thread/resume", kwargs))
+        return self.thread_read(thread_id)
 
     def thread_read(self, thread_id):
         self.calls.append(("thread/read", thread_id))

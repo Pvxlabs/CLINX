@@ -111,12 +111,14 @@ def test_prepare_start_native_route_matches_discovery(local, network, explicit, 
     turn = next(call for call in provider.calls if call[0] == "turn/start")
     assert start["sandbox"] == "workspace-write"
     assert start["dynamic_tools"] is None
-    assert turn[2].endswith("CURRENT REQUEST:\nRun project checks")
-    assert "Use Codex native workspace tools" in turn[2]
-    assert "CLINX_EXECUTION_RESULT\nSTATUS=" in turn[2]
-    assert "Do not call clinx_prepare_execution" in turn[2]
-    assert "clinx_host_operation" not in turn[2]
-    assert "Use only the Host capability" not in turn[2]
+    assert turn[2].endswith("\n\nRun project checks")
+    instructions = start["developer_instructions"]
+    assert "MANAGED EXECUTION CONTRACT" not in turn[2]
+    assert "Use Codex native workspace tools" in instructions
+    assert "CLINX_EXECUTION_RESULT\nSTATUS=" in instructions
+    assert "Do not call clinx_prepare_execution" in instructions
+    assert "clinx_host_operation" not in instructions
+    assert "Use only the Host capability" not in instructions
     assert turn[3]["approval_policy"] == "never"
     assert turn[3].get("network_access", False) == network
     if network:
@@ -136,7 +138,7 @@ def test_direct_dispatch_uses_same_native_default(local, network):
     policy = parse_execution_policy(dispatcher.tasks.get_task(result.task_id).execution_policy_json)
     assert policy == build_development_policy(network_access=network)
     prompt = next(call[2] for call in provider.calls if call[0] == "turn/start")
-    assert prompt.endswith("CURRENT REQUEST:\nRun project checks")
+    assert prompt == "Direct native\n\nRun project checks"
     assert "Use only the Host capability" not in prompt
     dispatcher.host_executor.dynamic_tool_spec.assert_not_called()
 
@@ -168,7 +170,8 @@ def test_explicit_host_and_sealed_continuation_remain_host(local, archived):
     assert dispatcher.tasks.get_task(task.task_id).execution_policy_json == original_policy
     assert dispatcher.tasks.get_execution_routing_identity(second["execution_ref"]).surface.stable_identifier == "host_executor"
     assert any(call[0] == "configure_dynamic_tool" for call in provider.calls)
-    assert "Use only the Host capability" in next(call[2] for call in provider.calls if call[0] == "turn/start")
+    assert "Use only the Host capability" in next(call[1]["developer_instructions"] for call in provider.calls if call[0] == "thread/resume")
+    assert next(call[2] for call in provider.calls if call[0] == "turn/start") == task.title + "\n\nContinue original authorization"
     with pytest.raises(M9IntegrationError, match="cannot override the sealed execution policy"):
         integration.prepare_execution(
             approved=True, task_ref=task.task_id, prompt="Change route",

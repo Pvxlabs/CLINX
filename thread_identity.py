@@ -167,7 +167,18 @@ class ThreadIdentityReader:
                 result = dict(result) if result else None
                 if result and result['turn_id'] != selected['turn_id']:
                     raise ThreadLookupError('THREAD_IDENTITY_CONFLICT', 'Result turn does not match selected execution')
-            snapshot = dict(task=task, current=current, lineage=lineage, facts=facts, executions=executions, selected=selected, reason=reason, result=result, provider=next(iter(providers), None))
+            deliveries, hosts = [], []
+            if selected:
+                from tool_delivery import certainty
+                if c.execute("SELECT 1 FROM sqlite_master WHERE name='host_tool_deliveries'").fetchone():
+                    deliveries = [{**dict(row), **certainty(row)} for row in c.execute(
+                        'SELECT * FROM host_tool_deliveries WHERE execution_ref=? ORDER BY admitted_at',
+                        (selected['execution_ref'],))]
+                hosts = rows(c,
+                    'SELECT host_execution_ref,execution_ref,tool_call_id,operation,capability,'
+                    'result_state,exit_code,started_at,completed_at FROM host_executions '
+                    'WHERE execution_ref=? ORDER BY started_at', (selected['execution_ref'],))
+            snapshot = dict(deliveries=deliveries, hosts=hosts, task=task, current=current, lineage=lineage, facts=facts, executions=executions, selected=selected, reason=reason, result=result, provider=next(iter(providers), None))
             snapshot['fingerprint'] = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
             return snapshot
 
@@ -292,6 +303,10 @@ class ThreadIdentityReader:
                 if metadata and Path(metadata['cwd']).resolve() != Path(task['cwd']).resolve():
                     raise ThreadLookupError('THREAD_IDENTITY_CONFLICT', 'Native thread workspace disagrees with persisted owner')
                 output = dict(lookup_status='RESOLVED', task_ref=task['task_id'], task_key=task['task_key'], host=task['host'], project=task['project_alias'], workspace=task['workspace_alias'], provider=snapshot['provider'], binding_sources=[k for k, v in snapshot['facts'].items() if v], current_thread_id=current['thread_id'] if current else None, is_current_thread=bool(current and current['thread_id'] == tid), relationship='HISTORICAL' if not current or current['thread_id'] != tid else 'CURRENT', predecessor_thread_id=lineage['predecessor_thread'] if lineage else None, successor_thread_id=lineage['successor_thread'] if lineage else None, adoption_source=snapshot['facts']['adoptions'][0]['adoption_source'] if snapshot['facts']['adoptions'] else None, execution_ref=selected['execution_ref'] if selected else None, execution_state=(selected['execution_state'] or selected['stage']) if selected else 'UNKNOWN', selection_reason=snapshot['reason'], selection_scope='QUERIED_THREAD', other_execution_refs=[ref for ref in snapshot['executions'] if not selected or ref != selected['execution_ref']], execution_turn_ref=selected['turn_id'] if selected else None, status_source='PERSISTED_EXECUTION' if selected else 'UNAVAILABLE', provider_observation={'state': 'UNKNOWN', 'reason': 'No provider process probe on read plane'}, task_current_projection={'execution_state': task['execution_state'], 'updated_at': task['updated_at'], 'current_thread_id': current['thread_id'] if current else None}, execution_result={k: snapshot['result'][k] for k in ('status', 'received_at', 'writeback_state')} if snapshot['result'] else None)
+                from tool_delivery import delivery_summary
+                output.update(dynamic_tool_deliveries=snapshot['deliveries'], host_executions=snapshot['hosts'],
+                    provider_delivery=delivery_summary(snapshot['deliveries'],
+                        snapshot['result']['raw_result'] if snapshot['result'] else ''))
             if context and (snapshot or output['lookup_status'] == 'THREAD_UNBOUND'):
                 anchor = snapshot['facts']['anchors'][0]['turn_id'] if snapshot and snapshot['facts']['anchors'] else None
                 selected_context = self._local_context(tid, metadata, recent_turns, max_bytes, anchor)

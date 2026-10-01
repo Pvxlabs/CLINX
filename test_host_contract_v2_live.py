@@ -14,6 +14,7 @@ import time
 import pytest
 
 import bridge
+from provider_qualification import isolated_provider
 from m9_integration import ClinxIntegration
 from mcp_server import ClinxMCPServer
 from task_registry import TaskRegistry, WorkspaceConfig
@@ -22,8 +23,11 @@ from tool_delivery import ToolDeliveryLedger
 
 @pytest.mark.skipif(os.environ.get('CLINX_LIVE_HOST_CONTRACT_V2') != '1', reason='real Provider opt-in required')
 @pytest.mark.parametrize('case', ['normal_sequence', 'multiple_predispatch_failures'])
-def test_real_host_contract_v2(tmp_path, case):
+def test_real_host_contract_v2(request, tmp_path, case):
     cfg = bridge.BridgeConfig.load(Path(__file__).with_name('bridge.toml'))
+    isolated = isolated_provider(cfg, tmp_path)
+    cfg = isolated.__enter__()
+    request.addfinalizer(lambda: isolated.__exit__(None, None, None))
     canonical = next(p for p in cfg.projects if p.project_alias == 'clinx')
     root = tmp_path/'project'
     subprocess.run(['git', 'clone', '--quiet', '--single-branch', '--branch', canonical.branch,

@@ -437,6 +437,9 @@ class FakeAppServerClient:
         self.error = error
         self.calls = []
 
+    def thread_name_set(self, thread_id, name):
+        self.calls.append(("thread/name/set", thread_id, name))
+
     def __enter__(self):
         return self
 
@@ -453,7 +456,7 @@ class FakeAppServerClient:
         self.calls.append(("thread/read", thread_id))
         return self.thread
 
-    def thread_resume(self, thread_id):
+    def thread_resume(self, thread_id, **kwargs):
         self.calls.append(("thread/resume", thread_id))
         self.thread = {**self.thread, "canAcceptDirectInput": True}
         return self.thread
