@@ -48,8 +48,10 @@ dynamic tool description. Sealed policy and Host authority checks remain unchang
 Only the preserved Observer thread
 `01a0f81b-1c84-7b20-aaeb-f452be41bbae` received a metadata-only name repair:
 `CLINX Observer Mac 实时连接验收`. Its original prompt and BLOCKED result remain intact.
-Name search, Desktop app read, and the actual CLI picker plus transcript preview
-now find that title without a UUID. Old previews intentionally retain historical content.
+Native name search, Desktop app inventory/read, and the actual CLI picker plus
+transcript preview find that title without a UUID. The user's Desktop UI still
+does not find it; the API result is not rendered visibility acceptance.
+Old previews intentionally retain historical content.
 
 ## Client and event evidence
 
@@ -69,6 +71,19 @@ uses vscode/custom too, but has a real name and 254 user characters. These compa
 disprove source-only visibility claims; they do not prove historical rendered UI use.
 Neither `source`, `threadSource`, nor `has_user_event` was changed.
 
+The user reported "没见到。" and explicitly confirmed the search was in remote
+P620's `Clinx`, not the separate local Mac `CLINX` project. The app's project
+inventory maps remote project `10154534-a419-4b48-ac43-a0bf8b0989bf` to
+`remote-ssh-discovered:p620` and `/home/pvxlabs/dev/clinx`; the fault thread is
+returned with that same project ID. The remote project is pinned and no host is
+reported unavailable. The local project instead maps to
+`/Users/tinzleung/Developer/CLINX`. This rules out the local/remote project mix-up
+for this observation and finds no stale remediation path in the current project
+mapping. It does not identify the rendered client's filter or cache behavior.
+P620's public daemon log did not expose the actual UI `thread/list` parameters.
+Evidence: `desktop-project-followup.json`. Desktop visibility is
+`NOT_RESTORED_USER_REPORTED`; the exact client-side cause remains UNKNOWN.
+
 A two-daemon isolated qualification shares one temporary CODEX_HOME. Read-only
 observers never call resume and never answer another owner's tools:
 
@@ -81,7 +96,9 @@ Neither observer receives per-item events. The 0.156.1 exported schema has
 `thread/unsubscribe` but no standalone read-only `thread/subscribe` method.
 Restoring the shared daemon or resuming an active thread merely for monitoring is
 not an accepted substitute: it risks writer/response correlation and policy changes.
-Actual Desktop rendered UI and item-stream visibility remain UNVERIFIED.
+Actual Desktop rendered discovery failed the user's check. Rendered history and
+item-stream visibility remain UNVERIFIED; native cross-daemon item streaming was
+not restored.
 
 The isolated identity test initializes one server with two distinct client names.
 Both userAgents retain the first name as their prefix; only the parenthesized client
@@ -120,6 +137,13 @@ No service was restarted and no ORION task/runtime was changed. The normal outer
 connector still exposes the pre-fix read schema. Source qualification does not
 prove runtime activation.
 
+The final follow-up at 2026-10-01 16:54:07 UTC again read the dedicated Provider's
+turn as `inProgress` and thread as `active`, with registry state `CODEX_RUNNING`.
+There were zero currently running Host commands and no PENDING delivery rows, but
+that does not make an active Worker safe to interrupt. Its owner was still PID
+1920093 beneath `clinx-tunnel.service`. See `switch-preflight-followup.json`.
+No service switch or formal outer-connector smoke was attempted.
+
 After that execution is independently terminal, recheck active turns, running Host
 processes and pending deliveries. From the independent native development session,
 reload only the necessary CLINX services, initialize the dedicated Provider with
@@ -137,7 +161,8 @@ probes need a credential-safe registered operation, never a token in prompt/argv
 These are follow-up changes, not authority added by this repair. Do not start an
 Observer execution that is guaranteed to fail on missing targets.
 
-Current completion boundary: `HOLD_SHARED_ACTIVATION_AND_NATIVE_LIVE_VISIBILITY`.
+Current completion boundary:
+`HOLD_SHARED_ACTIVATION_AND_DESKTOP_VISIBILITY`.
 `CLINX_NATIVE_VISIBILITY_AND_CONTINUATION_RESTORED` is not yet established.
 
 ## Source delivery boundary
