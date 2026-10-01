@@ -81,6 +81,12 @@ Use the normal hostname-validating TLS client, then the shipping ObserverClient
 and formal Monitor app. Credential provisioning uses protected stdin/SSH into
 the existing native Keychain API; never clipboard automation or shell argv.
 
+The Observer client's session connects directly through the OS Tailnet route,
+with an empty connectionProxyDictionary. During acceptance, the Mac's system
+HTTPS proxy (127.0.0.1:6152) accepted CONNECT then aborted the TLS handshake;
+normal direct TLS succeeded. This private-session setting avoids that proxy
+without changing global proxy settings, certificate verification or redirects.
+
 ## Audit, rotation and rollback
 
 CLINX_OBSERVER_AUDIT_METHODS=1 enables JSON lines containing only a fixed allowlist
