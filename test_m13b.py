@@ -1182,9 +1182,10 @@ class DynamicToolProtocolTests(unittest.TestCase):
     def test_dynamic_tool_identity_mismatch_fails_closed(self):
         transport = self.Transport()
         client = app_server.CodexAppServerClient(transport)
+        calls = []
         client.configure_dynamic_tool(
             namespace="clinx", name="clinx_host_operation",
-            thread_id="expected", handler=lambda _params: {},
+            thread_id="expected", handler=lambda params: calls.append(params) or {},
         )
         client._send_server_response({
             "id": 2, "method": "item/tool/call",
@@ -1193,7 +1194,9 @@ class DynamicToolProtocolTests(unittest.TestCase):
                 "namespace": "clinx", "tool": "clinx_host_operation", "arguments": {},
             },
         })
-        self.assertFalse(transport.sent[-1]["result"]["success"])
+        # Foreign broadcasts belong to another listener: do not race its response.
+        self.assertEqual(transport.sent, [])
+        self.assertEqual(calls, [])
 
     def test_dynamic_tool_namespace_mismatch_fails_closed(self):
         transport = self.Transport()

@@ -74,6 +74,7 @@ from host_executor import (
     HostExecutorConfig,
     RegisteredTarget,
 )
+from tool_delivery import ToolDeliveryLedger
 from m9_integration import (
     ExecutionFinalizer, ExecutionResultService, ResultParseError, parse_codex_result
 )
@@ -228,6 +229,7 @@ class AppServerConfig:
     # use the local app-server proxy regardless of this value.
     transport: str = "local"
     command: tuple[str, ...] = ("codex", "app-server", "proxy")
+    local_socket: str | None = None
     ssh_binary: str = "ssh"
     ssh_alias: str | None = None
     ssh_args: tuple[str, ...] = ("-T",)
@@ -709,6 +711,9 @@ class BridgeConfig:
         if not isinstance(command, list) or not command:
             raise BridgeError("[app_server].command must be a non-empty TOML string array")
         command = tuple(str(part) for part in command)
+        local_socket = app_server_raw.get("local_socket")
+        if local_socket is not None and (not isinstance(local_socket, str) or not local_socket.strip()):
+            raise BridgeError("[app_server].local_socket must be a non-empty socket path")
         transport = str(app_server_raw.get("transport", "local")).strip().lower()
         if transport not in {"local", "ssh"}:
             raise BridgeError("[app_server].transport must be 'local' or 'ssh'")
@@ -935,6 +940,7 @@ class BridgeConfig:
             .resolve(),
             projects=tuple(projects),
             app_server=AppServerConfig(
+                local_socket=local_socket,
                 transport=transport,
                 command=command,
                 ssh_binary=str(app_server_raw.get("ssh_binary", "ssh")),
@@ -2185,9 +2191,17 @@ def _default_app_server_client(
         selected_transport = "local"
     elif selected_transport == "ssh_stdio":
         selected_transport = "ssh"
+    endpoint = None
     if selected_transport == "local":
+        command = cfg.app_server.command
+        if cfg.app_server.local_socket:
+            endpoint = Path(cfg.app_server.local_socket)
+            if not endpoint.is_absolute():
+                endpoint = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / endpoint
+            # An explicit owned endpoint never falls back to the shared daemon.
+            command = (*command, "--sock", str(endpoint))
         transport = LocalStdioTransport(
-            cfg.app_server.command,
+            command,
             timeout_seconds=cfg.app_server.request_timeout_seconds,
         )
     elif selected_transport == "ssh":
@@ -2203,10 +2217,12 @@ def _default_app_server_client(
         )
     else:
         raise BridgeError(f"Unsupported app-server transport: {selected_transport}")
-    return CodexAppServerClient(
+    client = CodexAppServerClient(
         transport,
         timeout_seconds=cfg.app_server.request_timeout_seconds,
     )
+    client.provider_endpoint = str(endpoint) if endpoint is not None else None
+    return client
 
 
 class TaskDispatcher:
@@ -2591,6 +2607,7 @@ class TaskDispatcher:
                 arguments=values.get("arguments", {}),
                 project_root=project.repo,
                 timeout_seconds=values.get("timeout_seconds"),
+                tool_call_id=params.get("callId"),
             )
             return executor.execute(request)
 
@@ -2603,6 +2620,10 @@ class TaskDispatcher:
             name=spec["tools"][0]["name"],
             thread_id=thread_id,
             handler=handle,
+            delivery_ledger=ToolDeliveryLedger(self.tasks, execution_ref, context={
+                "task_ref": task_id,
+                "provider_session_id": getattr(self.tasks.get_binding(task_id), "session_id", None),
+            }),
         )
         return [spec]
 

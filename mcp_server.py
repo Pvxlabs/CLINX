@@ -254,6 +254,7 @@ def _status_output_schema() -> dict[str, Any]:
         "execution_routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
         "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
         "host_executions": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "dynamic_tool_deliveries": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "EXECUTION_STATE": {"type": "string"},
         "CODEX_RUNNING": {"type": "boolean"},
         "CURRENT_STAGE": {"type": "string"},

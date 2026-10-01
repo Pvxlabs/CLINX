@@ -629,8 +629,25 @@ class CodexAppServerClient:
         self._supervisor: threading.Thread | None = None
         self._completion_handoff: Callable[[dict[str, Any]], None] | None = None
         self._completion_identity: tuple[str, str] | None = None
+        self.connection_id = uuid.uuid4().hex
+        self._dynamic_listener_id: str | None = None
+        self._dynamic_registry_generation = 0
+        self._delivery_ledger = None
+        self.provider_endpoint: str | None = None
+
+    def _endpoint_identity(self) -> dict[str, Any] | None:
+        if self.provider_endpoint is None:
+            return None
+        try:
+            info = os.stat(self.provider_endpoint)
+            return {"path": self.provider_endpoint, "device": info.st_dev,
+                    "inode": info.st_ino, "created_ns": info.st_ctime_ns}
+        except OSError:
+            return {"path": self.provider_endpoint, "unavailable": True}
 
     def _record_event(self, message: dict[str, Any]) -> None:
+        if self._delivery_ledger is not None:
+            self._delivery_ledger.observe(message)
         method = message.get("method")
         if isinstance(method, str):
             self.events.append(method)
@@ -661,6 +678,10 @@ class CodexAppServerClient:
             self.close()
 
     def close(self) -> None:
+        self._dynamic_registry_generation += 1
+        self._dynamic_listener_id = None
+        if self._delivery_ledger is not None:
+            self._delivery_ledger.disconnected()
         self._retire_dynamic_turns()
         self._dynamic_staged_requests.clear()
         self._dynamic_tool_handler = None
@@ -726,7 +747,8 @@ class CodexAppServerClient:
             "contentItems": [{
                 "type": "inputText",
                 "text": json.dumps(
-                    {"result_state": str(code), "error": str(exc)[:2000]},
+                    {"result_state": str(code), "error": str(exc)[:2000],
+                     "execution_state": getattr(exc, "execution_state", "COMMAND_NOT_DISPATCHED")},
                     sort_keys=True,
                     separators=(",", ":"),
                 ),
@@ -765,11 +787,31 @@ class CodexAppServerClient:
             raise AppServerProtocolError("dynamic tool turn identity changed")
         if record is not None:
             record.state = "executing"
+        ledger = self._delivery_ledger
+        call_id = None
+        transport = self.transport
+        generation = self._dynamic_registry_generation
+        listener = self._dynamic_listener_id
+        endpoint_identity = self._endpoint_identity()
         try:
             handler = self._dynamic_tool_handler
             if handler is None:
                 raise AppServerProtocolError("dynamic tool handler is not configured")
+            if ledger is not None:
+                call_id = ledger.admit(request, {
+                    "connection_id": self.connection_id,
+                    "listener_id": listener, "registry_generation": generation,
+                    "thread_id": params.get("threadId"), "turn_id": params.get("turnId"),
+                    "namespace": params.get("namespace"), "tool": params.get("tool"),
+                    "client_pid": os.getpid(),
+                    "provider_version": getattr(self.initialize_info, "server_version", None),
+                    "provider_user_agent": getattr(self.initialize_info, "user_agent", None),
+                    "provider_endpoint": endpoint_identity,
+                    "transport_child_pid": getattr(getattr(getattr(transport, "_byte_transport", None), "_process", None), "pid", None),
+                })
             result = handler(params)
+            if ledger is not None:
+                ledger.host_result(call_id, result)
             response = {
                 "success": True,
                 "contentItems": [{
@@ -778,10 +820,30 @@ class CodexAppServerClient:
                 }],
             }
         except Exception as exc:
+            if ledger is not None and call_id is not None:
+                exc.execution_state = ledger.failed(call_id)
             response = self._dynamic_failure_response(exc)
-        self._cache_and_send_server_response(request.get("id"), response, record)
+        try:
+            if (self.transport is not transport or self._dynamic_registry_generation != generation
+                    or self._dynamic_listener_id != listener or self._endpoint_identity() != endpoint_identity):
+                raise AppServerTransportError("dynamic tool delivery owner changed after dispatch")
+            self._cache_and_send_server_response(request.get("id"), response, record)
+            if ledger is not None and call_id is not None:
+                ledger.sent(call_id, request.get("id"))
+        except Exception:
+            if ledger is not None and call_id is not None:
+                ledger.failed(call_id)
+            raise
 
     def _send_server_response(self, request: dict[str, Any]) -> None:
+        if request.get("method") == "item/tool/call":
+            params = request.get("params", {})
+            if self._dynamic_tool_handler is None or (
+                isinstance(params, dict) and params.get("threadId") != self._dynamic_thread_id
+            ):
+                # Shared providers broadcast to subscribers. An observer must
+                # never race the owning connection with an unsupported reply.
+                return
         request_id = request.get("id")
         request_key = self._server_request_key(request_id)
         record: _ServerRequestRecord | None = None
@@ -883,6 +945,7 @@ class CodexAppServerClient:
         handler: Callable[[dict[str, Any]], dict[str, Any]],
         operation_id: str | None = None,
         connection_generation: int | None = None,
+        delivery_ledger: Any = None,
     ) -> None:
         if (
             not isinstance(namespace, str)
@@ -906,6 +969,9 @@ class CodexAppServerClient:
         if self._dynamic_tool_handler is not None or self._dynamic_staged_requests:
             self._retire_dynamic_turns()
         self._dynamic_tool_namespace = namespace.strip()
+        self._dynamic_registry_generation += 1
+        self._dynamic_listener_id = uuid.uuid4().hex
+        self._delivery_ledger = delivery_ledger
         self._dynamic_tool_name = name.strip()
         self._dynamic_thread_id = thread_id.strip()
         self._dynamic_tool_handler = handler
@@ -936,6 +1002,8 @@ class CodexAppServerClient:
     def clear_dynamic_tool(self) -> None:
         """Remove a prior tool binding before the next operation."""
         self._retire_dynamic_turns()
+        self._dynamic_registry_generation += 1
+        self._dynamic_listener_id = None
         retired_turn = self._dynamic_turn_id or self._dynamic_provisional_turn_id
         if retired_turn is not None:
             self._dynamic_previous_turn_id = retired_turn

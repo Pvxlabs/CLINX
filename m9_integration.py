@@ -38,6 +38,7 @@ from task_registry import (
     TaskExecutionBusy,
     WorktreeExecutionBusy,
 )
+from tool_delivery import ToolDeliveryLedger
 
 
 class M9IntegrationError(RuntimeError):
@@ -524,6 +525,32 @@ class ExecutionFinalizer:
             except ResultParseError:
                 pass
         host_evidence = self.registry.list_host_executions(execution_ref=execution_ref)
+        deliveries = ToolDeliveryLedger.records(self.registry, execution_ref)
+        unresolved = [row for row in deliveries if row['delivery_state'] != 'DELIVERED'
+                      and row['execution_state'] != 'COMMAND_NOT_DISPATCHED']
+        if unresolved:
+            # Recover the crash window between Host evidence commit and result
+            # serialization. Never infer "not executed" from a missing reply.
+            ledger = ToolDeliveryLedger(self.registry, execution_ref)
+            for row in unresolved:
+                ledger.failed(row['tool_call_id'])
+            unresolved_ids = {row['tool_call_id'] for row in unresolved}
+            unresolved = [row for row in ledger.records(self.registry, execution_ref)
+                          if row['tool_call_id'] in unresolved_ids and row['delivery_state'] != 'DELIVERED']
+        if unresolved:
+            executed = any(row['host_exit_code'] is not None for row in unresolved)
+            code = ('RESULT_DELIVERY_FAILED_AFTER_EXECUTION' if executed else
+                    'RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH')
+            result = self._canonical_blocked(
+                summary="Host dispatch and provider delivery have separate evidence; reconciliation required.",
+                validation="; ".join(f"{row['tool_call_id']}={row['execution_state']} / "
+                                     f"host={row['host_execution_ref'] or 'PENDING'}" for row in unresolved),
+                blockers=f"{code}: command retry prohibited; reconcile persisted evidence.",
+                terminal_state="BLOCKED",
+            )
+            return _FinalizationDecision(result=result, terminal_state="BLOCKED",
+                                        retry_required=False, failure_code=code,
+                                        failure_evidence=result.validation)
         successful_host_evidence = [
             item for item in host_evidence
             if item.get("result_state") == "SUCCEEDED" and item.get("exit_code") == 0
@@ -1222,6 +1249,7 @@ class ClinxIntegration:
         )
         if execution_ref:
             status["execution_ref"] = execution_ref
+            status["dynamic_tool_deliveries"] = ToolDeliveryLedger.records(self.registry, execution_ref)
         return status
 
     def get_capabilities(self) -> dict[str, Any]:
