@@ -37,7 +37,7 @@ from task_registry import (
     TaskExecutionBusy,
     WorktreeExecutionBusy,
 )
-from tool_delivery import ToolDeliveryLedger, requires_reconciliation
+from tool_delivery import ToolDeliveryLedger, requires_reconciliation, delivery_summary
 
 
 class M9IntegrationError(RuntimeError):
@@ -1111,78 +1111,31 @@ class ClinxIntegration:
                 project=project,
                 host=host,
             )
-        # Context adapters may return a cached TaskRecord.  Refresh the
-        # durable row before selecting reconciliation evidence so a previous
-        # self-heal is visible on the next status read.
-        if self.registry is not None:
-            self.registry.reclaim_stale_worktree_leases()
-            task = self.registry.get_task(task.task_id)
-        # A status read is also a bounded recovery point.  The registry is
-        # authoritative for identity, while the dispatcher may reconcile one
-        # exact active turn against provider state without reading history.
-        active_for_reconcile = (
-            self.registry.get_active_execution(execution_ref)
-            if execution_ref else self.registry.get_latest_execution_for_task(task.task_id)
-        )
-        if (
-            active_for_reconcile is None
-            and retained_recovery is not None
-            and task.execution_state == "RECOVERY_REQUIRED"
-            and task.retry_required
-            and retained_recovery.get("stage") == "RECOVERY_REQUIRED"
-        ):
-            # A retained exact execution can still gain result evidence on a
-            # later bounded provider read.  It is never treated as active.
-            active_for_reconcile = retained_recovery
-        if (
-            active_for_reconcile is None
-            and not execution_ref
-            and task.codex_running
-            and task.execution_state in {
-                "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
-                "TRANSPORT_UNCERTAIN", "CANCEL_REQUESTED", "CANCELLATION_PENDING",
-            }
-        ):
-            # Some pre-M12 runtimes never flushed an executions row at all;
-            # the task projection is still a bounded owner candidate.
-            active_for_reconcile = {"execution_ref": None, "stage": task.current_stage}
-        reconcile = getattr(self.dispatcher, "reconcile_execution", None)
-        if not callable(reconcile):
-            reconcile = getattr(self.dispatcher, "reconcile_task", None)
-        if active_for_reconcile and callable(reconcile):
+        # Status reads never reclaim leases, reconcile, finalize, or start a provider.
+        task = self.registry.get_task(task.task_id)
+        if task_ref is not None and task_ref != task.task_id:
+            raise M9IntegrationError("execution_ref does not belong to task_ref")
+        selection_reason = "EXPLICIT_EXECUTION_REF"
+        if not execution_ref:
+            from thread_identity import ThreadIdentityReader, ThreadLookupError
+            with self.registry._connect() as conn:
+                candidates = []
+                for table in ("executions", "execution_history"):
+                    candidates.extend(dict(row, active_record=table == "executions") for row in conn.execute(
+                        f"SELECT * FROM {table} WHERE task_id=?", (task.task_id,)) if row['execution_ref'])
+            binding = self.registry.get_binding(task.task_id)
+            candidates = [row for row in candidates if
+                ((row['active_record'] and row['stage'] not in TERMINAL_EXECUTION_STAGES)
+                 or not task.turn_id or row['turn_id'] == task.turn_id) and
+                (binding is None or json.loads(row['routing_identity_json']).get('conversation', {}).get('binding')
+                 in (None, 'UNBOUND', 'UNKNOWN', 'BOUND', binding.thread_id))]
             try:
-                active_ref = active_for_reconcile.get("execution_ref")
-                if active_ref:
-                    reconcile(active_ref)
-                else:
-                    # Legacy executions may have a lease but no opaque
-                    # execution identity.  Reconcile the exact bound task;
-                    # the dispatcher will release it only on terminal proof.
-                    try:
-                        reconcile(None, task_id=task.task_id)
-                    except TypeError:
-                        # Lightweight adapters may expose only task-level
-                        # reconciliation; keep this compatibility bounded to
-                        # the null-ref legacy path.
-                        reconcile(task.task_id)
-                task = self.registry.get_task(task.task_id)
-            except Exception:
-                # Status remains useful even when a bounded provider read is
-                # unavailable; the registry keeps the explicit uncertainty.
-                task = self.registry.get_task(task.task_id)
-        result = (
-            self.registry.get_execution_result(execution_ref)
-            if execution_ref else self.registry.latest_execution_result(task.task_id)
-        )
-        if not execution_ref and result is not None:
-            # Historical results remain readable by execution_ref, but a task
-            # status read must expose only evidence for its current exact turn.
-            expected_turn = task.turn_id
-            prepared = self.registry.get_prepared_execution_for_task(task.task_id)
-            if expected_turn is None and prepared is not None:
-                expected_turn = prepared.resulting_turn_id
-            if expected_turn and result.turn_id != expected_turn:
-                result = None
+                selected, selection_reason = ThreadIdentityReader._select(candidates, None)
+            except ThreadLookupError as exc:
+                raise M9IntegrationError(str(exc)) from exc
+            execution_ref = selected['execution_ref'] if selected else None
+        record = self.registry.get_execution_record(execution_ref) if execution_ref else None
+        result = self.registry.get_execution_result(execution_ref) if execution_ref else None
         execution_result = None
         if result is not None:
             execution_result = {
@@ -1203,7 +1156,7 @@ class ClinxIntegration:
         execution_route = (
             self.registry.get_execution_routing_identity(execution_ref)
             if execution_ref
-            else self.registry.get_latest_execution_routing_identity(task.task_id)
+            else None
         )
         status["routing_identity"] = self._public_route(task.routing_identity_json)
         status["execution_routing_identity"] = (
@@ -1216,8 +1169,8 @@ class ClinxIntegration:
         status["execution_policy"] = policy.as_dict() if policy is not None else None
         status["host_executions"] = self.registry.list_host_executions(
             execution_ref=execution_ref,
-            task_id=None if execution_ref else task.task_id,
-        )
+            task_id=None,
+        ) if execution_ref else []
         prepared = (
             self.registry.get_prepared_execution_for_execution(execution_ref)
             if execution_ref
@@ -1267,7 +1220,20 @@ class ClinxIntegration:
         )
         if execution_ref:
             status["execution_ref"] = execution_ref
-            status["dynamic_tool_deliveries"] = ToolDeliveryLedger.records(self.registry, execution_ref)
+        deliveries = ToolDeliveryLedger.records(self.registry, execution_ref) if execution_ref else []
+        status["dynamic_tool_deliveries"] = deliveries
+        status["provider_delivery"] = delivery_summary(deliveries, result.raw_result if result else '')
+        status["selection_reason"] = selection_reason
+        status["task_current_projection"] = {
+            "execution_state": task.execution_state, "codex_running": bool(task.codex_running),
+            "turn_id": task.turn_id, "current_stage": task.current_stage,
+        }
+        status["status_source"] = "PERSISTED_EXECUTION" if record else "TASK_PROJECTION"
+        if record:
+            state = record.get("execution_owned_state") or record['stage']
+            status["execution_state"] = status["EXECUTION_STATE"] = state
+            status["execution_turn_ref"] = record.get("execution_owned_turn")
+            status["CODEX_RUNNING"] = status["codex_running"] = record["stage"] not in TERMINAL_EXECUTION_STAGES and bool(task.codex_running)
         return status
 
     def get_capabilities(self) -> dict[str, Any]:
