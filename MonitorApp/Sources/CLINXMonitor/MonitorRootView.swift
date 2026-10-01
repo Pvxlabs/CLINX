@@ -16,7 +16,9 @@ struct MonitorRootView: View {
         if windowWidth < 1280 { return DS.Metric.listWidthMedium }
         return DS.Metric.listWidthWide
     }
-    private var showTitle: Bool { windowWidth >= 1000 }
+    /// Wide enough for the full-width chrome: the search field keeps its 210pt width and the
+    /// scenario picker shows its label. Below this the design narrows both.
+    private var wideLayout: Bool { windowWidth >= 1000 }
     private var inspectorWidth: CGFloat {
         windowWidth - listWidth - (rail ? DS.Metric.sidebarRailWidth : DS.Metric.sidebarWidth)
     }
@@ -34,20 +36,29 @@ struct MonitorRootView: View {
                                                     ideal: rail ? DS.Metric.sidebarRailWidth : DS.Metric.sidebarWidth,
                                                     max: rail ? 60 : 280)
             } content: {
-                ExecutionListView(store: store)
-                    .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft]))
-                    .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft])
-                        .strokeBorder(DS.Palette.border, lineWidth: 1))
-                    .padding(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 0))
-                    .frame(maxHeight: .infinity)
-                    .background(DS.Palette.canvas)
-                    .navigationSplitViewColumnWidth(min: 260, ideal: listWidth, max: 520)
+                VStack(spacing: 0) {
+                    searchHeader
+                    ExecutionListView(store: store)
+                        .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft]))
+                        .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft])
+                            .strokeBorder(DS.Palette.border, lineWidth: 1))
+                        // The panels stop 40pt above the window bottom in every layout, so the
+                        // RuntimeStatus dock stays clear of content — with or without a
+                        // connectivity strip above, and at any window height.
+                        .padding(EdgeInsets(top: 8, leading: 8,
+                                            bottom: DS.Metric.contentBottomInset, trailing: 0))
+                        .frame(maxHeight: .infinity)
+                        .background(DS.Palette.canvas)
+                }
+                .background(DS.Palette.canvas)
+                .navigationSplitViewColumnWidth(min: 260, ideal: listWidth, max: 520)
             } detail: {
                 InspectorView(store: store, stacked: inspectorStacked)
                     .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight]))
                     .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight])
                         .strokeBorder(DS.Palette.border, lineWidth: 1))
-                    .padding(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 8))
+                    .padding(EdgeInsets(top: 8, leading: 0,
+                                        bottom: DS.Metric.contentBottomInset, trailing: 8))
                     .frame(maxHeight: .infinity)
                     .background(DS.Palette.canvas)
             }
@@ -58,6 +69,13 @@ struct MonitorRootView: View {
             if store.syntheticScenario != nil {
                 Rectangle().fill(DS.Palette.synthetic).frame(height: 2)
             }
+        }
+        // Environment + connection live here now: one transparent, read-only label in the
+        // window's bottom-right corner rather than a capsule in the toolbar.
+        .overlay(alignment: .bottomTrailing) {
+            RuntimeStatus(state: store.runtimeStatus)
+                .padding(.bottom, DS.Metric.runtimeStatusBottomInset)
+                .padding(.trailing, DS.Metric.runtimeStatusTrailingInset)
         }
         .background(
             GeometryReader { proxy in
@@ -82,6 +100,24 @@ struct MonitorRootView: View {
         .navigationTitle("")
     }
 
+    // MARK: header
+
+    /// The finalized header carries no "CLINX Monitor" title container. The search field
+    /// sits above the main content and is hard-aligned with the content panel's leading
+    /// edge: keeping it inside the content column is what makes that alignment exact, at
+    /// every sidebar width — desktop column or compact rail — with no measured offset.
+    private var searchHeader: some View {
+        HStack(spacing: 0) {
+            SearchField(store: store,
+                        focused: $searchFocused,
+                        width: wideLayout ? DS.Metric.searchFieldWidth : DS.Metric.searchFieldCompactWidth)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: DS.Metric.contentHeaderHeight)
+        .background(DS.Palette.canvas)
+    }
+
     // MARK: toolbar
 
     @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
@@ -90,22 +126,13 @@ struct MonitorRootView: View {
                 // The design renders the app mark at 24pt with a −3pt margin so the tile
                 // aligns with the 18pt toolbar icons.
                 AppMark(size: 24, flat: true).padding(-3)
-                if showTitle {
-                    Text("CLINX Monitor")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(DS.Palette.textPrimary)
-                }
-                EnvironmentBadge(synthetic: store.syntheticScenario != nil)
                 if let scenario = store.syntheticScenario {
-                    ScenarioSelector(store: store, current: scenario, compact: !showTitle)
+                    ScenarioSelector(store: store, current: scenario, compact: !wideLayout)
                 }
             }
         }
 
         ToolbarItemGroup(placement: .automatic) {
-            ConnectionCluster(connection: store.connection7, authority: store.authority,
-                              sync: store.syncText, compact: !showTitle)
-            SearchField(store: store, focused: $searchFocused, width: showTitle ? 210 : 140)
             ToolbarIconButton(system: "arrow.clockwise", help: "Refresh  ⌘R") {
                 Task { await store.refresh() }
             }
@@ -187,7 +214,7 @@ struct SearchField: View {
             }
         }
         .padding(.horizontal, 8)
-        .frame(width: width, height: 28)
+        .frame(width: width, height: DS.Metric.searchFieldHeight)
         .background(RoundedRectangle(cornerRadius: 7).fill(DS.Palette.surface))
         .overlay(RoundedRectangle(cornerRadius: 7)
             .strokeBorder(focused.wrappedValue ? DS.Palette.accent : DS.Palette.border, lineWidth: 1))

@@ -87,9 +87,11 @@ private struct SidebarItemView: View {
 
     private var active: Bool { store.view == view }
     private var count: Int { store.counts[view] ?? 0 }
+    /// Attention colour comes from the view's shared rule, and only while the view
+    /// actually holds entries — a "0" stays neutral grey on Blocked and Failed too.
     private var attention: MonitorStatus? {
-        guard (view == .blocked || view == .failed), count > 0 else { return nil }
-        return view == .blocked ? .blocked : .failed
+        guard count > 0 else { return nil }
+        return view.countTint
     }
 
     var body: some View {
@@ -124,7 +126,10 @@ private struct SidebarItemView: View {
                     Spacer(minLength: 6)
                     countView
                 }
-                .padding(.horizontal, 8)
+                .padding(.leading, 8)
+                // Every view — Active, Blocked, Failed, Recent, Completed — ends its count
+                // on this one column, so "5 / 2 / 1 / 12 / 6" share a right edge.
+                .padding(.trailing, DS.Metric.sidebarCountTrailingInset)
                 .frame(height: DS.Metric.sidebarItemHeight)
                 .background(RoundedRectangle(cornerRadius: 6)
                     .fill(active ? DS.Palette.selection : (hovering ? DS.Palette.hover : .clear)))
@@ -137,21 +142,14 @@ private struct SidebarItemView: View {
         .accessibilityLabel("\(view.label), \(count) executions")
     }
 
-    @ViewBuilder private var countView: some View {
-        if let attention {
-            Text("\(count)")
-                .font(.system(size: 11, weight: .medium))
-                .monospacedDigit()
-                .foregroundStyle(attention.color)
-                .padding(.horizontal, 4)
-                .frame(minWidth: 18)
-                .background(RoundedRectangle(cornerRadius: 4).fill(attention.tint))
-        } else {
-            Text("\(count)")
-                .font(DS.Font.meta)
-                .monospacedDigit()
-                .foregroundStyle(DS.Palette.textTertiary)
-        }
+    /// One renderer for every view and every state. The count is plain text — no badge,
+    /// no pill, no tinted fill, no minimum width and no padding — so the digits hug the
+    /// shared right edge and attention only ever changes their colour.
+    private var countView: some View {
+        Text("\(count)")
+            .font(DS.Font.metaEmphasis)
+            .monospacedDigit()
+            .foregroundStyle(attention?.color ?? DS.Palette.textTertiary)
     }
 
     @ViewBuilder private func glyph(size: CGFloat) -> some View {

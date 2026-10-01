@@ -16,9 +16,15 @@ recorded separately in `docs/monitor/UI_REDESIGN_EVIDENCE.md`.
 The document shell of that Make file (`App.tsx`, pages 00–16) is **design documentation
 navigation**, not product navigation, and is deliberately not reproduced in the app.
 
-Earlier Figma design file `OgzTpC5hnbctXciUVN6wri` contains only that documentation shell
-(principles + before/after spec) and no screen layers; it was superseded as the source by the
-Make file above.
+The Figma **design** file `OgzTpC5hnbctXciUVN6wri` began as that documentation shell only
+(principles + before/after spec). It now carries the full screen set — `Live / Healthy`
+(node `5:3841`), `Active` (`5:4657`), `Blocked` (`5:5531`), `Failed` (`5:6312`), `Completed`,
+`Stale`, `Offline`, `Empty`, `Synthetic Acceptance`, `Settings`, `Dark Mode` and `Compact
+Window` — each a complete `MonitorWindow` render (1440×900 desktop, 1100×720 / 900×640
+compact), plus a published `RuntimeStatus` component set (4 states × 2 themes). Those pages were
+hand-tuned *after* the Make implementation, so for the header, content insets, row, badge,
+sidebar count and runtime-status details recorded in §6 they are the current authority. The Make
+file remains the source for the original screen inventory in §2 and the token values in §3.
 
 ## 2. Screens → implementation
 
@@ -32,7 +38,7 @@ Make file above.
 | 09 Stale | `stale` | `FreshnessTag`, `ConnectivityStrip`, `MonitorStatus.status(freshness:)` |
 | 10 Offline | `offline` | `ConnectivityStrip` (“Observer unavailable”, last known data stays) |
 | 11 Empty | `empty` | `EmptyStateView`, list empty state |
-| 12 Synthetic Acceptance | `long`, synthetic | `EnvironmentBadge`, `ScenarioSelector`, purple window edge, long-content fixture |
+| 12 Synthetic Acceptance | `long`, synthetic | `RuntimeStatus` (synthetic), `ScenarioSelector`, purple window edge, long-content fixture |
 | 13 Settings | — | `MonitorSettingsView` (Settings scene) |
 | 14 Dark Mode | any, dark | `DS.Palette` dynamic tokens |
 | 15 Compact Window | 1100×720 / 900×640 | `MonitorRootView` metrics (`rail`, `listWidth`, `inspectorStacked`) |
@@ -64,8 +70,9 @@ Make file above.
 
 Metrics: toolbar 52 (native macOS unified toolbar), task row 54, list header 40, group header
 32, pagination 26, connectivity strip 28, sidebar 200 / rail 52, list 384 · 340 · 300,
-inspector min 520, panel radius 10, blocker radius 8, control radius 5, attention edge 2,
-window minimum 900×600.
+inspector min 520, panel radius 10, blocker radius 8, control radius 5, window minimum 900×600,
+content bottom inset 40, runtime status inset 8 / 12, sidebar count inset 18, stage badge 16,
+search field 210 wide / 150 in Compact Window.
 
 Typography: system font (SF Pro) for UI; SF Mono (`.monospaced`) for IDs, stages, codes and
 timestamps; tabular figures on every duration, count and timestamp.
@@ -130,9 +137,9 @@ promotes it.
    Settings scene, so ⌘, opens the standard macOS settings window with the design's three
    panes (Connection / Appearance / Shortcuts).
 6. **List container.** Rows are rendered in a `ScrollView` + `LazyVStack(pinnedViews:)` rather
-   than `List`: the design needs an exact 54px row, a 2px attention edge, custom selection fill
-   and selection that survives refresh by execution ID. `↑`/`↓` are implemented with
-   `onMoveCommand` on the focusable list.
+   than `List`: the design needs an exact 54px row, a custom selection fill and selection that
+   survives refresh by execution ID. `↑`/`↓` are implemented with `onMoveCommand` on the
+   focusable list.
 7. **Timeline evidence.** The Observer wire model carries no per-event payload, so timeline rows
    show the canonical `event_ref` as mono metadata. The evidence disclosure (collapsed by
    default) exists on the blocker/failure panel, where the canonical blocker message is the
@@ -143,3 +150,23 @@ promotes it.
 9. **Credential display.** Settings shows a fixed mask with no characters of the stored secret.
 10. **Test connection** performs a read-only `GET /v1/health` through the same client; it is not
     an execution control.
+
+## 6. Finalized page details
+
+The hand-tuned `MonitorWindow` renders in the design file encode the rules below. Every value
+was read from those pages, not from the older Make source.
+
+| Rule | Figma | Implementation |
+| --- | --- | --- |
+| Header carries no product title | `Header` (`5:4014`) holds only the traffic lights, the search field and two tool buttons | `MonitorRootView.toolbarContent` keeps the app mark, the scenario picker, refresh and settings — no title container |
+| Search field aligns with the content edge | `SearchField` at `x = 209`; the content panel starts at `208` plus its 1pt border | The field is the first row of the content column, so the alignment is structural at any sidebar width — desktop column or compact rail |
+| Content bottom inset | Panels end at `y = 860` of a 900-tall window → 40pt, unchanged on `Stale`, `Offline` and `Compact Window` | `DS.Metric.contentBottomInset` on both panels |
+| Runtime status | `RuntimeStatus` docked bottom-right with `fills: 0`, `strokes: 0` — no card, no capsule | `RuntimeStatus`: dot + environment + connection, transparent, no background and no border |
+| Row accent strip | No `TaskRow` on any page has a leading edge rect | `ExecutionRowView` draws no attention overlay |
+| Stage badge | 16pt tall, 8pt mono label, 6pt horizontal padding, hugged width, hairline stroke, no fill | `StageBadge.Metrics` |
+| Row trailing metadata | 9pt, one step below the row's own `meta` | `DS.Font.rowTrailing` |
+| Sidebar counts | `Text:align` right-aligned, count right edge 18pt inside the 188pt `SidebarItem`, plain 11pt text, identical for all five views | `DS.Metric.sidebarCountTrailingInset` plus one shared `countView` |
+
+`Blocked` and `Failed` counts take their status colour and nothing else — no badge, no tinted
+fill, no minimum width, no padding — so neither a selection background nor a status colour can
+move the digits off the shared column.

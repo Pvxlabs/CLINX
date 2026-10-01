@@ -37,10 +37,8 @@ enum MonitorStatus: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Tinted count / row fill. `color-mix(in srgb, <status> 11–13%, transparent)`.
-    var tint: Color { color.opacity(self == .blocked ? 0.12 : self == .cancelled || self == .unknown || self == .stale ? 0.13 : 0.11) }
-
-    /// Attention floats up: blocked and failed sort first and carry a 2px edge.
+    /// Attention floats up: blocked and failed sort first. It is expressed by the status
+    /// glyph, the stage chip and the trailing label — the row carries no coloured edge.
     var isAttention: Bool { self == .blocked || self == .failed }
 
     /// Glyph shape, matching the design's unique-shape-per-state rule.
@@ -157,6 +155,63 @@ enum ConnectionState7: String {
     }
 }
 
+/// The merged runtime status: environment and connection in one read-only indicator.
+///
+/// Figma component `RuntimeStatus` ships four states in two themes; the environment
+/// segment names the data source (`SYNTHETIC` for fixtures) and the connection segment
+/// the Observer link. Authority and last-sync are no longer rendered — the finalized
+/// indicator is deliberately one line of information with no controls.
+enum RuntimeStatusState: String, CaseIterable, Identifiable {
+    case live, stale, offline, synthetic
+
+    var id: String { rawValue }
+
+    /// Observer connection + synthetic mode → the four finalized states.
+    static func resolve(synthetic: Bool, connection: ConnectionState7) -> RuntimeStatusState {
+        if synthetic { return .synthetic }
+        switch connection {
+        case .connected: return .live
+        case .degraded: return .stale
+        case .offline: return .offline
+        }
+    }
+
+    var environment: String {
+        switch self {
+        case .live, .stale, .offline: return "P620"
+        case .synthetic: return "SYNTHETIC"
+        }
+    }
+
+    var connection: String {
+        switch self {
+        case .live: return "Connected"
+        case .stale: return "Stale"
+        case .offline: return "Offline"
+        case .synthetic: return "Local"
+        }
+    }
+
+    /// Status dot colour. Never the only signal: the connection word always names the state.
+    var color: Color {
+        switch self {
+        case .live: return DS.Palette.success
+        case .stale: return DS.Palette.stale
+        case .offline: return DS.Palette.unknown
+        case .synthetic: return DS.Palette.synthetic
+        }
+    }
+}
+
+@MainActor
+extension MonitorStore {
+    /// The docked indicator's state. Synthetic fixtures always read as synthetic — the
+    /// fixture scenario, not the Observer link, is what the user must never mistake for live.
+    var runtimeStatus: RuntimeStatusState {
+        RuntimeStatusState.resolve(synthetic: syntheticScenario != nil, connection: connection7)
+    }
+}
+
 enum AuthorityState: String {
     case live, stale, unknown
 
@@ -233,6 +288,17 @@ enum MonitorView: String, CaseIterable, Identifiable {
         case .failed: return 3
         case .recent: return 4
         case .completed: return 5
+        }
+    }
+
+    /// The status a view's count carries when it needs attention. One shared rule for all
+    /// five views — never a per-view special case — and only colour: the count is plain
+    /// text, so attention can never widen it or push the digits off the alignment column.
+    var countTint: MonitorStatus? {
+        switch self {
+        case .blocked: return .blocked
+        case .failed: return .failed
+        case .active, .recent, .completed: return nil
         }
     }
 
