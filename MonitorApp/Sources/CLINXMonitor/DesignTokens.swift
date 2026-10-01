@@ -92,6 +92,8 @@ enum DS {
         static let searchFieldCompactWidth: CGFloat = 150
         static let searchFieldHeight: CGFloat = 28
         static let contentHeaderHeight: CGFloat = 48
+        /// Keep all three native buttons clear of search when the sidebar becomes a rail.
+        static let nativeControlsInset: CGFloat = 76
 
         /// Figma `Text:align`: the sidebar count's right edge sits 18pt inside the
         /// SidebarItem's right edge, identically for every view and every state.
