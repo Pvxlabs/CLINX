@@ -1,11 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// Three-pane desktop shell: Sidebar · List · Inspector, under one 48pt header.
+/// Three-pane desktop shell: Sidebar · List · Inspector, under one compact header.
 ///
 /// Figma source of truth: the hand-tuned `MonitorWindow` renders in
 /// `CLINX Monitor UI/UX Redesign` (`OgzTpC5hnbctXciUVN6wri`), page `5:3841` (Live / Healthy).
-/// The header is a single 48pt bar — native traffic lights, the search field and the two
+/// The header is a single 38pt bar — native traffic lights, the search field and the two
 /// tool buttons all sit on that one level; there is no separate macOS toolbar or search row.
 struct MonitorRootView: View {
     @ObservedObject var store: MonitorStore
@@ -31,9 +31,6 @@ struct MonitorRootView: View {
         GeometryReader { proxy in
             ZStack(alignment: .top) {
                 VStack(spacing: 0) {
-                    if let note = store.connectivityNote {
-                        ConnectivityStrip(store: store, note: note)
-                    }
                     header
                     HStack(spacing: 0) {
                         SidebarView(store: store, rail: rail)
@@ -47,8 +44,7 @@ struct MonitorRootView: View {
                             .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft]))
                             .overlay(ExecutionPanelBorder())
                             // The panels stop 40pt above the window bottom in every layout, so the
-                            // RuntimeStatus dock stays clear of content — with or without a
-                            // connectivity strip above, and at any window height.
+                            // RuntimeStatus dock stays clear of content at any window height.
                             .padding(.bottom, DS.Metric.contentBottomInset)
                             .frame(maxHeight: .infinity)
                             .background(DS.Palette.canvas)
@@ -83,15 +79,15 @@ struct MonitorRootView: View {
             // window's bottom-right corner rather than a capsule in the toolbar.
             .overlay(alignment: .bottomTrailing) {
                 RuntimeStatus(state: store.runtimeStatus)
+                    .help([store.connectivityNote, store.connectivityDetail, store.connectivityTail]
+                        .compactMap { $0 }.joined(separator: " · "))
                     .padding(.bottom, DS.Metric.runtimeStatusBottomInset)
                     .padding(.trailing, DS.Metric.runtimeStatusTrailingInset)
             }
             .onAppear { windowWidth = proxy.size.width }
             .onChange(of: proxy.size.width) { windowWidth = $0 }
         }
-        .background(FullSizeContentConfigurator(
-            headerTopInset: store.connectivityNote == nil ? 0 : DS.Metric.connectivityStripHeight
-        ))
+        .background(FullSizeContentConfigurator())
         .onChange(of: store.searchFocusRequest) { _ in searchFocused = true }
         .onExitCommand {
             if searchFocused {
@@ -105,7 +101,7 @@ struct MonitorRootView: View {
 
     // MARK: header
 
-    /// One 48pt header, exactly as in the design: native traffic lights (drawn by macOS over
+    /// One compact header: native traffic lights (drawn by macOS over
     /// the leading inset), the search field aligned with the list column's leading edge, and
     /// the refresh/settings tool buttons on the right. No product title, no app mark.
     private var header: some View {

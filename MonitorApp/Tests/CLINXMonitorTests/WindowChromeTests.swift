@@ -10,22 +10,12 @@ final class WindowChromeTests: XCTestCase {
         defer { window.close() }
         FullSizeContentConfigurator.configure(window)
 
-        XCTAssertEqual(DS.Metric.contentHeaderHeight, 48)
+        XCTAssertEqual(DS.Metric.contentHeaderHeight, 38)
         XCTAssertTrue(window.styleMask.contains(.fullSizeContentView))
         XCTAssertTrue(window.titlebarAppearsTransparent)
         XCTAssertEqual(window.titleVisibility, .hidden)
         XCTAssertNil(window.toolbar, "the header must not acquire a second system toolbar")
         assertAlignment(window)
-    }
-
-    @MainActor
-    func testConnectivityStripAndHealthyTransitionsFollowTheActualHeader() {
-        let window = makeWindow()
-        defer { window.close() }
-        for inset in [DS.Metric.connectivityStripHeight, 0, DS.Metric.connectivityStripHeight, 0] {
-            FullSizeContentConfigurator.configure(window, headerTopInset: inset)
-            assertAlignment(window, headerTopInset: inset)
-        }
     }
 
     @MainActor
@@ -66,15 +56,14 @@ final class WindowChromeTests: XCTestCase {
     }
 
     @MainActor
-    private func assertAlignment(_ window: NSWindow, headerTopInset: CGFloat = 0,
-                                 file: StaticString = #filePath, line: UInt = #line) {
+    private func assertAlignment(_ window: NSWindow, file: StaticString = #filePath, line: UInt = #line) {
         for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             guard let button = window.standardWindowButton(type), let parent = button.superview else {
                 XCTFail("missing native window button", file: file, line: line)
                 continue
             }
             let rect = button.convert(button.bounds, to: nil)
-            XCTAssertEqual(window.frame.height - rect.midY, headerTopInset + 24,
+            XCTAssertEqual(window.frame.height - rect.midY, 19,
                            accuracy: 0.01, file: file, line: line)
             XCTAssertTrue(parent.bounds.contains(button.frame), "native hit region must not clip",
                           file: file, line: line)

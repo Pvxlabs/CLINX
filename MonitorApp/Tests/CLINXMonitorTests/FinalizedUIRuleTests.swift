@@ -63,7 +63,8 @@ final class FinalizedUIRuleTests: XCTestCase {
         XCTAssertEqual(DS.Metric.searchFieldWidth, 210)
         XCTAssertEqual(DS.Metric.searchFieldCompactWidth, 150)
         XCTAssertEqual(DS.Metric.searchFieldHeight, 28)
-        XCTAssertEqual(DS.Metric.contentHeaderHeight, 48)
+        XCTAssertEqual(DS.Metric.contentHeaderHeight, 38)
+        XCTAssertGreaterThan(DS.Metric.contentHeaderHeight, DS.Metric.searchFieldHeight)
         XCTAssertLessThan(DS.Metric.searchFieldCompactWidth, DS.Metric.searchFieldWidth)
         // Both widths must fit the narrowest content column without clipping.
         XCTAssertLessThan(DS.Metric.searchFieldWidth + 16, 260)
