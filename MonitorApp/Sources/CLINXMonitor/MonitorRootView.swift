@@ -44,7 +44,7 @@ struct MonitorRootView: View {
                             .frame(width: listWidth)
                             .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft]))
                             .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft])
-                                .strokeBorder(DS.Palette.border, style: StrokeStyle(lineWidth: 2, lineJoin: .round)))
+                                .strokeBorder(DS.Palette.border, lineWidth: 1))
                             // The panels stop 40pt above the window bottom in every layout, so the
                             // RuntimeStatus dock stays clear of content — with or without a
                             // connectivity strip above, and at any window height.
@@ -56,7 +56,7 @@ struct MonitorRootView: View {
                             .frame(maxWidth: .infinity)
                             .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight]))
                             .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight])
-                                .strokeBorder(DS.Palette.border, style: StrokeStyle(lineWidth: 1, lineJoin: .round)))
+                                .strokeBorder(DS.Palette.border, lineWidth: 1))
                             .padding(.bottom, DS.Metric.contentBottomInset)
                             .padding(.trailing, 8)
                             .frame(maxHeight: .infinity)
@@ -288,10 +288,9 @@ struct FullSizeContentConfigurator: NSViewRepresentable {
         /// Centers the native traffic lights on the 48pt header's vertical midline so they
         /// share one optical line with the search field and the toolbar buttons.
         static func alignTrafficLights(_ window: NSWindow) {
-            // The button frame is a touch taller than the glyph it draws, so the circle's
-            // visual center sits slightly above the frame's midline. Nudge it onto the header
-            // midline (verified against the rendered capture).
-            let targetCenterFromTop = DS.Metric.contentHeaderHeight / 2 + 1.25
+            // The glyph inside each standard button sits ~1.25pt above the button frame's
+            // midline, so the frame is centered slightly lower than the 24pt header midline.
+            let targetCenterFromTop = DS.Metric.contentHeaderHeight / 2 + 1.5
             let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
             let buttons = types.compactMap { window.standardWindowButton($0) }
             guard let superview = buttons.first?.superview else { return }
