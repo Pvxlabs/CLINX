@@ -66,7 +66,7 @@ enum DS {
         static let inspectorTabsHeight: CGFloat = 34
         static let sidebarItemHeight: CGFloat = 28
         static let sidebarRailWidth: CGFloat = 52
-        static let sidebarWidth: CGFloat = 200
+        static let sidebarWidth: CGFloat = 208
         static let listWidthWide: CGFloat = 384
         static let listWidthMedium: CGFloat = 340
         static let listWidthNarrow: CGFloat = 300

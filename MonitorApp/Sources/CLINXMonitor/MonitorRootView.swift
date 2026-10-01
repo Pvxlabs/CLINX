@@ -1,91 +1,93 @@
 import AppKit
 import SwiftUI
 
-/// Three-pane desktop shell: Sidebar · List · Inspector, under one compact toolbar.
+/// Three-pane desktop shell: Sidebar · List · Inspector, under one 48pt header.
 ///
-/// Figma source of truth: `MonitorWindow.tsx` (header, connectivity strip, sidebar/list/
-/// inspector geometry) plus the "Developer Handoff" page (window behaviour, keyboard).
+/// Figma source of truth: the hand-tuned `MonitorWindow` renders in
+/// `CLINX Monitor UI/UX Redesign` (`OgzTpC5hnbctXciUVN6wri`), page `5:3841` (Live / Healthy).
+/// The header is a single 48pt bar — native traffic lights, the search field and the two
+/// tool buttons all sit on that one level; there is no separate macOS toolbar or search row.
 struct MonitorRootView: View {
     @ObservedObject var store: MonitorStore
     @FocusState private var searchFocused: Bool
     @State private var windowWidth: CGFloat = 1440
 
+    /// Breakpoints follow the design's three reference sizes: 1440 desktop (full sidebar +
+    /// 384 list), 1100 compact (rail + 340 list), 900 compact (rail + 300 list).
     private var rail: Bool { windowWidth < 1280 }
     private var listWidth: CGFloat {
         if windowWidth < 1000 { return DS.Metric.listWidthNarrow }
         if windowWidth < 1280 { return DS.Metric.listWidthMedium }
         return DS.Metric.listWidthWide
     }
-    /// Wide enough for the full-width chrome: the search field keeps its 210pt width and the
-    /// scenario picker shows its label. Below this the design narrows both.
-    private var wideLayout: Bool { windowWidth >= 1000 }
-    private var inspectorWidth: CGFloat {
-        windowWidth - listWidth - (rail ? DS.Metric.sidebarRailWidth : DS.Metric.sidebarWidth)
+    private var sidebarWidth: CGFloat { rail ? DS.Metric.sidebarRailWidth : DS.Metric.sidebarWidth }
+    private var searchFieldWidth: CGFloat {
+        windowWidth < 1000 ? DS.Metric.searchFieldCompactWidth : DS.Metric.searchFieldWidth
     }
+    private var inspectorWidth: CGFloat { max(0, windowWidth - sidebarWidth - listWidth) }
     private var inspectorStacked: Bool { inspectorWidth < DS.Metric.inspectorStackThreshold }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let note = store.connectivityNote {
-                ConnectivityStrip(store: store, note: note)
-            }
-            NavigationSplitView {
-                SidebarView(store: store, rail: rail)
-                    .background(DS.Palette.canvas)
-                    .navigationSplitViewColumnWidth(min: rail ? 52 : 168,
-                                                    ideal: rail ? DS.Metric.sidebarRailWidth : DS.Metric.sidebarWidth,
-                                                    max: rail ? 60 : 280)
-            } content: {
+        GeometryReader { proxy in
+            ZStack(alignment: .top) {
                 VStack(spacing: 0) {
-                    searchHeader
-                    ExecutionListView(store: store)
-                        .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft]))
-                        .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft])
-                            .strokeBorder(DS.Palette.border, lineWidth: 1))
-                        // The panels stop 40pt above the window bottom in every layout, so the
-                        // RuntimeStatus dock stays clear of content — with or without a
-                        // connectivity strip above, and at any window height.
-                        .padding(EdgeInsets(top: 8, leading: 8,
-                                            bottom: DS.Metric.contentBottomInset, trailing: 0))
-                        .frame(maxHeight: .infinity)
-                        .background(DS.Palette.canvas)
-                }
-                .background(DS.Palette.canvas)
-                .navigationSplitViewColumnWidth(min: 260, ideal: listWidth, max: 520)
-            } detail: {
-                InspectorView(store: store, stacked: inspectorStacked)
-                    .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight]))
-                    .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight])
-                        .strokeBorder(DS.Palette.border, lineWidth: 1))
-                    .padding(EdgeInsets(top: 8, leading: 0,
-                                        bottom: DS.Metric.contentBottomInset, trailing: 8))
+                    if let note = store.connectivityNote {
+                        ConnectivityStrip(store: store, note: note)
+                    }
+                    header
+                    HStack(spacing: 0) {
+                        SidebarView(store: store, rail: rail)
+                            .frame(width: sidebarWidth)
+                            .background(DS.Palette.canvas)
+
+                        ExecutionListView(store: store)
+                            .frame(width: listWidth)
+                            .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft]))
+                            .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft])
+                                .strokeBorder(DS.Palette.border, lineWidth: 1))
+                            // The panels stop 40pt above the window bottom in every layout, so the
+                            // RuntimeStatus dock stays clear of content — with or without a
+                            // connectivity strip above, and at any window height.
+                            .padding(.bottom, DS.Metric.contentBottomInset)
+                            .frame(maxHeight: .infinity)
+                            .background(DS.Palette.canvas)
+
+                        InspectorView(store: store, stacked: inspectorStacked)
+                            .frame(maxWidth: .infinity)
+                            .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight]))
+                            .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight])
+                                .strokeBorder(DS.Palette.border, lineWidth: 1))
+                            .padding(.bottom, DS.Metric.contentBottomInset)
+                            .padding(.trailing, 8)
+                            .frame(maxHeight: .infinity)
+                            .background(DS.Palette.canvas)
+                    }
                     .frame(maxHeight: .infinity)
-                    .background(DS.Palette.canvas)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(DS.Palette.canvas)
+
+                // Synthetic-mode edge anchored to the window's absolute top (y=0), drawn as a
+                // ZStack sibling so it is not pushed by the safe-area inset that `.overlay` sees.
+                if store.syntheticScenario != nil {
+                    Rectangle().fill(DS.Palette.synthetic)
+                        .frame(height: 2)
+                        .frame(maxWidth: .infinity)
+                }
             }
-            .background(DS.Palette.canvas)
-        }
-        .background(DS.Palette.canvas)
-        .overlay(alignment: .top) {
-            if store.syntheticScenario != nil {
-                Rectangle().fill(DS.Palette.synthetic).frame(height: 2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea()
+            // Environment + connection live here now: one transparent, read-only label in the
+            // window's bottom-right corner rather than a capsule in the toolbar.
+            .overlay(alignment: .bottomTrailing) {
+                RuntimeStatus(state: store.runtimeStatus)
+                    .padding(.bottom, DS.Metric.runtimeStatusBottomInset)
+                    .padding(.trailing, DS.Metric.runtimeStatusTrailingInset)
             }
+            .onAppear { windowWidth = proxy.size.width }
+            .onChange(of: proxy.size.width) { windowWidth = $0 }
         }
-        // Environment + connection live here now: one transparent, read-only label in the
-        // window's bottom-right corner rather than a capsule in the toolbar.
-        .overlay(alignment: .bottomTrailing) {
-            RuntimeStatus(state: store.runtimeStatus)
-                .padding(.bottom, DS.Metric.runtimeStatusBottomInset)
-                .padding(.trailing, DS.Metric.runtimeStatusTrailingInset)
-        }
-        .background(
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear { windowWidth = proxy.size.width }
-                    .onChange(of: proxy.size.width) { windowWidth = $0 }
-            }
-        )
-        .background(WindowConfigurator())
-        .toolbar { toolbarContent }
+        .background(FullSizeContentConfigurator())
         .onChange(of: store.searchFocusRequest) { _ in searchFocused = true }
         .onExitCommand {
             if searchFocused {
@@ -95,95 +97,36 @@ struct MonitorRootView: View {
                 store.clearSelection()
             }
         }
-        // The product name lives in the leading toolbar cluster (as in the design), so the
-        // window title is left empty rather than repeating it in the centre of the bar.
-        .navigationTitle("")
     }
 
     // MARK: header
 
-    /// The finalized header carries no "CLINX Monitor" title container. The search field
-    /// sits above the main content and is hard-aligned with the content panel's leading
-    /// edge: keeping it inside the content column is what makes that alignment exact, at
-    /// every sidebar width — desktop column or compact rail — with no measured offset.
-    private var searchHeader: some View {
+    /// One 48pt header, exactly as in the design: native traffic lights (drawn by macOS over
+    /// the leading inset), the search field aligned with the list column's leading edge, and
+    /// the refresh/settings tool buttons on the right. No product title, no app mark.
+    private var header: some View {
         HStack(spacing: 0) {
-            SearchField(store: store,
-                        focused: $searchFocused,
-                        width: wideLayout ? DS.Metric.searchFieldWidth : DS.Metric.searchFieldCompactWidth)
+            // Reserve the sidebar column (plus its 1pt hairline) so the search field's left
+            // edge lands on the list column, at every sidebar width — desktop column or rail.
+            Spacer().frame(width: sidebarWidth + 1)
+            SearchField(store: store, focused: $searchFocused, width: searchFieldWidth)
             Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .frame(height: DS.Metric.contentHeaderHeight)
-        .background(DS.Palette.canvas)
-    }
-
-    // MARK: toolbar
-
-    @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            HStack(spacing: 10) {
-                // The design renders the app mark at 24pt with a −3pt margin so the tile
-                // aligns with the 18pt toolbar icons.
-                AppMark(size: 24, flat: true).padding(-3)
-                if let scenario = store.syntheticScenario {
-                    ScenarioSelector(store: store, current: scenario, compact: !wideLayout)
+            HStack(spacing: 8) {
+                ToolbarIconButton(system: "arrow.clockwise", help: "Refresh  ⌘R") {
+                    Task { await store.refresh() }
+                }
+                ToolbarIconButton(system: "gearshape", help: "Settings  ⌘,") {
+                    SettingsOpener.open()
                 }
             }
+            .padding(.trailing, 12)
         }
-
-        ToolbarItemGroup(placement: .automatic) {
-            ToolbarIconButton(system: "arrow.clockwise", help: "Refresh  ⌘R") {
-                Task { await store.refresh() }
-            }
-            ToolbarIconButton(system: "gearshape", help: "Settings  ⌘,") {
-                SettingsOpener.open()
-            }
-        }
+        .frame(height: DS.Metric.contentHeaderHeight)
+        .background(DS.Palette.canvas)
     }
 }
 
 // MARK: - Chrome pieces
-
-struct ScenarioSelector: View {
-    @ObservedObject var store: MonitorStore
-    let current: SyntheticScenario
-    var compact = false
-
-    var body: some View {
-        Menu {
-            ForEach(SyntheticScenario.allCases) { scenario in
-                Button(scenario.label) { store.useSynthetic(scenario) }
-            }
-            Divider()
-            Button("Exit synthetic mode") { store.useLiveObserver() }
-        } label: {
-            HStack(spacing: 6) {
-                if !compact {
-                    Text("SCENARIO")
-                        .font(DS.Font.mono(10))
-                        .tracking(0.5)
-                        .foregroundStyle(DS.Palette.synthetic.opacity(0.75))
-                }
-                Text(current.label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(DS.Palette.textPrimary)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 7, weight: .semibold))
-                    .foregroundStyle(DS.Palette.synthetic)
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .background(RoundedRectangle(cornerRadius: 5).fill(DS.Palette.surface))
-            .overlay(RoundedRectangle(cornerRadius: 5)
-                .strokeBorder(DS.Palette.synthetic.opacity(0.45), lineWidth: 1))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Synthetic acceptance scenario (development only)")
-    }
-}
 
 struct SearchField: View {
     @ObservedObject var store: MonitorStore
@@ -288,7 +231,7 @@ struct PanelShape: InsettableShape {
                     radius: bottomRight, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
         path.addLine(to: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY))
         path.addArc(center: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY - bottomLeft),
-                    radius: bottomLeft, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+                    radius: bottomLeft, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
         path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topLeft))
         path.addArc(center: CGPoint(x: rect.minX + topLeft, y: rect.minY + topLeft),
                     radius: topLeft, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
@@ -303,24 +246,51 @@ struct PanelShape: InsettableShape {
     }
 }
 
-/// Hides the centred window title: the design carries the product name in the leading
-/// toolbar cluster, and the reserved title space would push the search field into the
-/// toolbar's overflow menu on narrow windows.
-struct WindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async { view.window?.titleVisibility = .hidden }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { nsView.window?.titleVisibility = .hidden }
-    }
-}
-
 /// Opens the app's Settings scene (no `SettingsLink` on macOS 13).
 enum SettingsOpener {
     static func open() {
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+}
+
+/// Makes the window content extend under the native traffic lights, so the 48pt header is
+/// the window's top edge (the Figma `Header` carries the traffic lights, not a separate
+/// title bar). `.hiddenTitleBar` alone leaves a transparent title-bar band above the content;
+/// `.fullSizeContentView` removes it.
+struct FullSizeContentConfigurator: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = WindowBackingView()
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.configure(nsView.window)
+    }
+
+    final class Coordinator {
+        func configure(_ window: NSWindow?) {
+            guard let window else { return }
+            // Defer past SwiftUI's own window-style application, which otherwise resets the
+            // style mask after this view appears.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak window] in
+                guard let window else { return }
+                window.styleMask.insert(.fullSizeContentView)
+                window.titlebarAppearsTransparent = true
+                window.titleVisibility = .hidden
+                window.isMovableByWindowBackground = true
+            }
+        }
+    }
+}
+
+private final class WindowBackingView: NSView {
+    weak var coordinator: FullSizeContentConfigurator.Coordinator?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        coordinator?.configure(window)
     }
 }

@@ -19,6 +19,7 @@ struct CLINXMonitorApp: App {
                 }
                 .onDisappear { store.stop() }
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1440, height: 900)
         .windowResizability(.contentMinSize)
         .commands { commands }
