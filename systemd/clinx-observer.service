@@ -1,0 +1,37 @@
+[Unit]
+Description=CLINX read-only Monitor Observer
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/clinx-observer/observer.env
+Environment=CLINX_OBSERVER_DB=%h/.local/state/clinx/tasks.sqlite3
+Environment=CLINX_OBSERVER_PORT=8766
+Environment=CLINX_OBSERVER_AUDIT_METHODS=1
+ExecStart=/usr/bin/python3 -I -B %h/.local/lib/clinx-observer/current/observer_server.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+PrivateUsers=yes
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=%h/.local/lib/clinx-observer %h/.local/state/clinx
+InaccessiblePaths=/run
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET
+LockPersonality=yes
+RestrictSUIDSGID=yes
+MemoryMax=128M
+TasksMax=32
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=clinx-observer
+
+[Install]
+WantedBy=default.target

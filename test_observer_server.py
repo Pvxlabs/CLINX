@@ -343,5 +343,31 @@ class ObserverTests(unittest.TestCase):
         self.assertIsNone(elapsed("2026-09-30T02:00:00Z", "2026-09-30T01:00:00Z"))
         self.assertEqual(elapsed("2026-09-30T01:00:00Z", "2026-09-30T02:00:00Z"), 3600)
 
+    def test_method_audit_never_logs_request_content(self):
+        server = ObserverHTTPServer(0, self.api, audit_methods=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            for method, target, expected in [
+                ("GET", "/v1/health", 200),
+                ("POST", "/private-" + self.token, 405),
+                (self.token, "/v1/health", 405),
+            ]:
+                client = http.client.HTTPConnection(*server.server_address, timeout=2)
+                client.request(method, target, headers={"Authorization": "Bearer " + self.token})
+                response = client.getresponse()
+                self.assertEqual(response.status, expected)
+                response.read()
+                client.close()
+        self.assertEqual([json.loads(line) for line in output.getvalue().splitlines()], [
+            {"observer_http_method": "GET", "status": 200},
+            {"observer_http_method": "POST", "status": 405},
+            {"observer_http_method": "OTHER", "status": 405},
+        ])
+        self.assertNotIn(self.token, output.getvalue())
+
 if __name__ == "__main__":
     unittest.main()
