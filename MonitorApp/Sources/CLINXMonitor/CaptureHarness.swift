@@ -59,7 +59,11 @@ enum CaptureHarness {
         // Give the WindowGroup a moment to create and lay out its window.
         try? await Task.sleep(nanoseconds: 1_500_000_000)
 
-        for spec in specs {
+        let geometryOnly = ProcessInfo.processInfo.environment["CLINX_CAPTURE_GEOMETRY"] == "1"
+        let selectedSpecs = geometryOnly ? specs.filter {
+            ["04-live-healthy", "14b-dark-synthetic", "15-compact-1100", "15b-compact-900"].contains($0.name)
+        } : specs
+        for spec in selectedSpecs {
             apply(spec, store: store)
             guard let window = mainWindow() else {
                 NSLog("CLINX capture: no window available")
@@ -70,11 +74,68 @@ enum CaptureHarness {
             resize(window, to: spec)
             // Let the store refresh, the layout settle and the appearance redraw.
             try? await Task.sleep(nanoseconds: 1_400_000_000)
+            await checkpoint(window, name: spec.name, into: directory)
             capture(window, name: spec.name, into: directory, settings: spec.settings)
         }
-        await captureInteractions(store: store, directory: directory)
+        if geometryOnly {
+            await captureWindowLifecycle(store: store, directory: directory)
+        } else {
+            await captureInteractions(store: store, directory: directory)
+        }
+        try? "complete".write(to: directory.appendingPathComponent("complete.txt"), atomically: true, encoding: .utf8)
         NSLog("CLINX capture: complete")
         NSApp.terminate(nil)
+    }
+
+    private static func checkpoint(_ window: NSWindow, name: String, into directory: URL) async {
+        guard ProcessInfo.processInfo.environment["CLINX_CAPTURE_HOLD"] == "1" else { return }
+        try? "\(name)\n\(window.windowNumber)".write(
+            to: directory.appendingPathComponent("ready.txt"), atomically: true, encoding: .utf8)
+        let advance = directory.appendingPathComponent("continue.txt")
+        while !FileManager.default.fileExists(atPath: advance.path) {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        try? FileManager.default.removeItem(at: advance)
+    }
+
+    private static func captureWindowLifecycle(store: MonitorStore, directory: URL) async {
+        guard let window = mainWindow() else { return }
+        let spec = specs[0]
+        apply(spec, store: store)
+        resize(window, to: spec)
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        let entered = await toggleFullScreen(window, notification: NSWindow.didEnterFullScreenNotification)
+        if entered {
+            writeGeometry(window, name: "16-fullscreen", into: directory)
+        }
+        var exited = false
+        if entered {
+            exited = await toggleFullScreen(window, notification: NSWindow.didExitFullScreenNotification)
+        }
+        try? "entered=\(entered)\nexited=\(exited)".write(
+            to: directory.appendingPathComponent("fullscreen.txt"), atomically: true, encoding: .utf8)
+        guard exited else { return }
+        // Exercise deactivation/reactivation too, then capture the restored desktop.
+        NSApp.deactivate()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        await checkpoint(window, name: "17-desktop-restored", into: directory)
+        capture(window, name: "17-desktop-restored", into: directory, settings: false)
+    }
+
+    private static func toggleFullScreen(_ window: NSWindow, notification: Notification.Name) async -> Bool {
+        var complete = false
+        let token = NotificationCenter.default.addObserver(forName: notification, object: window, queue: .main) { _ in
+            complete = true
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        window.toggleFullScreen(nil)
+        for _ in 0..<100 {
+            if complete { return true }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return false
     }
 
     /// Interaction evidence: the two interactions that change what the list contains and
@@ -142,6 +203,7 @@ enum CaptureHarness {
         }
         guard let frameView = target.contentView?.superview ?? target.contentView else { return }
         frameView.layoutSubtreeIfNeeded()
+        writeGeometry(target, name: name, into: directory)
         let bounds = frameView.bounds
         let scale = target.backingScaleFactor > 0 ? target.backingScaleFactor : 2
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
@@ -157,5 +219,57 @@ enum CaptureHarness {
         try? data.write(to: url)
         NSLog("CLINX capture: wrote \(url.path)")
         if settings, target !== window { target.orderOut(nil) }
+    }
+
+    private static func writeGeometry(_ window: NSWindow, name: String, into directory: URL) {
+        func rect(_ r: NSRect) -> [String: CGFloat] {
+            ["x": r.minX, "y": r.minY, "width": r.width, "height": r.height]
+        }
+        func topRect(_ view: NSView) -> [String: CGFloat] {
+            let r = view.convert(view.bounds, to: nil)
+            return rect(NSRect(x: r.minX, y: window.frame.height - r.maxY,
+                               width: r.width, height: r.height))
+        }
+        var probes: [String: Any] = [:]
+        func visit(_ view: NSView) {
+            if let id = view.identifier?.rawValue, id.hasPrefix("capture.") {
+                probes[String(id.dropFirst(8))] = topRect(view)
+            }
+            view.subviews.forEach(visit)
+        }
+        if let root = window.contentView?.superview { visit(root) }
+        let types: [(String, NSWindow.ButtonType)] = [
+            ("close", .closeButton), ("minimize", .miniaturizeButton), ("zoom", .zoomButton)
+        ]
+        var buttons: [String: Any] = [:]
+        for (key, type) in types {
+            guard let button = window.standardWindowButton(type), let parent = button.superview else { continue }
+            var ancestors: [[String: Any]] = []
+            var ancestor: NSView? = parent
+            while let view = ancestor {
+                ancestors.append(["class": view.className, "frame": rect(view.frame),
+                                  "windowTopFrame": topRect(view)])
+                ancestor = view.superview
+            }
+            buttons[key] = ["frame": rect(button.frame), "windowTopFrame": topRect(button),
+                            "superview": parent.className, "superviewFrame": rect(parent.frame),
+                            "superviewWindowTopFrame": topRect(parent), "hidden": button.isHidden,
+                            "ancestors": ancestors]
+        }
+        let insets = window.contentView?.safeAreaInsets ?? NSEdgeInsets()
+        let report: [String: Any] = [
+            "coordinateSystem": "window top-left, points", "windowFrame": rect(window.frame),
+            "windowNumber": window.windowNumber,
+            "contentLayoutRect": rect(window.contentLayoutRect),
+            "contentViewFrame": rect(window.contentView?.frame ?? .zero),
+            "safeAreaInsets": ["top": insets.top, "bottom": insets.bottom, "left": insets.left, "right": insets.right],
+            "scale": window.backingScaleFactor, "buttons": buttons, "swiftUI": probes,
+            "fullSizeContentView": window.styleMask.contains(.fullSizeContentView),
+            "toolbarPresent": window.toolbar != nil
+        ]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: directory.appendingPathComponent("\(name)-geometry.json"))
+        } catch { NSLog("CLINX geometry capture failed: \(error)") }
     }
 }

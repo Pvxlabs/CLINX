@@ -38,13 +38,14 @@ struct MonitorRootView: View {
                     HStack(spacing: 0) {
                         SidebarView(store: store, rail: rail)
                             .frame(width: sidebarWidth)
+                            .captureGeometry("sidebar")
                             .background(DS.Palette.canvas)
 
                         ExecutionListView(store: store)
                             .frame(width: listWidth)
+                            .captureGeometry("list")
                             .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft]))
-                            .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft])
-                                .strokeBorder(DS.Palette.border, lineWidth: 1))
+                            .overlay(ExecutionPanelBorder())
                             // The panels stop 40pt above the window bottom in every layout, so the
                             // RuntimeStatus dock stays clear of content — with or without a
                             // connectivity strip above, and at any window height.
@@ -54,6 +55,7 @@ struct MonitorRootView: View {
 
                         InspectorView(store: store, stacked: inspectorStacked)
                             .frame(maxWidth: .infinity)
+                            .captureGeometry("inspector")
                             .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight]))
                             .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight])
                                 .strokeBorder(DS.Palette.border, lineWidth: 1))
@@ -108,25 +110,61 @@ struct MonitorRootView: View {
         HStack(spacing: 0) {
             // Reserve the sidebar column (plus its 1pt hairline) so the search field's left
             // edge lands on the list column, at every sidebar width — desktop column or rail.
-            Spacer().frame(width: sidebarWidth + 1)
+            Spacer().frame(width: max(sidebarWidth + 1, DS.Metric.nativeControlsInset))
             SearchField(store: store, focused: $searchFocused, width: searchFieldWidth)
+                .captureGeometry("search")
             Spacer(minLength: 0)
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ToolbarIconButton(system: "arrow.clockwise", help: "Refresh  ⌘R") {
                     Task { await store.refresh() }
                 }
+                .captureGeometry("refresh")
                 ToolbarIconButton(system: "gearshape", help: "Settings  ⌘,") {
                     SettingsOpener.open()
                 }
+                .captureGeometry("settings")
             }
             .padding(.trailing, 12)
         }
         .frame(height: DS.Metric.contentHeaderHeight)
+        .captureGeometry("header")
         .background(DS.Palette.canvas)
     }
 }
 
 // MARK: - Chrome pieces
+
+/// Add exactly one backing pixel to the two structural separators. This is border
+/// geometry inside the existing list bounds, so column widths never absorb it.
+private struct ExecutionPanelBorder: View {
+    @Environment(\.displayScale) private var scale
+
+    var body: some View {
+        let pixel = 1 / max(scale, 1)
+        let panel = PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft])
+        panel.strokeBorder(DS.Palette.border, lineWidth: 1)
+            .overlay {
+                StructuralEdges(radius: DS.Metric.panelRadius, inset: 1 + pixel / 2)
+                    .stroke(DS.Palette.border, lineWidth: pixel)
+                    .clipShape(panel)
+            }
+            .allowsHitTesting(false)
+    }
+
+    private struct StructuralEdges: Shape {
+        let radius: CGFloat
+        let inset: CGFloat
+
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            path.move(to: CGPoint(x: rect.minX + inset, y: rect.minY + radius))
+            path.addLine(to: CGPoint(x: rect.minX + inset, y: rect.maxY - radius))
+            path.move(to: CGPoint(x: rect.maxX - inset, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY))
+            return path
+        }
+    }
+}
 
 struct SearchField: View {
     @ObservedObject var store: MonitorStore
@@ -217,10 +255,11 @@ struct PanelShape: InsettableShape {
     func path(in rect: CGRect) -> Path {
         let rect = rect.insetBy(dx: inset, dy: inset)
         var path = Path()
-        let topLeft = corners.contains(.topLeft) ? radius : 0
-        let topRight = corners.contains(.topRight) ? radius : 0
-        let bottomRight = corners.contains(.bottomRight) ? radius : 0
-        let bottomLeft = corners.contains(.bottomLeft) ? radius : 0
+        let cornerRadius = max(0, min(radius - inset, min(rect.width, rect.height) / 2))
+        let topLeft = corners.contains(.topLeft) ? cornerRadius : 0
+        let topRight = corners.contains(.topRight) ? cornerRadius : 0
+        let bottomRight = corners.contains(.bottomRight) ? cornerRadius : 0
+        let bottomLeft = corners.contains(.bottomLeft) ? cornerRadius : 0
 
         path.move(to: CGPoint(x: rect.minX + topLeft, y: rect.minY))
         path.addLine(to: CGPoint(x: rect.maxX - topRight, y: rect.minY))
@@ -250,66 +289,5 @@ struct PanelShape: InsettableShape {
 enum SettingsOpener {
     static func open() {
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-    }
-}
-
-/// Makes the window content extend under the native traffic lights, so the 48pt header is
-/// the window's top edge (the Figma `Header` carries the traffic lights, not a separate
-/// title bar). `.hiddenTitleBar` alone leaves a transparent title-bar band above the content;
-/// `.fullSizeContentView` removes it.
-struct FullSizeContentConfigurator: NSViewRepresentable {
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> NSView {
-        let view = WindowBackingView()
-        view.coordinator = context.coordinator
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.configure(nsView.window)
-    }
-
-    final class Coordinator {
-        func configure(_ window: NSWindow?) {
-            guard let window else { return }
-            // Defer past SwiftUI's own window-style application, which otherwise resets the
-            // style mask after this view appears.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak window] in
-                guard let window else { return }
-                window.styleMask.insert(.fullSizeContentView)
-                window.titlebarAppearsTransparent = true
-                window.titleVisibility = .hidden
-                window.isMovableByWindowBackground = true
-                Self.alignTrafficLights(window)
-            }
-        }
-
-        /// Centers the native traffic lights on the 48pt header's vertical midline so they
-        /// share one optical line with the search field and the toolbar buttons.
-        static func alignTrafficLights(_ window: NSWindow) {
-            // The glyph inside each standard button sits ~1.25pt above the button frame's
-            // midline, so the frame is centered slightly lower than the 24pt header midline.
-            let targetCenterFromTop = DS.Metric.contentHeaderHeight / 2 + 1.5
-            let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-            let buttons = types.compactMap { window.standardWindowButton($0) }
-            guard let superview = buttons.first?.superview else { return }
-            let superHeight = superview.bounds.height
-            for button in buttons {
-                var frame = button.frame
-                let currentCenterFromTop = superHeight - frame.midY
-                frame.origin.y -= (targetCenterFromTop - currentCenterFromTop)
-                button.frame = frame
-            }
-        }
-    }
-}
-
-private final class WindowBackingView: NSView {
-    weak var coordinator: FullSizeContentConfigurator.Coordinator?
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        coordinator?.configure(window)
     }
 }
