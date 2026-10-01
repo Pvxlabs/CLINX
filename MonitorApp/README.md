@@ -14,8 +14,9 @@ swift test
 open '.build/CLINX Monitor.app'
 ```
 
-The build script makes an unsigned local `.app` bundle. Distribution signing and
-notarization have not been performed.
+The build script makes an unsigned local `.app` bundle and renders the app icon from the
+design spec (`Scripts/make-app-icon.swift`, Figma page 17 “App Icon”). Distribution signing
+and notarization have not been performed.
 
 ## UI/UX (Phase 2 redesign)
 
