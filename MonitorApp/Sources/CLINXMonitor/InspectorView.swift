@@ -587,10 +587,7 @@ struct EmptyStateView: View {
                 .foregroundStyle(DS.Palette.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 300)
-            HStack(spacing: 12) {
-                HStack(spacing: 4) { Kbd(text: "⌘K"); Text("Search") }
-                HStack(spacing: 4) { Kbd(text: "⌘R"); Text("Refresh") }
-            }
+            HStack(spacing: 4) { Kbd(text: "⌘R"); Text("Refresh") }
             .font(DS.Font.micro)
             .foregroundStyle(DS.Palette.textTertiary)
             .padding(.top, 4)

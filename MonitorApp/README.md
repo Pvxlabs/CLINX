@@ -35,18 +35,17 @@ Design authority and code authority are kept separate:
 
 | Keys | Action |
 | --- | --- |
-| `⌘K` | Focus search |
 | `⌘R` | Refresh from the Observer |
 | `⌘,` | Settings |
 | `⌘1`–`⌘5` | Active · Blocked · Failed · Recent · Completed |
 | `↑` `↓` | Move the row selection |
-| `Esc` | Clear search, then selection |
+| `Esc` | Clear selection |
 | right-click | Copy title / execution ID / summary |
 
 ### Read-only
 
 The client calls only the four ADR-006 GET routes. It has **no** execution controls: the
-only verbs are Copy, Show, Search, Filter and Refresh. Opening a task shows the current
+only verbs are Copy, Show, Filter and Refresh. Opening a task shows the current
 execution and its allowlisted event evidence; event history can be `PARTIAL` or
 `UNAVAILABLE`. Progress stays “Progress unavailable” unless the Observer persists a
 canonical denominator. A task result `PASS` means only an exact structured result for that

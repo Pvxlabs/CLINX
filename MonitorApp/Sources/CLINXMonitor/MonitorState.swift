@@ -97,10 +97,6 @@ final class MonitorStore: ObservableObject {
     @Published var timeWindow: TimeWindow = .day
     @Published var settingsPresented = false
     @Published private(set) var selectedRef: String?
-    /// Bumped by ⌘K so the toolbar search field can take focus.
-    @Published private(set) var searchFocusRequest = 0
-
-    func requestSearchFocus() { searchFocusRequest += 1 }
 
     private var service: (any ObserverServing)?
     private var pollTask: Task<Void, Never>?
