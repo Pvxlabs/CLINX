@@ -1,4 +1,85 @@
-# CLAUDE_CODE_HANDOFF — CLINX Monitor Phase 0/1
+# CLAUDE_CODE_HANDOFF — CLINX Monitor Phase 0/1 与 Phase 2
+
+## Phase 2 最新交接 — 2026-10-01 UTC
+
+**CANONICAL_INTEGRATION=PASS；ENGINEERING_COMPLETE=YES；
+RUNTIME_ACCEPTANCE_PENDING=YES。** 原有 13 个 Monitor Phase 2 文件已独立提交并
+非强制推送到 canonical `Pvxlabs/CLINX` main，远端回读与本地 HEAD 相等，
+ahead/behind `0/0`，worktree clean。提交以 `git rev-parse HEAD` 查询。
+下方 2026-09-30 的 blocked 记录是历史故障证据，不再表示当前交付状态。
+
+正式 app target 在 `MonitorApp/`：SwiftPM manifest、SwiftUI MenuBarExtra、
+ObserverModels、ObserverClient、MonitorStore、Info.plist、Swift tests、
+synthetic fixture 和 build script 完整入仓。网络客户端只发四类 authenticated GET，
+不包含 task mutation control。endpoint 仅接受 HTTPS，Observer credential
+仅存本机 Keychain；不应写入仓库、日志或截图。
+
+P620 已重跑此前 5 个环境失败测试并 **5/5 PASS**；Observer 定向 **21 tests
+PASS**；schema 与 9 个 synthetic examples、fixture 对齐 PASS；完整 Python
+regression **618 passed、102 subtests passed、1 opt-in skipped、0 failed**。
+P620 无 Swift/macOS 工具链，`SWIFT_BUILD=NOT_RUN`、`SWIFT_TEST=NOT_RUN`。
+真实 Mac app launch/UI、Observer connection、Keychain 和 Tailscale/TLS/ACL
+保持 **UNVERIFIED**，不得继承 P620 的 PASS。
+
+**NEXT_STATE=READY_FOR_MACOS_RUNTIME_ACCEPTANCE。** 在 Mac checkout 执行：
+
+```sh
+cd MonitorApp
+swift test
+./Scripts/build-app.sh
+open '.build/CLINX Monitor.app'
+```
+
+随后用 synthetic Observer fixture 验证 UI，再对经授权的真实私有 HTTPS
+Observer 验证连接、Keychain、状态/分页/刷新和 Tailscale/TLS/ACL。
+`docs/monitor/FINAL_REPORT.md` 是 canonical 报告；外部 `/data/artifacts`
+重复导出不属于当前 Gate。
+
+---
+
+## Canonical integration 历史续验阻塞（2026-09-30 UTC）
+
+GitHub canonical `Pvxlabs/CLINX` 的 `main` 与本地 HEAD 最新回读均为
+`b99dce56243b73d8ba0764360c7eb9e56bf48f47`；`43ee9af5`、`22aae814`
+是祖先。P620 当前没有旧 `/home/pvxlabs/dev/clinx` 路径，
+可见 checkout 是本 remediation 路径。DRS/QEX 正式测试入口未获协调器响应；
+沙箱直接运行仍有 2 个 loopback socket 与 3 个 MCP child 环境失败；
+最新全量 pytest 为 588 passed、75 subtests passed、5 failed。
+P620 Host 终端执行工具被自动审批拒绝（approval policy is never）。
+因此还没有 P620 工程回归 PASS，未 commit/push；不得使用 GitHub API
+绕过该先决验收。详见 `FINAL_REPORT.md` 最新续验段。
+
+---
+
+## Phase 2 当前交接（2026-09-30 UTC）
+
+正式客户端位于 `MonitorApp/`，以 `Package.swift` 作为 macOS 13+ SwiftPM/Xcode
+project manifest；源文件在 `Sources/CLINXMonitor/`，Swift tests 与 synthetic
+examples 在 `Tests/CLINXMonitorTests/`。`README.md` 给出 Mac build/test/app
+启动命令。下文 Phase 0/1 顺序是历史交接说明，正式 app source 以
+`MonitorApp/Sources/CLINXMonitor/` 为准。
+
+当前 Linux 无 Swift/Xcode、无真实 Mac surface。下一执行环境必须先在 macOS
+跑 `swift test`、`./Scripts/build-app.sh`、launch，然后用 fixture Observer 与
+经授权的真实 HTTPS Observer 分别做 UI/连接验收。真实 Tailscale/TLS/ACL、
+Keychain、睡眠/唤醒、深浅色与辅助功能都需要 Mac 证据。不得继承 Linux
+schema/Python 结果作为这些 gate 的 PASS。
+
+本轮 Python 全量 pytest 为 587 passed、75 subtests passed、5 failed；
+失败来自沙箱禁止 loopback socket（2）及既有 MCP child 试图写只读数据库（3）。
+不能记作完整 regression PASS。Phase 2 客户端没有 Start/Cancel/Retry/Kill/
+Redeploy/Edit API 或按钮；没有生产部署，也没有 ORION/CLINX task mutation。
+本轮 `.git` 只读导致 `git add` 失败，且 `github.com` DNS 不通；因此 Phase 2
+改动仍在工作区，尚未 commit/push，远端最新 SHA 未验证。需要可写 Git metadata
+与网络的执行环境从此工作区进行 Mac 工程验证、提交、非强制推送和远端回读。
+本轮期间本地 main/tracking ref 独立前进到 `22aae814d79c66c19dc2926178f28df19ef5d400`；
+其变更是 app_server/bridge/既有测试，与 Monitor 工作区改动不重叠。
+
+仓库内本文件和 `FINAL_REPORT.md` 是 canonical 交接源。
+`/data/artifacts/clinx-monitor-spec-20261001/` 只在合法可写范围出现时
+补充导出与 SHA-256 回读，不是当前前置 Gate。
+
+---
 
 交接日期：2026-09-30 UTC。用户指定产物批次名：clinx-monitor-spec-20261001。
 
