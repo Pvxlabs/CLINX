@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 import app_server
 import bridge
+from execution_policy import EXECUTION_SURFACES, HOST_CAPABILITIES, OPERATION_CLASSES
 from m9_integration import ClinxIntegration, M9IntegrationError
 from task_registry import TaskRegistry, TaskRegistryError
 
@@ -524,15 +525,26 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
                     "network_access": {"type": "boolean", "default": False},
                     "execution_surface": {
                         "type": "string",
-                        "enum": ["SANDBOX_WORKSPACE", "NETWORKED_SANDBOX", "HOST_EXECUTOR"],
+                        "enum": list(EXECUTION_SURFACES),
                     },
                     "required_capabilities": {
                         "type": "array",
-                        "items": {"type": "string"},
+                        "items": {"type": "string", "examples": list(HOST_CAPABILITIES)},
+                        "description": (
+                            "Canonical values (case-insensitive, surrounding whitespace ignored): "
+                            + ", ".join(HOST_CAPABILITIES)
+                            + ". Discovery probe labels and operation names are not a request vocabulary."
+                        ),
                     },
                     "operation_classes": {
                         "type": "array",
-                        "items": {"type": "string"},
+                        "items": {"type": "string", "examples": list(OPERATION_CLASSES)},
+                        "description": (
+                            "Canonical values (case-insensitive, surrounding whitespace ignored): "
+                            + ", ".join(OPERATION_CLASSES)
+                            + ". DEVELOPMENT_MUTATION for bounded repository commands; "
+                            "production mutation requires explicit intent; BUSINESS_ACTION is denied."
+                        ),
                     },
                     "production_mutation_intent": {"type": "boolean", "default": False},
                 },

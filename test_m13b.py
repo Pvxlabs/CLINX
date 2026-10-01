@@ -15,10 +15,13 @@ import bridge
 from execution_policy import (
     BUSINESS_ACTION,
     DEVELOPMENT_MUTATION,
+    HOST_CAPABILITIES,
+    HOST_CAPABILITY_PROBES,
     HOST_EXECUTOR,
     NETWORKED_SANDBOX,
     PRODUCTION_READ_ONLY,
     PRODUCTION_MUTATION,
+    OPERATION_CLASSES,
     READ_ONLY_HOST,
     SANDBOX_WORKSPACE,
     ExecutionPolicyError,
@@ -191,6 +194,70 @@ class PreparationPolicyTests(unittest.TestCase):
             team_id="team", trigger_label="local-codex", todo_state="Todo", projects=()
         )
         return ClinxIntegration(cfg, registry, Dispatcher(), Context(), None), registry, task
+
+    def test_discovered_request_capabilities_prepare_and_seal(self):
+        self.assertEqual(tuple(HOST_CAPABILITY_PROBES), HOST_CAPABILITIES)
+        for capability in HOST_CAPABILITIES:
+            with self.subTest(capability=capability), tempfile.TemporaryDirectory() as td:
+                policy = host_policy(capabilities=(capability,))
+                integration, registry, _task = self.fixture(
+                    Path(td), policy, {HOST_CAPABILITY_PROBES[capability]: "AVAILABLE"}
+                )
+                discovery = integration.get_capabilities()["execution_surfaces"][HOST_EXECUTOR]
+                contract = discovery["request_contract"]
+                self.assertEqual(contract["required_capabilities"], list(HOST_CAPABILITIES))
+                self.assertEqual(contract["operation_classes"], list(OPERATION_CLASSES))
+                self.assertFalse(contract["probe_labels_are_request_values"])
+                self.assertFalse(contract["capability_names_grant_authority"])
+                self.assertEqual(discovery["runtime_health"], "NOT_PROBED")
+                self.assertEqual(discovery["available_meaning"], "CONFIGURATION_ENABLED")
+                self.assertEqual(discovery["capabilities_kind"], "INFORMATIONAL_LOCAL_PROBES")
+                self.assertEqual(contract["capability_probe_keys"], HOST_CAPABILITY_PROBES)
+                prepared = integration.prepare_execution(
+                    prompt="inspect host", approved=True, task_action="create",
+                    host="p620", project="pilot", title="Capability contract",
+                    summary="Canonical discovery to prepare round trip",
+                    execution_surface=contract["execution_surface"],
+                    required_capabilities=[capability], operation_classes=[READ_ONLY_HOST],
+                )
+                stored = registry.verify_prepared_execution(prepared["prepared_execution_ref"])
+                self.assertEqual(parse_execution_policy(stored.execution_policy_json), policy)
+
+    def test_discovery_contract_exists_when_host_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as td:
+            integration, _registry, _task = self.fixture(Path(td), host_policy(), {})
+            integration.dispatcher = None
+            discovery = integration.get_capabilities()["execution_surfaces"][HOST_EXECUTOR]
+            self.assertFalse(discovery["available"])
+            self.assertEqual(discovery["runtime_health"], "NOT_PROBED")
+            self.assertEqual(discovery["request_contract"]["required_capabilities"], list(HOST_CAPABILITIES))
+
+    def test_probe_labels_and_operation_names_are_not_request_capabilities(self):
+        with tempfile.TemporaryDirectory() as td:
+            integration, _registry, _task = self.fixture(
+                Path(td), host_policy(), {"filesystem": "AVAILABLE", "host_process": "AVAILABLE"}
+            )
+            for value in ("filesystem", "host_process", "development_command", "unknown"):
+                with self.subTest(value=value), self.assertRaisesRegex(
+                    M9IntegrationError, "unsupported required_capabilities entry: " + value
+                ):
+                    integration.prepare_execution(
+                        prompt="inspect host", approved=True, task_action="create",
+                        host="p620", project="pilot", title="Invalid capability",
+                        summary="Unsupported vocabulary fails closed",
+                        required_capabilities=[value], operation_classes=[READ_ONLY_HOST],
+                    )
+            # Lowercase git already normalized successfully; it was not the defect.
+            self.assertEqual(host_policy(capabilities=("git",)).required_capabilities, ("GIT",))
+
+    def test_mcp_prepare_schema_uses_policy_vocabulary(self):
+        definition = next(item for item in tool_definitions() if item["name"] == "clinx_prepare_execution")
+        properties = definition["inputSchema"]["properties"]
+        self.assertEqual(properties["required_capabilities"]["items"]["examples"], list(HOST_CAPABILITIES))
+        self.assertEqual(properties["operation_classes"]["items"]["examples"], list(OPERATION_CLASSES))
+        # Do not narrow the existing case-insensitive validator via an uppercase-only enum.
+        self.assertNotIn("enum", properties["required_capabilities"]["items"])
+        self.assertNotIn("enum", properties["operation_classes"]["items"])
 
     def test_unsupported_capability_preparation_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
@@ -574,6 +641,75 @@ class HostExecutorFixture(unittest.TestCase):
             stored = self.registry.list_host_executions(execution_ref=ref)
             self.assertEqual(stored[0]["host_execution_ref"], result["host_execution_ref"])
             self.assertEqual(stored[0]["stdout_sha256"], result["stdout_sha256"])
+        finally:
+            context.__exit__(None, None, None)
+
+    def test_authorized_working_directory_is_real_and_persisted(self):
+        task, ref, route, policy, context = self.bound()
+        try:
+            # This fixture uses a short temporary path so the bounded output is complete.
+            result = self.executor.execute(self.request(
+                task, ref, route, policy, "LOCAL_HOST_PROCESS", "working_directory"
+            ))
+            self.assertEqual(result["exit_code"], 0)
+            self.assertEqual(result["stdout"].strip(), str(self.root))
+            self.assertEqual(self.registry.list_host_executions(execution_ref=ref)[0]["result_state"], "SUCCEEDED")
+        finally:
+            context.__exit__(None, None, None)
+
+    def test_development_test_does_not_require_drs_or_qex(self):
+        task, ref, route, policy, context = self.bound(classes=(DEVELOPMENT_MUTATION,))
+        try:
+            (self.root / "test_smoke.py").write_text(
+                "import unittest\nclass Smoke(unittest.TestCase):\n"
+                "    def test_arithmetic(self):\n        self.assertEqual(2 + 2, 4)\n"
+            )
+            unavailable = self.root / "unavailable-tools"
+            unavailable.mkdir()
+            for binary in ("drs", "qex"):
+                path = unavailable / binary
+                path.write_text("#!/bin/sh\nprintf called > unexpected-admission\nexit 69\n")
+                path.chmod(0o755)
+            with mock.patch.object(self.executor, "_executor_path", return_value=f"{unavailable}:/usr/bin:/bin"):
+                result = self.executor.execute(self.request(
+                    task, ref, route, policy, "LOCAL_HOST_PROCESS", "development_command",
+                    {"argv": ["python3", "-m", "unittest", "-q", "test_smoke"]},
+                    operation_class=DEVELOPMENT_MUTATION,
+                ))
+            self.assertEqual(result["exit_code"], 0)
+            self.assertEqual(result["result_state"], "SUCCEEDED")
+            self.assertFalse((self.root / "unexpected-admission").exists())
+            evidence = self.registry.list_host_executions(execution_ref=ref)[0]
+            self.assertEqual(evidence["host_execution_ref"], result["host_execution_ref"])
+            self.assertEqual(evidence["exit_code"], 0)
+        finally:
+            context.__exit__(None, None, None)
+
+    def test_development_commands_retain_existing_authority_bounds(self):
+        task, ref, route, policy, context = self.bound(classes=(DEVELOPMENT_MUTATION,))
+        try:
+            for argv in (["git", "status"], ["git", "diff"], ["git", "add", "owned.py"],
+                         ["git", "commit", "-m", "bounded development"], ["make", "build"],
+                         ["python3", "-m", "pytest", "-q"]):
+                with self.subTest(argv=argv):
+                    command = self.executor._command(self.request(
+                        task, ref, route, policy, "LOCAL_HOST_PROCESS", "development_command",
+                        {"argv": argv}, operation_class=DEVELOPMENT_MUTATION,
+                    ))
+                    self.assertEqual(command.argv, tuple(argv))
+            for argv in (["bash", "-c", "pwd"], ["sudo", "true"], ["git", "push", "--force"],
+                         ["ssh", "external-host"], ["systemctl", "restart", "external.service"]):
+                with self.subTest(argv=argv), self.assertRaises(AuthorityDenied):
+                    self.executor._command(self.request(
+                        task, ref, route, policy, "LOCAL_HOST_PROCESS", "development_command",
+                        {"argv": argv}, operation_class=DEVELOPMENT_MUTATION,
+                    ))
+            with self.assertRaises(AuthorityDenied):
+                self.executor.execute(self.request(
+                    task, ref, route, policy, "LOCAL_HOST_PROCESS", "working_directory",
+                    operation_class=PRODUCTION_MUTATION,
+                ))
+            self.assertFalse(policy.production_mutation_intent)
         finally:
             context.__exit__(None, None, None)
 

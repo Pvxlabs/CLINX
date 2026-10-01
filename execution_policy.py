@@ -52,6 +52,23 @@ HOST_CAPABILITIES = (
     "TAILSCALE",
 )
 
+# Probe labels are informational discovery keys, not request capability names.
+# Keep the mapping shared by discovery and preparation validation.
+HOST_CAPABILITY_PROBES = {
+    "LOCAL_HOST_PROCESS": "host_process",
+    "SYSTEMD_USER": "systemd_user",
+    "OUTBOUND_NETWORK": "network",
+    "SSH": "ssh",
+    "HOST_FILESYSTEM": "filesystem",
+    "AWS_CLI": "aws_cli",
+    "CLOUDFLARE_CLI": "cloudflare_cli",
+    "CLOUD_API": "cloud_api",
+    "GIT": "git",
+    "DOCKER": "docker",
+    "POSTGRES": "postgres",
+    "TAILSCALE": "tailscale",
+}
+
 # A registered local development workspace gets one stable authority envelope.
 # Individual commands are still executed with argv/cwd validation by the host
 # executor; callers do not need to enumerate every tool used by a project.
