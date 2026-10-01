@@ -1,11 +1,11 @@
 # CLINX Monitor macOS app
 
-This is the Phase 2 macOS 13+ SwiftUI MenuBarExtra client. `Package.swift` is the
-project manifest; Xcode can open this package. `Sources/CLINXMonitor` contains the
-shipping model, HTTPS client, view model and UI. The Swift files in `docs/monitor`
-remain the Phase 0/1 handoff snapshot and are not the app build source.
+macOS 13+ SwiftUI read-only client for the private CLINX Observer. `Package.swift` is the
+project manifest; Xcode can open this package. `Sources/CLINXMonitor` contains the shipping
+model, HTTPS client, view model and UI. The Swift files in `docs/monitor` remain the
+Phase 0/1 handoff snapshot and are not the app build source.
 
-On a Mac with current Xcode Command Line Tools:
+## Build and run (macOS)
 
 ```sh
 cd MonitorApp
@@ -15,17 +15,49 @@ open '.build/CLINX Monitor.app'
 ```
 
 The build script makes an unsigned local `.app` bundle. Distribution signing and
-notarization have not been performed. The UI asks for the private HTTPS Observer
-base URL and an observer-specific bearer credential. The endpoint is stored in
-local preferences; the credential is stored in this Mac's non-synchronizing
-Keychain. Do not put a credential in a URL, shell argument, screenshot or issue.
+notarization have not been performed.
 
-The client calls only the four ADR-006 GET routes. It has no execution mutation
-controls. Opening a task shows the current execution and its allowlisted event
-evidence; event history can be `PARTIAL` or `UNAVAILABLE`. Progress remains unknown
-when the Observer has no persisted denominator. A task result `PASS` means only an
-exact structured result for that task/execution; it is not deployment acceptance.
+## UI/UX (Phase 2 redesign)
 
-The fixture in `Tests/CLINXMonitorTests/Fixtures` is synthetic. Acceptance on a real
-Mac still requires building and launching the app, connecting to an authorized
+The window is a three-pane desktop shell — **Sidebar · Execution list · Inspector** — under
+one compact toolbar. `docs/monitor/UI_REDESIGN.md` maps every screen back to its Figma
+source (`CLINX Monitor UI/UX Redesign`, Figma Make file key `gjtQIi4778Yoh5cvRv5gwS`),
+including tokens, metrics and the seven-state status system.
+
+Design authority and code authority are kept separate:
+
+* **Figma** owns colour, spacing, typography, layout and component hierarchy.
+* **This code** owns the Observer contract: models, four authenticated GET routes, offset
+  and cursor pagination, freshness and error semantics, Keychain credential storage.
+
+### Keyboard
+
+| Keys | Action |
+| --- | --- |
+| `⌘K` | Focus search |
+| `⌘R` | Refresh from the Observer |
+| `⌘,` | Settings |
+| `⌘1`–`⌘5` | Active · Blocked · Failed · Recent · Completed |
+| `↑` `↓` | Move the row selection |
+| `Esc` | Clear search, then selection |
+| right-click | Copy title / execution ID / summary |
+
+### Read-only
+
+The client calls only the four ADR-006 GET routes. It has **no** execution controls: the
+only verbs are Copy, Show, Search, Filter and Refresh. Opening a task shows the current
+execution and its allowlisted event evidence; event history can be `PARTIAL` or
+`UNAVAILABLE`. Progress stays “Progress unavailable” unless the Observer persists a
+canonical denominator. A task result `PASS` means only an exact structured result for that
+task/execution; it is not deployment acceptance.
+
+### Synthetic acceptance
+
+Settings → Appearance (or the toolbar scenario selector once enabled) switches the client
+to the synthetic acceptance data set. Synthetic mode is always badged `SYNTHETIC DATA` with
+the purple window edge and the scenario selector, and is served through the same read-only
+`ObserverServing` contract. Live mode shows `P620 · LIVE`.
+
+The fixture in `Tests/CLINXMonitorTests/Fixtures` remains the schema example set. Acceptance
+on a real Mac still requires building and launching the app, connecting to an authorized
 Observer, and checking UI, Keychain, TLS and tailnet ACL behavior with real evidence.
