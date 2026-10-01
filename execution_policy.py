@@ -69,9 +69,8 @@ HOST_CAPABILITY_PROBES = {
     "TAILSCALE": "tailscale",
 }
 
-# A registered local development workspace gets one stable authority envelope.
-# Individual commands are still executed with argv/cwd validation by the host
-# executor; callers do not need to enumerate every tool used by a project.
+# Compatibility envelope for explicitly authorized Host development tasks.
+# Native workspace development does not request host capabilities.
 DEVELOPMENT_CAPABILITIES = (
     "LOCAL_HOST_PROCESS",
     "SYSTEMD_USER",
@@ -203,17 +202,8 @@ def build_execution_policy(
     # contract when no surface was supplied.  An explicitly requested sandbox
     # remains invalid for host capabilities and fails closed below.
     selected_surface = execution_surface
-    if (
-        selected_surface is None
-        and development_workspace
-        and not network_access
-        and required_capabilities is None
-        and operation_classes is None
-        and not production_mutation_intent
-    ):
-        selected_surface = HOST_EXECUTOR
-        capabilities = DEVELOPMENT_CAPABILITIES
-        classes = (DEVELOPMENT_MUTATION,)
+    # Retain development_workspace for caller compatibility. Project locality
+    # and writability do not grant host authority or select a custom executor.
     if selected_surface is None and (capabilities or classes or production_mutation_intent):
         selected_surface = HOST_EXECUTOR
     surface = _normalize_surface(selected_surface, network_access=network_access)
@@ -243,9 +233,9 @@ def build_execution_policy(
     return ExecutionPolicy(surface, capabilities, classes, production_mutation_intent)
 
 
-def build_development_policy() -> ExecutionPolicy:
-    """Return the default authority for a registered local dev project."""
-    return build_execution_policy(development_workspace=True)
+def build_development_policy(*, network_access: bool = False) -> ExecutionPolicy:
+    """Return native workspace authority, with network only when requested."""
+    return build_execution_policy(network_access=network_access)
 
 
 def parse_execution_policy(value: str | None) -> ExecutionPolicy | None:

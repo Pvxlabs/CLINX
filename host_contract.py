@@ -1,6 +1,7 @@
 """Safe, executable Host vocabulary shared by discovery, schema and validation.
 
-No credential, URL, filesystem root or registered argv is published here.
+No credential, URL or registered argv is published here. Configured workspace
+roots are public capability metadata, never production authority.
 """
 from execution_policy import (
     DEVELOPMENT_CAPABILITIES, DEVELOPMENT_MUTATION, HOST_CAPABILITIES,
@@ -21,7 +22,8 @@ def operation_catalog(config):
             catalog[capability][name] = {
                 'capability': capability, 'operation': name,
                 'description': name.replace('_', ' ') + '; ' + effects,
-                'target_kind': ('REGISTERED_TARGET' if targets is not None else
+                'target_kind': ('TRUSTED_WORKSPACE' if name in {'path_read', 'development_command'} else
+                                'REGISTERED_TARGET' if targets is not None else
                                 'REGISTERED_PROJECT' if capability in {'GIT', 'HOST_FILESYSTEM'} else 'LOCAL_HOST'),
                 'argument_schema': {'type': 'object', 'required': list(required),
                     'properties': {key: ({'type': 'array', 'items': {'type': 'string'}, 'minItems': 1} if key == 'argv'
@@ -52,7 +54,7 @@ def operation_catalog(config):
         classes=(DEVELOPMENT_MUTATION,), mutating=True, effects='PROJECT_MARKER')
     for capability in DEVELOPMENT_CAPABILITIES:
         add(capability, ('development_command',), required=('argv',), classes=(DEVELOPMENT_MUTATION,),
-            mutating=True, effects='BOUNDED_PROJECT_DEVELOPMENT')
+            mutating=True, effects='TRUSTED_WORKSPACE_DEVELOPMENT')
     for name, attribute in (('dns_lookup', 'dns_name'), ('https_head', 'url')):
         targets = [{'identity': t.alias, 'operation_classes': list(t.operation_classes)}
                    for t in config.network_targets if getattr(t, attribute)]
@@ -83,9 +85,18 @@ def executable_contract(config, probes=None, policy=None):
     return {
         'contract': 'CLINX_HOST_EXECUTION_CONTRACT_V2',
         'authority_granted': False,
+        'trusted_workspace_roots': [str(root) for root in config.trusted_workspace_roots],
+        'path_authority': {
+            'resolution': 'Path.resolve',
+            'relative_base': 'registered_task_cwd',
+            'unconfigured_roots': 'REGISTERED_PROJECT_ONLY',
+            'production_authority_granted': False,
+            'git_write_authority': 'REGISTERED_TASK_ORIGIN_AND_BRANCH',
+        },
         'constraints': 'Probe availability does not grant authority or prove execution health. '
                        'Use exact operations and safe target identities below. Policy and target classes intersect. '
                        'Git canonical branch/origin come from the registered task, never caller refspecs. '
+                       'Trusted workspace path access does not grant production or network authority. '
                        'fetch_origin writes local objects/remote-tracking refs and requires the existing lease; '
                        'it never changes index/worktree or merges/rebases. '
                        'No automatic command retry. Proven pre-dispatch rejection permits a new legal call.',

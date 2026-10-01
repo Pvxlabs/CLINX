@@ -1141,7 +1141,10 @@ class CodexAppServerClient:
 
     def supervise_turn(self, thread_id: str, turn_id: str) -> None:
         """Keep the initiating connection alive and deliver exact completion."""
-        self.attach_dynamic_tool_turn(thread_id, turn_id)
+        if self._dynamic_tool_handler is not None:
+            self.attach_dynamic_tool_turn(thread_id, turn_id)
+        elif self._completion_handoff is None:
+            raise AppServerProtocolError("turn supervision requires a completion handoff or dynamic tool handler")
         if self._completion_handoff is not None and self._completion_identity != (thread_id, turn_id):
             raise AppServerProtocolError("completion handoff identity changed")
         self._detached = True

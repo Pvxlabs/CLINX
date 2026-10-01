@@ -83,6 +83,7 @@ class HostExecutorConfig:
     ssh_targets: tuple[RegisteredTarget, ...] = ()
     network_targets: tuple[RegisteredTarget, ...] = ()
     local_commands: tuple[RegisteredTarget, ...] = ()
+    trusted_workspace_roots: tuple[Path, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -324,6 +325,36 @@ class HostExecutor:
             raise TargetNotRegistered("filesystem target is outside the registered project") from exc
         return resolved
 
+    def _workspace_path(self, root: Path, value: str) -> Path:
+        """Resolve before checking authority; Unix permissions still apply at dispatch."""
+        candidate = Path(value).expanduser()
+        resolved = (root / candidate).resolve()
+        # Unconfigured installations retain their previous project boundary.
+        # P620's shared roots are declared once in bridge.toml.
+        roots = self.config.trusted_workspace_roots or (root,)
+        if not any(resolved.is_relative_to(Path(allowed).resolve()) for allowed in roots):
+            raise TargetNotRegistered("filesystem target is outside trusted workspace roots")
+        return resolved
+
+    def _development_path(self, root: Path, value: str) -> Path:
+        path = self._workspace_path(root, value)
+        # A trusted root may also contain registered production entrypoints.
+        # Their presence in a workspace does not turn them into development tools.
+        for target in self.config.local_commands:
+            if PRODUCTION_MUTATION in target.operation_classes:
+                for _, command in target.commands:
+                    if command and Path(command[0]).is_absolute() and path == Path(command[0]).resolve():
+                        raise AuthorityDenied("registered production command requires its separate authority")
+        return path
+
+    @staticmethod
+    def _existing_operand(root: Path, value: str) -> bool:
+        try:
+            return (root / value).exists() or (root / value).is_symlink()
+        except OSError:
+            # An opaque expression/long literal is not an existing path operand.
+            return False
+
     def _command(self, request: HostExecutionRequest) -> _Command:
         capability = request.capability
         operation = request.operation
@@ -350,7 +381,7 @@ class HostExecutor:
         # Registered development workspaces use one generic argv surface. This
         # keeps normal git/test/build/script workflows on the same task lease
         # without growing a primitive allowlist, while retaining a strict
-        # project cwd and blocking known authority-escape vectors.
+        # registered cwd, trusted path arguments and authority-escape checks.
         if (
             capability in DEVELOPMENT_CAPABILITIES
             and operation == "development_command"
@@ -367,7 +398,15 @@ class HostExecutor:
             ):
                 raise InvalidArguments("development_command argv must be a non-empty string array")
             argv = tuple(item.strip() for item in argv)
-            binary = Path(argv[0]).name.casefold()
+            executable = Path(argv[0])
+            if '/' in argv[0]:
+                resolved_executable = (request.project_root / executable).resolve()
+                installed = shutil.which(executable.name, path=self._executor_path())
+                if not installed or resolved_executable != Path(installed).resolve():
+                    self._development_path(request.project_root, argv[0])
+                binary = resolved_executable.name.casefold()
+            else:
+                binary = executable.name.casefold()
             denied = {
                 "sudo", "su", "ssh", "scp", "rsync", "aws", "wrangler",
                 "kubectl", "terraform", "cloudflared", "systemctl", "env", "command", "exec", "busybox",
@@ -378,7 +417,7 @@ class HostExecutor:
                 )
             if binary == "git" and any(
                 value.casefold() in {"push", "fetch", "pull", "clone", "submodule", "config", "remote"}
-                or value.casefold().startswith(("-c", "--config-env", "--git-dir", "--work-tree"))
+                or value.startswith(("-c", "--config-env", "--git-dir", "--work-tree"))
                 for value in argv[1:]
             ):
                 raise AuthorityDenied(
@@ -387,15 +426,22 @@ class HostExecutor:
             if binary in {"sh", "bash", "zsh", "fish", "dash", "ksh"} and any(value.startswith("-") and "c" in value[1:] for value in argv[1:]):
                 raise AuthorityDenied("development_command shell evaluation is not allowed")
             root = request.project_root.resolve()
-            for value in argv[1:]:
-                if value.startswith("/"):
-                    candidate = Path(value).resolve()
-                    try:
-                        candidate.relative_to(root)
-                    except ValueError as exc:
-                        raise TargetNotRegistered(
-                            "development_command path is outside the registered project"
-                        ) from exc
+            git_cwd = root
+            for index, value in enumerate(argv[1:], 1):
+                path_value = value.split('=', 1)[1] if value.startswith('-') and '=' in value else value
+                if binary == 'git' and argv[index - 1] == '-C':
+                    git_cwd = self._workspace_path(git_cwd, value)
+                    continue
+                if binary == 'git' and value.startswith('-C') and len(value) > 2:
+                    git_cwd = self._workspace_path(git_cwd, value[2:])
+                    continue
+                # Arguments remain argv, never shell text. Check explicit paths,
+                # including option=value, traversal and existing symlink operands.
+                if (path_value.startswith(('/', './', '../', '~')) or
+                        path_value in {'.', '..'} or
+                        (not path_value.startswith('-') and
+                         ('/' in path_value or self._existing_operand(git_cwd, path_value)))):
+                    self._development_path(git_cwd, path_value)
             return _Command(argv, request.route.workspace.project_alias, True)
 
         if capability == "LOCAL_HOST_PROCESS":
@@ -546,7 +592,7 @@ class HostExecutor:
                 )
             if operation == "path_read":
                 relative = self._text_argument(arguments, "path")
-                path = self._relative_path(request.project_root, relative)
+                path = self._workspace_path(request.project_root, relative)
                 lines = arguments.get("lines", 100)
                 if not isinstance(lines, int) or not 1 <= lines <= 500:
                     raise InvalidArguments("read lines must be between 1 and 500")
@@ -844,6 +890,7 @@ class HostExecutor:
             "capability_probe_timestamp": _now(),
             "capabilities": capability,
             "executable_contract": executable_contract(self.config, capability),
+            "trusted_workspace_roots": [str(root) for root in self.config.trusted_workspace_roots],
             "registered_services": [item.alias for item in self.config.services],
             "registered_ssh_targets": [item.alias for item in self.config.ssh_targets],
             "registered_network_targets": [item.alias for item in self.config.network_targets],

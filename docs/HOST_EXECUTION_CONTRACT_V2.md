@@ -207,3 +207,11 @@ ahead_behind 4、service_is_active 8、service_status 16。Provider delivery（H
 远端 canonical 合入完成后，Observer continuation 应先在该 execution 安全结束后加载
 已验证的 Host v2 源码，再进行本任务以外的 Observer 注册/部署。临时集成验收证明两组
 代码可以共存，但不代表共享进程已加载新版本。
+
+
+## 2026-10-01 trusted workspace 路径契约
+
+后续路径扩展见 [TRUSTED_WORKSPACE_PATHS.md](TRUSTED_WORKSPACE_PATHS.md)。
+registered cwd 继续作为 task identity / lease anchor；path_read 和 development_command
+路径参数按配置 trusted roots 判断。上述历史资格快照保持不变；新的 canonical/runtime
+收敛证据见 [CANONICAL_CLOSURE_20261001.md](CANONICAL_CLOSURE_20261001.md)。
