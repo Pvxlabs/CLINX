@@ -19,7 +19,6 @@ from completion_runtime import serialized_execution, serialized_prepared_start
 from app_server import AppServerError
 from execution_semantics import RoutingIdentity, parse_routing_identity
 from execution_policy import (
-    build_development_policy,
     DEVELOPMENT_CAPABILITIES,
     DEVELOPMENT_MUTATION,
     HOST_CAPABILITIES,
@@ -1364,7 +1363,10 @@ class ClinxIntegration:
                 "Use CLINX for authoritative task context and command preparation. "
                 "Prepare with clinx_prepare_execution, then call "
                 "clinx_start_execution with only the returned prepared_execution_ref "
-                "and approved=true. Linear is optional audit/history compatibility "
+                "and approved=true. New development tasks use SANDBOX_WORKSPACE "
+                "by default, or NETWORKED_SANDBOX with network_access=true. "
+                "Host capabilities require an explicit policy request; continuation "
+                "preserves the sealed task policy. Linear is optional audit/history compatibility "
                 "and is never required for Codex execution."
             ),
             "read_only": True,
@@ -1570,28 +1572,8 @@ class ClinxIntegration:
                 host=selected_host,
                 project_mode="existing",
             )
-            # Registered writable local projects receive one unified DEVELOPMENT
-            # authority envelope. Explicit policy fields still take precedence,
-            # and read-only/external projects retain the sandbox default.
-            if (
-                execution_surface is None
-                and required_capabilities is None
-                and operation_classes is None
-                and production_mutation_intent in {None, False}
-                and not network_access
-                and descriptor.registered
-                and project_mapping is not None
-                and not project_mapping.read_only
-                and bool(
-                    getattr(
-                        getattr(self.dispatcher, "cfg", None),
-                        "host_executor",
-                        None,
-                    )
-                    and getattr(self.dispatcher.cfg.host_executor, "enabled", False)
-                )
-            ):
-                prepared_policy = build_development_policy()
+            # Seal the builder's native default (or explicit Host request).
+            # Host availability and project registration do not grant authority.
             route_builder = getattr(self.dispatcher, "_routing_identity", None)
             if callable(route_builder):
                 route = route_builder(

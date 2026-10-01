@@ -146,12 +146,12 @@ def setup(tmp_path):
                 client._supervisor.join(1)
 
 
-def dispatch(dispatcher, task, reference, *, new=False):
+def dispatch(dispatcher, task, reference, *, new=False, network_access=False):
     return dispatcher.dispatch(project_ref='pilot', host='p620', project_mode='existing',
           task_mode='new' if new else 'continue', task_id=None if new else task.task_id,
           prompt='Complete the deterministic fixture; do not invoke nested control-plane tools.',
           title='fixture-'+reference, summary='fixture', model='model', reasoning_effort=None,
-          execution_ref=reference)
+          execution_ref=reference, network_access=network_access)
 
 
 def wait_for_result(registry, reference, timeout=3):
@@ -181,18 +181,40 @@ def test_completed_wire_turn_finalizes_without_status_query(setup, early):
             runtime.stop()
 
 
-def test_new_and_continuation_use_autonomous_completion(setup):
-    dispatcher, registry, task, server = setup(early=True)
+@pytest.mark.parametrize('network_access', [False, True])
+@pytest.mark.parametrize('early', [False, True])
+def test_new_and_continuation_use_autonomous_completion(setup, network_access, early):
+    dispatcher, registry, task, server = setup(early=early)
     try:
-        result = dispatch(dispatcher, task, 'exec_new', new=True)
+        result = dispatch(dispatcher, task, 'exec_new', new=True, network_access=network_access)
         assert wait_for_result(registry, 'exec_new') == 'PASS'
         created = registry.get_task(result.task_id)
-        dispatch(dispatcher, created, 'exec_continue')
+        from execution_policy import build_development_policy, parse_execution_policy
+        assert parse_execution_policy(created.execution_policy_json) == build_development_policy(network_access=network_access)
+        dispatch(dispatcher, created, 'exec_continue', network_access=network_access)
         assert wait_for_result(registry, 'exec_continue') == 'PASS'
         assert registry.get_execution_result('exec_new').turn_id != registry.get_execution_result('exec_continue').turn_id
         assert server.starts == 2
+        assert not registry.has_execution_lease('exec_new')
+        assert not registry.has_execution_lease('exec_continue')
+        assert all(client._dynamic_tool_handler is None for client in server.clients)
     finally:
         dispatcher.stop_completion_runtime()
+
+
+def test_native_supervision_requires_exact_completion_identity():
+    server = Server(Path('/tmp'), early=False)
+    client = app_server.CodexAppServerClient(Wire(server))
+    try:
+        with pytest.raises(app_server.AppServerProtocolError, match='requires a completion handoff'):
+            client.supervise_turn('thread', 'turn')
+        client.configure_completion_handoff('thread', 'turn', lambda _message: None)
+        with pytest.raises(app_server.AppServerProtocolError, match='completion handoff identity changed'):
+            client.supervise_turn('thread', 'other-turn')
+        assert client._supervisor is None
+        assert client._dynamic_tool_handler is None
+    finally:
+        client.close()
 
 
 def test_real_prepare_start_cannot_overwrite_fast_terminal(setup):
@@ -352,8 +374,8 @@ def test_post_start_handoff_failure_keeps_execution_recoverable(setup, monkeypat
 def test_bad_host_parameters_rejected_before_executor(setup, monkeypatch):
     dispatcher, registry, task, server = setup(start_runtime=False)
     dispatch(dispatcher,task,'exec_tools')
-    from execution_policy import build_development_policy
-    policy=build_development_policy()
+    from execution_policy import parse_execution_policy
+    policy=parse_execution_policy(task.execution_policy_json)
     spec=dispatcher._managed_host_spec(policy)
     properties=spec['tools'][0]['inputSchema']['properties']
     assert properties['operation_class']['enum'] == ['DEVELOPMENT_MUTATION']

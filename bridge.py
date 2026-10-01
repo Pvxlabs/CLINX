@@ -838,6 +838,13 @@ class BridgeConfig:
         default_host_timeout = float(host_executor_raw.get("default_timeout_seconds", 30))
         max_host_timeout = float(host_executor_raw.get("max_timeout_seconds", 120))
         max_output_bytes = int(host_executor_raw.get("max_output_bytes", 65536))
+        trusted_roots = host_executor_raw.get("trusted_workspace_roots", [])
+        if not isinstance(trusted_roots, list) or any(
+            not isinstance(root, str) or not Path(root).is_absolute()
+            or Path(root).resolve() == Path('/') for root in trusted_roots
+        ):
+            raise BridgeError("[host_executor].trusted_workspace_roots must be absolute non-root paths")
+        trusted_roots = tuple(dict.fromkeys(Path(root).resolve() for root in trusted_roots))
         if default_host_timeout <= 0 or max_host_timeout < default_host_timeout:
             raise BridgeError("host executor timeout bounds are invalid")
         if not 1024 <= max_output_bytes <= 1024 * 1024:
@@ -968,6 +975,7 @@ class BridgeConfig:
                 default_timeout_seconds=default_host_timeout,
                 max_timeout_seconds=max_host_timeout,
                 max_output_bytes=max_output_bytes,
+                trusted_workspace_roots=trusted_roots,
                 services=target_list(
                     "services", ("READ_ONLY_HOST", "DEVELOPMENT_MUTATION")
                 ),
@@ -2366,25 +2374,8 @@ class TaskDispatcher:
     def _default_project_policy(
         self, project: ProjectMapping, *, network_access: bool
     ) -> ExecutionPolicy:
-        """Select unified local DEVELOPMENT authority for registered writable projects."""
-        if (
-            bool(getattr(self.cfg.host_executor, "enabled", False))
-            and
-            not network_access
-            and not project.read_only
-            and canonical_host(
-                self.cfg.runtime_host or self.cfg.host_executor.host
-            )
-            == canonical_host(
-                project.workspace_alias
-                or self.cfg.runtime_host
-                or self.cfg.host_executor.host
-            )
-        ):
-            registered = self.projects._registered.get(project.project_alias.casefold())
-            if registered is not None and not bool(getattr(registered, "read_only", False)):
-                return build_development_policy()
-        return build_execution_policy(network_access=network_access)
+        """Default new development tasks to Codex's native workspace surface."""
+        return build_development_policy(network_access=network_access)
 
     def _target(
         self,
@@ -2518,8 +2509,25 @@ class TaskDispatcher:
         return spec
 
     def _managed_host_prompt(self, prompt: str, policy: ExecutionPolicy) -> str:
+        result_contract = (
+            "At the end return exactly one multiline result with every field: "
+            "CLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<one concise paragraph>\n"
+            "CHANGED_FILES=<comma-separated paths or NONE>\nVALIDATION=<tests/checks and outcomes>\n"
+            "BLOCKERS=<NONE or exact blocker>\nNEXT_STATE=<IN_REVIEW|BLOCKED|COMPLETED>. "
+            "Each field must be on its own line.\n"
+        )
         if policy.execution_surface != HOST_EXECUTOR:
-            return prompt
+            return (
+                "CLINX MANAGED EXECUTION CONTRACT\n"
+                f"Execution surface: {policy.execution_surface}. "
+                "Use Codex native workspace tools within the configured sandbox, approval "
+                "and network boundaries. CLINX task approval does not override those boundaries. "
+                "Do not call clinx_prepare_execution, clinx_start_execution, cancellation, "
+                "or reconciliation to create or operate another execution. "
+                "Report unavailable tools or denied access as blockers.\n"
+                + result_contract
+                + "END CLINX MANAGED EXECUTION CONTRACT\n\nCURRENT REQUEST:\n" + prompt
+            )
         contract = {
             "executable_contract": executable_contract(getattr(self.cfg, "host_executor", HostExecutorConfig()), policy=policy),
             "role": "already-approved execution worker; not the CLINX operator",
@@ -2550,12 +2558,8 @@ class TaskDispatcher:
             "Use continuation_state and execution_can_continue. A proven COMMAND_NOT_DISPATCHED "
             "rejection permits a new legal call; do not replay the original call. "
             "Unresolved executed/dispatched result delivery requires reconciliation, never retry.\n"
-            "At the end return exactly one multiline result with every field: "
-            "CLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<one concise paragraph>\n"
-            "CHANGED_FILES=<comma-separated paths or NONE>\nVALIDATION=<tests/checks and outcomes>\n"
-            "BLOCKERS=<NONE or exact blocker>\nNEXT_STATE=<IN_REVIEW|BLOCKED|COMPLETED>. "
-            "Each field must be on its own line.\n"
-            "END CLINX MANAGED EXECUTION CONTRACT\n\nCURRENT REQUEST:\n" + prompt
+            + result_contract
+            + "END CLINX MANAGED EXECUTION CONTRACT\n\nCURRENT REQUEST:\n" + prompt
         )
 
     def _configure_host_turn(
@@ -2658,8 +2662,8 @@ class TaskDispatcher:
             repository_origin=task.repository_origin, branch=task.branch,
             workspace_alias=task.workspace_alias,
         )
-        policy = parse_execution_policy(task.execution_policy_json) or build_development_policy()
-        if policy.execution_surface != HOST_EXECUTOR:
+        policy = parse_execution_policy(task.execution_policy_json)
+        if policy is None or policy.execution_surface != HOST_EXECUTOR:
             raise DispatchContractError("provider migration requires HOST_EXECUTOR policy")
         route = self._routing_identity(
             workspace=workspace, project=project, conversation_bound=True,
@@ -2760,18 +2764,21 @@ class TaskDispatcher:
         return runtime.recover(execution_ref)
 
     @staticmethod
-    def _supervise_host_turn(
+    def _supervise_managed_turn(
         client: Any,
         *,
         policy: ExecutionPolicy,
+        execution_ref: str | None,
         thread_id: str,
         turn_id: str,
     ) -> None:
-        if policy.execution_surface != HOST_EXECUTOR:
+        if policy.execution_surface != HOST_EXECUTOR and not (
+            execution_ref and callable(getattr(client, "configure_completion_handoff", None))
+        ):
             return
         supervise = getattr(client, "supervise_turn", None)
         if not callable(supervise):
-            raise DispatchContractError("HOST_EXECUTOR turn supervision is unavailable")
+            raise DispatchContractError("managed turn supervision is unavailable")
         supervise(thread_id, turn_id)
 
     def _read_and_guard(
@@ -3005,14 +3012,15 @@ class TaskDispatcher:
                             turn_id=turn.turn_id,
                             retry_required=False,
                         )
-                        if policy.execution_surface == HOST_EXECUTOR:
+                        if execution_ref:
                             self._register_managed_completion(
                                 client, task_id=leased.task_id, execution_ref=execution_ref,
                                 thread_id=new_thread_id, turn_id=turn.turn_id,
                             )
-                        self._supervise_host_turn(
+                        self._supervise_managed_turn(
                             client,
                             policy=policy,
+                            execution_ref=execution_ref,
                             thread_id=new_thread_id,
                             turn_id=turn.turn_id,
                         )
@@ -3236,14 +3244,15 @@ class TaskDispatcher:
                         turn_id=turn.turn_id,
                         retry_required=False,
                     )
-                    if policy.execution_surface == HOST_EXECUTOR:
+                    if execution_ref:
                         self._register_managed_completion(
                             client, task_id=leased.task_id, execution_ref=execution_ref,
                             thread_id=binding.thread_id, turn_id=turn.turn_id,
                         )
-                    self._supervise_host_turn(
+                    self._supervise_managed_turn(
                         client,
                         policy=policy,
+                        execution_ref=execution_ref,
                         thread_id=binding.thread_id,
                         turn_id=turn.turn_id,
                     )

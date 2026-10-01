@@ -169,6 +169,7 @@ def test_development_escape_denied(v2, argv):
 def test_catalog_is_consumed_by_discovery_dynamic_schema_and_dispatch(v2):
     d = v2
     config = bridge.BridgeConfig.load(__import__('pathlib').Path(__file__).with_name('bridge.toml')).host_executor
+    config = dataclasses.replace(config, trusted_workspace_roots=(d.host.root,))
     # No private target command/URL/argv is published; aliases and class bounds are safe.
     executor = HostExecutor(config, d.host.registry)
     catalog = operation_catalog(config)

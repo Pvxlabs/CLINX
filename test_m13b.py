@@ -14,6 +14,7 @@ import app_server
 import bridge
 from execution_policy import (
     BUSINESS_ACTION,
+    DEVELOPMENT_CAPABILITIES,
     DEVELOPMENT_MUTATION,
     HOST_CAPABILITIES,
     HOST_CAPABILITY_PROBES,
@@ -25,7 +26,6 @@ from execution_policy import (
     READ_ONLY_HOST,
     SANDBOX_WORKSPACE,
     ExecutionPolicyError,
-    build_development_policy,
     build_execution_policy,
     parse_execution_policy,
 )
@@ -382,7 +382,9 @@ class ProviderThreadMigrationTests(unittest.TestCase):
 
     def fixture(self, root: Path, *, thread_id="legacy-thread", status="idle"):
         registry = TaskRegistry(root / "tasks.sqlite3")
-        policy = build_development_policy()
+        policy = host_policy(
+            capabilities=DEVELOPMENT_CAPABILITIES, classes=(DEVELOPMENT_MUTATION,)
+        )
         route = host_route(root, policy, conversation=thread_id)
         task = registry.create_task(
             host="p620", workspace_alias="p620", project_alias="pilot",
@@ -835,7 +837,7 @@ class HostExecutorFixture(unittest.TestCase):
             capabilities=("HOST_FILESYSTEM",)
         )
         try:
-            with self.assertRaisesRegex(TargetNotRegistered, "absolute"):
+            with self.assertRaisesRegex(TargetNotRegistered, "outside trusted workspace roots"):
                 self.executor.execute(self.request(
                     task, ref, route, policy, "HOST_FILESYSTEM", "path_read",
                     {"path": "/etc/passwd"},
