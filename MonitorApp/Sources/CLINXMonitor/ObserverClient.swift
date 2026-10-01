@@ -84,6 +84,8 @@ public actor ObserverClient: ObserverServing {
     }
     private static func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
+        // The private Observer must use the Tailnet route, not a system web proxy.
+        configuration.connectionProxyDictionary = [:]
         configuration.urlCache = nil
         configuration.httpCookieStorage = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
