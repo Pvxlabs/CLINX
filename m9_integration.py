@@ -22,7 +22,10 @@ from execution_policy import (
     build_development_policy,
     DEVELOPMENT_CAPABILITIES,
     DEVELOPMENT_MUTATION,
+    HOST_CAPABILITIES,
+    HOST_CAPABILITY_PROBES,
     HOST_EXECUTOR,
+    OPERATION_CLASSES,
     ExecutionPolicyError,
     build_execution_policy,
     legacy_policy_for_route,
@@ -1237,6 +1240,32 @@ class ClinxIntegration:
                 "capabilities": {},
             }
         )
+        # Preserve the legacy probe map, but explicitly separate it from the
+        # vocabulary accepted by prepare. Discovery never grants authority or
+        # proves command dispatch, target connectivity, or QEX admission.
+        host_capabilities = {
+            **host_capabilities,
+            "available_meaning": "CONFIGURATION_ENABLED",
+            "capabilities_kind": "INFORMATIONAL_LOCAL_PROBES",
+            "runtime_health": "NOT_PROBED",
+            "request_contract": {
+                "execution_surface": HOST_EXECUTOR,
+                "required_capabilities": list(HOST_CAPABILITIES),
+                "operation_classes": list(OPERATION_CLASSES),
+                "capability_probe_keys": dict(HOST_CAPABILITY_PROBES),
+                "probe_labels_are_request_values": False,
+                "capability_names_grant_authority": False,
+                "development_operation_class": DEVELOPMENT_MUTATION,
+                "constraints": (
+                    "Use canonical required_capabilities, not probe labels or operation names. "
+                    "Preparation checks probe availability; execution also checks the sealed "
+                    "task policy, route, lease, operation and target. DEVELOPMENT_MUTATION "
+                    "permits bounded repository commands. PRODUCTION_MUTATION requires "
+                    "explicit production_mutation_intent=true. BUSINESS_ACTION is denied. "
+                    "AVAILABLE probes do not prove end-to-end execution health."
+                ),
+            },
+        }
         return {
             "context_plane": {
                 "available": True,
@@ -1535,23 +1564,9 @@ class ClinxIntegration:
             available = executor.capabilities()
             if not available.get("available"):
                 raise M9IntegrationError("HOST_EXECUTOR_UNAVAILABLE")
-            capability_keys = {
-                "LOCAL_HOST_PROCESS": "host_process",
-                "SYSTEMD_USER": "systemd_user",
-                "OUTBOUND_NETWORK": "network",
-                "SSH": "ssh",
-                "HOST_FILESYSTEM": "filesystem",
-                "AWS_CLI": "aws_cli",
-                "CLOUDFLARE_CLI": "cloudflare_cli",
-                "CLOUD_API": "cloud_api",
-                "GIT": "git",
-                "DOCKER": "docker",
-                "POSTGRES": "postgres",
-                "TAILSCALE": "tailscale",
-            }
             unavailable = [
                 item for item in prepared_policy.required_capabilities
-                if available.get("capabilities", {}).get(capability_keys[item]) != "AVAILABLE"
+                if available.get("capabilities", {}).get(HOST_CAPABILITY_PROBES[item]) != "AVAILABLE"
             ]
             # The unified DEVELOPMENT envelope intentionally spans the local
             # toolchain. Missing optional tools should produce the command's
