@@ -89,7 +89,9 @@ struct MonitorRootView: View {
             .onAppear { windowWidth = proxy.size.width }
             .onChange(of: proxy.size.width) { windowWidth = $0 }
         }
-        .background(FullSizeContentConfigurator())
+        .background(FullSizeContentConfigurator(
+            headerTopInset: store.connectivityNote == nil ? 0 : DS.Metric.connectivityStripHeight
+        ))
         .onChange(of: store.searchFocusRequest) { _ in searchFocused = true }
         .onExitCommand {
             if searchFocused {

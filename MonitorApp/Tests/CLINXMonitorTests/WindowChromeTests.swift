@@ -19,6 +19,16 @@ final class WindowChromeTests: XCTestCase {
     }
 
     @MainActor
+    func testConnectivityStripAndHealthyTransitionsFollowTheActualHeader() {
+        let window = makeWindow()
+        defer { window.close() }
+        for inset in [DS.Metric.connectivityStripHeight, 0, DS.Metric.connectivityStripHeight, 0] {
+            FullSizeContentConfigurator.configure(window, headerTopInset: inset)
+            assertAlignment(window, headerTopInset: inset)
+        }
+    }
+
+    @MainActor
     func testBridgeReconcilesAppKitRelayoutWithoutATimer() {
         let window = makeWindow()
         defer { window.close() }
@@ -56,14 +66,16 @@ final class WindowChromeTests: XCTestCase {
     }
 
     @MainActor
-    private func assertAlignment(_ window: NSWindow, file: StaticString = #filePath, line: UInt = #line) {
+    private func assertAlignment(_ window: NSWindow, headerTopInset: CGFloat = 0,
+                                 file: StaticString = #filePath, line: UInt = #line) {
         for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             guard let button = window.standardWindowButton(type), let parent = button.superview else {
                 XCTFail("missing native window button", file: file, line: line)
                 continue
             }
             let rect = button.convert(button.bounds, to: nil)
-            XCTAssertEqual(window.frame.height - rect.midY, 24, accuracy: 0.01, file: file, line: line)
+            XCTAssertEqual(window.frame.height - rect.midY, headerTopInset + 24,
+                           accuracy: 0.01, file: file, line: line)
             XCTAssertTrue(parent.bounds.contains(button.frame), "native hit region must not clip",
                           file: file, line: line)
             var ancestor: NSView? = parent.superview
