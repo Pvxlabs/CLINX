@@ -4,21 +4,13 @@ import SwiftUI
 /// One full-size content surface. AppKit lays out its titlebar again on resize and
 /// activation, so reconcile native button geometry after each window update.
 struct FullSizeContentConfigurator: NSViewRepresentable {
-    var headerTopInset: CGFloat = 0
-
-    func makeNSView(context: Context) -> NSView {
-        let view = WindowBackingView()
-        view.headerTopInset = headerTopInset
-        return view
-    }
+    func makeNSView(context: Context) -> NSView { WindowBackingView() }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        guard let view = nsView as? WindowBackingView else { return }
-        view.headerTopInset = headerTopInset
-        view.configure()
+        (nsView as? WindowBackingView)?.configure()
     }
 
-    static func configure(_ window: NSWindow, headerTopInset: CGFloat = 0) {
+    static func configure(_ window: NSWindow) {
         if !window.styleMask.contains(.fullSizeContentView) {
             window.styleMask.insert(.fullSizeContentView)
         }
@@ -36,7 +28,7 @@ struct FullSizeContentConfigurator: NSViewRepresentable {
 
         // Enlarge the actual titlebar container, keeping its window-space top fixed.
         // Moving buttons below a 28pt container alone clips their native hit regions.
-        let height = headerTopInset + DS.Metric.contentHeaderHeight
+        let height = DS.Metric.contentHeaderHeight
         // The button view and its enclosing titlebar container both clip at the
         // native 28pt height. Resize outer-to-inner, without touching the theme frame.
         for view in [parent, container] {
@@ -48,7 +40,7 @@ struct FullSizeContentConfigurator: NSViewRepresentable {
                 view.frame = frame
             }
         }
-        let windowCenter = NSPoint(x: 0, y: window.frame.height - headerTopInset - DS.Metric.contentHeaderHeight / 2)
+        let windowCenter = NSPoint(x: 0, y: window.frame.height - height / 2)
         let center = container.convert(windowCenter, from: nil).y
         for button in buttons where abs(button.frame.midY - center) > 0.01 {
             var frame = button.frame
@@ -59,7 +51,6 @@ struct FullSizeContentConfigurator: NSViewRepresentable {
 }
 
 private final class WindowBackingView: NSView {
-    var headerTopInset: CGFloat = 0
     private var observers: [NSObjectProtocol] = []
     private var configuring = false
 
@@ -95,7 +86,7 @@ private final class WindowBackingView: NSView {
         guard !configuring, let window else { return }
         configuring = true
         defer { configuring = false }
-        FullSizeContentConfigurator.configure(window, headerTopInset: headerTopInset)
+        FullSizeContentConfigurator.configure(window)
     }
 
     private func removeObservers() {

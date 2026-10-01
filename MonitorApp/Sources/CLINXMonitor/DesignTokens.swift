@@ -79,19 +79,19 @@ enum DS {
         static let inspectorStackThreshold: CGFloat = 760
 
         /// Figma: the list/inspector panels sit 40pt above the MonitorWindow bottom in
-        /// every layout — desktop, Dark Mode, and Compact Window alike. A connectivity
-        /// strip only moves the panels' top edge; the bottom inset is unchanged.
+        /// every layout — desktop, Dark Mode, and Compact Window alike.
         static let contentBottomInset: CGFloat = 40
         /// Figma: the read-only RuntimeStatus docks inside that 40pt band, bottom-right.
         static let runtimeStatusBottomInset: CGFloat = 8
         static let runtimeStatusTrailingInset: CGFloat = 12
 
-        /// Figma: "SearchField" is 210 × 28 above the main content, in a 48pt header row.
+        /// SearchField stays 210 × 28 inside the compact native header.
         /// The Compact Window pages narrow it to 150 at 900pt; 1100 and 1440 keep 210.
         static let searchFieldWidth: CGFloat = 210
         static let searchFieldCompactWidth: CGFloat = 150
         static let searchFieldHeight: CGFloat = 28
-        static let contentHeaderHeight: CGFloat = 48
+        /// User correction: halve the former 76pt header + connection band to 38pt.
+        static let contentHeaderHeight: CGFloat = 38
         /// Keep all three native buttons clear of search when the sidebar becomes a rail.
         static let nativeControlsInset: CGFloat = 76
 
