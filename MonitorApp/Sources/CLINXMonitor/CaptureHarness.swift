@@ -60,8 +60,14 @@ enum CaptureHarness {
         try? await Task.sleep(nanoseconds: 1_500_000_000)
 
         let geometryOnly = ProcessInfo.processInfo.environment["CLINX_CAPTURE_GEOMETRY"] == "1"
+        if geometryOnly, let window = mainWindow() {
+            resize(window, to: specs[0])
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            await checkpoint(window, name: "00-launch", into: directory)
+            capture(window, name: "00-launch", into: directory, settings: false)
+        }
         let selectedSpecs = geometryOnly ? specs.filter {
-            ["04-live-healthy", "14b-dark-synthetic", "15-compact-1100", "15b-compact-900"].contains($0.name)
+            ["04-live-healthy", "10-offline", "14b-dark-synthetic", "15-compact-1100", "15b-compact-900"].contains($0.name)
         } : specs
         for spec in selectedSpecs {
             apply(spec, store: store)
