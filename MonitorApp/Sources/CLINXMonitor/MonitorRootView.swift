@@ -44,7 +44,7 @@ struct MonitorRootView: View {
                             .frame(width: listWidth)
                             .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft]))
                             .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft])
-                                .strokeBorder(DS.Palette.border, lineWidth: 1))
+                                .strokeBorder(DS.Palette.border, style: StrokeStyle(lineWidth: 2, lineJoin: .round)))
                             // The panels stop 40pt above the window bottom in every layout, so the
                             // RuntimeStatus dock stays clear of content — with or without a
                             // connectivity strip above, and at any window height.
@@ -56,7 +56,7 @@ struct MonitorRootView: View {
                             .frame(maxWidth: .infinity)
                             .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight]))
                             .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight])
-                                .strokeBorder(DS.Palette.border, lineWidth: 1))
+                                .strokeBorder(DS.Palette.border, style: StrokeStyle(lineWidth: 1, lineJoin: .round)))
                             .padding(.bottom, DS.Metric.contentBottomInset)
                             .padding(.trailing, 8)
                             .frame(maxHeight: .infinity)
@@ -231,7 +231,7 @@ struct PanelShape: InsettableShape {
                     radius: bottomRight, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
         path.addLine(to: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY))
         path.addArc(center: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY - bottomLeft),
-                    radius: bottomLeft, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+                    radius: bottomLeft, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
         path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topLeft))
         path.addArc(center: CGPoint(x: rect.minX + topLeft, y: rect.minY + topLeft),
                     radius: topLeft, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
@@ -281,6 +281,26 @@ struct FullSizeContentConfigurator: NSViewRepresentable {
                 window.titlebarAppearsTransparent = true
                 window.titleVisibility = .hidden
                 window.isMovableByWindowBackground = true
+                Self.alignTrafficLights(window)
+            }
+        }
+
+        /// Centers the native traffic lights on the 48pt header's vertical midline so they
+        /// share one optical line with the search field and the toolbar buttons.
+        static func alignTrafficLights(_ window: NSWindow) {
+            // The button frame is a touch taller than the glyph it draws, so the circle's
+            // visual center sits slightly above the frame's midline. Nudge it onto the header
+            // midline (verified against the rendered capture).
+            let targetCenterFromTop = DS.Metric.contentHeaderHeight / 2 + 1.25
+            let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+            let buttons = types.compactMap { window.standardWindowButton($0) }
+            guard let superview = buttons.first?.superview else { return }
+            let superHeight = superview.bounds.height
+            for button in buttons {
+                var frame = button.frame
+                let currentCenterFromTop = superHeight - frame.midY
+                frame.origin.y -= (targetCenterFromTop - currentCenterFromTop)
+                button.frame = frame
             }
         }
     }
