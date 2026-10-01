@@ -96,6 +96,32 @@ verified fixed in the next capture:
 3. **Round 3** — “Offline” was truncated to “Offli…” in the toolbar cluster; the empty
    scenario still rendered an empty “Hosts” heading.
 
+## 5b. Icon round (design page 17 “App Icon”)
+
+The design added the app icon and menu bar glyphs after the first redesign round. This round
+re-synced the icons and re-ran the whole ladder on the same Mac:
+
+```text
+swift Scripts/make-app-icon.swift  -> AppIcon.icns (433 KB) + AppIcon-1024.png master
+swift build                        Build complete! (3.08s)
+swift test                         27 tests, 0 failures
+./Scripts/build-app.sh             Contents/Resources/AppIcon.icns, CFBundleIconFile=AppIcon
+window capture                     16/16 screens re-rendered with the new toolbar mark
+```
+
+Checked against the design figure:
+
+* 1024 master — graphite tile (824 @ rx 185) with the top edge highlight, off-white open ring
+  (r 210 / 66 stroke) with the opening on the right, indigo execution dot (r 64) inside the
+  opening.
+* 16 / 32 / 64 px (extracted back out of the `.icns` with `iconutil`) — the ring + dot
+  silhouette holds and the shadow is correctly absent below 64px.
+* Toolbar — the window mark is now `AppMark(size: 24, flat: true).padding(-3)`, matching
+  `MonitorWindow.tsx`'s `<AppIcon size={24} flat />`; this is visible in every re-captured
+  screen.
+
+Artifacts: `/home/pvxlabs/dev/clinx-ui-evidence-20261001/app-icon/`.
+
 ## 6. Known, deliberate deviations
 
 * Row height 54 (documented spec) vs 52 in the design's Make implementation.
@@ -108,6 +134,8 @@ verified fixed in the next capture:
   carries no per-event payload, so event rows show the canonical event reference instead.
 * The design's in-window settings modal is the native Settings scene; screenshots of it are
   560×450 rather than a 1440×900 window.
+* The menu bar glyph is specified on page 17 but not shipped: the same design file still
+  lists “Menu bar extra with attention count” as *NOT in Phase 2 UI*.
 
 ## 7. Not covered by this evidence
 

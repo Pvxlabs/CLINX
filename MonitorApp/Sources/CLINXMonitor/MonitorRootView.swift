@@ -87,7 +87,9 @@ struct MonitorRootView: View {
     @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
             HStack(spacing: 10) {
-                LogoMark()
+                // The design renders the app mark at 24pt with a −3pt margin so the tile
+                // aligns with the 18pt toolbar icons.
+                AppMark(size: 24, flat: true).padding(-3)
                 if showTitle {
                     Text("CLINX Monitor")
                         .font(.system(size: 13, weight: .semibold))
@@ -115,20 +117,6 @@ struct MonitorRootView: View {
 }
 
 // MARK: - Chrome pieces
-
-struct LogoMark: View {
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 4.5).fill(DS.Palette.textPrimary)
-            Circle()
-                .strokeBorder(DS.Palette.surface, lineWidth: 1.6)
-                .frame(width: 7.2, height: 7.2)
-            Circle().fill(DS.Palette.surface).frame(width: 2.4, height: 2.4)
-        }
-        .frame(width: 18, height: 18)
-        .accessibilityHidden(true)
-    }
-}
 
 struct ScenarioSelector: View {
     @ObservedObject var store: MonitorStore

@@ -88,6 +88,32 @@ each state has a unique glyph so state never depends on colour alone.
 Freshness is a property of the snapshot: `CURRENT`, `STALE`, `LAST KNOWN` are always labelled
 (list tag, inspector tag, connectivity strip). Offline keeps the last snapshot visible.
 
+## 4b. Icons
+
+Figma source of truth: page **17 “App Icon”** of the Make file — `src/monitor/AppIcon.tsx`
+plus its toolbar use in `MonitorWindow.tsx` (`<AppIcon size={24} flat />`), and the menu bar
+glyph in the same file.
+
+**App mark.** An open ring observing one execution — “watched, never touched”. 1024 grid:
+824 tile at (100,100) with a 185 corner radius, a graphite gradient (#2B2C31 → #0D0E10) and a
+top edge highlight; the ring is radius 210 with a 66 stroke centred at (474,500), its 59.7°
+opening on the right; the execution dot (r 64) sits at (506,500) in `--st-running` indigo.
+The drop shadow is dropped below 64px.
+
+| Where | Implementation |
+| --- | --- |
+| Window toolbar mark | `AppMark.swift` — `AppMark(size: 24, flat: true).padding(-3)`, exactly the design's usage |
+| `.app` bundle icon | `Scripts/make-app-icon.swift` renders the same geometry at 16…1024 into an `.iconset`, `iconutil` packs `AppIcon.icns`; `Scripts/build-app.sh` generates it into `Contents/Resources` and `Info.plist` sets `CFBundleIconFile=AppIcon` |
+
+**Menu bar glyph.** `AppIcon.tsx` also specifies an 18×18pt template menu bar glyph with six
+states (live · blocked · failed · stale · offline · synthetic), a state priority of
+*Offline › Failed › Blocked › Stale › Live*, “synthetic always shows the diamond”, and the
+rule that only the Blocked/Failed dot is drawn in colour while the ring and dot stay
+template. The design's own Principles page still lists “Menu bar extra with attention count”
+under **Future suggestions — NOT in Phase 2 UI**, so no menu bar extra is shipped in this
+change; the glyph spec is recorded here so it can be implemented in one step when the design
+promotes it.
+
 ## 5. Deliberate adaptations (design → macOS)
 
 1. **Fonts.** The Make file names Inter with an SF Pro fallback and `'SF Mono', ui-monospace,
