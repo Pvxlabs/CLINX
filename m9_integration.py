@@ -38,7 +38,7 @@ from task_registry import (
     TaskExecutionBusy,
     WorktreeExecutionBusy,
 )
-from tool_delivery import ToolDeliveryLedger
+from tool_delivery import ToolDeliveryLedger, requires_reconciliation
 
 
 class M9IntegrationError(RuntimeError):
@@ -526,8 +526,7 @@ class ExecutionFinalizer:
                 pass
         host_evidence = self.registry.list_host_executions(execution_ref=execution_ref)
         deliveries = ToolDeliveryLedger.records(self.registry, execution_ref)
-        unresolved = [row for row in deliveries if row['delivery_state'] != 'DELIVERED'
-                      and row['execution_state'] != 'COMMAND_NOT_DISPATCHED']
+        unresolved = [row for row in deliveries if requires_reconciliation(row)]
         if unresolved:
             # Recover the crash window between Host evidence commit and result
             # serialization. Never infer "not executed" from a missing reply.
@@ -536,7 +535,7 @@ class ExecutionFinalizer:
                 ledger.failed(row['tool_call_id'])
             unresolved_ids = {row['tool_call_id'] for row in unresolved}
             unresolved = [row for row in ledger.records(self.registry, execution_ref)
-                          if row['tool_call_id'] in unresolved_ids and row['delivery_state'] != 'DELIVERED']
+                          if row['tool_call_id'] in unresolved_ids and requires_reconciliation(row)]
         if unresolved:
             executed = any(row['host_exit_code'] is not None for row in unresolved)
             code = ('RESULT_DELIVERY_FAILED_AFTER_EXECUTION' if executed else

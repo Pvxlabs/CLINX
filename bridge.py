@@ -74,6 +74,7 @@ from host_executor import (
     HostExecutorConfig,
     RegisteredTarget,
 )
+from host_contract import executable_contract
 from tool_delivery import ToolDeliveryLedger
 from m9_integration import (
     ExecutionFinalizer, ExecutionResultService, ResultParseError, parse_codex_result
@@ -2510,17 +2511,17 @@ class TaskDispatcher:
         )
 
     def _managed_host_spec(self, policy: ExecutionPolicy) -> dict[str, Any]:
-        spec = self.host_executor.dynamic_tool_spec()
+        spec = self.host_executor.dynamic_tool_spec(getattr(self.cfg, "host_executor", HostExecutorConfig()), policy)
         properties = spec["tools"][0]["inputSchema"]["properties"]
         properties["operation_class"]["enum"] = list(policy.operation_classes)
         properties["capability"]["enum"] = list(policy.required_capabilities)
         return spec
 
-    @staticmethod
-    def _managed_host_prompt(prompt: str, policy: ExecutionPolicy) -> str:
+    def _managed_host_prompt(self, prompt: str, policy: ExecutionPolicy) -> str:
         if policy.execution_surface != HOST_EXECUTOR:
             return prompt
         contract = {
+            "executable_contract": executable_contract(getattr(self.cfg, "host_executor", HostExecutorConfig()), policy=policy),
             "role": "already-approved execution worker; not the CLINX operator",
             "tool": "clinx.clinx_host_operation",
             "operation_classes": list(policy.operation_classes),
@@ -2546,7 +2547,9 @@ class TaskDispatcher:
             "or reconciliation to create or operate another execution. Those are outer "
             "operator actions; approval for this execution does not approve nested work. "
             "Do not guess capability names or pass raw task, execution, host or cwd identities. "
-            "Report unavailable tools as blockers, not as a reason to start nested work.\n"
+            "Use continuation_state and execution_can_continue. A proven COMMAND_NOT_DISPATCHED "
+            "rejection permits a new legal call; do not replay the original call. "
+            "Unresolved executed/dispatched result delivery requires reconciliation, never retry.\n"
             "At the end return exactly one multiline result with every field: "
             "CLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<one concise paragraph>\n"
             "CHANGED_FILES=<comma-separated paths or NONE>\nVALIDATION=<tests/checks and outcomes>\n"
@@ -2577,7 +2580,7 @@ class TaskDispatcher:
         if executor is None or not callable(configure):
             raise DispatchContractError("HOST_EXECUTOR dynamic tool bridge is unavailable")
 
-        def handle(params: dict[str, Any]) -> dict[str, Any]:
+        def request_from_params(params: dict[str, Any]) -> HostExecutionRequest:
             values = params.get("arguments")
             if not isinstance(values, dict):
                 raise DispatchContractError("host operation arguments must be an object")
@@ -2592,10 +2595,6 @@ class TaskDispatcher:
                     raise DispatchContractError(f"host operation {field} must be non-empty text")
             if not isinstance(values.get("arguments", {}), dict):
                 raise DispatchContractError("host operation arguments must be an object")
-            if values.get("operation_class", DEVELOPMENT_MUTATION) not in policy.operation_classes:
-                raise DispatchContractError("host operation class is not approved for this execution")
-            if values.get("capability", "LOCAL_HOST_PROCESS") not in policy.required_capabilities:
-                raise DispatchContractError("host capability is not approved for this execution")
             request = HostExecutionRequest(
                 task_ref=task_id,
                 execution_ref=execution_ref,
@@ -2609,6 +2608,15 @@ class TaskDispatcher:
                 timeout_seconds=values.get("timeout_seconds"),
                 tool_call_id=params.get("callId"),
             )
+            return request
+
+        def handle(params: dict[str, Any]) -> dict[str, Any]:
+            try:
+                request = request_from_params(params)
+            except Exception as exc:
+                exc.command_not_dispatched = True
+                exc.code = "INVALID_ARGUMENTS"
+                raise
             return executor.execute(request)
 
         if callable(getattr(client, "configure_completion_handoff", None)):

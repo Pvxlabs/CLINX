@@ -742,17 +742,21 @@ class CodexAppServerClient:
 
     def _dynamic_failure_response(self, exc: Exception) -> dict[str, Any]:
         code = getattr(exc, "code", "HOST_EXECUTOR_ERROR")
+        state = getattr(exc, "execution_state", "COMMAND_NOT_DISPATCHED")
+        safe = state == "COMMAND_NOT_DISPATCHED"
+        known = state in {"COMMAND_EXECUTED_RESULT_DELIVERED", "COMMAND_EXECUTION_FAILED", "COMMAND_EXECUTED_RESULT_DELIVERY_FAILED"}
+        unresolved = getattr(exc, "reconciliation_required", not safe)
         return {
             "success": False,
-            "contentItems": [{
-                "type": "inputText",
-                "text": json.dumps(
-                    {"result_state": str(code), "error": str(exc)[:2000],
-                     "execution_state": getattr(exc, "execution_state", "COMMAND_NOT_DISPATCHED")},
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ),
-            }],
+            "contentItems": [{"type": "inputText", "text": json.dumps({
+                "result_state": str(code), "error": str(exc)[:2000], "execution_state": state,
+                "failure_stage": "PRE_DISPATCH_VALIDATION" if safe else "RESULT_DELIVERY",
+                "host_dispatched": False if safe else True if known else None,
+                "side_effect_certainty": "NOT_EXECUTED" if safe else "EXECUTED" if known and not unresolved else "EXECUTED_OR_POSSIBLY_EXECUTED" if known else "UNKNOWN",
+                "delivery_state": "PENDING", "continuation_state": "RECONCILIATION_REQUIRED" if unresolved else "SAFE_TO_CONTINUE",
+                "retry_allowed": False, "retry_required": False,
+                "reconciliation_required": unresolved, "execution_can_continue": not unresolved,
+            }, sort_keys=True, separators=(",", ":"))}],
         }
 
     def _validate_dynamic_tool_params(self, params: Any) -> tuple[dict[str, Any], str]:
@@ -812,6 +816,20 @@ class CodexAppServerClient:
             result = handler(params)
             if ledger is not None:
                 ledger.host_result(call_id, result)
+            completed = result.get("exit_code") is not None
+            result = {**result,
+                "execution_state": ("COMMAND_DISPATCHED" if not completed else
+                    "COMMAND_EXECUTION_FAILED" if result["exit_code"] != 0 else
+                    "COMMAND_EXECUTED_RESULT_DELIVERY_PENDING"),
+                "failure_code": ("HOST_TRANSPORT_FAILED" if not completed else
+                                 "COMMAND_FAILED" if result["exit_code"] != 0 else None),
+                "failure_stage": ("HOST_TRANSPORT" if not completed else
+                                  "HOST_EXECUTION" if result["exit_code"] != 0 else None),
+                "host_dispatched": True if completed else None,
+                "side_effect_certainty": "EXECUTED" if completed else "UNKNOWN",
+                "delivery_state": "PENDING",
+                "continuation_state": "AWAITING_PROVIDER_ACK" if completed else "RECONCILIATION_REQUIRED",
+                "retry_allowed": False, "retry_required": False}
             response = {
                 "success": True,
                 "contentItems": [{
@@ -821,7 +839,13 @@ class CodexAppServerClient:
             }
         except Exception as exc:
             if ledger is not None and call_id is not None:
-                exc.execution_state = ledger.failed(call_id)
+                exc.execution_state = ledger.failed(call_id,
+                    not_dispatched=getattr(exc, "command_not_dispatched", False),
+                    failure_code=getattr(exc, "code", "INVALID_ARGUMENTS"))
+                if exc.execution_state != "COMMAND_NOT_DISPATCHED":
+                    exc.code = ("RESULT_DELIVERY_FAILED_AFTER_EXECUTION"
+                                if exc.execution_state != "COMMAND_DISPATCHED"
+                                else "RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH")
             response = self._dynamic_failure_response(exc)
         try:
             if (self.transport is not transport or self._dynamic_registry_generation != generation
