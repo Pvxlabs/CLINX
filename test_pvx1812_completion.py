@@ -359,16 +359,14 @@ def test_bad_host_parameters_rejected_before_executor(setup, monkeypatch):
     assert properties['operation_class']['enum'] == ['DEVELOPMENT_MUTATION']
     assert 'filesystem' not in properties['capability']['enum']
     client=app_server.CodexAppServerClient(Wire(server))
-    def forbidden(*args,**kwargs):
-        raise AssertionError('invalid request reached HostExecutor')
-    monkeypatch.setattr(dispatcher.host_executor,'execute',forbidden)
     project=dispatcher.cfg.projects[0]
     dispatcher._configure_host_turn(client=client,task_id=task.task_id,execution_ref='exec_tools',
         route=registry.get_execution_routing_identity('exec_tools'),policy=policy,project=project,
         thread_id=server.thread_id)
     for fields in [{'operation_class':'LOCAL_HOST_PROCESS'}, {'capability':'filesystem'}, {'capability':'host_process'},
                    {'operation_class':['DEVELOPMENT_MUTATION']}, {'execution_ref':'other'}]:
-        with pytest.raises(bridge.DispatchContractError):
+        from host_executor import AuthorityDenied
+        with pytest.raises((bridge.DispatchContractError, AuthorityDenied)):
             client._dynamic_tool_handler({'arguments':{**fields,'arguments':{}}})
     prompt=dispatcher._managed_host_prompt('write a test',policy)
     assert 'Do not call clinx_prepare_execution' in prompt

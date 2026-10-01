@@ -39,8 +39,10 @@ def test_real_provider_rejection_after_host_exit_never_reexecutes(tmp_path):
     registry = TaskRegistry(cfg.task_db_path)
     injected = []
     owner_clients = []
+    provider_targets = []
 
     def client_factory(target):
+        provider_targets.append(target)
         client = bridge._default_app_server_client(cfg, target)
         original = client._cache_and_send_server_response
 
@@ -114,17 +116,51 @@ def test_real_provider_rejection_after_host_exit_never_reexecutes(tmp_path):
         assert deliveries[0]['execution_state'] == 'COMMAND_EXECUTED_RESULT_DELIVERY_FAILED'
         assert deliveries[0]['delivery_state'] == 'FAILED'
         assert deliveries[0]['acknowledged_at'] is not None
-        # Reconnect/replay admission is tested against the same durable ledger,
-        # with a new JSON-RPC id and callId. No handler may be called again.
+        # Open a real new Provider connection and read the same durable thread;
+        # no new turn is created. Adversarial replay frames then exercise the
+        # app-server admission path on a fresh listener with the same ledger.
         owner = owner_clients[0]
-        from tool_delivery import DeliveryReconciliationRequired
-        with pytest.raises(DeliveryReconciliationRequired):
-            owner._delivery_ledger.admit({'id': 'reconnected', 'params': {'callId': 'worker-retry'}}, {})
+        identity = json.loads(deliveries[0]['identity_json'])
+        reconnected = bridge._default_app_server_client(cfg, provider_targets[0])
+        try:
+            reconnected.__enter__()
+            reconnected.initialize(client_name='host-v2-fault-reconnect',
+                client_title='CLINX isolated fault acceptance', client_version='2')
+            thread = reconnected.thread_read(identity['thread_id'])
+            assert thread['id'] == identity['thread_id']
+        finally:
+            reconnected.close()
+        import app_server
+        from test_tool_delivery import Wire
+        replay_client = app_server.CodexAppServerClient(Wire())
+        handler_calls = []
+        def forbidden_handler(params):
+            handler_calls.append(params['callId'])
+            raise AssertionError('replay reached Host handler')
+        replay_client.configure_dynamic_tool(namespace=identity['namespace'], name=identity['tool'],
+            thread_id=identity['thread_id'], handler=forbidden_handler,
+            delivery_ledger=ToolDeliveryLedger(registry, reference))
+        replay_client.attach_dynamic_tool_turn(identity['thread_id'], identity['turn_id'])
+        replay_results = []
+        for request_id, call_id in [('reconnected', deliveries[0]['tool_call_id']),
+                                    ('new-request', deliveries[0]['tool_call_id']),
+                                    ('new-call-request', 'worker-retry-new-call')]:
+            replay_client._send_server_response({'id': request_id, 'method': 'item/tool/call', 'params': {
+                'threadId': identity['thread_id'], 'turnId': identity['turn_id'],
+                'namespace': identity['namespace'], 'tool': identity['tool'], 'callId': call_id,
+                'arguments': {'capability': 'LOCAL_HOST_PROCESS', 'operation_class': 'DEVELOPMENT_MUTATION',
+                              'operation': 'development_command', 'arguments': {'argv': command}}}})
+            reply = json.loads(replay_client.transport.sent[-1]['result']['contentItems'][0]['text'])
+            assert reply['reconciliation_required'] is True
+            replay_results.append({'request_id': request_id, 'call_id': call_id, 'result_state': reply['result_state']})
+        assert handler_calls == []
+        assert (root/'counter').read_text() == '1'
         assert len(registry.list_host_executions(execution_ref=reference)) == 1
         evidence = {'execution_ref': reference, 'prepared_execution_ref': prepared['prepared_execution_ref'],
                     'task_ref': started['task_ref'], 'status': result.status, 'blockers': result.blockers,
                     'retry_required': task.retry_required, 'HOST_EXECUTION_COUNT': len(hosts),
-                    'injected': injected, 'deliveries': deliveries}
+                    'injected': injected, 'deliveries': deliveries, 'provider_reconnect': 'PASS',
+                    'replay_results': replay_results, 'DUPLICATE_EXECUTION_PREVENTION': 'PASS'}
         (tmp_path/'acceptance.json').write_text(json.dumps(evidence, indent=2))
         print('LIVE_FAULT_EVIDENCE', tmp_path/'acceptance.json', flush=True)
     finally:

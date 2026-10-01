@@ -917,14 +917,16 @@ class HostExecutorFixture(unittest.TestCase):
             capabilities=("GIT",), classes=(DEVELOPMENT_MUTATION,)
         )
         try:
-            with mock.patch("host_executor.subprocess.run") as run:
-                run.return_value = SimpleNamespace(returncode=0, stdout="master\n")
-                request = self.request(
-                    task, ref, route, policy, "GIT", "push_current_branch",
-                    {"remote": "origin"}, operation_class=DEVELOPMENT_MUTATION,
-                )
-                command = self.executor._command(request)
-            self.assertEqual(command.argv, ("git", "push", "origin", "master"))
+            with mock.patch.object(self.registry, 'get_task', return_value=SimpleNamespace(
+                    branch='main', repository_origin='git@example.invalid:fixture.git')):
+                with mock.patch.object(self.executor, '_git_identity', side_effect=[
+                        'git@example.invalid:fixture.git', 'git@example.invalid:fixture.git', 'main']):
+                    request = self.request(
+                        task, ref, route, policy, "GIT", "push_current_branch",
+                        {"remote": "origin"}, operation_class=DEVELOPMENT_MUTATION,
+                    )
+                    command = self.executor._command(request)
+            self.assertEqual(command.argv[-5:], ('push', '--no-verify', '--no-force', 'origin', 'refs/heads/main:refs/heads/main'))
             self.assertTrue(command.mutating)
             with self.assertRaisesRegex(TargetNotRegistered, "registered origin"):
                 self.executor._command(self.request(

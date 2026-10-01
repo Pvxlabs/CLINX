@@ -173,6 +173,13 @@ def test_registry_replaced_while_host_process_is_running(delivery):
         time.sleep(0.005)
     assert d.host.registry.list_host_executions(execution_ref=d.ref)[0]['result_state'] == 'RUNNING'
     d.client.clear_dynamic_tool()
+    assert rows(d)[0]['execution_state'] == 'COMMAND_DISPATCHED'
+    assert rows(d)[0]['side_effect_certainty'] == 'UNKNOWN'
+    fresh = app_server.CodexAppServerClient(Wire())
+    d.configure(fresh)
+    fresh._send_server_response({**d.request, 'id': 'during-disconnect',
+        'params': {**d.request['params'], 'callId': 'retry-while-running'}})
+    assert d.calls == ['call-1']
     worker.join(3)
     assert not worker.is_alive()
     assert len(errors) == 1
