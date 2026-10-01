@@ -3,3 +3,4 @@ __pycache__/
 bridge.toml.local
 .env
 kernel/target/
+MonitorApp/.build/
