@@ -229,11 +229,11 @@ struct ExecutionRowView: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
 
-                    StageBadge(stage: task.stage, tone: stageTone)
+                    StageBadge(stage: task.stage, tone: StageBadge.Tone.forStatus(status))
 
                     Spacer(minLength: 4)
                     Text(task.rowTail(status: status))
-                        .font(DS.Font.meta)
+                        .font(DS.Font.rowTrailing)
                         .monospacedDigit()
                         .lineLimit(1)
                         .foregroundStyle(tailColor)
@@ -243,13 +243,8 @@ struct ExecutionRowView: View {
             .padding(.horizontal, 16)
             .frame(height: DS.Metric.rowHeight)
             .background(selected ? DS.Palette.selection : (hovering ? DS.Palette.hover : .clear))
-            .overlay(alignment: .leading) {
-                if status.isAttention {
-                    Rectangle()
-                        .fill(status.color)
-                        .frame(width: DS.Metric.attentionEdgeWidth)
-                }
-            }
+            // No status accent strip: the row reads its state from the status glyph, the
+            // stage chip and the trailing label, never from a 2pt edge.
             .opacity(dimmed && status == .stale ? 0.8 : 1)
             .contentShape(Rectangle())
         }
@@ -264,14 +259,6 @@ struct ExecutionRowView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(status.label), \(task.titleText), \(task.projectText) on \(task.hostText)")
-    }
-
-    private var stageTone: StageBadge.Tone {
-        switch status {
-        case .blocked: return .warn
-        case .failed: return .error
-        default: return .neutral
-        }
     }
 
     private var tailColor: Color {

@@ -77,7 +77,25 @@ enum DS {
         static let windowMinWidth: CGFloat = 900
         static let windowMinHeight: CGFloat = 600
         static let inspectorStackThreshold: CGFloat = 760
-        static let attentionEdgeWidth: CGFloat = 2
+
+        /// Figma: the list/inspector panels sit 40pt above the MonitorWindow bottom in
+        /// every layout — desktop, Dark Mode, and Compact Window alike. A connectivity
+        /// strip only moves the panels' top edge; the bottom inset is unchanged.
+        static let contentBottomInset: CGFloat = 40
+        /// Figma: the read-only RuntimeStatus docks inside that 40pt band, bottom-right.
+        static let runtimeStatusBottomInset: CGFloat = 8
+        static let runtimeStatusTrailingInset: CGFloat = 12
+
+        /// Figma: "SearchField" is 210 × 28 above the main content, in a 48pt header row.
+        /// The Compact Window pages narrow it to 150 at 900pt; 1100 and 1440 keep 210.
+        static let searchFieldWidth: CGFloat = 210
+        static let searchFieldCompactWidth: CGFloat = 150
+        static let searchFieldHeight: CGFloat = 28
+        static let contentHeaderHeight: CGFloat = 48
+
+        /// Figma `Text:align`: the sidebar count's right edge sits 18pt inside the
+        /// SidebarItem's right edge, identically for every view and every state.
+        static let sidebarCountTrailingInset: CGFloat = 18
     }
 
     // MARK: - Typography
@@ -100,9 +118,13 @@ enum DS {
         }
 
         static let monoID = mono(11)
-        static let monoStage = mono(10)
         static let monoRowMeta = mono(10.5)
         static let monoMicro = mono(9, weight: .semibold)
+
+        /// Figma: TaskRow trailing metadata ("2m ago", "Blocked 6m ago") — one step below
+        /// `meta`, so the right-hand column stays quieter than the row's own subject.
+        static let rowTrailingSize: CGFloat = 9
+        static let rowTrailing = SwiftUI.Font.system(size: rowTrailingSize)
     }
 }
 

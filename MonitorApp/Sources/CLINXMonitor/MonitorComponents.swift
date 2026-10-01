@@ -83,11 +83,20 @@ struct StatusPill: View {
 
 // MARK: - Stage badge
 
+/// The row's stage chip. Figma fixes its metrics at 16pt tall with 6pt horizontal
+/// padding, the label set at 8pt mono and the chip hugging the text — no fixed width,
+/// no leftover slack, and no fill: the panel already supplies the surface.
 struct StageBadge: View {
     let stage: String
     var tone: Tone = .neutral
 
-    enum Tone { case neutral, warn, error }
+    enum Tone: Equatable { case neutral, warn, error }
+
+    enum Metrics {
+        static let height: CGFloat = 16
+        static let horizontalPadding: CGFloat = 6
+        static let textSize: CGFloat = 8
+    }
 
     private var color: Color {
         switch tone {
@@ -97,127 +106,70 @@ struct StageBadge: View {
         }
     }
 
+    /// Neutral chips take the shared hairline; warn/error keep their tone as a tint.
+    private var border: Color {
+        switch tone {
+        case .neutral: return DS.Palette.border
+        case .warn, .error: return color.opacity(0.35)
+        }
+    }
+
     var body: some View {
         Text(stage)
-            .font(DS.Font.monoStage)
+            .font(DS.Font.mono(Metrics.textSize))
             .foregroundStyle(color)
             .lineLimit(1)
             .truncationMode(.tail)
-            .padding(.horizontal, 6)
-            .frame(height: 18)
-            .background(RoundedRectangle(cornerRadius: DS.Metric.controlRadius).fill(DS.Palette.surface))
+            .padding(.horizontal, Metrics.horizontalPadding)
+            .frame(height: Metrics.height)
             .overlay(RoundedRectangle(cornerRadius: DS.Metric.controlRadius)
-                .strokeBorder(color.opacity(0.35), lineWidth: 1))
+                .strokeBorder(border, lineWidth: 1))
     }
 }
 
-// MARK: - Environment badge
+extension StageBadge.Tone {
+    /// Row status → chip tone. One shared mapping for every list, so no screen invents its
+    /// own colour rule for a stage chip.
+    static func forStatus(_ status: MonitorStatus) -> StageBadge.Tone {
+        switch status {
+        case .blocked: return .warn
+        case .failed: return .error
+        default: return .neutral
+        }
+    }
+}
 
-struct EnvironmentBadge: View {
-    let synthetic: Bool
+// MARK: - Runtime status
+
+/// Environment and connection merged into the one `RuntimeStatus` semantic
+/// (Figma component `RuntimeStatus`), docked at the window's bottom-right.
+///
+/// Finalized design: **transparent**. There is no card, no fill, no stroke and no
+/// capsule — only the status dot and the two labels. The element is informational and
+/// read-only, so it must never grow a container layer or an action affordance.
+struct RuntimeStatus: View {
+    let state: RuntimeStatusState
 
     var body: some View {
-        if synthetic {
-            HStack(spacing: 6) {
-                Image(systemName: "flask")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white)
-                Text("SYNTHETIC DATA")
-                    .font(DS.Font.mono(10, weight: .semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(.white)
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .background(RoundedRectangle(cornerRadius: 6).fill(DS.Palette.synthetic))
-            .overlay(HatchPattern().stroke(Color.white.opacity(0.14), lineWidth: 5).clipShape(RoundedRectangle(cornerRadius: 6)))
-            .help("Synthetic acceptance data — not P620 live")
-        } else {
-            HStack(spacing: 6) {
-                Circle().fill(DS.Palette.success).frame(width: 6, height: 6)
-                Text("P620").font(DS.Font.mono(10, weight: .semibold)).tracking(0.4)
-                    .foregroundStyle(DS.Palette.textPrimary)
-                Text("LIVE").font(DS.Font.mono(10, weight: .semibold)).tracking(0.4)
-                    .foregroundStyle(DS.Palette.textTertiary)
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .background(RoundedRectangle(cornerRadius: 6).fill(DS.Palette.surface))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(DS.Palette.border, lineWidth: 1))
-            .help("Live P620 Observer data")
+        HStack(spacing: 6) {
+            Circle()
+                .fill(state.color)
+                .frame(width: 7, height: 7)
+            Text(state.environment)
+                .font(DS.Font.mono(10, weight: .bold))
+                .foregroundStyle(DS.Palette.textPrimary)
+            Text("·")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(DS.Palette.textTertiary)
+            Text(state.connection)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(DS.Palette.textPrimary)
         }
-    }
-}
-
-/// 45° hatch used by the synthetic badge.
-struct HatchPattern: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let step: CGFloat = 10
-        var x = -rect.height
-        while x < rect.width + rect.height {
-            path.move(to: CGPoint(x: x, y: rect.maxY))
-            path.addLine(to: CGPoint(x: x + rect.height, y: rect.minY))
-            x += step
-        }
-        return path
-    }
-}
-
-// MARK: - Connection cluster
-
-struct ConnectionCluster: View {
-    let connection: ConnectionState7
-    let authority: AuthorityState
-    let sync: String
-    /// Narrow windows keep connection · authority and drop the last-sync segment so the
-    /// search field and the toolbar buttons stay visible instead of overflowing.
-    var compact = false
-
-    var body: some View {
-        HStack(spacing: 0) {
-            HStack(spacing: 6) {
-                indicator
-                Text(connection.label)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(DS.Palette.textPrimary)
-            }
-            .padding(.horizontal, 8)
-
-            if !compact {
-                Rectangle().fill(DS.Palette.border).frame(width: 1, height: 12)
-
-                Text(authority.label)
-                    .font(DS.Font.mono(10, weight: .semibold))
-                    .tracking(0.5)
-                    .foregroundStyle(authority.color)
-                    .padding(.horizontal, 8)
-            }
-
-            if !compact {
-                Rectangle().fill(DS.Palette.border).frame(width: 1, height: 12)
-
-                Text(sync)
-                    .font(DS.Font.meta)
-                    .monospacedDigit()
-                    .foregroundStyle(DS.Palette.textSecondary)
-                    .padding(.horizontal, 8)
-            }
-        }
-        .frame(height: 26)
-        .fixedSize()
-        .background(RoundedRectangle(cornerRadius: 7).fill(DS.Palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(DS.Palette.border, lineWidth: 1))
-        .help("Observer \(connection.label.lowercased()) · authority \(authority.label.lowercased()) · last sync \(sync)")
-    }
-
-    @ViewBuilder private var indicator: some View {
-        switch connection {
-        case .connected: Circle().fill(connection.color).frame(width: 7, height: 7)
-        case .degraded: Rectangle().fill(connection.color).frame(width: 7, height: 7).rotationEffect(.degrees(45))
-        case .offline:
-            Rectangle().strokeBorder(connection.color, lineWidth: 1.5).frame(width: 7, height: 7)
-        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(state.environment), \(state.connection)")
+        .help("Runtime status — \(state.environment) \(state.connection.lowercased()). Read-only.")
     }
 }
 
