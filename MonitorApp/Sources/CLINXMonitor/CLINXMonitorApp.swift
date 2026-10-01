@@ -31,8 +31,6 @@ struct CLINXMonitorApp: App {
 
     @CommandsBuilder private var commands: some Commands {
         CommandGroup(after: .toolbar) {
-            Button("Search Executions") { store.requestSearchFocus() }
-                .keyboardShortcut("k", modifiers: .command)
             Button("Refresh Now") { Task { await store.refresh() } }
                 .keyboardShortcut("r", modifiers: .command)
             Divider()

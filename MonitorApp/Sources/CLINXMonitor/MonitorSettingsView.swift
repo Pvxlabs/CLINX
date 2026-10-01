@@ -285,7 +285,7 @@ private struct AppearanceSettingsView: View {
 
 private struct ShortcutSettingsView: View {
     private let rows: [(String, String)] = [
-        ("Search", "⌘K"), ("Refresh", "⌘R"), ("Settings", "⌘,"),
+        ("Refresh", "⌘R"), ("Settings", "⌘,"),
         ("Active", "⌘1"), ("Blocked", "⌘2"), ("Failed", "⌘3"), ("Recent", "⌘4"), ("Completed", "⌘5"),
         ("Move selection", "↑ ↓"), ("Dismiss", "Esc"), ("Copy (row)", "right-click"),
     ]

@@ -85,15 +85,8 @@ enum DS {
         static let runtimeStatusBottomInset: CGFloat = 8
         static let runtimeStatusTrailingInset: CGFloat = 12
 
-        /// SearchField stays 210 × 28 inside the compact native header.
-        /// The Compact Window pages narrow it to 150 at 900pt; 1100 and 1440 keep 210.
-        static let searchFieldWidth: CGFloat = 210
-        static let searchFieldCompactWidth: CGFloat = 150
-        static let searchFieldHeight: CGFloat = 28
         /// User correction: halve the former 76pt header + connection band to 38pt.
         static let contentHeaderHeight: CGFloat = 38
-        /// Keep all three native buttons clear of search when the sidebar becomes a rail.
-        static let nativeControlsInset: CGFloat = 76
 
         /// Figma `Text:align`: the sidebar count's right edge sits 18pt inside the
         /// SidebarItem's right edge, identically for every view and every state.

@@ -5,12 +5,12 @@ import SwiftUI
 ///
 /// Figma source of truth: the hand-tuned `MonitorWindow` renders in
 /// `CLINX Monitor UI/UX Redesign` (`OgzTpC5hnbctXciUVN6wri`), page `5:3841` (Live / Healthy).
-/// The header is a single 38pt bar — native traffic lights, the search field and the two
+/// The header is a single 38pt bar — native traffic lights and the two
 /// tool buttons all sit on that one level; there is no separate macOS toolbar or search row.
 struct MonitorRootView: View {
     @ObservedObject var store: MonitorStore
-    @FocusState private var searchFocused: Bool
     @State private var windowWidth: CGFloat = 1440
+    @Environment(\.displayScale) private var displayScale
 
     /// Breakpoints follow the design's three reference sizes: 1440 desktop (full sidebar +
     /// 384 list), 1100 compact (rail + 340 list), 900 compact (rail + 300 list).
@@ -21,11 +21,9 @@ struct MonitorRootView: View {
         return DS.Metric.listWidthWide
     }
     private var sidebarWidth: CGFloat { rail ? DS.Metric.sidebarRailWidth : DS.Metric.sidebarWidth }
-    private var searchFieldWidth: CGFloat {
-        windowWidth < 1000 ? DS.Metric.searchFieldCompactWidth : DS.Metric.searchFieldWidth
-    }
     private var inspectorWidth: CGFloat { max(0, windowWidth - sidebarWidth - listWidth) }
     private var inspectorStacked: Bool { inspectorWidth < DS.Metric.inspectorStackThreshold }
+    private var borderWidth: CGFloat { 1 / max(displayScale, 1) }
 
     var body: some View {
         GeometryReader { proxy in
@@ -38,27 +36,35 @@ struct MonitorRootView: View {
                             .captureGeometry("sidebar")
                             .background(DS.Palette.canvas)
 
-                        ExecutionListView(store: store)
-                            .frame(width: listWidth)
-                            .captureGeometry("list")
-                            .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft]))
-                            .overlay(ExecutionPanelBorder())
-                            // The panels stop 40pt above the window bottom in every layout, so the
-                            // RuntimeStatus dock stays clear of content at any window height.
-                            .padding(.bottom, DS.Metric.contentBottomInset)
-                            .frame(maxHeight: .infinity)
-                            .background(DS.Palette.canvas)
+                        HStack(spacing: 0) {
+                            ExecutionListView(store: store)
+                                .frame(width: listWidth)
+                                .captureGeometry("list")
+                                // Draw the shared boundary once, inside the list's existing bounds.
+                                .overlay(alignment: .trailing) {
+                                    Rectangle().fill(DS.Palette.border)
+                                        .frame(width: borderWidth)
+                                        .allowsHitTesting(false)
+                                }
 
-                        InspectorView(store: store, stacked: inspectorStacked)
-                            .frame(maxWidth: .infinity)
-                            .captureGeometry("inspector")
-                            .clipShape(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight]))
-                            .overlay(PanelShape(radius: DS.Metric.panelRadius, corners: [.topRight, .bottomRight])
-                                .strokeBorder(DS.Palette.border, lineWidth: 1))
-                            .padding(.bottom, DS.Metric.contentBottomInset)
-                            .padding(.trailing, 8)
-                            .frame(maxHeight: .infinity)
-                            .background(DS.Palette.canvas)
+                            InspectorView(store: store, stacked: inspectorStacked)
+                                .frame(maxWidth: .infinity)
+                                .captureGeometry("inspector")
+                        }
+                        .clipShape(PanelShape(radius: DS.Metric.panelRadius,
+                                             corners: [.topLeft, .bottomLeft, .topRight, .bottomRight]))
+                        .overlay {
+                            PanelShape(radius: DS.Metric.panelRadius,
+                                       corners: [.topLeft, .bottomLeft, .topRight, .bottomRight])
+                                .strokeBorder(DS.Palette.border, lineWidth: borderWidth)
+                                .allowsHitTesting(false)
+                        }
+                        // One outer border and one shared separator, each one backing pixel.
+                        // The panels stop 40pt above the window bottom in every layout.
+                        .padding(.bottom, DS.Metric.contentBottomInset)
+                        .padding(.trailing, 8)
+                        .frame(maxHeight: .infinity)
+                        .background(DS.Palette.canvas)
                     }
                     .frame(maxHeight: .infinity)
                 }
@@ -88,12 +94,8 @@ struct MonitorRootView: View {
             .onChange(of: proxy.size.width) { windowWidth = $0 }
         }
         .background(FullSizeContentConfigurator())
-        .onChange(of: store.searchFocusRequest) { _ in searchFocused = true }
         .onExitCommand {
-            if searchFocused {
-                store.searchText = ""
-                searchFocused = false
-            } else if store.selectedRef != nil {
+            if store.selectedRef != nil {
                 store.clearSelection()
             }
         }
@@ -101,16 +103,9 @@ struct MonitorRootView: View {
 
     // MARK: header
 
-    /// One compact header: native traffic lights (drawn by macOS over
-    /// the leading inset), the search field aligned with the list column's leading edge, and
-    /// the refresh/settings tool buttons on the right. No product title, no app mark.
+    /// One compact header: native traffic lights on the left and refresh/settings on the right.
     private var header: some View {
         HStack(spacing: 0) {
-            // Reserve the sidebar column (plus its 1pt hairline) so the search field's left
-            // edge lands on the list column, at every sidebar width — desktop column or rail.
-            Spacer().frame(width: max(sidebarWidth + 1, DS.Metric.nativeControlsInset))
-            SearchField(store: store, focused: $searchFocused, width: searchFieldWidth)
-                .captureGeometry("search")
             Spacer(minLength: 0)
             HStack(spacing: 10) {
                 ToolbarIconButton(system: "arrow.clockwise", help: "Refresh  ⌘R") {
@@ -131,74 +126,6 @@ struct MonitorRootView: View {
 }
 
 // MARK: - Chrome pieces
-
-/// Add exactly one backing pixel to the two structural separators. This is border
-/// geometry inside the existing list bounds, so column widths never absorb it.
-private struct ExecutionPanelBorder: View {
-    @Environment(\.displayScale) private var scale
-
-    var body: some View {
-        let pixel = 1 / max(scale, 1)
-        let panel = PanelShape(radius: DS.Metric.panelRadius, corners: [.topLeft, .bottomLeft])
-        panel.strokeBorder(DS.Palette.border, lineWidth: 1)
-            .overlay {
-                StructuralEdges(radius: DS.Metric.panelRadius, inset: 1 + pixel / 2)
-                    .stroke(DS.Palette.border, lineWidth: pixel)
-                    .clipShape(panel)
-            }
-            .allowsHitTesting(false)
-    }
-
-    private struct StructuralEdges: Shape {
-        let radius: CGFloat
-        let inset: CGFloat
-
-        func path(in rect: CGRect) -> Path {
-            var path = Path()
-            path.move(to: CGPoint(x: rect.minX + inset, y: rect.minY + radius))
-            path.addLine(to: CGPoint(x: rect.minX + inset, y: rect.maxY - radius))
-            path.move(to: CGPoint(x: rect.maxX - inset, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY))
-            return path
-        }
-    }
-}
-
-struct SearchField: View {
-    @ObservedObject var store: MonitorStore
-    var focused: FocusState<Bool>.Binding
-    let width: CGFloat
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
-                .foregroundStyle(DS.Palette.textTertiary)
-            TextField("Search executions", text: $store.searchText)
-                .textFieldStyle(.plain)
-                .font(DS.Font.body)
-                .focused(focused)
-            if store.searchText.isEmpty {
-                Kbd(text: "⌘K")
-            } else {
-                Button {
-                    store.searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(DS.Palette.textTertiary)
-                }
-                .buttonStyle(.plain)
-                .help("Clear search")
-            }
-        }
-        .padding(.horizontal, 8)
-        .frame(width: width, height: DS.Metric.searchFieldHeight)
-        .background(RoundedRectangle(cornerRadius: 7).fill(DS.Palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 7)
-            .strokeBorder(focused.wrappedValue ? DS.Palette.accent : DS.Palette.border, lineWidth: 1))
-    }
-}
 
 struct ConnectivityStrip: View {
     @ObservedObject var store: MonitorStore
