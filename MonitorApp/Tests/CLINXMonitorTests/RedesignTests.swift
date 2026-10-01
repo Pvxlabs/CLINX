@@ -59,7 +59,7 @@ final class RedesignStatusTests: XCTestCase {
         XCTAssertEqual(try task(record).monitorStatus, .blocked)
     }
 
-    func testHostFailureFlipsStatusToFailed() throws {
+    func testHostFailureDoesNotOverrideCanonicalExecutionState() throws {
         var record = try example("running_detail")
         let operation: [String: Any] = [
             "host_execution_ref": "hostexec_test", "execution_ref": "exec_fixture",
@@ -69,6 +69,17 @@ final class RedesignStatusTests: XCTestCase {
             "exit_code": 1, "result_state": "FAILED", "timed_out": false,
         ]
         record["host_operations"] = [operation]
+        XCTAssertEqual(try task(record).monitorStatus, .running)
+        record["retry_required"] = true
+        XCTAssertEqual(try task(record).monitorStatus, .blocked)
+        record["execution_state"] = "BLOCKED"
+        record["retry_required"] = false
+        let blocked = try task(record)
+        XCTAssertEqual(blocked.monitorStatus, .blocked)
+        XCTAssertTrue(blocked.rowTail(status: blocked.monitorStatus).hasPrefix("Blocked "))
+        record["state"] = "FAILED"
+        XCTAssertEqual(try task(record).monitorStatus, .blocked)
+        record["execution_state"] = "FAILED"
         XCTAssertEqual(try task(record).monitorStatus, .failed)
     }
 

@@ -334,6 +334,17 @@ final class MonitorStore: ObservableObject {
                   detail.mutationBoundary.allowedActions.isEmpty else { throw MonitorError.incompatibleSchema }
             guard token == selectionToken else { return }
             selected = detail
+            // Detail can be newer than the list snapshot. Keep the same execution's
+            // row and inspector aligned without replacing a newer list observation.
+            func refreshed(_ row: ObservedTask) -> ObservedTask {
+                guard row.taskRef == detail.taskRef, row.executionRef == detail.executionRef,
+                      let observed = TimestampParser.date(from: detail.timestamps.observedAt),
+                      let previous = TimestampParser.date(from: row.timestamps.observedAt),
+                      observed >= previous else { return row }
+                return detail
+            }
+            active = active.map(refreshed)
+            recent = recent.map(refreshed)
             let page = try await service.events(ref, after: nil)
             guard token == selectionToken else { return }
             try acceptEvents(page, ref: ref, reset: true)

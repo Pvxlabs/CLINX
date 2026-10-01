@@ -20,10 +20,14 @@ or host operations. There is no new authority table, event writer, state store o
 migration. Existing execution semantics remain untouched.
 
 Expose exactly four authenticated GET route shapes, loopback only; use private
-Tailscale Serve HTTPS and tailnet ACL at deployment. No verified Tailscale peer
-identity adapter currently exists in the stack, so require an independent observer
-bearer credential. Never trust client/forwarded identity headers. Mac uses Keychain.
-Do not use Funnel or expose the listener publicly.
+Tailscale Serve HTTPS at deployment. All authenticated devices joined to the trusted
+Tailnet may reach the private endpoint under the existing effective Tailnet policy.
+Tailnet membership is the network trust boundary; reaching the endpoint does not
+authorize Observer reads. No verified Tailscale peer identity adapter currently
+exists in the stack, so require an independent, revocable Observer bearer credential
+for every GET, including health. Never trust client/forwarded identity headers.
+Mac uses Keychain. Do not use Funnel or expose the listener publicly. Do not broaden
+the Tailnet policy solely for this Observer.
 
 Use exact execution/task/turn attribution for results and execution-owned metadata;
 unknown remains null/UNKNOWN. Serialize only a positive allowlist. Progress is null

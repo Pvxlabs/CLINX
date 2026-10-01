@@ -90,15 +90,18 @@ extension ObservedTask {
     /// Developer-handoff mapping. Never infers success, never conflates states, and keeps a
     /// historical PASS from overriding a current BLOCKED/FAILED.
     var monitorStatus: MonitorStatus {
-        if ["BLOCKED", "RECOVERY_REQUIRED", "TRANSPORT_UNCERTAIN"].contains(state)
+        if [state, executionState].contains(where: {
+            ["BLOCKED", "RECOVERY_REQUIRED", "TRANSPORT_UNCERTAIN"].contains($0)
+        })
             || exactResult?.status == "BLOCKED" { return .blocked }
-        // A failure is a failure even when a retry is required: exit ≠ 0 must never be
-        // rendered as a generic block.
-        if state == "FAILED" || exactResult?.status == "FAILED" || hasHostFailure { return .failed }
+        // Only canonical task/execution failure outranks retry-required. A failed
+        // child command is evidence, not the final outcome of its parent execution.
+        if state == "FAILED" || executionState == "FAILED" || exactResult?.status == "FAILED" { return .failed }
         if retryRequired { return .blocked }
         if claimsRunning { return .running }
         if ["CANCELLED", "STOPPED"].contains(state) || exactResult?.status == "CANCELLED" { return .cancelled }
         if ["COMPLETED", "IN_REVIEW"].contains(state) { return .completed }
+        if hasHostFailure { return .failed }
         return .unknown
     }
 

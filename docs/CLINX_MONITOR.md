@@ -98,7 +98,8 @@ Strings are plain text, never rendered as HTML/Markdown links or commands. Commo
 bearer/key/password assignment patterns are redacted; the configured observer
 credential is scrubbed from serialized HTTP bodies. This is not a universal DLP
 engine: task titles and structured result prose can contain sensitive user text.
-Tailnet ACL + credential authorize read access to all visible registry tasks.
+Trusted Tailnet membership permits private network access; an independent Observer
+credential authorizes read access to all visible registry tasks.
 Per-project/per-user authorization and arbitrary artifact serving are out of scope.
 
 ## Event cursor and retention
@@ -132,11 +133,13 @@ Mac URLSession -> HTTPS on private Tailscale Serve endpoint -> 127.0.0.1:8766 ob
 -> canonical P620 SQLite registry opened read-only.
 
 Do not bind 0.0.0.0, a public interface or an unauthenticated raw TCP port. Listener
-host is hard-coded loopback. Do not use Tailscale Funnel. Tailnet ACL/grants should
-allow only the designated Mac/user to this Serve HTTPS endpoint; HTTPS certificate
-validation remains enabled, no ATS exception and no custom trust bypass. Disable
-request/header/body logging on any reverse proxy. Validate tailnet exposure and
-unauthorized-device denial before enabling a production endpoint.
+host is hard-coded loopback. Do not use Tailscale Funnel. All authenticated devices
+in the trusted Tailnet may reach this private endpoint under the existing effective
+policy; Tailnet access alone never authorizes an Observer GET. Do not broaden the
+Tailnet policy solely for this Observer. HTTPS certificate validation remains
+enabled, with no ATS exception or custom trust bypass. Disable request/header/body
+logging on any reverse proxy. Validate private Tailnet reachability, bearer denial
+and absence of public exposure before enabling a production endpoint.
 
 Tailscale identity would be preferred if the server could verify the peer via a
 trusted local tailscaled identity channel. The current stdlib HTTP/MCP/tunnel stack

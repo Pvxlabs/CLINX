@@ -60,8 +60,8 @@ Backend: `127.0.0.1:8766` only. Planned frontend:
 `https://workstation-p620.tail691100.ts.net:8449` (TCP/HTTPS, private Serve).
 8449 is dedicated to Observer; do not alter existing Serve routes 8443-8448.
 
-The user explicitly authorized **all joined Tailnet devices** on 2026-10-01,
-superseding ADR-006's original designated-Mac/user restriction for this deployment.
+The user explicitly authorized **all joined Tailnet devices** on 2026-10-01, as
+recorded in ADR-006 and the Monitor contract.
 An independent Observer-only bearer remains mandatory for every GET. This is not
 public or unauthenticated read access. No ACL policy mutation is authorized or
 needed if the existing effective policy already admits joined Tailnet clients.
