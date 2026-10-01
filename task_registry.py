@@ -1046,6 +1046,9 @@ class TaskRegistry:
                 conn.execute(
                     "ALTER TABLE tasks ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'normal'"
                 )
+            host_columns = {row[1] for row in conn.execute("PRAGMA table_info(host_executions)")}
+            if "tool_call_id" not in host_columns:
+                conn.execute("ALTER TABLE host_executions ADD COLUMN tool_call_id TEXT")
             execution_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(executions)")
             }
@@ -3251,7 +3254,7 @@ class TaskRegistry:
                             target_identity,started_at,completed_at,duration_ms,exit_code,
                             stdout,stderr,stdout_bytes,stderr_bytes,stdout_sha256,
                             stderr_sha256,stdout_truncated,stderr_truncated,result_state,
-                            timeout_seconds,timed_out,cancel_requested
+                            timeout_seconds,timed_out,cancel_requested,tool_call_id
                      FROM host_executions WHERE {where}
                      ORDER BY started_at DESC LIMIT ?""",
                 (value, limit),

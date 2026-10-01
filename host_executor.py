@@ -87,6 +87,7 @@ class HostExecutionRequest:
     arguments: dict[str, Any]
     project_root: Path
     timeout_seconds: float | None = None
+    tool_call_id: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -614,6 +615,7 @@ class HostExecutor:
             result_state="RUNNING",
             timeout_seconds=timeout,
             executor_instance=self.instance_id,
+            tool_call_id=request.tool_call_id,
         )
 
         began = time.monotonic()

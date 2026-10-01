@@ -1,0 +1,15 @@
+[Unit]
+Description=CLINX owned Codex provider endpoint
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PATH=/home/pvxlabs/.nvm/versions/node/v24.19.0/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env codex app-server --listen unix://%t/clinx-provider.sock
+UMask=0077
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

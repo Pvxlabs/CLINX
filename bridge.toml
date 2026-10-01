@@ -21,6 +21,7 @@ sandbox = "workspace-write"
 approval = "never"
 
 [app_server]
+local_socket = "clinx-provider.sock"
 # This is the configured remote transport only. Runtime/target host equality
 # selects the local proxy command and never constructs an SSH command.
 transport = "ssh"

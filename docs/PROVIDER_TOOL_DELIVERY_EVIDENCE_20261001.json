@@ -1,0 +1,343 @@
+{
+  "baseline": "031269cc48a62b5a61704971c0be31548e075e11",
+  "root_cause_evidence": {
+    "prior_host_evidence": [
+      {
+        "host_execution_ref": "hostexec_56e8cd347c8b47e19ade76e6f7f16de7",
+        "execution_ref": "exec_d2a0c24c7c794ff2b15fd34d24c07b49",
+        "started_at": "2026-10-01T00:11:56.758868+00:00",
+        "completed_at": "2026-10-01T00:12:02.189651+00:00",
+        "operation": "push_current_branch",
+        "argv_json": "[\"git\",\"push\",\"origin\",\"main\"]",
+        "result_state": "SUCCEEDED",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "To github.com:Pvxlabs/CLINX.git\n   b99dce5..031269c  main -> main\n"
+      },
+      {
+        "host_execution_ref": "hostexec_17a40e669fd74af784a04bdb35bed365",
+        "execution_ref": "exec_6515e93e93c44896b27c02ce42fee459",
+        "started_at": "2026-10-01T00:15:13.882071+00:00",
+        "completed_at": "2026-10-01T00:15:19.006733+00:00",
+        "operation": "development_command",
+        "argv_json": "[\"git\",\"ls-remote\",\"--exit-code\",\"origin\",\"refs/heads/main\"]",
+        "result_state": "SUCCEEDED",
+        "exit_code": 0,
+        "stdout": "031269cc48a62b5a61704971c0be31548e075e11\trefs/heads/main\n",
+        "stderr": ""
+      }
+    ],
+    "prior_provider_events": [
+      {
+        "timestamp": "2026-10-01T00:11:56.802Z",
+        "thread_id": "01a0f4bf-0976-7051-be58-e6bfea928f86",
+        "turn_id": "01a0f4cb-a5e8-79e3-af73-8362a822ac2a",
+        "item": {
+          "type": "DynamicToolCall",
+          "id": "exec-244f018d-f6cd-4388-878a-56a6b018f3bf",
+          "namespace": "clinx",
+          "tool": "clinx_host_operation",
+          "arguments": {
+            "capability": "GIT",
+            "operation": "push_current_branch",
+            "operation_class": "DEVELOPMENT_MUTATION",
+            "timeout_seconds": 120,
+            "arguments": {
+              "remote": "origin"
+            }
+          },
+          "status": "failed",
+          "content_items": [
+            {
+              "type": "inputText",
+              "text": "Unsupported dynamic tool namespace: clinx"
+            }
+          ],
+          "success": false,
+          "duration": {
+            "secs": 0,
+            "nanos": 49613930
+          }
+        }
+      },
+      {
+        "timestamp": "2026-10-01T00:15:13.894Z",
+        "thread_id": "01a0f4bf-0976-7051-be58-e6bfea928f86",
+        "turn_id": "01a0f4d0-7ddb-7e91-b485-df737555287e",
+        "item": {
+          "type": "DynamicToolCall",
+          "id": "exec-b739dddd-8b74-443f-9f31-f87de9f3b7f0",
+          "namespace": "clinx",
+          "tool": "clinx_host_operation",
+          "arguments": {
+            "capability": "LOCAL_HOST_PROCESS",
+            "operation": "development_command",
+            "operation_class": "DEVELOPMENT_MUTATION",
+            "timeout_seconds": 120,
+            "arguments": {
+              "argv": [
+                "git",
+                "ls-remote",
+                "--exit-code",
+                "origin",
+                "refs/heads/main"
+              ]
+            }
+          },
+          "status": "failed",
+          "content_items": [
+            {
+              "type": "inputText",
+              "text": "Unsupported dynamic tool namespace: clinx"
+            }
+          ],
+          "success": false,
+          "duration": {
+            "secs": 0,
+            "nanos": 15277771
+          }
+        }
+      }
+    ],
+    "passive_observer": [
+      {
+        "at": 1790814747.0003195,
+        "observer_pid": 2814179,
+        "method": "item/started",
+        "request_id": null,
+        "identity": {
+          "threadId": "01a0f4bf-0976-7051-be58-e6bfea928f86",
+          "turnId": "01a0f4e0-5d17-7da1-b682-107371ae7339",
+          "id": "exec-42083369-71e3-421c-abc8-f7c5b3f3cd1e",
+          "type": "dynamicToolCall",
+          "status": "inProgress",
+          "success": null
+        }
+      },
+      {
+        "at": 1790814747.0004394,
+        "observer_pid": 2814179,
+        "method": "item/tool/call",
+        "request_id": 7137,
+        "identity": {
+          "threadId": "01a0f4bf-0976-7051-be58-e6bfea928f86",
+          "turnId": "01a0f4e0-5d17-7da1-b682-107371ae7339",
+          "callId": "exec-42083369-71e3-421c-abc8-f7c5b3f3cd1e",
+          "namespace": "clinx",
+          "tool": "clinx_host_operation"
+        }
+      },
+      {
+        "at": 1790814747.0166254,
+        "observer_pid": 2814179,
+        "method": "item/completed",
+        "request_id": null,
+        "identity": {
+          "threadId": "01a0f4bf-0976-7051-be58-e6bfea928f86",
+          "turnId": "01a0f4e0-5d17-7da1-b682-107371ae7339",
+          "id": "exec-42083369-71e3-421c-abc8-f7c5b3f3cd1e",
+          "type": "dynamicToolCall",
+          "status": "failed",
+          "success": false
+        }
+      }
+    ],
+    "rejecting_client_identity": "UNIDENTIFIED"
+  },
+  "provider": {
+    "socket": "/run/user/1001/clinx-provider.sock",
+    "pid": 3051040,
+    "started_at_utc": "2026-10-01T00:50:09Z",
+    "socket_mode": "0600",
+    "shared_daemon_restarted": false
+  },
+  "normal": {
+    "prepared_execution_ref": "prepared_abb5948ac0c3408aa1b9302a057452cd",
+    "execution_ref": "exec_abb5948ac0c3408aa1b9302a057452cd",
+    "result": {
+      "status": "PASS",
+      "summary": "All four requested HostExecutor development commands completed successfully with exit_code=0.",
+      "changed_files": "NONE",
+      "validation": "pwd host_execution_ref=\"hostexec_fda015f25180409ebbd3cff532eec7d2\"; git status --short host_execution_ref=\"hostexec_5040e37c2a3646d8a6bb5a10f64c7ba6\"; git rev-parse HEAD host_execution_ref=\"hostexec_791d332347a04b2ab9520b2d519bb093\"; acceptance marker host_execution_ref=\"hostexec_95d891e14d1145b9b4d14c8a10997128\", printed \"CLINX_PROVIDER_DELIVERY_ACCEPTANCE_OK\"",
+      "blockers": "NONE",
+      "next_state": "COMPLETED",
+      "received_at": "2026-10-01T00:59:25.623097+00:00",
+      "writeback_state": "WRITTEN"
+    },
+    "deliveries": [
+      {
+        "execution_ref": "exec_abb5948ac0c3408aa1b9302a057452cd",
+        "tool_call_id": "exec-358ad02b-aefc-4a13-b78b-fe6fb1552ad5",
+        "request_id": "6",
+        "response_id": "6",
+        "identity_json": "{\"client_pid\": 3242597, \"connection_id\": \"8cc4869447ad41f99764594375bba893\", \"listener_id\": \"32526b76a5cf49589e37d69cacd247e0\", \"namespace\": \"clinx\", \"provider_endpoint\": {\"created_ns\": 1790815809166805135, \"device\": 66308, \"inode\": 9568275, \"path\": \"/run/user/1001/clinx-provider.sock\"}, \"provider_session_id\": \"01a0f4f4-8692-73b2-9065-600bc547ec7d\", \"provider_user_agent\": \"clinx-delivery-check/0.156.1 (Ubuntu 24.4.0; x86_64) unknown (linear-local-codex-bridge; 1.0.0-m6)\", \"provider_version\": null, \"registry_generation\": 1, \"task_ref\": \"task_240ff6888bee435b93e8cd1838de2bf4\", \"thread_id\": \"01a0f4f4-8692-73b2-9065-600bc547ec7d\", \"tool\": \"clinx_host_operation\", \"transport_child_pid\": 3242633, \"turn_id\": \"01a0f4f8-be68-71b2-83b2-2a2b2e8d0bd3\"}",
+        "request_hash": "72dce412d34be1eb6c4ec836282ed6ac1ff5de3a0d845659d6c34e29e869eeda",
+        "host_execution_ref": "hostexec_fda015f25180409ebbd3cff532eec7d2",
+        "host_exit_code": 0,
+        "execution_state": "COMMAND_EXECUTED_RESULT_DELIVERED",
+        "delivery_state": "DELIVERED",
+        "failure_code": null,
+        "admitted_at": 1790816344.0470572,
+        "host_completed_at": 1790816344.0570025,
+        "response_sent_at": 1790816344.0577197,
+        "acknowledged_at": 1790816344.0605552
+      },
+      {
+        "execution_ref": "exec_abb5948ac0c3408aa1b9302a057452cd",
+        "tool_call_id": "exec-625611cb-2f1d-4813-a87a-0e70fdcf37b6",
+        "request_id": "7",
+        "response_id": "7",
+        "identity_json": "{\"client_pid\": 3242597, \"connection_id\": \"8cc4869447ad41f99764594375bba893\", \"listener_id\": \"32526b76a5cf49589e37d69cacd247e0\", \"namespace\": \"clinx\", \"provider_endpoint\": {\"created_ns\": 1790815809166805135, \"device\": 66308, \"inode\": 9568275, \"path\": \"/run/user/1001/clinx-provider.sock\"}, \"provider_session_id\": \"01a0f4f4-8692-73b2-9065-600bc547ec7d\", \"provider_user_agent\": \"clinx-delivery-check/0.156.1 (Ubuntu 24.4.0; x86_64) unknown (linear-local-codex-bridge; 1.0.0-m6)\", \"provider_version\": null, \"registry_generation\": 1, \"task_ref\": \"task_240ff6888bee435b93e8cd1838de2bf4\", \"thread_id\": \"01a0f4f4-8692-73b2-9065-600bc547ec7d\", \"tool\": \"clinx_host_operation\", \"transport_child_pid\": 3242633, \"turn_id\": \"01a0f4f8-be68-71b2-83b2-2a2b2e8d0bd3\"}",
+        "request_hash": "a26b1dee72d8f3554c9682344a7b79bf796843d215b926404a2c4356d9e46cf5",
+        "host_execution_ref": "hostexec_5040e37c2a3646d8a6bb5a10f64c7ba6",
+        "host_exit_code": 0,
+        "execution_state": "COMMAND_EXECUTED_RESULT_DELIVERED",
+        "delivery_state": "DELIVERED",
+        "failure_code": null,
+        "admitted_at": 1790816348.3653636,
+        "host_completed_at": 1790816348.3760464,
+        "response_sent_at": 1790816348.3768291,
+        "acknowledged_at": 1790816348.379169
+      },
+      {
+        "execution_ref": "exec_abb5948ac0c3408aa1b9302a057452cd",
+        "tool_call_id": "exec-e6178168-4dfb-41b0-9e0c-2cbdbe585e1b",
+        "request_id": "8",
+        "response_id": "8",
+        "identity_json": "{\"client_pid\": 3242597, \"connection_id\": \"8cc4869447ad41f99764594375bba893\", \"listener_id\": \"32526b76a5cf49589e37d69cacd247e0\", \"namespace\": \"clinx\", \"provider_endpoint\": {\"created_ns\": 1790815809166805135, \"device\": 66308, \"inode\": 9568275, \"path\": \"/run/user/1001/clinx-provider.sock\"}, \"provider_session_id\": \"01a0f4f4-8692-73b2-9065-600bc547ec7d\", \"provider_user_agent\": \"clinx-delivery-check/0.156.1 (Ubuntu 24.4.0; x86_64) unknown (linear-local-codex-bridge; 1.0.0-m6)\", \"provider_version\": null, \"registry_generation\": 1, \"task_ref\": \"task_240ff6888bee435b93e8cd1838de2bf4\", \"thread_id\": \"01a0f4f4-8692-73b2-9065-600bc547ec7d\", \"tool\": \"clinx_host_operation\", \"transport_child_pid\": 3242633, \"turn_id\": \"01a0f4f8-be68-71b2-83b2-2a2b2e8d0bd3\"}",
+        "request_hash": "3eacf9430adf55d89ba667949091e7ec4977356c3d496cd1e0bb3516c56717ee",
+        "host_execution_ref": "hostexec_791d332347a04b2ab9520b2d519bb093",
+        "host_exit_code": 0,
+        "execution_state": "COMMAND_EXECUTED_RESULT_DELIVERED",
+        "delivery_state": "DELIVERED",
+        "failure_code": null,
+        "admitted_at": 1790816351.6460032,
+        "host_completed_at": 1790816351.6537187,
+        "response_sent_at": 1790816351.6541348,
+        "acknowledged_at": 1790816351.656161
+      },
+      {
+        "execution_ref": "exec_abb5948ac0c3408aa1b9302a057452cd",
+        "tool_call_id": "exec-dd8c1f4a-00dc-499d-844c-f212e6d36b43",
+        "request_id": "9",
+        "response_id": "9",
+        "identity_json": "{\"client_pid\": 3242597, \"connection_id\": \"8cc4869447ad41f99764594375bba893\", \"listener_id\": \"32526b76a5cf49589e37d69cacd247e0\", \"namespace\": \"clinx\", \"provider_endpoint\": {\"created_ns\": 1790815809166805135, \"device\": 66308, \"inode\": 9568275, \"path\": \"/run/user/1001/clinx-provider.sock\"}, \"provider_session_id\": \"01a0f4f4-8692-73b2-9065-600bc547ec7d\", \"provider_user_agent\": \"clinx-delivery-check/0.156.1 (Ubuntu 24.4.0; x86_64) unknown (linear-local-codex-bridge; 1.0.0-m6)\", \"provider_version\": null, \"registry_generation\": 1, \"task_ref\": \"task_240ff6888bee435b93e8cd1838de2bf4\", \"thread_id\": \"01a0f4f4-8692-73b2-9065-600bc547ec7d\", \"tool\": \"clinx_host_operation\", \"transport_child_pid\": 3242633, \"turn_id\": \"01a0f4f8-be68-71b2-83b2-2a2b2e8d0bd3\"}",
+        "request_hash": "f7005df6fa182117b4fef4fe9ca9bd995075b42e6e04f096d5baa0d7b4cfc24d",
+        "host_execution_ref": "hostexec_95d891e14d1145b9b4d14c8a10997128",
+        "host_exit_code": 0,
+        "execution_state": "COMMAND_EXECUTED_RESULT_DELIVERED",
+        "delivery_state": "DELIVERED",
+        "failure_code": null,
+        "admitted_at": 1790816354.6064734,
+        "host_completed_at": 1790816354.6294134,
+        "response_sent_at": 1790816354.631974,
+        "acknowledged_at": 1790816354.6328187
+      }
+    ],
+    "host_commands": [
+      {
+        "host_execution_ref": "hostexec_95d891e14d1145b9b4d14c8a10997128",
+        "tool_call_id": "exec-dd8c1f4a-00dc-499d-844c-f212e6d36b43",
+        "execution_ref": "exec_abb5948ac0c3408aa1b9302a057452cd",
+        "operation": "development_command",
+        "exit_code": 0,
+        "result_state": "SUCCEEDED",
+        "started_at": "2026-10-01T00:59:14.609581+00:00",
+        "completed_at": "2026-10-01T00:59:14.627299+00:00"
+      },
+      {
+        "host_execution_ref": "hostexec_791d332347a04b2ab9520b2d519bb093",
+        "tool_call_id": "exec-e6178168-4dfb-41b0-9e0c-2cbdbe585e1b",
+        "execution_ref": "exec_abb5948ac0c3408aa1b9302a057452cd",
+        "operation": "development_command",
+        "exit_code": 0,
+        "result_state": "SUCCEEDED",
+        "started_at": "2026-10-01T00:59:11.647974+00:00",
+        "completed_at": "2026-10-01T00:59:11.652563+00:00"
+      },
+      {
+        "host_execution_ref": "hostexec_5040e37c2a3646d8a6bb5a10f64c7ba6",
+        "tool_call_id": "exec-625611cb-2f1d-4813-a87a-0e70fdcf37b6",
+        "execution_ref": "exec_abb5948ac0c3408aa1b9302a057452cd",
+        "operation": "development_command",
+        "exit_code": 0,
+        "result_state": "SUCCEEDED",
+        "started_at": "2026-10-01T00:59:08.368512+00:00",
+        "completed_at": "2026-10-01T00:59:08.374245+00:00"
+      },
+      {
+        "host_execution_ref": "hostexec_fda015f25180409ebbd3cff532eec7d2",
+        "tool_call_id": "exec-358ad02b-aefc-4a13-b78b-fe6fb1552ad5",
+        "execution_ref": "exec_abb5948ac0c3408aa1b9302a057452cd",
+        "operation": "development_command",
+        "exit_code": 0,
+        "result_state": "SUCCEEDED",
+        "started_at": "2026-10-01T00:59:04.050577+00:00",
+        "completed_at": "2026-10-01T00:59:04.054557+00:00"
+      }
+    ]
+  },
+  "fault": {
+    "execution_ref": "exec_19c5d92d90814fa3bb71ef82a5806135",
+    "prepared_execution_ref": "prepared_19c5d92d90814fa3bb71ef82a5806135",
+    "task_ref": "task_9643892cffb24a62965bd2f7e0052935",
+    "status": "BLOCKED",
+    "blockers": "RESULT_DELIVERY_FAILED_AFTER_EXECUTION: command retry prohibited; reconcile persisted evidence.",
+    "retry_required": 0,
+    "HOST_EXECUTION_COUNT": 1,
+    "injected": [
+      {
+        "execution_ref": "exec_19c5d92d90814fa3bb71ef82a5806135",
+        "host_execution_ref": "hostexec_371fe2dfa7de49dd8db0ec7bbaaaa2e3",
+        "tool_call_id": "exec-fea3e999-9023-4326-8150-c1a3b119657c"
+      }
+    ],
+    "deliveries": [
+      {
+        "execution_ref": "exec_19c5d92d90814fa3bb71ef82a5806135",
+        "tool_call_id": "exec-fea3e999-9023-4326-8150-c1a3b119657c",
+        "request_id": "5",
+        "response_id": "5",
+        "identity_json": "{\"client_pid\": 3230255, \"connection_id\": \"7d0e7b1135bc4d2b81416ebd7efb8408\", \"listener_id\": \"38daff7049da4a87bcbed593e5c784ec\", \"namespace\": \"clinx\", \"provider_endpoint\": {\"created_ns\": 1790815809166805135, \"device\": 66308, \"inode\": 9568275, \"path\": \"/run/user/1001/clinx-provider.sock\"}, \"provider_session_id\": \"01a0f4f8-2c2d-7c10-8377-319d482c5055\", \"provider_user_agent\": \"clinx-delivery-check/0.156.1 (Ubuntu 24.4.0; x86_64) unknown (linear-local-codex-bridge; 1.0.0-m6)\", \"provider_version\": null, \"registry_generation\": 1, \"task_ref\": \"task_9643892cffb24a62965bd2f7e0052935\", \"thread_id\": \"01a0f4f8-2c2d-7c10-8377-319d482c5055\", \"tool\": \"clinx_host_operation\", \"transport_child_pid\": 3230278, \"turn_id\": \"01a0f4f8-2ce9-7cb1-8b99-efc545fea6ea\"}",
+        "request_hash": "67356d5c6da7a62b2c666917c60386a650fbdfcf7c08d53d9dfb0ad655d893c5",
+        "host_execution_ref": "hostexec_371fe2dfa7de49dd8db0ec7bbaaaa2e3",
+        "host_exit_code": 0,
+        "execution_state": "COMMAND_EXECUTED_RESULT_DELIVERY_FAILED",
+        "delivery_state": "FAILED",
+        "failure_code": "RESULT_DELIVERY_FAILED_AFTER_EXECUTION",
+        "admitted_at": 1790816311.7553294,
+        "host_completed_at": 1790816311.7930834,
+        "response_sent_at": 1790816311.79401,
+        "acknowledged_at": 1790816311.795825
+      }
+    ]
+  },
+  "preservation": {
+    "monitor_file_count": 13,
+    "historical_blocked_result_count": 3,
+    "historical_snapshot_sha256": "0e3f7db3f32b0bd929810647c0eada879e02cf56470246a20ca822cbff9bedb0"
+  },
+  "production_mutation": false,
+  "orion_task_mutation": false,
+  "validation": {
+    "targeted": "104 passed, 27 subtests passed",
+    "full": "618 passed, 102 subtests passed, 1 opt-in skipped",
+    "live_fault": "1 passed",
+    "external_connector_readback": "PASS / WRITTEN / 4 DELIVERED"
+  },
+  "source_sha256": {
+    "app_server.py": "7e602668b6622d0d680158ed8339bd460bf9ce9a949462929b5e6c9644c9afd4",
+    "bridge.py": "513b6fccc94462314fbca614559816ee10657c6f54b9497da40afd6186062ac5",
+    "bridge.toml": "310bef681dd26bcf41c4523edb17c36cc7cea412d80b37675c857bb6a5a31987",
+    "host_executor.py": "8d165c6b0f2ea21497be79bf66f21b1729dbeeba340744df187cca0c91f6254b",
+    "m9_integration.py": "ffcc6080693f564c497b9618f9263f7e8072a2a3cfd280ad8bb9fb86dc1250f9",
+    "mcp_server.py": "60728c842da29148a4126c45218855659749f82729fc088c0c9af21439f31116",
+    "task_registry.py": "7c5382003aab71d147aeeceadc356d4e4c02c83fbdf134a5e77ec2518aeb4c0c",
+    "tool_delivery.py": "a3ae7d99148869b2c242dcdd60a7ef115e76afc4f674511c56d38cdb77b393f9",
+    "test_m13b.py": "b03a475f937b131c63c2d6f5703a181fdf4c9b7b7445e7ca1f129bb9a1034247",
+    "test_tool_delivery.py": "40344c866a355877772cb673e22d44616f70ba096dd198473a910fe832d2dbc2",
+    "test_tool_delivery_live.py": "d67a15679a946f82702cfa1d9636d53dfcadc27edb1017aa599dfac81f5edfb5",
+    "systemd/clinx-provider.service": "912d95dba7d667b330fa26fb0d28f3f5f52b407285c64cc7f67322adf0621b5d",
+    "systemd/clinx-provider.conf": "468a92bb7ec7bb1d63bac675cebea8b22593d4c93ad36f8dfceb10796a89f919"
+  }
+}
