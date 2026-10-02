@@ -122,7 +122,7 @@ public struct ObserverEvent: Codable, Identifiable, Sendable {
     public let occurredAt: String?
     public let recordedAt: String?
 }
-public struct HostOperation: Codable, Identifiable, Sendable {
+public struct HostOperation: Codable, Identifiable, Sendable, Equatable {
     public var id: String { hostExecutionRef }
     public let hostExecutionRef: String
     public let executionRef: String
@@ -138,7 +138,7 @@ public struct HostOperation: Codable, Identifiable, Sendable {
     public let resultState: String
     public let timedOut: Bool
 }
-public struct FinalResult: Codable, Sendable {
+public struct FinalResult: Codable, Sendable, Equatable {
     public let executionRef: String
     public let status: String
     public let summary: String?

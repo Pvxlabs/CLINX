@@ -8,7 +8,7 @@ struct InspectorView: View {
 
     @State private var tab: Tab = .inspection
 
-    enum Tab { case inspection, raw }
+    enum Tab { case inspection, raw, activity }
 
     var body: some View {
         Group {
@@ -27,29 +27,35 @@ struct InspectorView: View {
         VStack(spacing: 0) {
             ExecutionHeaderView(store: store, task: task, status: status, stacked: stacked)
             tabBar(task)
-            ScrollView {
-                if tab == .raw {
-                    RawSnapshotView(task: task)
-                } else {
-                    VStack(alignment: .leading, spacing: 20) {
-                        if let blocker = task.blocker {
-                            BlockerPanelView(task: task, status: status, blocker: blocker)
-                        }
-                        if stacked {
-                            VStack(alignment: .leading, spacing: 20) {
-                                overview(task)
-                                timeline(task, status: status)
+            if tab == .activity {
+                ActivityView(task: task, service: store.activityService)
+                    .equatable()
+                    .id(store.activitySource + task.taskRef + (task.executionRef ?? ""))
+            } else {
+                ScrollView {
+                    if tab == .raw {
+                        RawSnapshotView(task: task)
+                    } else {
+                        VStack(alignment: .leading, spacing: 20) {
+                            if let blocker = task.blocker {
+                                BlockerPanelView(task: task, status: status, blocker: blocker)
                             }
-                        } else {
-                            HStack(alignment: .top, spacing: 28) {
-                                overview(task).frame(minWidth: 240, maxWidth: 300, alignment: .leading)
-                                timeline(task, status: status)
+                            if stacked {
+                                VStack(alignment: .leading, spacing: 20) {
+                                    overview(task)
+                                    timeline(task, status: status)
+                                }
+                            } else {
+                                HStack(alignment: .top, spacing: 28) {
+                                    overview(task).frame(minWidth: 240, maxWidth: 300, alignment: .leading)
+                                    timeline(task, status: status)
+                                }
                             }
                         }
+                        .padding(.horizontal, 24)
+                        .padding(.top, 20)
+                        .padding(.bottom, 24)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 20)
-                    .padding(.bottom, 24)
                 }
             }
         }
@@ -59,6 +65,7 @@ struct InspectorView: View {
         HStack(spacing: 20) {
             tabButton("Inspection", .inspection)
             tabButton("Raw snapshot", .raw)
+            tabButton("Activity", .activity)
             Spacer()
             Text("snapshot \(RelativeTime.clock(TimestampParser.date(from: task.timestamps.observedAt)))")
                 .font(DS.Font.mono(10))

@@ -32,6 +32,7 @@ Unit tests instantiate TaskRegistry only in disposable fixture directories.
 | GET /v1/tasks?state=recent | task page | Same; newest updated_at then task_ref |
 | GET /v1/tasks/{task_ref} | task snapshot | Opaque reference: 1..128 ASCII alphanumeric / underscore / hyphen |
 | GET /v1/tasks/{task_ref}/events?after={cursor} | event page | 100 items, ascending durable cursor |
+| GET /v1/tasks/{task_ref}/activity?execution_ref={execution_ref} | Activity v1 page | Latest 40 public feedback messages; after OR before scoped cursor; exact execution/thread/turn; see monitor/ACTIVITY_V1_SPEC.md |
 | SSE | Not implemented in Phase 1 | Mac uses polling |
 
 All routes, including health, require one Authorization header. No other routes or

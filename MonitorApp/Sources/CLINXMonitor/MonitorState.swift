@@ -104,6 +104,9 @@ final class MonitorStore: ObservableObject {
     private let defaults: UserDefaults
     private static let archiveKey = "monitor.localArchives.v1"
 
+    var activityService: (any ActivityServing)? { service as? any ActivityServing }
+    var activitySource: String { archiveSource }
+
     private var service: (any ObserverServing)?
     private var pollTask: Task<Void, Never>?
     private var eventCursor: String?

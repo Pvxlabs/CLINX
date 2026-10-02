@@ -17,6 +17,9 @@
     },
     {
       "$ref": "#/$defs/error"
+    },
+    {
+      "$ref": "#/$defs/activityFeed"
     }
   ],
   "$defs": {
@@ -824,6 +827,117 @@
       "required": [
         "schema_version",
         "error"
+      ],
+      "additionalProperties": false
+    },
+    "activityFeed": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "task_ref": {
+          "type": "string"
+        },
+        "execution_ref": {
+          "type": "string"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source": {
+          "const": "CODEX_NATIVE_HISTORY"
+        },
+        "availability": {
+          "enum": [
+            "AVAILABLE",
+            "UNAVAILABLE"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "ordinal": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "timestamp_ms": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "feedback",
+                  "result"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 16384
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "ordinal",
+              "revision",
+              "timestamp_ms",
+              "kind",
+              "text",
+              "truncated"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "older_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema_version",
+        "task_ref",
+        "execution_ref",
+        "observed_at",
+        "source",
+        "availability",
+        "reason",
+        "items",
+        "next_cursor",
+        "older_cursor",
+        "has_more"
       ],
       "additionalProperties": false
     }

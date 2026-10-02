@@ -17,6 +17,9 @@ PrivateUsers=yes
 ProtectSystem=strict
 ProtectHome=tmpfs
 BindReadOnlyPaths=%h/.local/lib/clinx-observer %h/.local/state/clinx
+# Native display history only; optional WAL/SHM companions preserve live SQLite reads.
+BindReadOnlyPaths=-%h/.codex/state_5.sqlite -%h/.codex/state_5.sqlite-wal -%h/.codex/state_5.sqlite-shm
+BindReadOnlyPaths=-%h/.codex/thread_history_1.sqlite -%h/.codex/thread_history_1.sqlite-wal -%h/.codex/thread_history_1.sqlite-shm
 InaccessiblePaths=/run
 PrivateTmp=yes
 PrivateDevices=yes
