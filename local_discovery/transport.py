@@ -71,11 +71,11 @@ def receive(sock: ssl.SSLSocket) -> dict[str, Any]:
                 raw = json.loads(data)
                 if not isinstance(raw, dict):
                     raise ValueError()
-                if "error" in raw:
-                    raise DeviceError("REMOTE_REQUEST_REJECTED")
-                return raw
             except (ValueError, UnicodeError) as exc:
                 raise DeviceError("INVALID_FRAME") from exc
+            if "error" in raw:
+                raise DeviceError("REMOTE_REQUEST_REJECTED")
+            return raw
     raise DeviceError("FRAME_TOO_LARGE")
 
 
@@ -269,6 +269,20 @@ class LanTransport:
             peer = self.peers.authenticate(candidate.node_id, public, allow_dev=self.allow_dev)
             return DeviceSession(candidate.node_id, peer["fingerprint"])
 
+    def observer_connection(self, candidate: Candidate) -> dict[str, Any]:
+        from .observer_bootstrap import validate_connection
+
+        if self.allow_dev:
+            raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
+        with self._connect(candidate, pairing=False) as sock:
+            public = certificate_public(peer_certificate(sock))
+            self.peers.authenticate(candidate.node_id, public)
+            send(sock, dict(op="observer_connection", node_id=self.identity.public["node_id"]))
+            reply = receive(sock)
+            if reply.get("node_id") != candidate.node_id or reply.get("read_only") is not True:
+                raise DeviceError("INVALID_OBSERVER_CONNECTION")
+            return validate_connection(reply)
+
 
 class DeviceServer:
     def __init__(
@@ -280,11 +294,13 @@ class DeviceServer:
         port: int = 0,
         allow_dev: bool = False,
         window: PairingWindow | None = None,
+        observer_bootstrap: Any = None,
     ):
         if address != "0.0.0.0":
             lan_address(address)
         self.identity, self.peers, self.allow_dev = identity, peers, allow_dev
         self.window = window or PairingWindow()
+        self.observer_bootstrap = observer_bootstrap
         self._slots = threading.BoundedSemaphore(16)
         self._lease = identity.store.lock("server.lock", nonblocking=True)
         self._lease.__enter__()
@@ -360,6 +376,13 @@ class DeviceServer:
                         authorization_required=True,
                     ),
                 )
+            elif request.get("op") == "observer_connection":
+                pub = certificate_public(peer_certificate(sock))
+                self.peers.authenticate(request["node_id"], pub)
+                if self.allow_dev or self.observer_bootstrap is None:
+                    raise DeviceError("OBSERVER_SHARING_DISABLED")
+                connection = self.observer_bootstrap.connection()
+                send(sock, dict(connection, node_id=self.identity.public["node_id"]))
             elif request.get("op") == "pair":
                 reservation, window_id, code = self.window.reserve()
                 expected_protocol = DEV_PROTOCOL if self.allow_dev else PRODUCTION_PROTOCOL

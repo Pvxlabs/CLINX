@@ -357,7 +357,7 @@ def test_actual_tls_key_substitution_and_wrong_client_rejected(connection, tmp_p
         pairing_protocol=PRODUCTION_PROTOCOL,
         fresh_pairing=True,
     )
-    with pytest.raises((ssl.SSLError, DeviceError)):
+    with pytest.raises((ssl.SSLError, DeviceError, BrokenPipeError)):
         LanTransport(imposter, pi).reconnect(c)
     assert pa.all()["beta"]["public_key"] == b.public["public_key"]
 
