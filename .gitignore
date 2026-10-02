@@ -4,3 +4,14 @@ bridge.toml.local
 .env
 kernel/target/
 MonitorApp/.build/
+
+.venv/
+.discovery-deps/
+.cache/
+.validation/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.discovery-deps312/
+
+native/opaque_pairing/target/

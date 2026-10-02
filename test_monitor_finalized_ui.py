@@ -8,6 +8,8 @@ own XCTest target.
 
 Figma authority: design file `OgzTpC5hnbctXciUVN6wri`, pages Live / Healthy (5:3841),
 Active (5:4657), Blocked (5:5531), Failed (5:6312) and their siblings.
+Later user-approved iMac adjustments take precedence for header/search/navigation:
+see docs/monitor/IMAC_ACCEPTED_BASELINE_20261002.md.
 """
 
 from __future__ import annotations
@@ -72,33 +74,25 @@ def test_environment_badge_and_connection_cluster_are_gone() -> None:
 # --- Header / search ----------------------------------------------------------------------
 
 
-def test_search_field_is_out_of_the_toolbar() -> None:
+def test_header_keeps_navigation_without_a_system_toolbar() -> None:
     root = swift("MonitorRootView.swift")
-    toolbar = body(root, "@ToolbarContentBuilder private var toolbarContent")
-    assert "SearchField(" not in toolbar, "the search field belongs above the main content"
-    assert "ToolbarIconButton(system: \"arrow.clockwise\"" in toolbar
-    assert "ToolbarIconButton(system: \"gearshape\"" in toolbar
-    assert "Text(\"CLINX Monitor\")" not in toolbar, "the title container was removed"
+    header = body(root, "private var header: some View")
+    assert "toolbarContent" not in root
+    for symbol in ("sidebar.left", "clock", "chevron.left", "chevron.right", "arrow.clockwise", "gearshape"):
+        assert f'ToolbarIconButton(system: "{symbol}"' in header
 
 
-def test_search_field_width_matches_the_compact_pages() -> None:
+def test_header_keeps_the_accepted_imac_height() -> None:
     tokens = swift("DesignTokens.swift")
-    assert "static let searchFieldWidth: CGFloat = 210" in tokens
-    assert "static let searchFieldCompactWidth: CGFloat = 150" in tokens
-    assert "static let searchFieldHeight: CGFloat = 28" in tokens
+    assert "static let contentHeaderHeight: CGFloat = 38" in tokens
+    assert ".frame(height: DS.Metric.contentHeaderHeight)" in body(swift("MonitorRootView.swift"), "private var header: some View")
 
 
-def test_search_field_is_the_first_row_of_the_content_column() -> None:
+def test_removed_search_row_does_not_return() -> None:
     root = swift("MonitorRootView.swift")
-    content = body(root, "} content: {")
-    assert content.index("searchHeader") < content.index("ExecutionListView(")
-    header = body(root, "private var searchHeader: some View")
-    assert "DS.Metric.searchFieldWidth" in header
-    # Compact Window narrows the field to 150 at 900pt while keeping the same left edge.
-    assert "DS.Metric.searchFieldCompactWidth" in header
-    # The header row shares the content panel's leading inset, which is what makes the
-    # search field and the panel's left edge the same vertical line.
-    assert ".padding(.horizontal, 8)" in header
+    assert "searchHeader" not in root
+    assert "SearchField(" not in root
+    assert "ExecutionListView(store: store)" in root
 
 
 # --- Main content bottom inset ------------------------------------------------------------
@@ -106,7 +100,7 @@ def test_search_field_is_the_first_row_of_the_content_column() -> None:
 
 def test_main_content_bottom_inset_is_forty_in_every_pane() -> None:
     root = swift("MonitorRootView.swift")
-    assert root.count("bottom: DS.Metric.contentBottomInset") == 2, "both panes need the 40pt inset"
+    assert root.count(".padding(.bottom, DS.Metric.contentBottomInset)") == 1, "the shared panel owns one 40pt bottom inset"
     assert "bottom: 8," not in root, "no pane may fall back to the old 8pt inset"
     assert "static let contentBottomInset: CGFloat = 40" in swift("DesignTokens.swift")
 
@@ -183,11 +177,13 @@ def test_sidebar_attention_colour_is_a_shared_view_rule() -> None:
 # --- Compact / dark / synthetic must not regress ------------------------------------------
 
 
-def test_compact_rail_keeps_its_own_count_treatment() -> None:
-    sidebar = swift("SidebarView.swift")
-    assert "if rail {" in sidebar
-    rail = body(sidebar, "if rail {")
-    assert "ZStack(alignment: .topTrailing)" in rail, "the icon rail keeps its overlaid count"
+def test_collapsed_navigation_has_no_icon_counter_rail() -> None:
+    root = swift("MonitorRootView.swift")
+    assert "rail: true" not in root
+    assert "sidebarExpanded = !sidebarDocked" in root
+    hover = body(root, "private func updateNavigationHover()")
+    assert "if !sidebarDocked" in hover
+    assert "navigationOpen = true" in hover
 
 
 def test_dark_mode_still_resolves_through_dynamic_tokens() -> None:
@@ -202,8 +198,12 @@ def test_synthetic_semantics_are_still_distinct() -> None:
     assert "observerReadOnly: true" in synthetic, "fixtures stay inside the read-only boundary"
     assert "readOnly: true" in synthetic, "the health response still reports read-only"
     root = swift("MonitorRootView.swift")
-    assert "Rectangle().fill(DS.Palette.synthetic).frame(height: 2)" in root, "purple window edge"
-    assert "ScenarioSelector(store: store, current: scenario" in root
+    edge = body(root, "if store.syntheticScenario != nil")
+    assert "Rectangle().fill(DS.Palette.synthetic)" in edge and ".frame(height: 2)" in edge
+    assert ".ignoresSafeArea()" in root
+    settings = swift("MonitorSettingsView.swift")
+    assert "ForEach(SyntheticScenario.allCases)" in settings
+    assert "store.useSynthetic($0)" in settings
 
 
 def test_row_sizes_come_from_the_token_layer_not_from_the_view() -> None:

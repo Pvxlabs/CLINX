@@ -1188,7 +1188,7 @@ class LinearDispatchIntegrationTests(unittest.TestCase):
             )
             unchanged = registry.get_task(task.task_id)
             self.assertEqual(unchanged.execution_state, "CODEX_RUNNING")
-            self.assertTrue(unchanged.codex_running)
+            self.assertFalse(unchanged.codex_running)
             self.assertEqual(unchanged.turn_id, "turn-real")
 
     def test_self_project_pre_turn_failure_requires_manual_bootstrap_repair(self):

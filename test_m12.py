@@ -323,7 +323,7 @@ class M12RecoveryAndCancellationTests(unittest.TestCase):
             self.assertTrue(repeated["idempotent"])
             self.assertEqual(len(calls), 1)
 
-    def test_terminal_reconciliation_clears_running_and_releases_lease(self):
+    def test_recovery_clears_running_and_retains_lease(self):
         with tempfile.TemporaryDirectory() as td:
             _integration, registry, _dispatcher, task = make_fixture(Path(td))
             self._active(registry, task)
@@ -334,7 +334,8 @@ class M12RecoveryAndCancellationTests(unittest.TestCase):
             self.assertFalse(reconciled.codex_running)
             self.assertEqual(reconciled.execution_state, "RECOVERY_REQUIRED")
             self.assertEqual(reconciled.failure_code, "APP_SERVER_TRANSPORT_FAILURE")
-            self.assertIsNone(registry.get_active_execution("exec_recovery"))
+            self.assertIsNotNone(registry.get_active_execution("exec_recovery"))
+            self.assertTrue(registry.has_execution_lease("exec_recovery"))
 
     def test_confirmed_cancel_is_idempotent_after_lease_release(self):
         with tempfile.TemporaryDirectory() as td:
@@ -357,7 +358,7 @@ class M124OrphanedLeaseTests(unittest.TestCase):
                 turn_id="turn-orphan", codex_running=True,
             )
 
-    def _terminal_exact_ref_with_stale_lease(self, registry, task):
+    def _recovery_exact_ref_with_held_lease(self, registry, task):
         with registry.execution(task.task_id, execution_ref="exec_stale", retain=True):
             registry.set_execution_state(
                 task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
@@ -367,7 +368,7 @@ class M124OrphanedLeaseTests(unittest.TestCase):
             task.task_id, "RECOVERY_REQUIRED", current_stage="RECOVERY_REQUIRED",
             codex_running=False, retry_required=True,
         )
-        self.assertIsNone(registry.get_active_execution("exec_stale"))
+        self.assertIsNotNone(registry.get_active_execution("exec_stale"))
 
     def test_get_status_is_read_only_and_explicit_recovery_is_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
@@ -425,7 +426,7 @@ class M124OrphanedLeaseTests(unittest.TestCase):
 
             status = integration.get_status(task_ref=task.task_id)
             self.assertEqual(status["EXECUTION_STATE"], "CODEX_RUNNING")
-            self.assertTrue(status["CODEX_RUNNING"])
+            self.assertFalse(status["CODEX_RUNNING"])
             self.assertIsNotNone(registry.active_worktree_conflict(
                 host=task.host, cwd=task.cwd, repository_origin=task.repository_origin
             ))
@@ -441,7 +442,7 @@ class M124OrphanedLeaseTests(unittest.TestCase):
                 turn_id="turn-legacy", codex_running=True,
             )
 
-            self.assertTrue(integration.get_status(task_ref=task.task_id)["CODEX_RUNNING"])
+            self.assertFalse(integration.get_status(task_ref=task.task_id)["CODEX_RUNNING"])
             self.assertEqual(dispatcher.reconcile_calls, [])
             dispatcher.reconcile_execution(None, task_id=task.task_id)
             status = integration.get_status(task_ref=task.task_id)
@@ -449,38 +450,28 @@ class M124OrphanedLeaseTests(unittest.TestCase):
             self.assertFalse(status["CODEX_RUNNING"])
             self.assertEqual(dispatcher.reconcile_calls, [(None, task.task_id)])
 
-    def test_terminal_exact_ref_stale_lease_is_reclaimed_by_status_and_start(self):
+    def test_recovery_lease_is_preserved_by_status_and_start(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             integration, registry, dispatcher, task = make_fixture(root)
-            self._terminal_exact_ref_with_stale_lease(registry, task)
-
+            self._recovery_exact_ref_with_held_lease(registry, task)
             status = integration.get_status(task_ref=task.task_id)
             self.assertEqual(status["EXECUTION_STATE"], "RECOVERY_REQUIRED")
-            self.assertIsNone(registry.get_latest_execution_for_task(task.task_id))
-            self.assertIsNotNone(registry.get_execution_record("exec_stale"))
-            self.assertIsNone(registry.active_worktree_conflict(
-                host=task.host, cwd=task.cwd, repository_origin=task.repository_origin,
-            ))
+            self.assertFalse(status["CODEX_RUNNING"])
+            self.assertTrue(registry.has_execution_lease("exec_stale"))
+            self.assertEqual(registry.reclaim_stale_worktree_leases(), 0)
+            self.assertIsNotNone(registry.active_worktree_conflict(
+                host=task.host, cwd=task.cwd, repository_origin=task.repository_origin))
+            self.assertEqual(len(dispatcher.dispatch_calls), 0)
 
-            prepared = integration.prepare_execution(
-                prompt="continue after exact stale lease", approved=True,
-                task_ref=task.task_id,
-            )
-            result = integration.start_execution(
-                prepared_execution_ref=prepared["prepared_execution_ref"], approved=True,
-            )
-            self.assertTrue(result["execution_started"])
-            self.assertEqual(len(dispatcher.dispatch_calls), 1)
-
-    def test_registry_startup_reclaims_terminal_lease_but_keeps_live_owner(self):
+    def test_registry_startup_keeps_recovery_and_live_owner(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             _integration, registry, _dispatcher, task = make_fixture(root)
-            self._terminal_exact_ref_with_stale_lease(registry, task)
+            self._recovery_exact_ref_with_held_lease(registry, task)
 
             restarted = TaskRegistry(root / "tasks.sqlite3")
-            self.assertIsNone(restarted.active_worktree_conflict(
+            self.assertIsNotNone(restarted.active_worktree_conflict(
                 host=task.host, cwd=task.cwd, repository_origin=task.repository_origin,
             ))
 

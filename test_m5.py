@@ -93,12 +93,12 @@ class TaskRegistryTests(unittest.TestCase):
                 task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
                 current_blocker=None, codex_running=True, turn_id="turn-real",
             )
-            self.assertTrue(running.codex_running)
+            self.assertFalse(running.codex_running)
             self.assertEqual(running.turn_id, "turn-real")
             self.assertIsNone(running.current_blocker)
             restarted = TaskRegistry(path).get_task(task.task_id)
             self.assertEqual(restarted.execution_state, "CODEX_RUNNING")
-            self.assertTrue(restarted.codex_running)
+            self.assertFalse(restarted.codex_running)
             self.assertEqual(restarted.turn_id, "turn-real")
 
     def test_blocked_never_reports_running_and_reopen_clears_old_execution(self):

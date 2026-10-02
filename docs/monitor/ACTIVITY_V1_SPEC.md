@@ -1,6 +1,6 @@
 # CLINX Monitor Activity v1
 
-Status: IMPLEMENTING. Authorized 2026-10-02: near-real-time persisted activity, approximately 2s polling.
+Status: IMPLEMENTED; real new-message latency measurement remains pending. Authorized 2026-10-02: near-real-time persisted activity, approximately 2s polling.
 Linear milestone: CLINX Monitor — Activity 执行动态 v1. Tasks: PVX-1871, PVX-1872, PVX-1873.
 
 ## Objective / boundaries

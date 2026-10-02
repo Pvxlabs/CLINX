@@ -1,0 +1,10 @@
+{
+  "canonical_head_unchanged": true,
+  "canonical_dirty_status_unchanged": true,
+  "canonical_dirty_content_unchanged": true,
+  "dirty_file_count": 13,
+  "base_head": "38631af027daf27f30af2a58204781d989a99aad",
+  "syntax": "PASS",
+  "import_exit": 0,
+  "diff_check_exit": 0
+}
