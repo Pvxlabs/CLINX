@@ -240,17 +240,26 @@ class NodeIdentity:
         )
 
     def load_tls_credentials(self, context: Any) -> None:
-        paths: list[str] = []
+        # OpenSSL's path API reads private process pipes through /dev/fd.
+        # No transient PEM file is staged on disk (Linux/macOS POSIX runtime).
+        readers: list[int] = []
         try:
             for content in (self.certificate, self._private_pem):
-                fd, path = tempfile.mkstemp(prefix=".tls-", dir=self.store.root)
-                paths.append(path)
-                with os.fdopen(fd, "w") as stream:
-                    stream.write(content)
-            context.load_cert_chain(paths[0], paths[1])
+                read_fd, write_fd = os.pipe()
+                readers.append(read_fd)
+                try:
+                    data = content.encode("ascii")
+                    os.set_blocking(write_fd, False)
+                    if len(data) > 4096:
+                        raise DeviceError("TLS_CREDENTIAL_TOO_LARGE")
+                    if os.write(write_fd, data) != len(data):
+                        raise DeviceError("TLS_CREDENTIAL_LOAD_FAILED")
+                finally:
+                    os.close(write_fd)
+            context.load_cert_chain(*(f"/dev/fd/{fd}" for fd in readers))
         finally:
-            for path in paths:
-                os.unlink(path)
+            for fd in readers:
+                os.close(fd)
 
 
 class TrustedPeerStore:
@@ -274,13 +283,32 @@ class TrustedPeerStore:
                 raise DeviceError("INVALID_PEER_STORE")
             if certificate_public(peer["certificate"]) != pub["public_key"]:
                 raise DeviceError("PEER_KEY_MISMATCH")
-            if peer.get("security_status") not in {"DEV_ONLY", "QUALIFIED"}:
+            if peer.get("security_status") not in {"DEV_ONLY", "OPAQUE_V1"}:
                 raise DeviceError("INVALID_PEER_SECURITY_STATUS")
+            if peer["security_status"] == "OPAQUE_V1":
+                from .pairing import PRODUCTION_PROTOCOL
+
+                if peer.get("pairing_protocol") != PRODUCTION_PROTOCOL:
+                    raise DeviceError("INVALID_PEER_SECURITY_STATUS")
         return peers
 
-    def trust(self, public: dict[str, Any], certificate: str, *, security_status: str) -> None:
+    def trust(
+        self,
+        public: dict[str, Any],
+        certificate: str,
+        *,
+        security_status: str,
+        pairing_protocol: str | None = None,
+        fresh_pairing: bool = False,
+    ) -> None:
+        from .pairing import PRODUCTION_PROTOCOL, PRODUCTION_TRUST
+
+        if security_status == PRODUCTION_TRUST and (
+            pairing_protocol != PRODUCTION_PROTOCOL or not fresh_pairing
+        ):
+            raise DeviceError("FRESH_PRODUCTION_PAIRING_REQUIRED")
         peer = public_record(public)
-        if security_status not in {"DEV_ONLY", "QUALIFIED"}:
+        if security_status not in {"DEV_ONLY", "OPAQUE_V1"}:
             raise DeviceError("INVALID_PEER_SECURITY_STATUS")
         if certificate_public(certificate) != peer["public_key"]:
             raise DeviceError("PEER_KEY_MISMATCH")
@@ -295,13 +323,18 @@ class TrustedPeerStore:
                 raise DeviceError("PUBLIC_KEY_ALREADY_BOUND")
             if old and (old["public_key"] != peer["public_key"] or old["trust_state"] == "REVOKED"):
                 raise DeviceError("IDENTITY_MISMATCH")
+            if old and old["security_status"] == "OPAQUE_V1" and security_status == "DEV_ONLY":
+                raise DeviceError("TRUST_DOWNGRADE_REJECTED")
             peers[peer["node_id"]] = dict(
                 peer,
                 certificate=certificate,
                 friendly_name=peer["display_name"],
                 trust_state="TRUSTED",
                 security_status=security_status,
-                paired_at=old["paired_at"] if old else now,
+                pairing_protocol=pairing_protocol,
+                paired_at=old["paired_at"]
+                if old and old["security_status"] == security_status
+                else now,
                 updated_at=now,
                 last_authenticated_at=old.get("last_authenticated_at") if old else None,
             )

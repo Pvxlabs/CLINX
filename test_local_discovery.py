@@ -451,7 +451,7 @@ def test_cli_devices_output_and_default_pairing_gate(nodes, monkeypatch, capsys,
     assert {r["state"] for r in output["devices"]} == {"This Device", "Online Unpaired"}
     args = build_parser().parse_args(["pair", "accept"])
     assert handle(args) == 2
-    assert "DEV_PAIRING_REQUIRES" in capsys.readouterr().err
+    assert "PAIRING_REQUIRES_LOCAL_TTY" in capsys.readouterr().err
 
 
 @pytest.mark.skipif(os.environ.get("CLINX_LAN_SELFTEST") != "1", reason="opt-in local multicast")
@@ -496,7 +496,15 @@ def test_disconnected_pairing_attempt_consumes_failure(connected):
     a, _, _, pb, server, c, client, _ = connected
     server.window.open()
     with client._connect(c, pairing=True) as sock:
-        send(sock, dict(op="pair", identity=a.public, certificate=a.certificate))
+        send(
+            sock,
+            dict(
+                op="pair",
+                protocol="DEV-SPAKE2-PYTHON-v1",
+                identity=a.public,
+                certificate=a.certificate,
+            ),
+        )
         assert "message" in receive(sock)
     deadline = time.monotonic() + 2
     while server.window.failures == 0 and time.monotonic() < deadline:

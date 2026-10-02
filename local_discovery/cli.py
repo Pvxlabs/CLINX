@@ -82,16 +82,19 @@ def handle(args: argparse.Namespace) -> int:
     try:
         from .discovery import DiscoveryIndex, LanDiscovery, device_rows
         from .identity import DeviceError, NodeIdentity, PrivateStore, TrustedPeerStore
+        from .pairing import backend_status
         from .transport import DeviceServer, LanTransport, reconnect_discovered
 
         if not 0 <= args.wait <= 30:
             raise DeviceError("INVALID_DISCOVERY_INTERVAL")
         accepting = args.command == "pair" and args.device == "accept"
         # No PIN on argv, pipes, JSON, log files, or a non-interactive console.
-        if accepting and (not args.allow_dev_pairing or args.json or not sys.stdout.isatty()):
-            raise DeviceError("DEV_PAIRING_REQUIRES_OPT_IN_AND_LOCAL_TTY")
+        if accepting and (args.json or not sys.stdout.isatty()):
+            raise DeviceError("PAIRING_REQUIRES_LOCAL_TTY")
         if args.command == "pair" and not args.allow_dev_pairing:
-            raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
+            from .pairing import production_backend
+
+            production_backend()
         root, host = _settings(args)
         store = PrivateStore(root)
         identity = NodeIdentity(store, host, args.display_name)
@@ -144,7 +147,15 @@ def handle(args: argparse.Namespace) -> int:
                     if states.get(row["node_id"]) == "IDENTITY_MISMATCH":
                         row["state"] = "Identity Mismatch"
                 if args.json:
-                    print(json.dumps(dict(devices=rows, security_status="BLOCKED"), sort_keys=True))
+                    print(
+                        json.dumps(
+                            dict(
+                                devices=rows,
+                                security_status=backend_status(allow_dev=args.allow_dev_pairing),
+                            ),
+                            sort_keys=True,
+                        )
+                    )
                 else:
                     for row in rows:
                         auth = " / authenticated" if row["authenticated"] else ""
@@ -152,7 +163,11 @@ def handle(args: argparse.Namespace) -> int:
                 return 0
             candidate = _select(candidates, identity, args.device)
             transport = LanTransport(identity, peers, allow_dev=args.allow_dev_pairing)
-            if candidate.node_id in peers.all():
+            old = peers.all().get(candidate.node_id)
+            needs_secure_repair = (
+                old and old["security_status"] == "DEV_ONLY" and not args.allow_dev_pairing
+            )
+            if old and not needs_secure_repair:
                 session = transport.reconnect(candidate)
             else:
                 if not sys.stdin.isatty():

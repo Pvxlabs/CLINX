@@ -7,6 +7,7 @@ TLS with pinned self-signed Ed25519 certificates. No PIN/token is reused.
 from __future__ import annotations
 
 import json
+import secrets
 import socket
 import socketserver
 import ssl
@@ -29,10 +30,17 @@ from .identity import (
     public_record,
 )
 from .pairing import (
+    DEV_PROTOCOL,
+    PRODUCTION_PROTOCOL,
+    PRODUCTION_TRUST,
+    OpaqueClientProtocol,
+    OpaqueServerProtocol,
     PairingProtocol,
     PairingWindow,
     Spake2Protocol,
     confirmation,
+    pairing_binding,
+    production_backend,
     verify_confirmation,
 )
 
@@ -152,7 +160,7 @@ class LanTransport:
 
     def pair(self, candidate: Candidate, code: str) -> DeviceSession:
         if not self.allow_dev:
-            raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
+            return self._pair_production(candidate, code)
         if candidate.node_id == self.identity.public["node_id"]:
             raise DeviceError("DUPLICATE_LOCAL_NODE_ID")
         with self._connect(candidate, pairing=True) as sock:
@@ -160,10 +168,15 @@ class LanTransport:
             send(
                 sock,
                 dict(
-                    op="pair", identity=self.identity.public, certificate=self.identity.certificate
+                    op="pair",
+                    protocol=DEV_PROTOCOL,
+                    identity=self.identity.public,
+                    certificate=self.identity.certificate,
                 ),
             )
             hello = receive(sock)
+            if hello.get("protocol") != DEV_PROTOCOL:
+                raise DeviceError("PAIRING_PROTOCOL_MISMATCH")
             server = public_record(hello["identity"])
             if server["node_id"] != candidate.node_id or server["public_key"] != certificate_public(
                 cert
@@ -186,6 +199,59 @@ class LanTransport:
             verify_confirmation(key, "B", decoded(result["confirmation"]))
             self.peers.trust(server, cert, security_status=exchange.security_status)
         # Prove both durable trust writes with a fresh mutual-TLS connection.
+        return self.reconnect(candidate)
+
+    def _pair_production(self, candidate: Candidate, code: str) -> DeviceSession:
+        production_backend()  # Fail before any connection or enrollment.
+        if candidate.node_id == self.identity.public["node_id"]:
+            raise DeviceError("DUPLICATE_LOCAL_NODE_ID")
+        client_nonce = secrets.token_hex(16)
+        with self._connect(candidate, pairing=True) as sock:
+            cert = peer_certificate(sock)
+            send(
+                sock,
+                dict(
+                    op="pair",
+                    protocol=PRODUCTION_PROTOCOL,
+                    client_nonce=client_nonce,
+                    identity=self.identity.public,
+                    certificate=self.identity.certificate,
+                ),
+            )
+            hello = receive(sock)
+            if hello.get("protocol") != PRODUCTION_PROTOCOL:
+                raise DeviceError("PAIRING_PROTOCOL_MISMATCH")
+            server = public_record(hello["identity"])
+            if server["node_id"] != candidate.node_id or server["public_key"] != certificate_public(
+                cert
+            ):
+                raise DeviceError("IDENTITY_MISMATCH")
+            binding = pairing_binding(
+                self.identity.public,
+                server,
+                hello["window_id"],
+                hello["session_id"],
+                client_nonce,
+            )
+            exchange: PairingProtocol = OpaqueClientProtocol(code, binding)
+            code = ""
+            send(sock, dict(protocol=PRODUCTION_PROTOCOL, message=encoded(exchange.start())))
+            response = receive(sock)
+            if response.get("protocol") != PRODUCTION_PROTOCOL:
+                raise DeviceError("PAIRING_PROTOCOL_MISMATCH")
+            finalization = exchange.finish(decoded(response["message"]))
+            send(sock, dict(protocol=PRODUCTION_PROTOCOL, message=encoded(finalization)))
+            # KE2 already authenticated the TLS server public key. This TLS
+            # acknowledgement reports the durable server commit, not a new MAC.
+            if receive(sock) != dict(protocol=PRODUCTION_PROTOCOL, paired=True):
+                raise DeviceError("PAIRING_COMMIT_FAILED")
+            self.peers.trust(
+                server,
+                cert,
+                security_status=PRODUCTION_TRUST,
+                pairing_protocol=PRODUCTION_PROTOCOL,
+                fresh_pairing=True,
+            )
         return self.reconnect(candidate)
 
     def reconnect(self, candidate: Candidate) -> DeviceSession:
@@ -272,7 +338,7 @@ class DeviceServer:
             p["certificate"]
             for p in self.peers.all().values()
             if p["trust_state"] == "TRUSTED"
-            and (p["security_status"] == "QUALIFIED" or self.allow_dev)
+            and (p["security_status"] == PRODUCTION_TRUST or self.allow_dev)
         ]
         if certificates:
             context.load_verify_locations(cadata="".join(certificates))
@@ -295,9 +361,10 @@ class DeviceServer:
                     ),
                 )
             elif request.get("op") == "pair":
-                if not self.allow_dev:
-                    raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
                 reservation, window_id, code = self.window.reserve()
+                expected_protocol = DEV_PROTOCOL if self.allow_dev else PRODUCTION_PROTOCOL
+                if request.get("protocol") != expected_protocol:
+                    raise DeviceError("PAIRING_PROTOCOL_MISMATCH")
                 client = public_record(request["identity"])
                 if client["node_id"] == self.identity.public["node_id"]:
                     raise DeviceError("DUPLICATE_LOCAL_NODE_ID")
@@ -309,6 +376,12 @@ class DeviceServer:
                     old["public_key"] != client["public_key"] or old["trust_state"] != "TRUSTED"
                 ):
                     raise DeviceError("IDENTITY_MISMATCH")
+                if not self.allow_dev:
+                    self._accept_production(
+                        sock, request, client, cert, reservation, window_id, code
+                    )
+                    reservation = None
+                    return
                 exchange: PairingProtocol = Spake2Protocol(
                     code,
                     role="B",
@@ -321,6 +394,7 @@ class DeviceServer:
                 send(
                     sock,
                     dict(
+                        protocol=DEV_PROTOCOL,
                         identity=self.identity.public,
                         window_id=window_id,
                         message=encoded(exchange.start()),
@@ -352,7 +426,54 @@ class DeviceServer:
             except OSError:
                 pass
 
+    def _accept_production(
+        self,
+        sock: ssl.SSLSocket,
+        request: dict[str, Any],
+        client: dict[str, Any],
+        cert: str,
+        reservation: str,
+        window_id: str,
+        code: str,
+    ) -> None:
+        production_backend()
+        binding = pairing_binding(
+            client, self.identity.public, window_id, reservation, request["client_nonce"]
+        )
+        send(
+            sock,
+            dict(
+                protocol=PRODUCTION_PROTOCOL,
+                identity=self.identity.public,
+                window_id=window_id,
+                session_id=reservation,
+            ),
+        )
+        first = receive(sock)
+        if first.get("protocol") != PRODUCTION_PROTOCOL:
+            raise DeviceError("PAIRING_PROTOCOL_MISMATCH")
+        exchange: PairingProtocol = OpaqueServerProtocol(code, binding, decoded(first["message"]))
+        code = ""
+        send(sock, dict(protocol=PRODUCTION_PROTOCOL, message=encoded(exchange.start())))
+        answer = receive(sock)
+        if answer.get("protocol") != PRODUCTION_PROTOCOL:
+            raise DeviceError("PAIRING_PROTOCOL_MISMATCH")
+        exchange.finish(decoded(answer["message"]))
+        self.window.complete(
+            reservation,
+            success=True,
+            commit=lambda: self.peers.trust(
+                client,
+                cert,
+                security_status=PRODUCTION_TRUST,
+                pairing_protocol=PRODUCTION_PROTOCOL,
+                fresh_pairing=True,
+            ),
+        )
+        send(sock, dict(protocol=PRODUCTION_PROTOCOL, paired=True))
+
     def close(self) -> None:
+        self.window.close()
         self.server.shutdown()
         self.server.server_close()
         self._thread.join(timeout=6)
