@@ -102,5 +102,7 @@ not provider liveness or the generation time of the last message.
 
 See ../docs/monitor/ACTIVITY_V1_SPEC.md and ACTIVITY_V1_ACCEPTANCE.md for contract and
 validation. The Observer unit exposes only the native state/history DB and WAL/SHM
-companions as read-only mounts. If Codex recreates these files, restart the standalone
-Observer to refresh its file mounts; this does not restart the provider or CLINX Core.
+companions as read-only mounts. The companion `clinx-observer-history-guard.timer`
+checks their identities every five seconds and refreshes only an active standalone
+Observer when Codex replaces a file. Observer restart invalidates Activity cursors
+so the client reloads recovered feedback. The Provider and CLINX Core keep running.
