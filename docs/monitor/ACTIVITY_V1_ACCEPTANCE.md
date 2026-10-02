@@ -2,6 +2,54 @@
 
 Scope/contract: ACTIVITY_V1_SPEC.md. Linear: PVX-1871 / PVX-1872 / PVX-1873.
 
+## 2026-10-02 stale history mount correction
+
+- Exact reported execution: `exec_e47dc3d423ca40458cd77e0b95a7e141`.
+  Direct native read returned 16 public messages while the running Observer HTTP
+  returned AVAILABLE with zero items. Both native databases had the same inode in
+  the host and service, but all four WAL/SHM companions differed. This isolates the
+  stale individual bind mounts rather than a missing execution/thread/turn binding.
+- Restarting only Observer recovered 17 messages, including the user's two quoted
+  feedback paragraphs. The existing Mac still rendered empty even after switching
+  tasks; the Activity state owner was therefore separated from its Equatable shell.
+  After user-completed Keychain authorization, the rebuilt Mac app rendered the
+  recovered public feedback and final response (real screenshot, 17:39 Asia/Shanghai).
+- Added a host-side five-second timer that stats the six fixed native/mounted paths.
+  Only differing stable identities trigger `try-restart` of the active Observer;
+  missing primary databases, changing sources and stopped/replaced processes defer.
+  It has no listener or message-content reads. Its host user namespace is necessary
+  for `/proc/<pid>/root` inspection; the HTTP service retains all existing sandboxing.
+- Added reader-lifetime cursor scope. A cursor captured before activation returned
+  409 after activation; a fresh authenticated read recovered 19 messages. Six native
+  read-only mounts and hidden `auth.json` were verified. Core/Provider/Tunnel PIDs
+  remained 289423 / 1829817 / 289422.
+- Isolated real systemd bind-mount fixture: ordinary content write caused no restart;
+  replacing WAL changed fixture PID 1458426 to 1458438 and refreshed the mount; a
+  stopped fixture was not started. No native data was modified for this test.
+- 33 Python tests and 9 subtests passed; 61 Swift tests passed. Release build and
+  stable signing passed. Logs: `/tmp/clinx-activity-refresh-swift.log` and
+  `/tmp/clinx-activity-refresh-build.log`. The initial Keychain wait was resolved
+  by the user; no credential or authorization policy was changed by this fix.
+- Real UI readback after authorization: P620 Connected, the exact reported
+  execution selected, and the 17:03/17:07 feedback plus 17:26 final response visible.
+  HTTP returned 20 public items with the last marked result. Scrolling upward
+  showed Jump to latest; scrollbar position stayed 0.6993939393939393 while Synced
+  advanced from 17:39:56 to 17:40:32. Jump to latest returned to the final response
+  and dismissed the button. Real screenshot and accessibility readback passed.
+  The Provider turn had ended before this acceptance window, so newly generated
+  message-to-screen latency remains unmeasured; do not treat polling as that proof.
+- Activated Observer release:
+  `~/.local/lib/clinx-observer/releases/activity-refresh-9dad52e70c22`.
+  Server SHA256: `9dad52e70c22bf58d36b2f4c4dfcaea258325ce5f71fa840059b1510ef9b662c`.
+  Guard SHA256: `e3a64e385ddff54315a6727c5fb159cc1a5028f6d0dfd535702f3f6a5f370baf`.
+  Guard timer is enabled/active and the guard exits successfully. The installed
+  Observer unit and credential are unchanged.
+- Rollback: disable/stop only `clinx-observer-history-guard.timer`, remove its two
+  new unit files, restore `current` to the path recorded in
+  `~/.local/lib/clinx-observer/rollbacks/before-activity-refresh-9dad52e70c22/previous-release.txt`,
+  daemon-reload and restart only Observer. The old release remains intact.
+- These corrective changes have not been committed or pushed.
+
 ## Automated evidence
 
 - Python Observer + Activity + JSON schema: 27 passed, 9 subtests passed.

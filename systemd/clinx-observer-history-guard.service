@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh stale CLINX Observer native history mounts
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I -B %h/.local/lib/clinx-observer/current/observer_history_guard.py
+NoNewPrivileges=yes
+# Stay in the host user namespace to stat /proc/<observer-pid>/root. Mount
+# sandboxing in a user unit creates a sibling user namespace and denies that read.
+# This helper has no listener and only stats fixed paths / controls one fixed unit.
+RestrictAddressFamilies=AF_UNIX
+TimeoutStartSec=25
