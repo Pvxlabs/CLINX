@@ -46,7 +46,9 @@ class M9IntegrationError(RuntimeError):
 
 
 class ResultParseError(M9IntegrationError):
-    pass
+    def __init__(self, message: str, code: str = "RESULT_INVALID"):
+        super().__init__(message)
+        self.code = code
 
 
 @dataclasses.dataclass(frozen=True)
@@ -140,67 +142,38 @@ _RESULT_KEYS = (
 def parse_execution_result(text: str) -> ExecutionResult:
     """Parse the strict CLINX result contract; reject ambiguous output."""
     if not isinstance(text, str) or "CLINX_EXECUTION_RESULT" not in text:
-        raise ResultParseError("missing CLINX_EXECUTION_RESULT header")
+        raise ResultParseError("missing CLINX_EXECUTION_RESULT header", "RESULT_MARKER_MISSING")
     lines = [line.strip() for line in text.splitlines()]
-    starts = [index for index, line in enumerate(lines)
-              if line == "CLINX_EXECUTION_RESULT"]
-    if not starts:
-        # Some app-server summary views collapse line breaks.  Preserve the
-        # strict field contract while accepting that bounded representation.
-        compact = " ".join(text.split())
-        keys = "STATUS|SUMMARY|CHANGED_FILES|VALIDATION|BLOCKERS|NEXT_STATE"
-        headers = [match.start() for match in re.finditer(
-            r"(?:^|\s)CLINX_EXECUTION_RESULT(?:\s|$)", compact
-        )]
-        candidates = []
-        for offset in headers:
-            candidate = compact[offset:]
-            values = {
-                key: value.strip()
-                for key, value in re.findall(
-                    rf"(?:^|\s)({keys})=(.*?)(?=\s+(?:{keys})=|$)", candidate
-                )
-            }
-            if all(values.get(key) for key in _RESULT_KEYS):
-                candidates.append(values)
-        if not candidates:
-            raise ResultParseError("missing or incomplete CLINX result block")
-        values = candidates[-1]
+    starts = [i for i, line in enumerate(lines) if line == "CLINX_EXECUTION_RESULT"]
+    if len(starts) > 1:
+        raise ResultParseError("multiple CLINX result blocks", "RESULT_DUPLICATE_CONFLICT")
+    keys = "|".join(_RESULT_KEYS)
+    if starts:
+        pairs = [match.groups() for line in lines[starts[0] + 1:]
+                 if (match := re.match(rf"^({keys})=(.*)$", line))]
     else:
-        # A provider may echo an example contract before emitting its actual
-        # result.  Validate each complete block and use the last valid one.
-        pattern = re.compile(
-            r"^(STATUS|SUMMARY|CHANGED_FILES|VALIDATION|BLOCKERS|NEXT_STATE)=(.*)$"
-        )
-        candidates: list[dict[str, str]] = []
-        for start in starts:
-            values: dict[str, str] = {}
-            duplicate = False
-            for line in lines[start + 1:]:
-                if line == "CLINX_EXECUTION_RESULT":
-                    break
-                if not line:
-                    continue
-                match = pattern.match(line)
-                if match:
-                    key, value = match.groups()
-                    if key in values:
-                        duplicate = True
-                        break
-                    values[key] = value.strip()
-            if not duplicate and all(values.get(key) for key in _RESULT_KEYS):
-                candidates.append(values)
-        if not candidates:
-            raise ResultParseError("missing or incomplete CLINX result block")
-        values = candidates[-1]
+        # Retain compatibility with a collapsed provider summary.
+        compact = " ".join(text.split())
+        headers = list(re.finditer(r"(?:^|\s)CLINX_EXECUTION_RESULT(?:\s|$)", compact))
+        if len(headers) != 1:
+            raise ResultParseError("ambiguous CLINX result header", "RESULT_DUPLICATE_CONFLICT")
+        pairs = re.findall(rf"(?:^|\s)({keys})=(.*?)(?=\s+(?:{keys})=|$)",
+                           compact[headers[0].end():])
+    if len({key for key, _ in pairs}) != len(pairs):
+        raise ResultParseError("duplicate CLINX result field", "RESULT_DUPLICATE_CONFLICT")
+    values = {key: value.strip() for key, value in pairs}
+    if not all(values.get(key) for key in _RESULT_KEYS):
+        raise ResultParseError("missing or incomplete CLINX result block", "RESULT_INCOMPLETE")
     if values["STATUS"] not in {"PASS", "BLOCKED"}:
         raise ResultParseError("STATUS must be PASS or BLOCKED")
     if values["NEXT_STATE"] not in {"IN_REVIEW", "BLOCKED", "COMPLETED"}:
         raise ResultParseError("NEXT_STATE is invalid")
     if values["STATUS"] == "BLOCKED" and values["NEXT_STATE"] != "BLOCKED":
         raise ResultParseError("BLOCKED results must use NEXT_STATE=BLOCKED")
-    if values["STATUS"] == "PASS" and values["BLOCKERS"].upper() != "NONE":
-        raise ResultParseError("PASS results must use BLOCKERS=NONE")
+    if values["STATUS"] == "PASS" and values["NEXT_STATE"] == "BLOCKED":
+        raise ResultParseError("PASS results cannot use NEXT_STATE=BLOCKED", "RESULT_STATE_CONFLICT")
+    if values["STATUS"] == "PASS" and values["BLOCKERS"] != "NONE":
+        raise ResultParseError("PASS results must use BLOCKERS=NONE", "RESULT_STATUS_BLOCKERS_CONFLICT")
     return ExecutionResult(
         status=values["STATUS"], summary=values["SUMMARY"],
         changed_files=values["CHANGED_FILES"], validation=values["VALIDATION"],
@@ -221,6 +194,8 @@ def parse_codex_result(text: str) -> ExecutionResult:
     try:
         return parse_execution_result(text)
     except ResultParseError as strict_error:
+        if "CLINX_EXECUTION_RESULT" in text:
+            raise
         candidate = text.strip()
         if candidate.startswith("```") and candidate.endswith("```"):
             if candidate.startswith("```json"):
@@ -517,17 +492,19 @@ class ExecutionFinalizer:
         *,
         provider_outcome: str,
         provider_status: str | None,
+        reconcile_delivery: bool = True,
     ) -> _FinalizationDecision:
         parsed: ExecutionResult | None = None
+        parse_error = ResultParseError("missing CLINX_EXECUTION_RESULT header", "RESULT_MARKER_MISSING")
         if raw_result:
             try:
                 parsed = parse_codex_result(raw_result)
-            except ResultParseError:
-                pass
+            except ResultParseError as exc:
+                parse_error = exc
         host_evidence = self.registry.list_host_executions(execution_ref=execution_ref)
         deliveries = ToolDeliveryLedger.records(self.registry, execution_ref)
         unresolved = [row for row in deliveries if requires_reconciliation(row)]
-        if unresolved:
+        if unresolved and reconcile_delivery:
             # Recover the crash window between Host evidence commit and result
             # serialization. Never infer "not executed" from a missing reply.
             ledger = ToolDeliveryLedger(self.registry, execution_ref)
@@ -545,24 +522,25 @@ class ExecutionFinalizer:
                 validation="; ".join(f"{row['tool_call_id']}={row['execution_state']} / "
                                      f"host={row['host_execution_ref'] or 'PENDING'}" for row in unresolved),
                 blockers=f"{code}: command retry prohibited; reconcile persisted evidence.",
-                terminal_state="BLOCKED",
+                terminal_state="RECOVERY_REQUIRED",
             )
-            return _FinalizationDecision(result=result, terminal_state="BLOCKED",
+            return _FinalizationDecision(result=result, terminal_state="RECOVERY_REQUIRED",
                                         retry_required=False, failure_code=code,
                                         failure_evidence=result.validation)
+        if any(item.get("completed_at") is None or item.get("result_state") in {"RUNNING", "UNKNOWN"}
+               for item in host_evidence):
+            result = self._canonical_blocked(
+                summary="Host side effects remain unresolved.",
+                validation="Exact Host operation has no definitive completion receipt.",
+                blockers="HOST_SIDE_EFFECT_UNRESOLVED: reconcile evidence; replay prohibited.",
+                terminal_state="RECOVERY_REQUIRED",
+            )
+            return _FinalizationDecision(result, "RECOVERY_REQUIRED", False,
+                                         "HOST_SIDE_EFFECT_UNRESOLVED", result.validation)
         successful_host_evidence = [
             item for item in host_evidence
             if item.get("result_state") == "SUCCEEDED" and item.get("exit_code") == 0
         ]
-        # A managed agent may recover from a failed command.  For a missing
-        # provider marker, the latest exact host operation is the terminal
-        # validation signal; retain earlier failures in the evidence summary.
-        latest_host_evidence = host_evidence[0] if host_evidence else None
-        host_succeeded = bool(successful_host_evidence) and bool(
-            latest_host_evidence
-            and latest_host_evidence.get("result_state") == "SUCCEEDED"
-            and latest_host_evidence.get("exit_code") == 0
-        )
         host_summary = ", ".join(
             f"{item.get('host_execution_ref', 'UNKNOWN')}="
             f"{item.get('result_state', 'UNKNOWN')}/exit_code={item.get('exit_code')}"
@@ -587,7 +565,7 @@ class ExecutionFinalizer:
                     failure_code="PROVIDER_HOST_EVIDENCE_CONFLICT",
                     failure_evidence=result.validation,
                 )
-            if parsed is None:
+            if parsed is None or parsed.status == "PASS":
                 parsed = self._canonical_blocked(
                     summary="Provider reported a definitive failed terminal state.",
                     validation=f"Provider status={status}; exact host evidence={host_summary}.",
@@ -634,41 +612,26 @@ class ExecutionFinalizer:
                 terminal_state=terminal_state,
                 retry_required=terminal_state == "BLOCKED",
             )
-        if host_succeeded:
-            canonical_raw = (
-                "CLINX_EXECUTION_RESULT\n"
-                "STATUS=PASS\n"
-                "SUMMARY=Host execution evidence succeeded; provider terminal output omitted the result marker.\n"
-                "CHANGED_FILES=UNKNOWN (provider marker absent)\n"
-                f"VALIDATION=Latest exact host execution succeeded with exit_code=0; "
-                f"all exact host evidence retained: {host_summary}.\n"
-                "BLOCKERS=NONE\n"
-                "NEXT_STATE=COMPLETED"
-            )
-            result = dataclasses.replace(
-                parse_execution_result(canonical_raw), terminal_state="COMPLETED"
-            )
-            return _FinalizationDecision(
-                result=result, terminal_state="COMPLETED", retry_required=False
-            )
-        else:
-            result = self._canonical_blocked(
-                summary=(
-                    "Provider terminal output omitted the result marker and no successful "
-                    "host execution evidence was recorded."
-                ),
-                validation=(
-                    "Provider turn was terminal; exact execution has no successful host evidence."
-                ),
-                blockers=(
-                    "Managed execution finalized without a provider result marker or host "
-                    "success evidence."
-                ),
-                terminal_state="BLOCKED",
-            )
-            return _FinalizationDecision(
-                result=result, terminal_state="BLOCKED", retry_required=True
-            )
+        result = self._canonical_blocked(
+            summary=f"Result ingestion requires reconciliation: {parse_error.code}.",
+            validation=f"Provider terminal observed; engineering conclusion is not inferred. {parse_error}",
+            blockers=f"{parse_error.code}: {parse_error}; reconcile this execution without replay.",
+            terminal_state="BLOCKED",
+        )
+        if raw_result:
+            result = dataclasses.replace(result, raw_result=raw_result)
+        return _FinalizationDecision(
+            result=result, terminal_state="BLOCKED", retry_required=False,
+            failure_code=parse_error.code, failure_evidence=str(parse_error),
+        )
+
+    @serialized_execution
+    def reconcile_result(self, execution_ref: str, **kwargs: Any) -> dict[str, Any]:
+        """Same-execution maintenance through the sole finalizer boundary."""
+        from result_ingestion import repair_result
+        if kwargs["identity"]["execution_ref"] != execution_ref:
+            raise TaskRegistryError("RESULT_RECONCILIATION_IDENTITY_CONFLICT")
+        return repair_result(self, **kwargs)
 
     @serialized_execution
     def finalize(
@@ -686,6 +649,7 @@ class ExecutionFinalizer:
         blocked_state: str | None = None,
         provider_outcome: str = "PROVIDER_TERMINAL",
         provider_status: str | None = None,
+        result_source: dict[str, Any] | None = None,
     ) -> ExecutionResult:
         """Persist result, terminate/release, then update the external projection."""
         if provider_outcome not in {
@@ -694,13 +658,22 @@ class ExecutionFinalizer:
         }:
             raise TaskRegistryError(f"Unsupported provider terminal outcome: {provider_outcome}")
         execution = self._validate_owner(execution_ref, task_id, turn_id)
+        existing = self.registry.get_execution_result(execution_ref)
+        if existing and (execution.get("failure_code") or "").startswith(("RESULT_DELIVERY_", "HOST_SIDE_EFFECT_")):
+            if (existing.task_id, existing.turn_id) != (task_id, turn_id):
+                raise TaskRegistryError("persisted result identity mismatch")
+            return self._from_record(existing, terminal_state=execution.get("stage"))
         from execution_liveness import release_allowed
         with self.registry._connect() as conn:
             safe_release = release_allowed(conn, execution_ref)
         if self.registry.has_execution_lease(execution_ref) and not safe_release:
             raise TaskRegistryError("finalizer requires fresh exact owner terminal evidence")
 
+        from result_ingestion import record_ingestion, bounded_result, failure_stage, decision_evidence
         existing = self.registry.get_execution_result(execution_ref)
+        ingestion = None
+        if existing is None or result_source is not None:
+            ingestion = record_ingestion(self.registry, execution_ref, task_id, turn_id, raw_result, result_source)
         active = self.registry.get_active_execution(execution_ref)
         retained_recovery = active is None and execution.get("stage") == "RECOVERY_REQUIRED"
         if existing is not None:
@@ -735,7 +708,7 @@ class ExecutionFinalizer:
                     execution_ref,
                     terminal_state,
                     retry_required=decision.retry_required,
-                    failure_stage="provider" if decision.failure_code else None,
+                    failure_stage=failure_stage(decision.failure_code),
                     failure_code=decision.failure_code,
                     evidence=decision.failure_evidence,
                 )
@@ -762,7 +735,8 @@ class ExecutionFinalizer:
                 provider_outcome=provider_outcome,
                 provider_status=provider_status,
             )
-            result = decision.result
+            decision = decision_evidence(decision, ingestion)
+            result = bounded_result(decision.result)
             self.registry.record_execution_result(
                 execution_ref=execution_ref,
                 task_id=task_id,
@@ -779,7 +753,7 @@ class ExecutionFinalizer:
                 execution_ref,
                 decision.terminal_state,
                 retry_required=decision.retry_required,
-                failure_stage="provider" if decision.failure_code else None,
+                failure_stage=failure_stage(decision.failure_code),
                 failure_code=decision.failure_code,
                 evidence=decision.failure_evidence,
             )

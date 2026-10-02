@@ -29,7 +29,7 @@ import urllib.request
 import uuid
 from typing import Any
 
-from completion_runtime import CompletionIdentity, CompletionRuntime, serialized_execution
+from completion_runtime import CompletionIdentity, CompletionIdentityError, CompletionRuntime, serialized_execution
 
 from app_server import (
     AppServerError,
@@ -1551,18 +1551,21 @@ def read_codex_completion_result(thread_id: str, turn_id: str) -> str | None:
     root = Path.home() / ".codex" / "sessions"
     if not isinstance(thread_id, str) or not isinstance(turn_id, str):
         return None
-    for path in root.glob("**/*.jsonl"):
-        if thread_id not in path.name:
-            continue
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", thread_id):
+        return None
+    for path in root.glob(f"**/*{thread_id}*.jsonl"):
         try:
             with path.open(encoding="utf-8") as stream:
+                session_matches = False
                 for line in stream:
                     try:
                         row = json.loads(line)
                     except json.JSONDecodeError:
                         continue
                     payload = row.get("payload")
-                    if row.get("type") != "event_msg" or not isinstance(payload, dict):
+                    if row.get("type") == "session_meta" and isinstance(payload, dict):
+                        session_matches = payload.get("id") == thread_id
+                    if not session_matches or row.get("type") != "event_msg" or not isinstance(payload, dict):
                         continue
                     if payload.get("type") != "task_complete" or payload.get("turn_id") != turn_id:
                         continue
@@ -2580,7 +2583,12 @@ class TaskDispatcher:
             "CLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<one concise paragraph>\n"
             "CHANGED_FILES=<comma-separated paths or NONE>\nVALIDATION=<tests/checks and outcomes>\n"
             "BLOCKERS=<NONE or exact blocker>\nNEXT_STATE=<IN_REVIEW|BLOCKED|COMPLETED>. "
-            "Each field must be on its own line. A prerequisite authority blocker does not mark "
+            "Each field must be on its own line. STATUS judges only the explicitly authorized execution scope. "
+            "PASS requires BLOCKERS=NONE exactly; use NEXT_STATE=COMPLETED when that scope is complete. "
+            "Keep scope, independent downstream TODOs and out-of-scope NOT_RUN/unverified work in SUMMARY/VALIDATION, "
+            "never in PASS BLOCKERS. Do not erase real in-scope blockers or independent failed qualification. "
+            "Result format errors require same-execution result reconciliation, never task replay. "
+            "A prerequisite authority blocker does not mark "
             "unperformed deployment, readback or observation BLOCKED: report NOT_RUN. "
             "Do not overwrite independent qualification FAIL, or infer PASS after authority changes.\n"
         )
@@ -2832,7 +2840,22 @@ class TaskDispatcher:
         configure(thread_id, turn_id, lambda message: runtime.notify(identity, message))
 
     @serialized_execution
-    def recover_execution_completion(self, execution_ref: str, *, restore_cancelled: bool = False) -> dict[str, Any]:
+    def recover_execution_completion(self, execution_ref: str, *, restore_cancelled: bool = False,
+                                     result_reconciliation: dict[str, str] | None = None) -> dict[str, Any]:
+        if result_reconciliation is not None:
+            if restore_cancelled:
+                raise TaskRegistryError("result reconciliation cannot restore cancellation")
+            required = {"task_id", "thread_id", "turn_id", "result_sha256", "source_sha256"}
+            if not required.issubset(result_reconciliation) or any(not result_reconciliation[k] for k in required):
+                raise TaskRegistryError("result reconciliation requires exact identity and both SHA256 values")
+            from result_ingestion import check_repair
+            identity = dict(execution_ref=execution_ref, **{k: result_reconciliation[k]
+                            for k in ("task_id", "thread_id", "turn_id")})
+            with self.tasks._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                check_repair(conn, identity, result_reconciliation)
+            return self.reconcile_execution(execution_ref, reclaim_stale=False,
+                                            _result_reconciliation=result_reconciliation)
         # Explicit maintenance operation. No global lease sweep or new turn.
         runtime = CompletionRuntime(self.tasks, self.reconcile_execution)
         if restore_cancelled:
@@ -3803,6 +3826,7 @@ class TaskDispatcher:
     def reconcile_execution(
         self, execution_ref: str | None = None, *, task_id: str | None = None,
         reclaim_stale: bool = True,
+        _result_reconciliation: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Perform one bounded provider read and converge durable execution truth.
 
@@ -3831,13 +3855,13 @@ class TaskDispatcher:
             retained = self.tasks.get_execution_record(execution_ref or "")
             persisted = self.tasks.get_execution_result(execution_ref or "")
             held = self.tasks.has_execution_lease(execution_ref or "")
-            if retained is not None and persisted is not None and not held:
+            if retained is not None and persisted is not None and not held and _result_reconciliation is None:
                 recovered = ExecutionFinalizer(self.tasks, getattr(self, "linear", None)).finalize(
                     execution_ref=execution_ref, task_id=persisted.task_id,
                     turn_id=persisted.turn_id, raw_result=persisted.raw_result,
                 )
                 return {"state": recovered.terminal_state, "authoritative": True, "finalized": True}
-            if retained is None or not (held or retained.get("stage") == "RECOVERY_REQUIRED"):
+            if retained is None or not (held or retained.get("stage") == "RECOVERY_REQUIRED" or _result_reconciliation):
                 return {"state": "UNKNOWN", "authoritative": False}
             task = self.tasks.get_task(retained["task_id"])
             # A partial finalizer commit is re-observed before releasing its lease.
@@ -3862,6 +3886,9 @@ class TaskDispatcher:
 
         from execution_liveness import classify, record as record_liveness
         def unknown(reason, evidence=None):
+            if _result_reconciliation is not None:
+                return {"state": "BLOCKED", "authoritative": False, "failure_stage": "result_reconciliation",
+                        "failure_code": reason, "retry_required": False}
             observed = evidence or classify([], "", "")
             if evidence is None:
                 observed["liveness_reason"] = reason
@@ -3926,6 +3953,13 @@ class TaskDispatcher:
                 )
                 return {"state": final_state, "authoritative": True}
 
+            if _result_reconciliation is not None:
+                return finalizer.reconcile_result(
+                    execution_ref=execution_ref,
+                    identity=dict(execution_ref=execution_ref, task_id=task.task_id,
+                                  thread_id=binding.thread_id, turn_id=exact_turn_id),
+                    expected=_result_reconciliation, raw=raw_result, source=result_source,
+                    provider_outcome=provider_outcome, provider_status=provider_status)
             index = self.tasks.get_task_index(task.task_id)
             linear = getattr(self, "linear", None)
             finalized = ExecutionFinalizer(self.tasks, linear).finalize(
@@ -3939,15 +3973,21 @@ class TaskDispatcher:
                 blocked_state=getattr(self.cfg, "todo_state", ""),
                 provider_outcome=provider_outcome,
                 provider_status=provider_status,
+                result_source=result_source,
             )
             final_state = finalized.terminal_state or (
                 "BLOCKED" if finalized.status == "BLOCKED" else "COMPLETED"
             )
+            record = self.tasks.get_execution_record(execution_ref)
             return {
                 "state": final_state,
                 "authoritative": True,
                 "finalized": True,
                 "provider_outcome": provider_outcome,
+                **{key: record.get(key)
+                   for key in ("failure_stage", "failure_code", "failure_evidence")},
+                "retry_required": self.tasks.get_task(task.task_id).retry_required,
+                "retry_scope": "RESULT_RECONCILIATION" if record.get("failure_stage") == "result_ingestion" else None,
                 "result_source": (
                     "provider" if raw_result and finalized.raw_result == raw_result else "finalizer"
                 ),
@@ -3955,6 +3995,7 @@ class TaskDispatcher:
 
         route: RoutingIdentity | None = None
         bounded_items: list[dict[str, Any]] = []
+        result_source: dict[str, Any] | None = None
         native_observer_state: str | None = None
         native_evidence = None
         try:
@@ -3969,9 +4010,10 @@ class TaskDispatcher:
                                             read_only=True, turn_id=exact_turn_id)
             native_evidence = getattr(client, "execution_route_evidence", None)
             if native_evidence and "provider_liveness" in native_evidence:
-                projected = record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, native_evidence)
+                if _result_reconciliation is None:
+                    projected = record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, native_evidence)
                 if native_evidence["provider_liveness"] != "TERMINAL" or not native_evidence["release_safe"]:
-                    return projected
+                    return unknown("RESULT_RECONCILIATION_OWNER_NOT_TERMINAL") if _result_reconciliation else projected
             with client:
                 client.initialize(
                     client_name=self.cfg.app_server.client_name,
@@ -3981,7 +4023,7 @@ class TaskDispatcher:
                 if hasattr(client, "thread_read"):
                     observed_thread = client.thread_read(binding.thread_id)
                     if observed_thread.get('id') != binding.thread_id:
-                        raise AppServerError('native observer returned a different thread')
+                        raise CompletionIdentityError('native observer returned a different thread')
                     native_observer_state = _status_type(observed_thread)
                 page = client.thread_turns_list(
                     binding.thread_id, limit=20, sort_direction="desc", items_view="summary"
@@ -4024,49 +4066,53 @@ class TaskDispatcher:
                     None,
                 )
                 if candidate is not None and hasattr(client, "thread_items_list"):
-                    summary_text = self._turn_text(
-                        candidate.get("items", candidate), assistant_only=True
-                    )
-                    summary_has_result = False
-                    if summary_text:
-                        try:
-                            parse_codex_result(summary_text)
-                        except Exception:
-                            pass
-                        else:
-                            summary_has_result = True
-                    if not summary_has_result:
-                        # Fetch newest items singly: command output in an unrelated
-                        # older item can contain invalid UTF-8 in provider responses.
-                        # Only the exact final Agent response is completion evidence.
-                        item_cursor = None
-                        item_cursors: set[str] = set()
-                        for _ in range(20):
-                            item_page = client.thread_items_list(
-                                binding.thread_id, turn_id=exact_turn_id, limit=1,
-                                sort_direction="desc",
-                                **({"cursor": item_cursor} if item_cursor else {}),
-                            )
-                            for entry in item_page.get("data", ()):
-                                if not isinstance(entry, dict):
-                                    continue
-                                if entry.get("turnId", exact_turn_id) != exact_turn_id:
-                                    raise AppServerError("completion item belongs to a different turn")
-                                item = entry.get("item", entry)
-                                if (isinstance(item, dict) and item.get("type") == "agentMessage"
-                                        and item.get("phase") in {"final", "final_answer"}
-                                        and isinstance(item.get("text"), str)):
-                                    bounded_items = [{"type": "agentMessage", "text":
-                                        self._exact_final_result(item["text"])}]
-                                    break
-                            if bounded_items:
+                    # Summary projections can be truncated or include commentary.
+                    # Always prefer the exact final item when this API is available.
+                    # Fetch newest items singly: command output in an unrelated
+                    # older item can contain invalid UTF-8 in provider responses.
+                    # Only the exact final Agent response is completion evidence.
+                    item_cursor = None
+                    item_cursors: set[str] = set()
+                    for _ in range(20):
+                        item_page = client.thread_items_list(
+                            binding.thread_id, turn_id=exact_turn_id, limit=1,
+                            sort_direction="desc",
+                            **({"cursor": item_cursor} if item_cursor else {}),
+                        )
+                        for entry in item_page.get("data", ()):
+                            if not isinstance(entry, dict):
+                                continue
+                            if entry.get("turnId", exact_turn_id) != exact_turn_id:
+                                raise CompletionIdentityError("completion item belongs to a different turn")
+                            if entry.get("threadId", binding.thread_id) != binding.thread_id:
+                                raise CompletionIdentityError("completion item belongs to a different thread")
+                            item = entry.get("item", entry)
+                            if isinstance(item, dict) and (
+                                    item.get("turnId", exact_turn_id) != exact_turn_id or
+                                    item.get("threadId", binding.thread_id) != binding.thread_id):
+                                raise CompletionIdentityError("completion item identity mismatch")
+                            if (isinstance(item, dict) and item.get("type") == "agentMessage"
+                                    and item.get("phase") in {"final", "final_answer"}
+                                    and isinstance(item.get("text"), str)):
+                                text = item["text"]
+                                result_source = dict(source="provider_final", raw_text=text,
+                                    message_id=item.get("id", entry.get("id")), phase=item.get("phase"),
+                                    created_at=item.get("createdAt", item.get("created_at_ms", entry.get("createdAt"))),
+                                    source_incomplete=any(item.get(k) or entry.get(k)
+                                        for k in ("truncated", "textTruncated", "isTruncated")))
+                                bounded_items = [{"type": "agentMessage", "text":
+                                    self._exact_final_result(text)}]
                                 break
-                            item_cursor = item_page.get("nextCursor")
-                            if not isinstance(item_cursor, str) or not item_cursor or item_cursor in item_cursors:
-                                break
-                            item_cursors.add(item_cursor)
+                        if bounded_items:
+                            break
+                        item_cursor = item_page.get("nextCursor")
+                        if not isinstance(item_cursor, str) or not item_cursor or item_cursor in item_cursors:
+                            break
+                        item_cursors.add(item_cursor)
         except DispatchContractError as exc:
             evidence = str(exc)
+            if _result_reconciliation is not None:
+                return unknown("ROUTING_IDENTITY_UNAVAILABLE")
             if execution_ref:
                 from execution_liveness import invalidate
                 invalidate(self.tasks, execution_ref, "ROUTING_IDENTITY_UNAVAILABLE")
@@ -4101,6 +4147,8 @@ class TaskDispatcher:
                 "failure_code": "ROUTING_IDENTITY_UNAVAILABLE",
                 "evidence": evidence,
             }
+        except CompletionIdentityError:
+            return unknown("RESULT_SOURCE_IDENTITY_MISMATCH")
         except Exception as exc:
             return unknown("PROVIDER_UNAVAILABLE", getattr(exc, "liveness_evidence", None))
         rows = [item for item in page.get("data", ()) if isinstance(item, dict)]
@@ -4114,7 +4162,8 @@ class TaskDispatcher:
             from native_provider import observe_execution
             fresh = observe_execution(self.cfg, binding.thread_id, exact_turn_id)
             if (fresh["provider_liveness"] != "TERMINAL" or not fresh["release_safe"]):
-                return record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, fresh)
+                return (unknown("RESULT_RECONCILIATION_OWNER_NOT_TERMINAL") if _result_reconciliation else
+                        record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, fresh))
             fresh_owner = next(r for r in fresh["observations"] if r["endpoint"] == fresh["owner_endpoint"])
             if (fresh["owner_endpoint"] != native_evidence["owner_endpoint"] or
                     self._turn_status({"status": fresh_owner.get("turn_status")}) != status):
@@ -4126,10 +4175,13 @@ class TaskDispatcher:
             observed = classify([dict(endpoint="execution-route", state=native_observer_state or "UNKNOWN",
                 thread_id=binding.thread_id, turn_id=row.get("id"), turn_status=row.get("status"))],
                 binding.thread_id, exact_turn_id)
-            projected = record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, observed)
             if observed["provider_liveness"] != "TERMINAL" or not observed["release_safe"]:
-                return projected
+                return (unknown("RESULT_RECONCILIATION_OWNER_NOT_TERMINAL") if _result_reconciliation else
+                        record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, observed))
+            record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, observed)
         if status in {"cancelled", "canceled", "interrupted", "aborted"}:
+            if _result_reconciliation is not None:
+                return unknown("RESULT_RECONCILIATION_CANCELLED")
             terminalize(
                 "CANCELLED", failure_stage="provider",
                 failure_code="TURN_CANCELLED", evidence=f"provider turn status={status}",
@@ -4140,22 +4192,25 @@ class TaskDispatcher:
         if provider_outcome is not None:
             # A turn summary can contain both the prompt and its response.  Only
             # the provider response may satisfy the strict result contract.
-            raw_result = self._turn_text(bounded_items or row.get("items", row), assistant_only=True)
-            if raw_result:
-                try:
-                    parse_codex_result(raw_result)
-                except ResultParseError:
-                    raw_result = None
-            if not raw_result:
+            raw_result = bounded_items[0]["text"] if bounded_items else None
+            if not raw_result and not hasattr(client, "thread_items_list"):
+                # Legacy terminal-turn API: accept agent messages only, never tools/commentary.
+                items = row.get("items", [])
+                finals = [item for item in items if isinstance(item, dict) and
+                          item.get("type") == "agentMessage" and
+                          item.get("phase") in {None, "final", "final_answer"} and
+                          isinstance(item.get("text", item.get("aggregatedOutput")), str)]
+                if len(finals) == 1:
+                    item = finals[0]
+                    text = item.get("text", item.get("aggregatedOutput"))
+                    raw_result = self._exact_final_result(text)
+                    result_source = dict(source="provider_final", raw_text=text,
+                                         message_id=item.get("id"), phase=item.get("phase"))
+            if not raw_result and _result_reconciliation is None:
                 session_result = read_codex_completion_result(binding.thread_id, exact_turn_id)
                 if session_result:
-                    try:
-                        session_result = self._exact_final_result(session_result)
-                        parse_codex_result(session_result)
-                    except ResultParseError:
-                        pass
-                    else:
-                        raw_result = session_result
+                    raw_result = self._exact_final_result(session_result)
+                    result_source = dict(source="native_task_complete", raw_text=session_result)
 
             return finalize_provider(provider_outcome, status, raw_result)
         return unknown("UNRECOGNIZED_TURN_STATUS")
@@ -6917,6 +6972,10 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("execution_ref")
     recover.add_argument("--restore-cancelled", action="store_true",
                          help="Restore a released cancellation only with a fresh exact active owner")
+    recover.add_argument("--reconcile-result", action="store_true",
+                         help="Re-read exact final message and CAS-reconcile a stored ingestion error; no task replay")
+    for field in ("task-id", "thread-id", "turn-id", "result-sha256", "source-sha256", "message-id"):
+        recover.add_argument("--expected-" + field)
     sub.add_parser("once", help="Poll once and execute at most max_batch issues")
     sub.add_parser("run", help="Run foreground polling loop")
     return parser
@@ -6938,11 +6997,14 @@ def main() -> int:
     if args.command == "recover-execution":
         try:
             result = TaskDispatcher(cfg, initialize_host_executor=False).recover_execution_completion(
-                args.execution_ref, restore_cancelled=args.restore_cancelled)
+                args.execution_ref, restore_cancelled=args.restore_cancelled,
+                result_reconciliation=({key: getattr(args, "expected_" + key)
+                    for key in ("task_id", "thread_id", "turn_id", "result_sha256", "source_sha256", "message_id")}
+                    if args.reconcile_result else None))
             print(json.dumps(result, sort_keys=True))
             return 0 if result.get("completion_delivery") == "DONE" else 1
         except Exception as exc:
-            print(f"RECOVERY_BLOCKED: {type(exc).__name__}", file=sys.stderr)
+            print(f"RECOVERY_BLOCKED: {exc}" if isinstance(exc, TaskRegistryError) else f"RECOVERY_BLOCKED: {type(exc).__name__}", file=sys.stderr)
             return 1
 
     if args.command == "self-project-check":
