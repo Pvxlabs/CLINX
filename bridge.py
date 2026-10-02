@@ -6732,6 +6732,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to TOML config (default: bridge.toml)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+    from local_discovery.cli import add_commands
+    add_commands(sub)
     sub.add_parser("doctor", help="Validate Linear, Codex, MCP, and repo mappings")
     sub.add_parser(
         "self-project-check",
@@ -6811,6 +6813,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.command in {"devices", "pair", "serve"}:
+        from local_discovery.cli import handle
+        return handle(args)
     config_path = Path(args.config).expanduser().resolve()
 
     try:

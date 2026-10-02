@@ -1,0 +1,5 @@
+# Optional LAN device dependencies. Legacy CLINX remains stdlib-only.
+cryptography==50.0.2
+zeroconf==0.151.5
+ifaddr==0.2.0
+# Native production PAKE: build/install native/opaque_pairing with its Cargo.lock.
