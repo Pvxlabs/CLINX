@@ -98,6 +98,8 @@ final class MonitorStore: ObservableObject {
     @Published var settingsPresented = false
     @Published private(set) var selectedRef: String?
     @Published private(set) var localArchives: [LocalArchiveEntry]
+    @Published private(set) var navigationHistory: [NavigationEntry] = []
+    @Published private(set) var navigationIndex: Int?
 
     private let defaults: UserDefaults
     private static let archiveKey = "monitor.localArchives.v1"
@@ -141,6 +143,7 @@ final class MonitorStore: ObservableObject {
                                               taskRef: task.taskRef, executionRef: task.executionRef,
                                               title: task.titleText))
         persistArchives()
+        removeHistory(for: task.taskRef)
         if selectedRef == task.taskRef {
             selectionToken += 1
             clearSelection()
@@ -250,10 +253,12 @@ final class MonitorStore: ObservableObject {
 
     func status(of task: ObservedTask) -> MonitorStatus { task.status(freshness: freshness) }
 
+    private var unarchivedTasks: [ObservedTask] { allTasks.filter { !isLocallyArchived($0) } }
+
     var counts: [MonitorView: Int] {
         var result = Dictionary(uniqueKeysWithValues: MonitorView.allCases.map { ($0, 0) })
         let freshness = freshness
-        for task in allTasks where !isLocallyArchived(task) {
+        for task in filteredTasks {
             let status = task.status(freshness: freshness)
             for view in MonitorView.allCases where view.matches(status) {
                 result[view, default: 0] += 1
@@ -263,21 +268,25 @@ final class MonitorStore: ObservableObject {
     }
 
     var hostOptions: [FilterOption] {
-        Dictionary(grouping: allTasks, by: { $0.hostText })
+        Dictionary(grouping: unarchivedTasks, by: { $0.hostText })
             .map { FilterOption(name: $0.key, count: $0.value.count) }
             .sorted { $0.name < $1.name }
     }
 
     var projectOptions: [FilterOption] {
-        Dictionary(grouping: allTasks, by: { $0.projectText })
+        Dictionary(grouping: unarchivedTasks, by: { $0.projectText })
             .map { FilterOption(name: $0.key, count: $0.value.count) }
             .sorted { $0.name < $1.name }
     }
 
     var visibleTasks: [ObservedTask] {
-        allTasks
-            .filter { !isLocallyArchived($0) }
-            .filter { view.matches(status(of: $0)) }
+        let freshness = freshness
+        return filteredTasks.filter { view.matches($0.status(freshness: freshness)) }
+    }
+
+    /// Sidebar counts and list rows use the same scope before selecting a status view.
+    private var filteredTasks: [ObservedTask] {
+        unarchivedTasks
             .filter { projectFilter == nil || $0.projectText == projectFilter }
             .filter { hostFilter == nil || $0.hostText == hostFilter }
             .filter { task in
@@ -327,6 +336,58 @@ final class MonitorStore: ObservableObject {
 
     // MARK: - Selection
 
+    var canGoBack: Bool { (navigationIndex ?? 0) > 0 }
+    var canGoForward: Bool {
+        guard let navigationIndex else { return false }
+        return navigationIndex + 1 < navigationHistory.count
+    }
+
+    func goBack() {
+        guard canGoBack, let navigationIndex else { return }
+        openHistory(at: navigationIndex - 1)
+    }
+
+    func goForward() {
+        guard canGoForward, let navigationIndex else { return }
+        openHistory(at: navigationIndex + 1)
+    }
+
+    func openHistory(at index: Int) {
+        guard navigationHistory.indices.contains(index) else { return }
+        let entry = navigationHistory[index]
+        navigationIndex = index
+        view = entry.view
+        projectFilter = entry.project
+        hostFilter = entry.host
+        timeWindow = entry.timeWindow
+        searchText = entry.search
+        beginSelection(entry.taskRef, recordHistory: false)
+    }
+
+    private func recordVisit(_ ref: String) {
+        guard let task = allTasks.first(where: { $0.taskRef == ref }), !isLocallyArchived(task) else { return }
+        if let index = navigationIndex {
+            let current = navigationHistory[index]
+            if current.taskRef == ref && current.view == view && current.project == projectFilter
+                && current.host == hostFilter && current.timeWindow == timeWindow && current.search == searchText {
+                return
+            }
+            navigationHistory = Array(navigationHistory.prefix(index + 1))
+        }
+        navigationHistory.append(NavigationEntry(taskRef: ref, title: task.titleText, status: status(of: task), view: view,
+                                                project: projectFilter, host: hostFilter,
+                                                timeWindow: timeWindow, search: searchText))
+        if navigationHistory.count > 50 { navigationHistory.removeFirst() }
+        navigationIndex = navigationHistory.count - 1
+    }
+
+    private func removeHistory(for ref: String) {
+        let remainingBeforeCursor = navigationHistory.prefix((navigationIndex ?? -1) + 1)
+            .filter { $0.taskRef != ref }.count
+        navigationHistory.removeAll { $0.taskRef == ref }
+        navigationIndex = navigationHistory.isEmpty ? nil : max(0, remainingBeforeCursor - 1)
+    }
+
     func selectionIndex() -> Int? {
         guard let selectedRef else { return nil }
         return visibleTasks.firstIndex { $0.taskRef == selectedRef }
@@ -341,7 +402,8 @@ final class MonitorStore: ObservableObject {
     }
 
     /// Highlights immediately (no wait on I/O) and loads the detail in the background.
-    func beginSelection(_ ref: String) {
+    func beginSelection(_ ref: String, recordHistory: Bool = true) {
+        if recordHistory { recordVisit(ref) }
         selectedRef = ref
         selectionToken += 1
         let token = selectionToken
@@ -359,13 +421,14 @@ final class MonitorStore: ObservableObject {
 
     /// Awaits the detail load; used by tests and by callers that need the result.
     func select(_ ref: String) async {
+        recordVisit(ref)
         selectedRef = ref
         selectionToken += 1
         await loadSelection(ref: ref, token: selectionToken)
     }
 
     private func loadSelection(ref: String, token: Int) async {
-        guard let service else { return }
+        guard let service, token == selectionToken else { return }
         if selected?.taskRef != ref { selected = nil; events = []; eventCursor = nil; eventHasMore = false }
         do {
             let detail = try await service.task(ref)
@@ -437,6 +500,8 @@ final class MonitorStore: ObservableObject {
     }
 
     private func resetForNewSource() {
+        navigationHistory = []
+        navigationIndex = nil
         active = []
         recent = []
         selected = nil

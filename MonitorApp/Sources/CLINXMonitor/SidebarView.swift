@@ -2,11 +2,11 @@ import SwiftUI
 
 /// Level 1 navigation: views, hosts and the chain.
 ///
-/// At ≥ 1280pt the sidebar is a 200pt column; below that it collapses to the design's 52pt
-/// icon rail with counts (Developer Handoff — Window behavior).
+/// Used by the docked sidebar and the temporary navigation drawer.
 struct SidebarView: View {
     @ObservedObject var store: MonitorStore
     let rail: Bool
+    var onNavigate: () -> Void = {}
 
     var body: some View {
         let counts = store.counts
@@ -30,7 +30,7 @@ struct SidebarView: View {
                         .padding(.vertical, 6)
                         .padding(.horizontal, rail ? 0 : 8)
                 }
-                SidebarItemView(store: store, view: view, rail: rail, count: counts[view] ?? 0)
+                SidebarItemView(store: store, view: view, rail: rail, count: counts[view] ?? 0, onNavigate: onNavigate)
             }
 
             if !rail {
@@ -43,7 +43,7 @@ struct SidebarView: View {
                         .padding(.bottom, 4)
 
                     ForEach(store.hostOptions) { host in
-                        HostRow(store: store, host: host)
+                        HostRow(store: store, host: host, onNavigate: onNavigate)
                     }
                 }
 
@@ -84,6 +84,7 @@ private struct SidebarItemView: View {
     let view: MonitorView
     let rail: Bool
     let count: Int
+    let onNavigate: () -> Void
 
     @State private var hovering = false
 
@@ -98,6 +99,7 @@ private struct SidebarItemView: View {
     var body: some View {
         Button {
             store.view = view
+            onNavigate()
         } label: {
             if rail {
                 ZStack(alignment: .topTrailing) {
@@ -106,14 +108,6 @@ private struct SidebarItemView: View {
                         .foregroundStyle(active ? DS.Palette.accent : DS.Palette.textSecondary)
                         .background(RoundedRectangle(cornerRadius: 6)
                             .fill(active ? DS.Palette.selection : (hovering ? DS.Palette.hover : .clear)))
-                    if count > 0 {
-                        Text("\(count)")
-                            .font(.system(size: 9, weight: .semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(attention?.color ?? DS.Palette.textTertiary)
-                            .padding(.top, 1)
-                            .padding(.trailing, 1)
-                    }
                 }
                 .padding(.bottom, 2)
             } else {
@@ -167,12 +161,14 @@ private struct SidebarItemView: View {
 private struct HostRow: View {
     @ObservedObject var store: MonitorStore
     let host: FilterOption
+    let onNavigate: () -> Void
 
     private var active: Bool { store.hostFilter == host.name }
 
     var body: some View {
         Button {
             store.hostFilter = active ? nil : host.name
+            onNavigate()
         } label: {
             HStack(spacing: 8) {
                 Circle().fill(DS.Palette.success).frame(width: 6, height: 6)

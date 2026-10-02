@@ -3,6 +3,50 @@ import XCTest
 
 final class TimelineArchiveTests: XCTestCase {
     @MainActor
+    func testSidebarCountsMatchEveryViewAfterFilteringArchivingAndRestoring() async throws {
+        let suite = "CLINXCountTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MonitorStore(service: SyntheticObserverService(scenario: .blocked), defaults: defaults)
+        await store.refresh()
+
+        func assertCounts(file: StaticString = #filePath, line: UInt = #line) {
+            for view in MonitorView.allCases {
+                store.view = view
+                XCTAssertEqual(store.counts[view], store.visibleTasks.count, file: file, line: line)
+            }
+        }
+
+        assertCounts()
+        store.timeWindow = .hour
+        assertCounts()
+        let task = try XCTUnwrap(store.allTasks.first { store.status(of: $0).isAttention })
+        store.hostFilter = task.hostText
+        assertCounts()
+        store.projectFilter = task.projectText
+        assertCounts()
+        store.searchText = task.taskRef
+        assertCounts()
+        XCTAssertEqual(store.counts[.active], 1)
+        store.archiveLocally(task)
+        assertCounts()
+        XCTAssertEqual(store.counts[.active], 0)
+        XCTAssertEqual(store.hostOptions.first { $0.name == task.hostText }?.count ?? 0,
+                       store.allTasks.filter { $0.hostText == task.hostText && !store.isLocallyArchived($0) }.count)
+        XCTAssertEqual(store.projectOptions.first { $0.name == task.projectText }?.count ?? 0,
+                       store.allTasks.filter { $0.projectText == task.projectText && !store.isLocallyArchived($0) }.count)
+        await store.refresh()
+        assertCounts()
+        XCTAssertEqual(store.counts[.active], 0)
+        store.restoreLocalArchive(try XCTUnwrap(store.currentArchives.first).id)
+        assertCounts()
+        XCTAssertEqual(store.counts[.active], 1)
+        store.searchText = "no-matching-execution"
+        assertCounts()
+        XCTAssertTrue(store.counts.values.allSatisfy { $0 == 0 })
+    }
+
+    @MainActor
     func testLocalArchivePersistsAndRestoresWithoutChangingCanonicalTasks() async throws {
         let suite = "CLINXArchiveTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
