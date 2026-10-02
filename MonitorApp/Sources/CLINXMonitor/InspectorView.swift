@@ -322,7 +322,7 @@ struct BlockerPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
-                StatusGlyphView(glyph: failed ? .squareCross : .octagon, color: color, size: 14)
+                StatusGlyphView(glyph: failed ? .squareCross : .circleMinus, color: color, size: 14)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {

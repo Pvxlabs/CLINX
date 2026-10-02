@@ -16,6 +16,7 @@ struct MonitorRootView: View {
     @State private var navigationDrawerHovered = false
     @State private var navigationCloseTask: Task<Void, Never>?
     @State private var historyOpen = false
+    @State private var listPopover: ListPopover?
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -49,7 +50,7 @@ struct MonitorRootView: View {
                             .background(DS.Palette.canvas)
 
                         HStack(spacing: 0) {
-                            ExecutionListView(store: store)
+                            ExecutionListView(store: store, popover: $listPopover)
                                 .frame(width: listWidth)
                                 .captureGeometry("list")
                                 // Draw the shared boundary once, inside the list's existing bounds.
@@ -109,6 +110,35 @@ struct MonitorRootView: View {
                             .padding(.leading, 124)
                     }
                     .ignoresSafeArea()
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if let popover = listPopover {
+                    ZStack(alignment: .topLeading) {
+                        Color.clear.contentShape(Rectangle())
+                            .onTapGesture { listPopover = nil }
+                        Group {
+                            switch popover {
+                            case .archive: LocalArchiveView(store: store)
+                            case .options: FilterPopover(store: store)
+                            }
+                        }
+                        .background(DS.Palette.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(DS.Palette.border, lineWidth: borderWidth))
+                        .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+                        .padding(.leading, max(12, sidebarWidth + listWidth - 16
+                            - (popover == .archive ? 36 + 360 : 330)))
+                        .padding(.top, DS.Metric.contentHeaderHeight + DS.Metric.listHeaderHeight - 2)
+                    }
+                    .ignoresSafeArea()
+                    .background {
+                        Button("Close list options", action: { listPopover = nil })
+                            .keyboardShortcut(.cancelAction)
+                            .hidden()
+                            .accessibilityHidden(true)
+                    }
                 }
             }
             // Environment + connection live here now: one transparent, read-only label in the
@@ -171,10 +201,15 @@ struct MonitorRootView: View {
             .onAppear { windowWidth = proxy.size.width }
             .onChange(of: proxy.size.width) { windowWidth = $0 }
             .onDisappear { navigationCloseTask?.cancel() }
+            .onChange(of: listPopover) { if $0 != nil { historyOpen = false; navigationOpen = false } }
+            .onChange(of: historyOpen) { if $0 { listPopover = nil } }
+            .onChange(of: navigationOpen) { if $0 { listPopover = nil } }
         }
         .background(FullSizeContentConfigurator())
         .onExitCommand {
-            if navigationOpen {
+            if listPopover != nil {
+                listPopover = nil
+            } else if navigationOpen {
                 navigationOpen = false
             } else if historyOpen {
                 historyOpen = false

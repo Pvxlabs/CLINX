@@ -171,6 +171,81 @@ def release_allowed(conn, execution_ref):
                                and time.time() - row["observed_at"] <= LIVENESS_GRACE_SECONDS)
 
 
+def restore_cancelled_execution(registry, identity, evidence):
+    """Explicit maintenance only: restore an erroneously released exact live turn.
+
+    Reacquire its original lease atomically, without starting/resuming a provider.
+    The intermediate state is RECOVERY_REQUIRED until the normal reconciler reads
+    the owner again. Preserve the erroneous record and observations in an audit row.
+    """
+    from task_registry import TaskRegistryError
+    from execution_semantics import parse_routing_identity
+    observed = classify(evidence["observations"], identity.thread_id, identity.turn_id)
+    if observed["provider_liveness"] != "LIVE" or observed["ownership_conflict"]:
+        raise TaskRegistryError("released cancellation recovery requires an exact active owner")
+    stamp = iso(time.time())
+    with registry._connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT * FROM execution_history WHERE execution_ref=?",
+                           (identity.execution_ref,)).fetchone()
+        task = conn.execute("SELECT * FROM tasks WHERE task_id=?", (identity.task_id,)).fetchone()
+        binding = conn.execute("SELECT thread_id FROM conversation_bindings WHERE task_id=?",
+                               (identity.task_id,)).fetchone()
+        if (row is None or task is None or row["task_id"] != identity.task_id
+                or row["stage"] != "CANCELLED" or row["execution_state"] != "CANCELLED"
+                or task["execution_state"] != "CANCELLED" or task["status"] == "ARCHIVED"
+                or row["turn_id"] != identity.turn_id or task["turn_id"] != identity.turn_id
+                or binding is None or binding["thread_id"] != identity.thread_id):
+            raise TaskRegistryError("released cancellation no longer owns current task/thread/turn")
+        route = parse_routing_identity(row["routing_identity_json"])
+        key = registry.worktree_key(host=task["host"], cwd=task["cwd"],
+                                    repository_origin=task["repository_origin"])
+        if (route is None or not route.executable or route.conversation.binding != identity.thread_id
+                or row["worktree_key"] != key):
+            raise TaskRegistryError("released cancellation route or worktree identity changed")
+        if (conn.execute("SELECT 1 FROM executions WHERE task_id=? OR execution_ref=?",
+                         (identity.task_id, identity.execution_ref)).fetchone()
+                or conn.execute("SELECT 1 FROM worktree_leases WHERE worktree_key=? OR task_id=? OR execution_ref=?",
+                                (key, identity.task_id, identity.execution_ref)).fetchone()
+                or conn.execute("SELECT 1 FROM execution_results WHERE execution_ref=?",
+                                (identity.execution_ref,)).fetchone()
+                or conn.execute("SELECT 1 FROM execution_history WHERE task_id=? AND acquired_at>?",
+                                (identity.task_id, row["acquired_at"])).fetchone()):
+            raise TaskRegistryError("released cancellation conflicts with an execution, lease or result")
+        handoff = conn.execute("SELECT * FROM clinx_completion_handoffs WHERE execution_ref=?",
+                               (identity.execution_ref,)).fetchone()
+        if handoff and (handoff["task_id"], handoff["thread_id"], handoff["turn_id"]) != (
+                identity.task_id, identity.thread_id, identity.turn_id):
+            raise TaskRegistryError("completion handoff identity changed")
+        conn.execute("""CREATE TABLE IF NOT EXISTS execution_recovery_audit (
+            execution_ref TEXT PRIMARY KEY, recovered_at TEXT NOT NULL,
+            previous_execution_json TEXT NOT NULL, previous_task_json TEXT NOT NULL,
+            owner_evidence_json TEXT NOT NULL)""")
+        conn.execute("INSERT INTO execution_recovery_audit VALUES (?,?,?,?,?)",
+                     (identity.execution_ref, stamp, json.dumps(dict(row), sort_keys=True),
+                      json.dumps(dict(task), sort_keys=True), json.dumps(observed, sort_keys=True)))
+        conn.execute("""INSERT INTO executions
+            (execution_ref,task_id,issue_id,worktree_key,logical_model,resolved_model,
+             stage,execution_state,turn_id,acquired_at,routing_identity_json,execution_policy_json)
+            SELECT execution_ref,task_id,issue_id,worktree_key,logical_model,resolved_model,
+                   'RECOVERY_REQUIRED','RECOVERY_REQUIRED',turn_id,acquired_at,
+                   routing_identity_json,execution_policy_json
+            FROM execution_history WHERE execution_ref=?""", (identity.execution_ref,))
+        conn.execute("INSERT INTO worktree_leases VALUES (?,?,?,'RECOVERY_REQUIRED',?)",
+                     (key, identity.task_id, identity.execution_ref, row["acquired_at"]))
+        conn.execute("DELETE FROM execution_history WHERE execution_ref=?", (identity.execution_ref,))
+        conn.execute("""UPDATE tasks SET execution_state='RECOVERY_REQUIRED',current_stage='RECOVERY_REQUIRED',
+            codex_running=0,retry_required=1,current_blocker='Awaiting exact owner reconciliation',
+            updated_at=?,last_progress_at=? WHERE task_id=?""", (stamp, stamp, identity.task_id))
+        # Explicit recovery has already validated this durable handoff identity.
+        # Re-enroll in the same transaction so a crash cannot strand the new lease.
+        conn.execute("""INSERT INTO clinx_completion_handoffs
+            (execution_ref,task_id,thread_id,turn_id,state,updated_at) VALUES (?,?,?,?,'PENDING',?)
+            ON CONFLICT(execution_ref) DO UPDATE SET state='PENDING',terminal_observed=0,
+            next_attempt=0,last_error=NULL,updated_at=excluded.updated_at""",
+            (identity.execution_ref, identity.task_id, identity.thread_id, identity.turn_id, time.time()))
+
+
 def invalidate(registry, execution_ref, reason):
     """Loss of local identity invalidates live proof without inventing activity."""
     with registry._connect() as conn:

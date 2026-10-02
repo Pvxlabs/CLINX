@@ -1,12 +1,13 @@
 import AppKit
 import SwiftUI
 
+enum ListPopover { case archive, options }
+
 /// Level 2 — the execution list. Header, grouped rows, pagination.
 struct ExecutionListView: View {
     @ObservedObject var store: MonitorStore
     @FocusState private var listFocused: Bool
-    @State private var filterOpen = false
-    @State private var archiveOpen = false
+    @Binding var popover: ListPopover?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,19 +65,14 @@ struct ExecutionListView: View {
                 .help("Clear host filter")
             }
 
-            if !store.currentArchives.isEmpty {
-                ToolbarIconButton(system: "archivebox", help: "Archived on this Mac (\(store.currentArchives.count))",
-                                  active: archiveOpen) { archiveOpen.toggle() }
-                    .popover(isPresented: $archiveOpen, arrowEdge: .bottom) {
-                        LocalArchiveView(store: store)
-                    }
+            ToolbarIconButton(system: "archivebox", help: "Archived on this Mac (\(store.currentArchives.count))",
+                              active: popover == .archive) {
+                popover = popover == .archive ? nil : .archive
             }
-            ToolbarIconButton(system: "line.3.horizontal.decrease", size: 13, help: "Filter",
-                              active: filterOpen || store.projectFilter != nil || store.hostFilter != nil) {
-                filterOpen.toggle()
-            }
-            .popover(isPresented: $filterOpen, arrowEdge: .bottom) {
-                FilterPopover(store: store)
+            ToolbarIconButton(system: "line.3.horizontal.decrease", size: 13, help: "Filter and sort",
+                              active: popover == .options || store.projectFilter != nil || store.hostFilter != nil
+                                || store.timeWindow != .day || store.executionOrder != .activity) {
+                popover = popover == .options ? nil : .options
             }
         }
         .padding(.horizontal, 16)
@@ -222,8 +218,8 @@ struct ExecutionRowView: View {
                         .font(DS.Font.meta)
                         .monospacedDigit()
                         .foregroundStyle(DS.Palette.textTertiary)
-                        .frame(minWidth: status.isAttention ? 58 : nil, alignment: .trailing)
-                        .opacity(hovering && status.isAttention ? 0 : 1)
+                        .frame(minWidth: status.canArchiveLocally ? 58 : nil, alignment: .trailing)
+                        .opacity(hovering && status.canArchiveLocally ? 0 : 1)
                 }
                 HStack(spacing: 8) {
                     HStack(spacing: 2) {
@@ -261,7 +257,7 @@ struct ExecutionRowView: View {
         }
         .buttonStyle(.plain)
         .overlay(alignment: .topTrailing) {
-            if hovering && status.isAttention {
+            if hovering && status.canArchiveLocally {
                 Button { store.archiveLocally(task) } label: {
                     Image(systemName: "archivebox")
                         .font(.system(size: 12))
@@ -281,7 +277,7 @@ struct ExecutionRowView: View {
             Button("Copy title") { copy(task.titleText) }
             Button("Copy execution ID") { copy(task.executionText) }
             Button("Copy summary") { copy(summaryText) }
-            if status.isAttention {
+            if status.canArchiveLocally {
                 Divider()
                 Button("Archive on this Mac") { store.archiveLocally(task) }
             }
@@ -320,63 +316,99 @@ struct FilterPopover: View {
     @ObservedObject var store: MonitorStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Filter executions")
-                .font(DS.Font.metaEmphasis)
-                .foregroundStyle(DS.Palette.textPrimary)
-                .padding(.bottom, 4)
-
-            row("Project") {
-                chip("All", on: store.projectFilter == nil) { store.projectFilter = nil }
-                ForEach(store.projectOptions, id: \.name) { option in
-                    chip(option.name, on: store.projectFilter == option.name) { store.projectFilter = option.name }
+        VStack(spacing: 0) {
+            HStack {
+                Text("View options").font(DS.Font.bodyEmphasis)
+                Spacer()
+                Button("Reset") {
+                    store.projectFilter = nil
+                    store.hostFilter = nil
+                    store.timeWindow = .day
+                    store.executionOrder = .activity
+                }
+                .buttonStyle(.plain)
+                .font(DS.Font.meta)
+                .foregroundStyle(DS.Palette.accent)
+            }
+            .padding(16)
+            Divider().overlay(DS.Palette.divider)
+            VStack(spacing: 12) {
+                option("Project", icon: "folder", value: store.projectFilter ?? "All projects") {
+                    Button("All projects") { store.projectFilter = nil }
+                    ForEach(store.projectOptions) { option in
+                        Button(option.name) { store.projectFilter = option.name }
+                    }
+                }
+                option("Host", icon: "desktopcomputer", value: store.hostFilter ?? "All hosts") {
+                    Button("All hosts") { store.hostFilter = nil }
+                    ForEach(store.hostOptions) { option in
+                        Button(option.name) { store.hostFilter = option.name }
+                    }
+                }
+                option("State", icon: "circle.dotted", value: store.view.label) {
+                    ForEach(MonitorView.allCases) { view in
+                        Button(view.label) { store.view = view }
+                    }
                 }
             }
-            row("Host") {
-                chip("All", on: store.hostFilter == nil) { store.hostFilter = nil }
-                ForEach(store.hostOptions, id: \.name) { option in
-                    chip(option.name, on: store.hostFilter == option.name) { store.hostFilter = option.name }
+            .padding(16)
+            Divider().overlay(DS.Palette.divider)
+            VStack(spacing: 12) {
+                option("Ordering", icon: "arrow.up.arrow.down", value: store.executionOrder.rawValue) {
+                    ForEach(ExecutionOrder.allCases) { order in
+                        Button(order.rawValue) { store.executionOrder = order }
+                    }
+                }
+                option("Time range", icon: "clock", value: timeLabel(store.timeWindow)) {
+                    ForEach(TimeWindow.allCases) { window in
+                        Button(timeLabel(window)) { store.timeWindow = window }
+                    }
                 }
             }
-            row("State") {
-                ForEach(MonitorView.allCases) { view in
-                    chip(view.label, on: store.view == view) { store.view = view }
-                }
-            }
-            row("Time") {
-                ForEach(TimeWindow.allCases) { window in
-                    chip(window.rawValue, on: store.timeWindow == window) { store.timeWindow = window }
-                }
-            }
+            .padding(16)
         }
-        .padding(12)
-        .frame(width: 280, alignment: .leading)
+        .foregroundStyle(DS.Palette.textPrimary)
+        .frame(width: 330)
+        .background(DS.Palette.surface)
     }
 
-    private func row<Content: View>(_ key: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(key)
-                .font(DS.Font.meta)
-                .foregroundStyle(DS.Palette.textTertiary)
-                .frame(width: 64, alignment: .leading)
-            FlowRow(spacing: 4) { content() }
+    private func timeLabel(_ window: TimeWindow) -> String {
+        switch window {
+        case .hour: return "Past hour"
+        case .day: return "Past 24 hours"
+        case .week: return "Past 7 days"
         }
-        .padding(.vertical, 2)
     }
 
-    private func chip(_ label: String, on: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(DS.Font.meta)
-                .foregroundStyle(on ? DS.Palette.accent : DS.Palette.textSecondary)
-                .padding(.horizontal, 6)
-                .frame(height: 20)
-                .background(RoundedRectangle(cornerRadius: 4)
-                    .fill(on ? DS.Palette.selection : .clear))
-                .overlay(RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(on ? DS.Palette.accent : DS.Palette.border, lineWidth: 1))
+    private func option<Content: View>(_ title: String, icon: String, value: String,
+                                      @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .frame(width: 16)
+                .foregroundStyle(DS.Palette.textSecondary)
+            Text(title).font(DS.Font.body)
+                .foregroundStyle(DS.Palette.textSecondary)
+            Spacer(minLength: 8)
+            Menu(content: content) {
+                HStack(spacing: 6) {
+                    Text(value).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium))
+                }
+                .font(DS.Font.body)
+                .padding(.horizontal, 10)
+                .frame(width: 150, height: 28)
+                .background(RoundedRectangle(cornerRadius: 7).fill(DS.Palette.surface))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(DS.Palette.border, lineWidth: 1))
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel(title)
+            .accessibilityValue(value)
         }
-        .buttonStyle(.plain)
     }
 }
 

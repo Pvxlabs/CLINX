@@ -58,6 +58,22 @@ enum TimeWindow: String, CaseIterable, Identifiable {
     }
 }
 
+enum ExecutionOrder: String, CaseIterable, Identifiable {
+    case activity = "Latest activity", newest = "Newest first", oldest = "Oldest first"
+    var id: String { rawValue }
+
+    func ordered(_ tasks: [ObservedTask]) -> [ObservedTask] {
+        tasks.sorted { lhs, rhs in
+            let left = self == .activity ? (lhs.lastProgressDate ?? lhs.startedDate) : lhs.startedDate
+            let right = self == .activity ? (rhs.lastProgressDate ?? rhs.startedDate) : rhs.startedDate
+            if left == right { return lhs.taskRef < rhs.taskRef }
+            guard let left else { return false }
+            guard let right else { return true }
+            return self == .oldest ? left < right : left > right
+        }
+    }
+}
+
 struct TaskGroup: Identifiable {
     let id: String
     let title: String?
@@ -95,6 +111,7 @@ final class MonitorStore: ObservableObject {
     @Published var projectFilter: String?
     @Published var hostFilter: String?
     @Published var timeWindow: TimeWindow = .day
+    @Published var executionOrder: ExecutionOrder = .activity
     @Published var settingsPresented = false
     @Published private(set) var selectedRef: String?
     @Published private(set) var localArchives: [LocalArchiveEntry]
@@ -141,7 +158,7 @@ final class MonitorStore: ObservableObject {
     }
 
     func archiveLocally(_ task: ObservedTask) {
-        guard status(of: task).isAttention, !isLocallyArchived(task) else { return }
+        guard status(of: task).canArchiveLocally, !isLocallyArchived(task) else { return }
         localArchives.append(LocalArchiveEntry(id: UUID(), source: archiveSource,
                                               taskRef: task.taskRef, executionRef: task.executionRef,
                                               title: task.titleText))
@@ -284,7 +301,7 @@ final class MonitorStore: ObservableObject {
 
     var visibleTasks: [ObservedTask] {
         let freshness = freshness
-        return filteredTasks.filter { view.matches($0.status(freshness: freshness)) }
+        return executionOrder.ordered(filteredTasks.filter { view.matches($0.status(freshness: freshness)) })
     }
 
     /// Sidebar counts and list rows use the same scope before selecting a status view.
@@ -363,6 +380,7 @@ final class MonitorStore: ObservableObject {
         projectFilter = entry.project
         hostFilter = entry.host
         timeWindow = entry.timeWindow
+        executionOrder = entry.order
         searchText = entry.search
         beginSelection(entry.taskRef, recordHistory: false)
     }
@@ -372,14 +390,15 @@ final class MonitorStore: ObservableObject {
         if let index = navigationIndex {
             let current = navigationHistory[index]
             if current.taskRef == ref && current.view == view && current.project == projectFilter
-                && current.host == hostFilter && current.timeWindow == timeWindow && current.search == searchText {
+                && current.host == hostFilter && current.timeWindow == timeWindow
+                && current.order == executionOrder && current.search == searchText {
                 return
             }
             navigationHistory = Array(navigationHistory.prefix(index + 1))
         }
         navigationHistory.append(NavigationEntry(taskRef: ref, title: task.titleText, status: status(of: task), view: view,
                                                 project: projectFilter, host: hostFilter,
-                                                timeWindow: timeWindow, search: searchText))
+                                                timeWindow: timeWindow, order: executionOrder, search: searchText))
         if navigationHistory.count > 50 { navigationHistory.removeFirst() }
         navigationIndex = navigationHistory.count - 1
     }

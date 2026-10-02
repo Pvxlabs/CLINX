@@ -41,11 +41,14 @@ enum MonitorStatus: String, CaseIterable, Identifiable {
     /// glyph, the stage chip and the trailing label — the row carries no coloured edge.
     var isAttention: Bool { self == .blocked || self == .failed }
 
+    /// Finished and attention-needed executions can be hidden locally and restored later.
+    var canArchiveLocally: Bool { isAttention || self == .completed || self == .cancelled }
+
     /// Glyph shape, matching the design's unique-shape-per-state rule.
     var glyph: StatusGlyph {
         switch self {
         case .running: return .spinner
-        case .blocked: return .octagon
+        case .blocked: return .circleMinus
         case .failed: return .squareCross
         case .completed: return .circleCheck
         case .cancelled: return .slash
@@ -56,7 +59,7 @@ enum MonitorStatus: String, CaseIterable, Identifiable {
 }
 
 enum StatusGlyph {
-    case spinner, octagon, squareCross, circleCheck, slash, triangle, dashedRing
+    case spinner, circleMinus, squareCross, circleCheck, slash, triangle, dashedRing
 }
 
 // MARK: - Observer → UI status mapping
