@@ -33,7 +33,7 @@ activated by the outer maintenance owner.
 
 ## Control-release handoff
 
-Source commit: `8a848bb2b41a1d939a5ba8e1b4c57b709128a9a3` on `main`, pushed to
+Source commit: `8a47e8a0db48c772fcc50f58eb180aa5d8a77fa3` on `main`, pushed to
 the registered `origin`. The previous source commit is
 `563e77cffc696d97b30be732cd4397550fb86e00`; restoring that commit is the source
 rollback boundary. No shared service restart or runtime activation is part of
