@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+launcher_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$launcher_dir/.." && pwd)
+if [ "$#" -eq 0 ]; then
+    set -- devices
+fi
+exec "${CLINX_PYTHON:-python3}" "$repo_root/bridge.py" --config "$repo_root/bridge.toml" "$@"
