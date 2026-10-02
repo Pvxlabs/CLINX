@@ -168,3 +168,37 @@ repository_origin = "git@github.com:Pvxlabs/CLINX.git"
 branch = "codex/local-discovery-v1"
 read_only = false
 unexpected_origin_policy = "FAIL"
+
+# Candidate-independent DATA controller boundary. Inputs are identities only;
+# artifact/plan content, migrations, scope and idempotency belong to ORION.
+# Files must already be staged by the authorized ORION artifact workflow.
+[host_executor.workflows.orion_data_deploy]
+identity = "ORION_DEPLOY"
+target = "orion-data"
+action = "apply"
+operation_class = "PRODUCTION_MUTATION"
+resource = "orion-data"
+argv = ["/usr/bin/ssh", "-T", "-o", "BatchMode=yes", "orion-data", "sudo", "-n", "/usr/local/bin/orion-data-node", "deploy", "{source_sha}", "--artifact-root", "/opt/orion-data-node/release/{scope}/{source_sha}", "--plan", "/opt/orion-data-node/release/plans/{plan_digest}.json", "--request-id", "{request_id}"]
+parameters.source_sha.format = "source_sha"
+parameters.scope.enum = ["DATA"]
+parameters.plan_digest.format = "sha256"
+parameters.request_id.format = "identity"
+
+[host_executor.workflows.orion_data_operation]
+identity = "ORION_DEPLOY"
+target = "orion-data"
+action = "operation"
+operation_class = "PRODUCTION_READ_ONLY"
+resource = "orion-data"
+argv = ["/usr/bin/ssh", "-T", "-o", "BatchMode=yes", "orion-data", "sudo", "-n", "/usr/local/bin/orion-data-node", "operation", "{request_id}"]
+parameters.request_id.format = "identity"
+
+[host_executor.workflows.orion_data_controller_adopt]
+identity = "ORION_CONTROLLER_ADOPT"
+target = "orion-data"
+action = "apply"
+operation_class = "PRODUCTION_MUTATION"
+resource = "orion-data"
+argv = ["/home/pvxlabs/dev/ORION/scripts/deploy/orion-deploy-controller-adopt", "--target", "data", "--host", "orion-data", "--source-sha", "{source_sha}", "--request-id", "{request_id}", "apply"]
+parameters.source_sha.format = "source_sha"
+parameters.request_id.format = "identity"

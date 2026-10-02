@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import hashlib
 from typing import Any
 
 from execution_semantics import RoutingIdentity
@@ -137,9 +138,12 @@ class ExecutionPolicy:
     required_capabilities: tuple[str, ...]
     operation_classes: tuple[str, ...]
     production_mutation_intent: bool = False
+    # None preserves historical V1 policies. An explicit tuple is an exact
+    # operation/target grant, never a wildcard or a controller parameter.
+    operation_scopes: tuple[tuple[str, str, str, str], ...] | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "contract": "CLINX_EXECUTION_POLICY_V1",
             "execution_surface": self.execution_surface,
             "required_capabilities": list(self.required_capabilities),
@@ -148,6 +152,18 @@ class ExecutionPolicy:
             "host_executor_default": False,
             "business_action_authority": False,
         }
+        if self.operation_scopes is not None:
+            value["operation_scopes"] = [dict(zip(
+                ("capability", "operation", "operation_class", "target"), scope
+            )) for scope in self.operation_scopes]
+        return value
+
+    def permits_operation(self, capability: str, operation: str,
+                          operation_class: str, target: str = "") -> bool:
+        return self.permits(operation_class, capability) and (
+            self.operation_scopes is None or
+            (capability, operation, operation_class, target) in self.operation_scopes
+        )
 
     def to_json(self) -> str:
         return json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":"))
@@ -188,6 +204,7 @@ def build_execution_policy(
     production_mutation_intent: bool = False,
     network_access: bool = False,
     development_workspace: bool = False,
+    operation_scopes: Any = None,
 ) -> ExecutionPolicy:
     if not isinstance(network_access, bool):
         raise ExecutionPolicyError("network_access must be a boolean")
@@ -230,7 +247,37 @@ def build_execution_policy(
             raise ExecutionPolicyError(
                 "PRODUCTION_MUTATION requires explicit production_mutation_intent=true"
             )
-    return ExecutionPolicy(surface, capabilities, classes, production_mutation_intent)
+    scopes = normalize_operation_scopes(operation_scopes)
+    if scopes is not None and any(cap not in capabilities or cls not in classes
+                                  for cap, _op, cls, _target in scopes):
+        raise ExecutionPolicyError("operation scope exceeds capability/class authority")
+    return ExecutionPolicy(surface, capabilities, classes, production_mutation_intent, scopes)
+
+
+def normalize_operation_scopes(values: Any) -> tuple[tuple[str, str, str, str], ...] | None:
+    if values is None:
+        return None
+    if not isinstance(values, (list, tuple)) or len(values) > 128:
+        raise ExecutionPolicyError("operation_scopes must be a bounded array")
+    result = set()
+    for scope in values:
+        if not isinstance(scope, dict) or set(scope) != {"capability", "operation", "operation_class", "target"}:
+            raise ExecutionPolicyError("operation scope requires capability, operation, operation_class, target")
+        if any(not isinstance(v, str) or len(v) > 160 or any(ord(c) < 32 for c in v)
+               for v in scope.values()):
+            raise ExecutionPolicyError("invalid operation scope identity")
+        cap, = _normalized_values("required_capabilities", [scope["capability"]], HOST_CAPABILITIES)
+        cls, = _normalized_values("operation_classes", [scope["operation_class"]], OPERATION_CLASSES)
+        if not scope["operation"].strip() or "*" in scope["operation"] or "*" in scope["target"]:
+            raise ExecutionPolicyError("operation scopes require exact identities")
+        result.add((cap, scope["operation"], cls, scope["target"]))
+    return tuple(sorted(result))
+
+
+def policy_identity(policy_json: str, route_json: str, version: int = 0) -> str:
+    """CAS identity includes network/route and generation, including legacy null policy."""
+    return hashlib.sha256(json.dumps([json.loads(policy_json), json.loads(route_json), version],
+                                    sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def build_development_policy(*, network_access: bool = False) -> ExecutionPolicy:
@@ -256,7 +303,7 @@ def parse_execution_policy(value: str | None) -> ExecutionPolicy | None:
         "host_executor_default",
         "business_action_authority",
     }
-    if set(raw) != expected:
+    if set(raw) - {"operation_scopes"} != expected:
         raise ExecutionPolicyError("non-canonical execution policy")
     if raw.get("contract") != "CLINX_EXECUTION_POLICY_V1":
         raise ExecutionPolicyError("unsupported execution policy contract")
@@ -271,6 +318,7 @@ def parse_execution_policy(value: str | None) -> ExecutionPolicy | None:
         operation_classes=raw.get("operation_classes"),
         production_mutation_intent=raw.get("production_mutation_intent"),
         network_access=network_access,
+        operation_scopes=raw.get("operation_scopes"),
     )
 
 

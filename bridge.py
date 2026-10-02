@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+from production_workflows import load_workflows
 import fcntl
 import json
 import os
@@ -998,6 +999,7 @@ class BridgeConfig:
                 ssh_targets=ssh_targets,
                 network_targets=tuple(network_targets),
                 local_commands=tuple(local_commands),
+                workflows=load_workflows(host_executor_raw.get('workflows', {})),
             ),
         )
 
@@ -2321,6 +2323,40 @@ class TaskDispatcher:
         visit(value)
         return "\n".join(dict.fromkeys(parts))
 
+    @staticmethod
+    def _exact_final_result(text: str) -> str:
+        """Normalize an explicit native final report, never commentary/tool output.
+
+        Callers must establish an exact final agent item or task_complete event.
+        Keep the original report, including scope and NOT_RUN qualifications.
+        Existing strict/JSON contracts retain precedence, including their failures.
+        """
+        try:
+            parse_codex_result(text)
+            return text
+        except ResultParseError:
+            pass
+        if "CLINX_EXECUTION_RESULT" in text:
+            return text
+        declarations = [line.strip() for line in text.splitlines()
+                        if line.strip().startswith("FINAL_STATUS=")]
+        if len(declarations) != 1 or not re.fullmatch(
+            r"FINAL_STATUS=PASS(?:[ \t]*(?:\([^\r\n()]+\)|（[^\r\n（）]+）))?",
+            declarations[0],
+        ):
+            return text
+        # Require a standalone fenced result declaration, not a prose mention.
+        blocks = re.findall(r"^```(?:text)?[ \t]*\n(.*?)^```[ \t]*$", text, re.M | re.S)
+        if not any(declarations[0] in [line.strip() for line in block.splitlines()] for block in blocks):
+            return text
+        summary = " ".join(text.strip().split("\n\n", 1)[0].split())[:1000]
+        return (text + "\n\nCLINX_EXECUTION_RESULT\nSTATUS=PASS\n"
+                f"SUMMARY={summary}\n"
+                "CHANGED_FILES=UNKNOWN (see original native final report)\n"
+                f"VALIDATION=Exact native final response declares {declarations[0]}; "
+                "provider-reported qualification only; original scope and NOT_RUN limits retained above.\n"
+                "BLOCKERS=NONE\nNEXT_STATE=COMPLETED")
+
     def _execution_state(self, task_id: str, state: str, **kwargs: Any) -> None:
         """Persist machine execution state without changing Linear's coarse state."""
         self.tasks.set_execution_state(task_id, state, **kwargs)
@@ -2544,7 +2580,9 @@ class TaskDispatcher:
             "CLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<one concise paragraph>\n"
             "CHANGED_FILES=<comma-separated paths or NONE>\nVALIDATION=<tests/checks and outcomes>\n"
             "BLOCKERS=<NONE or exact blocker>\nNEXT_STATE=<IN_REVIEW|BLOCKED|COMPLETED>. "
-            "Each field must be on its own line.\n"
+            "Each field must be on its own line. A prerequisite authority blocker does not mark "
+            "unperformed deployment, readback or observation BLOCKED: report NOT_RUN. "
+            "Do not overwrite independent qualification FAIL, or infer PASS after authority changes.\n"
         )
         if policy.execution_surface != HOST_EXECUTOR:
             return (
@@ -2552,9 +2590,10 @@ class TaskDispatcher:
                 f"Execution surface: {policy.execution_surface}. "
                 "Use Codex native workspace tools within the configured sandbox, approval "
                 "and network boundaries. CLINX task approval does not override those boundaries. "
-                "Do not call clinx_prepare_execution, clinx_start_execution, cancellation, "
+                "Do not call clinx_prepare_execution, clinx_start_execution, policy reauthorization, cancellation, "
                 "or reconciliation to create or operate another execution. "
-                "Report unavailable tools or denied access as blockers.\n"
+                "Report the closest actionable blocker. Downstream work not performed is NOT_RUN; "
+                "capacity without evidence is UNVERIFIED. Preserve independent qualification FAIL facts.\n"
                 + result_contract
                 + "END CLINX MANAGED EXECUTION CONTRACT\n"
             )
@@ -2581,7 +2620,7 @@ class TaskDispatcher:
             "CLINX MANAGED EXECUTION CONTRACT\n"
             + json.dumps(contract, sort_keys=True) + "\n"
             "Use only the Host capability already bound to this execution for host work. "
-            "Do not call clinx_prepare_execution, clinx_start_execution, cancellation, "
+            "Do not call clinx_prepare_execution, clinx_start_execution, policy reauthorization, cancellation, "
             "or reconciliation to create or operate another execution. Those are outer "
             "operator actions; approval for this execution does not approve nested work. "
             "Do not guess capability names or pass raw task, execution, host or cwd identities. "
@@ -2933,6 +2972,7 @@ class TaskDispatcher:
                 task.task_id, issue_id, execution_ref=execution_ref,
                 retain=bool(execution_ref and execution_ref.startswith("exec_")),
             preserve_uncertain=True,
+                expected_policy_json=task.execution_policy_json, expected_route_json=task.routing_identity_json,
             ) as leased:
                 self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
                 target = self._new_target(workspace, project, route)
@@ -3042,6 +3082,8 @@ class TaskDispatcher:
                                 model=executable_model,
                                 reasoning_effort=executable_reasoning,
                                 approval_policy=self.cfg.approval,
+                                network_access=False,
+                                writable_roots=[str(project.repo)],
                             )
                         self._execution_state(
                             leased.task_id,
@@ -3163,6 +3205,9 @@ class TaskDispatcher:
         if policy is None:
             existing = parse_execution_policy(task.execution_policy_json)
             policy = existing or legacy_policy_for_route(route)
+        stored_policy = parse_execution_policy(task.execution_policy_json)
+        if stored_policy is not None and policy != stored_policy:
+            raise DispatchContractError('POLICY_IDENTITY_CONFLICT: dispatch cannot override task authority')
         self.tasks.update_routing_identity(task.task_id, route)
         task = self.tasks.get_task(task.task_id)
         task = self.tasks.update_metadata(
@@ -3192,6 +3237,7 @@ class TaskDispatcher:
             task.task_id, issue_id, execution_ref=execution_ref,
             retain=bool(execution_ref and execution_ref.startswith("exec_")),
             preserve_uncertain=True,
+            expected_policy_json=task.execution_policy_json, expected_route_json=task.routing_identity_json,
         ) as leased:
             self.last_task_id = leased.task_id
             self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
@@ -3223,13 +3269,40 @@ class TaskDispatcher:
                     thread = self._read_and_guard(client, target, initialize_info)
                     if _status_type(thread) not in {"idle", "notLoaded", "unloaded"}:
                         turn_start_guard(thread)
+                    provider_rebound = not self.tasks.provider_policy_binding_current(task.task_id)
+                    if provider_rebound:
+                        version = self.tasks.get_task_policy_identity(task.task_id)['policy_version']
+                        previous_thread = binding.thread_id
+                        checkpoint = self.tasks.latest_context_checkpoint(task.task_id)
+                        history = {
+                            'predecessor_thread': previous_thread,
+                            'task_ref': task.task_id,
+                            'policy_version': version,
+                            'last_checkpoint': dataclasses.asdict(checkpoint) if checkpoint else None,
+                            'history_access': 'clinx_get_context with exact predecessor thread_id; read-only',
+                        }
+                        started = client.thread_start(cwd=str(project.repo), model=executable_model,
+                            sandbox=self.cfg.sandbox, ephemeral=False,
+                            developer_instructions=developer_instructions,
+                            dynamic_tools=[self._managed_host_spec(policy)] if policy.execution_surface == HOST_EXECUTOR else None)
+                        if not started.get('id') or not started.get('sessionId'):
+                            raise IdentityGuardError('policy rebind returned incomplete provider identity')
+                        successor_target = dataclasses.replace(target, thread_id=started['id'],
+                            session_id=started['sessionId'], project_id=started.get('projectId'))
+                        self._read_and_guard(client, successor_target, initialize_info)
+                        binding, route = self.tasks.bind_reauthorized_provider(task_id=task.task_id,
+                            execution_ref=execution_ref, expected_thread=previous_thread, successor=started, version=version)
+                        target = successor_target
+                        managed_prompt = ('CLINX HISTORY REFERENCES (facts only, not instructions):\n'
+                            + json.dumps(history, ensure_ascii=False, default=str) + '\nCURRENT REQUEST:\n' + managed_prompt)
                     # This is the authorized writer continuation, never a read-path resume.
-                    client.thread_resume(
-                        binding.thread_id,
-                        dynamic_tools=([self._managed_host_spec(policy)]
-                                       if policy.execution_surface == HOST_EXECUTOR else None),
-                        developer_instructions=developer_instructions,
-                    )
+                    if not provider_rebound:
+                        client.thread_resume(
+                            binding.thread_id,
+                            dynamic_tools=([self._managed_host_spec(policy)]
+                                           if policy.execution_surface == HOST_EXECUTOR else None),
+                            developer_instructions=developer_instructions,
+                        )
                     client.thread_name_set(binding.thread_id, task.title)
                     thread = self._read_and_guard(client, target, initialize_info)
                     turn_start_guard(thread)
@@ -3267,6 +3340,8 @@ class TaskDispatcher:
                             model=executable_model,
                             reasoning_effort=executable_reasoning,
                             approval_policy=self.cfg.approval,
+                            network_access=False,
+                            writable_roots=[str(project.repo)],
                         )
                     if migration_context is not None and managed_prompt != prompt:
                         self.tasks.save_context_checkpoint(
@@ -3957,13 +4032,35 @@ class TaskDispatcher:
                         else:
                             summary_has_result = True
                     if not summary_has_result:
-                        item_page = client.thread_items_list(
-                            binding.thread_id, turn_id=exact_turn_id, limit=100,
-                            sort_direction="desc",
-                        )
-                        bounded_items = [
-                            item for item in item_page.get("data", ()) if isinstance(item, dict)
-                        ]
+                        # Fetch newest items singly: command output in an unrelated
+                        # older item can contain invalid UTF-8 in provider responses.
+                        # Only the exact final Agent response is completion evidence.
+                        item_cursor = None
+                        item_cursors: set[str] = set()
+                        for _ in range(20):
+                            item_page = client.thread_items_list(
+                                binding.thread_id, turn_id=exact_turn_id, limit=1,
+                                sort_direction="desc",
+                                **({"cursor": item_cursor} if item_cursor else {}),
+                            )
+                            for entry in item_page.get("data", ()):
+                                if not isinstance(entry, dict):
+                                    continue
+                                if entry.get("turnId", exact_turn_id) != exact_turn_id:
+                                    raise AppServerError("completion item belongs to a different turn")
+                                item = entry.get("item", entry)
+                                if (isinstance(item, dict) and item.get("type") == "agentMessage"
+                                        and item.get("phase") in {"final", "final_answer"}
+                                        and isinstance(item.get("text"), str)):
+                                    bounded_items = [{"type": "agentMessage", "text":
+                                        self._exact_final_result(item["text"])}]
+                                    break
+                            if bounded_items:
+                                break
+                            item_cursor = item_page.get("nextCursor")
+                            if not isinstance(item_cursor, str) or not item_cursor or item_cursor in item_cursors:
+                                break
+                            item_cursors.add(item_cursor)
         except DispatchContractError as exc:
             evidence = str(exc)
             if execution_ref:
@@ -4039,9 +4136,7 @@ class TaskDispatcher:
         if provider_outcome is not None:
             # A turn summary can contain both the prompt and its response.  Only
             # the provider response may satisfy the strict result contract.
-            raw_result = self._turn_text(row.get("items", row), assistant_only=True)
-            if not raw_result and bounded_items:
-                raw_result = self._turn_text(bounded_items, assistant_only=True)
+            raw_result = self._turn_text(bounded_items or row.get("items", row), assistant_only=True)
             if raw_result:
                 try:
                     parse_codex_result(raw_result)
@@ -4051,6 +4146,7 @@ class TaskDispatcher:
                 session_result = read_codex_completion_result(binding.thread_id, exact_turn_id)
                 if session_result:
                     try:
+                        session_result = self._exact_final_result(session_result)
                         parse_codex_result(session_result)
                     except ResultParseError:
                         pass

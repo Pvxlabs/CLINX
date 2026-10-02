@@ -77,20 +77,63 @@ def operation_catalog(config):
                 classes=target.operation_classes, targets=[{'identity': target.alias,
                 'operation_classes': list(target.operation_classes)}], mutating=mutating,
                 effects='REGISTERED_LOCAL_COMMAND' if mutating else 'LOCAL_READ')
+    for workflow in config.workflows:
+        operations = catalog['LOCAL_HOST_PROCESS']
+        existing = operations.get(workflow.operation)
+        target = {'identity': workflow.target, 'operation_classes': [workflow.operation_class],
+                  'workflow': workflow.identity, 'parameter_schema': workflow.parameter_schema}
+        if existing:
+            if workflow.operation_class not in existing['operation_classes']:
+                existing['operation_classes'].append(workflow.operation_class)
+            existing['registered_targets'].append(target)
+            continue
+        add('LOCAL_HOST_PROCESS', (workflow.operation,), classes=(workflow.operation_class,),
+            required=('target', 'parameters'), targets=[target],
+            mutating=workflow.operation_class == PRODUCTION_MUTATION, effects='CONTROLLER_OWNED_WORKFLOW')
+        operations[workflow.operation]['argument_schema']['properties']['parameters'] = {'type': 'object'}
+    for operations in catalog.values():
+        for spec in operations.values():
+            spec.update(implemented=True, client_exposed='NOT_OBSERVED', runtime_health='NOT_PROBED', task_authorized=None)
+            for target in spec.get('registered_targets', []):
+                target['task_target_authorized'] = None
     return catalog
 
 
 def executable_contract(config, probes=None, policy=None):
     catalog = operation_catalog(config)
+    for cap, operations in catalog.items():
+        for name, spec in operations.items():
+            targets = spec.get('registered_targets', [])
+            spec['implemented'] = True
+            spec['client_exposed'] = 'NOT_OBSERVED'
+            spec['runtime_health'] = 'NOT_PROBED'
+            spec['task_authorized'] = None if policy is None else any(
+                policy.permits_operation(cap, name, cls, target.get('identity', ''))
+                and (not name.startswith('workflow:') or policy.operation_scopes is not None)
+                for target in (targets or [{}]) for cls in spec['operation_classes'])
+            for target in targets:
+                target['task_target_authorized'] = None if policy is None else any(
+                    policy.permits_operation(cap, name, cls, target['identity'])
+                    and (not name.startswith('workflow:') or policy.operation_scopes is not None)
+                    for cls in target['operation_classes'])
     return {
         'contract': 'CLINX_HOST_EXECUTION_CONTRACT_V2',
         'authority_granted': False,
+        'authority_granted_meaning': 'DISCOVERY_DOES_NOT_GRANT_AUTHORITY; legacy field, not task authorization',
+        'effective_authority': {'source': 'SEALED_EXECUTION_POLICY' if policy else 'NO_TASK_SELECTED',
+            'task_authorized': None if policy is None else True,
+            'production_mutation_authorized': None if policy is None else
+                PRODUCTION_MUTATION in policy.operation_classes and policy.production_mutation_intent,
+            'operation_scopes': None if policy is None else policy.as_dict().get('operation_scopes'),
+            'target_authorization': 'CHECK_EXACT_OPERATION_SCOPE_AND_REGISTERED_TARGET',
+            'runtime_health': 'NOT_PROBED', 'client_exposure': 'NOT_OBSERVED'},
         'trusted_workspace_roots': [str(root) for root in config.trusted_workspace_roots],
         'path_authority': {
             'resolution': 'Path.resolve',
             'relative_base': 'registered_task_cwd',
             'unconfigured_roots': 'REGISTERED_PROJECT_ONLY',
             'production_authority_granted': False,
+            'production_authority_granted_meaning': 'PATH_ACCESS_ALONE_GRANTS_NO_PRODUCTION_AUTHORITY',
             'git_write_authority': 'REGISTERED_TASK_ORIGIN_AND_BRANCH',
         },
         'constraints': 'Probe availability does not grant authority or prove execution health. '

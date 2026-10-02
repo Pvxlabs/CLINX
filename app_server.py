@@ -1734,10 +1734,10 @@ class CodexAppServerClient:
         model: str | None = None,
         reasoning_effort: str | None = None,
         approval_policy: str | None = None,
-        network_access: bool = False,
+        network_access: bool | None = None,
         writable_roots: list[str] | None = None,
     ) -> TurnStartInfo:
-        if not isinstance(network_access, bool):
+        if network_access is not None and not isinstance(network_access, bool):
             raise AppServerSandboxPolicyError("network_access must be a boolean")
         params: dict[str, Any] = {
             "threadId": thread_id,
@@ -1750,7 +1750,7 @@ class CodexAppServerClient:
             params["effort"] = reasoning_effort
         if approval_policy is not None:
             params["approvalPolicy"] = approval_policy
-        if network_access:
+        if network_access is not None:
             roots = writable_roots if writable_roots is not None else [cwd]
             if not isinstance(cwd, str) or not os.path.isabs(cwd):
                 raise AppServerSandboxPolicyError(
@@ -1767,7 +1767,7 @@ class CodexAppServerClient:
             params["sandboxPolicy"] = {
                 "type": "workspaceWrite",
                 "writableRoots": roots,
-                "networkAccess": True,
+                "networkAccess": network_access,
             }
         try:
             result = self._request("turn/start", params)

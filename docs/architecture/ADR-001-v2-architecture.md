@@ -457,3 +457,13 @@ The repository's existing test suite remains the regression baseline:
 ```
 
 Passing the existing suite confirms that this documentation-only change does not alter checked-in runtime behavior. It does not by itself qualify the proposed V2 scheduler, event store, worker recovery, provider adapters, or Rust runtime candidates.
+
+
+## Execution authority implementation (2026-10-02)
+
+The live V1 execution owner now supports append-only policy versions on the same
+Task, CAS reauthorization, structured operation/target requirements and registered
+parameterized controller workflows. See [Execution authority](../EXECUTION_AUTHORITY.md)
+for the public MCP contract, Provider schema rebinding, resource fences and
+capability/evidence distinctions. This reuses the existing execution, registry,
+Host, delivery and finalizer owners; it introduces no second deployment controller.
