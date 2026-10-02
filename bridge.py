@@ -2941,6 +2941,10 @@ class TaskDispatcher:
                 policy = parse_execution_policy(policy)
             if policy is None:
                 policy = self._default_project_policy(project, network_access=network_access)
+            try:
+                policy.validate_new_task_authority()
+            except ExecutionPolicyError as exc:
+                raise DispatchContractError(str(exc)) from exc
             if policy.execution_surface == HOST_EXECUTOR and not execution_ref:
                 # Host operations need a durable opaque parent reference even
                 # when the caller did not originate from a Linear issue.

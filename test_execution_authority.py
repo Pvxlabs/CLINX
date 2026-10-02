@@ -192,6 +192,58 @@ def test_registered_path_templates_cannot_inject_path_or_shell(tmp_path):
         workflow.render({**params,'host':'orion-core'})
 
 
+@pytest.mark.parametrize('operation_class', ['PRODUCTION_READ_ONLY', 'PRODUCTION_MUTATION'])
+@pytest.mark.parametrize('scopes', [None, []])
+def test_new_production_task_cannot_omit_exact_scope(authority, operation_class, scopes):
+    integration, registry, _, root, dispatcher = authority
+    policy = build_execution_policy(required_capabilities=['LOCAL_HOST_PROCESS'],
+        operation_classes=[operation_class], production_mutation_intent=True,
+        operation_scopes=scopes)
+    # Legacy snapshots must still parse; only new admission is tightened.
+    from execution_policy import parse_execution_policy
+    assert parse_execution_policy(policy.to_json()) == policy
+    with pytest.raises(M9IntegrationError, match='PRODUCTION_SCOPE_REQUIRED'):
+        integration.prepare_execution(approved=True, task_action='create', host='p620',
+            project='pilot', title='Unbounded production', prompt='Explicit production request',
+            required_capabilities=['LOCAL_HOST_PROCESS'], operation_classes=[operation_class],
+            production_mutation_intent=True, requested_operations=scopes)
+    with pytest.raises(bridge.DispatchContractError, match='PRODUCTION_SCOPE_REQUIRED'):
+        dispatcher.dispatch(project_ref='pilot', host='p620', project_mode='existing',
+            task_mode='new', task_id=None, prompt='Explicit production request',
+            title='Unbounded production', summary=None, model=None, reasoning_effort=None,
+            execution_policy=policy)
+    result = ClinxMCPServer(integration).handle({'id': 1, 'method': 'tools/call', 'params': {
+        'name': 'clinx_prepare_execution', 'arguments': dict(approved=True, task_action='create',
+            host='p620', project='pilot', title='Unbounded production', prompt='Production request',
+            required_capabilities=['LOCAL_HOST_PROCESS'], operation_classes=[operation_class],
+            production_mutation_intent=True)}})['result']
+    assert result['isError']
+    assert result['structuredContent']['failure_code'] == 'PRODUCTION_SCOPE_REQUIRED'
+    assert result['structuredContent']['root_blocker']['layer'] == 'AUTHORITY'
+    assert result['structuredContent']['downstream']['DEPLOYMENT'] == 'NOT_RUN'
+    with registry._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM tasks').fetchone()[0] == 1
+        assert conn.execute('SELECT count(*) FROM prepared_executions').fetchone()[0] == 0
+        assert conn.execute('SELECT count(*) FROM executions').fetchone()[0] == 0
+    assert not (root/'calls.jsonl').exists()
+
+
+def test_new_production_preparation_preserves_exact_target_scope(authority):
+    integration, registry, _, root, _ = authority
+    result = integration.prepare_execution(approved=True, task_action='create', host='p620',
+        project='pilot', title='Bounded production', prompt='Approved safe DATA workflow',
+        summary='Prepare one approved safe DATA workflow without executing it',
+        production_mutation_intent=True, requested_operations=[scope()])
+    from execution_policy import parse_execution_policy
+    prepared = registry.verify_prepared_execution(result['prepared_execution_ref'])
+    policy = parse_execution_policy(prepared.execution_policy_json)
+    assert policy.permits_operation('LOCAL_HOST_PROCESS', 'workflow:SAFE_DEPLOY:apply',
+        'PRODUCTION_MUTATION', 'safe-data')
+    assert not policy.permits_operation('LOCAL_HOST_PROCESS', 'workflow:SAFE_DEPLOY:apply',
+        'PRODUCTION_MUTATION', 'core')
+    assert not (root/'calls.jsonl').exists()
+
+
 def test_resource_uncertainty_fences_another_workspace(authority, tmp_path):
     integration, registry, task, root, dispatcher = authority
     apply_change(integration, prepare_change(integration,task))

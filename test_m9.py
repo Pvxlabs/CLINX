@@ -312,7 +312,7 @@ class M9MCPTests(unittest.TestCase):
 
     def test_initialize_and_tool_discovery_are_deterministic(self):
         initialized = self.server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
-        self.assertEqual(initialized["result"]["serverInfo"], {"name": "clinx", "version": "m12"})
+        self.assertEqual(initialized["result"]["serverInfo"], {"name": "clinx", "version": "execution-authority-v1"})
         listed = self.server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = [tool["name"] for tool in listed["result"]["tools"]]
         self.assertEqual(names, list(DEFAULT_TOOL_NAMES))
@@ -332,7 +332,7 @@ class M9MCPTests(unittest.TestCase):
                 "_meta": {
                     "io.modelcontextprotocol/serverInfo": {
                         "name": "clinx",
-                        "version": "m12",
+                        "version": "execution-authority-v1",
                     },
                 },
                 "instructions": MCP_INSTRUCTIONS,

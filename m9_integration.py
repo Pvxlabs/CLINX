@@ -1724,6 +1724,7 @@ class ClinxIntegration:
                     network_access=network_access,
                     operation_scopes=requested_operations,
                 )
+                prepared_policy.validate_new_task_authority()
             except ExecutionPolicyError as exc:
                 raise M9IntegrationError(str(exc)) from exc
             if not hasattr(self.dispatcher, "resolve_project"):
