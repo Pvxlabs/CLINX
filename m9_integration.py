@@ -985,6 +985,20 @@ class ClinxIntegration:
             "read_only": False,
         }
 
+    def reconcile_host_delivery(self, *, execution_ref: str, tool_call_id: str,
+                                proof: dict[str, Any]) -> dict[str, Any]:
+        """Outer maintenance entry for one exact persisted delivery failure."""
+        if (not isinstance(execution_ref, str) or not execution_ref.startswith('exec_')
+                or not isinstance(tool_call_id, str) or not tool_call_id.strip()
+                or not isinstance(proof, dict)):
+            raise M9IntegrationError('exact execution_ref, tool_call_id and proof are required')
+        recover = getattr(self.dispatcher, 'recover_execution_completion', None)
+        if not callable(recover):
+            raise M9IntegrationError('delivery reconciliation maintenance path is unavailable')
+        return recover(execution_ref, delivery_reconciliation={
+            'tool_call_id': tool_call_id, 'proof': proof,
+        })
+
     def get_context(
         self,
         *,
@@ -2410,6 +2424,10 @@ def clinx_start_execution(integration: ClinxIntegration, **kwargs: Any) -> dict[
 
 def clinx_cancel_execution(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
     return integration.cancel_execution(**kwargs)
+
+
+def clinx_reconcile_host_delivery(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:
+    return integration.reconcile_host_delivery(**kwargs)
 
 
 def clinx_execute(integration: ClinxIntegration, **kwargs: Any) -> dict[str, Any]:

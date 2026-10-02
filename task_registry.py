@@ -1079,6 +1079,7 @@ class TaskRegistry:
                     capability TEXT NOT NULL,
                     operation TEXT NOT NULL,
                     argv_json TEXT NOT NULL,
+                    mutating INTEGER,
                     cwd_identity TEXT NOT NULL,
                     target_identity TEXT,
                     started_at TEXT NOT NULL,
@@ -1125,6 +1126,8 @@ class TaskRegistry:
             host_columns = {row[1] for row in conn.execute("PRAGMA table_info(host_executions)")}
             if "tool_call_id" not in host_columns:
                 conn.execute("ALTER TABLE host_executions ADD COLUMN tool_call_id TEXT")
+            if "mutating" not in host_columns:
+                conn.execute("ALTER TABLE host_executions ADD COLUMN mutating INTEGER")
             execution_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(executions)")
             }
@@ -1674,6 +1677,65 @@ class TaskRegistry:
         if values is not None:
             values.pop('policy_version', None)
         return ConversationBindingLineage(**values) if values is not None else None
+
+    def provider_dynamic_tool_upgrade_required(self, task_id: str) -> bool:
+        """Return true only for a persisted exact Provider tool rejection."""
+        with self._connect() as conn:
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE name='host_tool_deliveries'").fetchone() is None:
+                return False
+            return conn.execute("""SELECT 1 FROM host_tool_deliveries d
+                JOIN execution_history h ON h.execution_ref=d.execution_ref
+                WHERE h.task_id=? AND d.delivery_state='FAILED'
+                  AND d.execution_state='COMMAND_EXECUTED_RESULT_DELIVERY_FAILED'
+                  AND d.provider_item_json IS NOT NULL
+                  AND d.provider_item_json LIKE '%Unsupported dynamic tool namespace%'
+                  AND NOT EXISTS (SELECT 1 FROM conversation_binding_lineage l WHERE l.task_id=h.task_id)
+                  AND NOT EXISTS (SELECT 1 FROM conversation_policy_lineage l WHERE l.task_id=h.task_id)
+                  LIMIT 1""", (task_id,)).fetchone() is not None
+
+    def bind_dynamic_tool_upgrade(self, *, task_id: str, execution_ref: str,
+                                  expected_thread: str, successor: dict[str, Any]) -> ConversationBinding:
+        """Bind a successor Provider thread under the active Task lease."""
+        required = ('id', 'sessionId')
+        if any(not isinstance(successor.get(key), str) or not successor[key] for key in required):
+            raise TaskRegistryError('provider successor identity is incomplete')
+        stamp = _now()
+        with self._connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            task = conn.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+            old = conn.execute('SELECT * FROM conversation_bindings WHERE task_id=?', (task_id,)).fetchone()
+            execution = conn.execute('SELECT * FROM executions WHERE task_id=? AND execution_ref=?',
+                                      (task_id, execution_ref)).fetchone()
+            if (task is None or old is None or old['thread_id'] != expected_thread
+                    or execution is None or execution['stage'] not in ('CLAIMED', 'DISPATCHING')
+                    or not conn.execute('SELECT 1 FROM worktree_leases WHERE task_id=? AND execution_ref=?',
+                                        (task_id, execution_ref)).fetchone()):
+                raise TaskRegistryError('PROVIDER_SCHEMA_UPGRADE_OWNER_CONFLICT')
+            if conn.execute('SELECT 1 FROM conversation_binding_lineage WHERE task_id=?', (task_id,)).fetchone():
+                raise TaskRegistryError('PROVIDER_SCHEMA_UPGRADE_ALREADY_BOUND')
+            if conn.execute('SELECT 1 FROM conversation_bindings WHERE thread_id=?', (successor['id'],)).fetchone():
+                raise TaskRegistryError('PROVIDER_SCHEMA_UPGRADE_THREAD_CONFLICT')
+            conn.execute("""INSERT INTO conversation_binding_lineage
+                (task_id,predecessor_thread,successor_thread,migration_reason,migrated_at,
+                 predecessor_session_id,predecessor_project_id,predecessor_app_server_version)
+                VALUES (?,?,?,?,?,?,?,?)""", (task_id, old['thread_id'], successor['id'],
+                'DYNAMIC_TOOL_SCHEMA_UPGRADE', stamp, old['session_id'], old['project_id'],
+                old['app_server_version']))
+            conn.execute("""UPDATE conversation_bindings SET thread_id=?,session_id=?,project_id=?,
+                bound_at=?,last_verified_at=?,app_server_version=? WHERE task_id=?""",
+                (successor['id'], successor['sessionId'], successor.get('projectId'), stamp, stamp,
+                 successor.get('appServerVersion'), task_id))
+            route = parse_routing_identity(task['routing_identity_json'])
+            if route is not None:
+                from execution_semantics import ConversationIdentity
+                route = dataclasses.replace(route, conversation=ConversationIdentity(successor['id'], 'BOUND'))
+                conn.execute('UPDATE tasks SET routing_identity_json=?,updated_at=? WHERE task_id=?',
+                             (route.to_json(), stamp, task_id))
+                conn.execute('UPDATE executions SET routing_identity_json=? WHERE task_id=? AND execution_ref=?',
+                             (route.to_json(), task_id, execution_ref))
+        binding = self.get_binding(task_id)
+        assert binding is not None
+        return binding
 
     def migrate_conversation_binding(
         self, *, task_id: str, successor_thread: str, successor_session_id: str,
@@ -2686,6 +2748,7 @@ class TaskRegistry:
         failure_code: str | None = None,
         evidence: str | None = None,
         retry_required: bool | None = None,
+        _delivery_reconciled: bool = False,
     ) -> TaskRecord:
         """Persist authoritative terminal evidence and release its lease."""
         if state not in {
@@ -2695,7 +2758,7 @@ class TaskRegistry:
         if state != "RECOVERY_REQUIRED":
             from execution_liveness import release_allowed
             with self._connect() as conn:
-                if not release_allowed(conn, execution_ref):
+                if not _delivery_reconciled and not release_allowed(conn, execution_ref):
                     raise TaskRegistryError("terminal reconciliation requires fresh exact owner evidence")
         active = self.get_active_execution(execution_ref)
         if active is None:
@@ -2765,9 +2828,57 @@ class TaskRegistry:
         # Keep the terminal execution row so its creation-time routing
         # identity remains available for status/readback.  Only the mutable
         # worktree lease is released here.
+        if _delivery_reconciled:
+            with self._connect() as conn:
+                conn.execute("UPDATE executions SET stage=?,execution_state=? WHERE execution_ref=?",
+                             (state, state, execution_ref))
         if state != "RECOVERY_REQUIRED":
-            self.release_execution(task.task_id, execution_ref, retain_history=True)
+            self.release_execution(task.task_id, execution_ref, retain_history=True,
+                                   _delivery_reconciled=_delivery_reconciled)
         return task
+
+    def reconcile_host_delivery_failure(self, execution_ref: str, tool_call_id: str,
+                                        proof: dict[str, Any]) -> dict[str, Any]:
+        """CAS-reconcile a known Host-success/provider-delivery failure.
+
+        This path never invokes Host or Provider.  It preserves FAILED delivery
+        evidence and only releases the old execution after exact ownership and
+        terminal result checks pass.
+        """
+        from tool_delivery import ToolDeliveryLedger
+        existing = self.get_execution_result(execution_ref)
+        if existing is None or existing.status != 'BLOCKED' or 'RESULT_DELIVERY_FAILED_AFTER_EXECUTION' not in existing.blockers:
+            raise TaskRegistryError('DELIVERY_RECONCILIATION_RESULT_NOT_BLOCKED')
+        if proof.get('task_id') != existing.task_id or proof.get('turn_id') != existing.turn_id:
+            raise TaskRegistryError('DELIVERY_RECONCILIATION_IDENTITY_CONFLICT')
+        active = self.get_active_execution(execution_ref)
+        if active is None or active.get('task_id') != existing.task_id:
+            raise TaskRegistryError('DELIVERY_RECONCILIATION_EXECUTION_NOT_ACTIVE')
+        with self._connect() as conn:
+            competing = conn.execute("""SELECT execution_ref FROM executions
+                WHERE task_id=? AND execution_ref<>?""", (existing.task_id, execution_ref)).fetchone()
+            lease = conn.execute("SELECT task_id,execution_ref FROM worktree_leases WHERE execution_ref=?",
+                                 (execution_ref,)).fetchone()
+            if competing or lease is None or lease['task_id'] != existing.task_id:
+                raise TaskRegistryError('DELIVERY_RECONCILIATION_OWNER_CONFLICT')
+            if conn.execute("""SELECT 1 FROM host_executions
+                WHERE execution_ref=? AND (completed_at IS NULL OR result_state IN ('RUNNING','UNKNOWN'))
+                LIMIT 1""", (execution_ref,)).fetchone():
+                raise TaskRegistryError('DELIVERY_RECONCILIATION_HOST_IN_FLIGHT')
+        ledger = ToolDeliveryLedger(self, execution_ref)
+        outcome = ledger.reconcile_failed(tool_call_id, proof=proof)
+        if outcome['state'] == 'ALREADY_APPLIED':
+            return {**outcome, 'terminal_state': self.get_task(existing.task_id).execution_state,
+                    'retry_required': self.get_task(existing.task_id).retry_required}
+        evidence = ('host_execution_ref=' + str(proof['host_execution_ref'])
+                    + '; provider_failure_sha256=' + str(proof['provider_failure_sha256']))
+        task = self.reconcile_terminal(execution_ref, 'BLOCKED',
+            failure_stage='delivery_reconciliation',
+            failure_code='RESULT_DELIVERY_FAILED_AFTER_EXECUTION', evidence=evidence,
+            retry_required=False, _delivery_reconciled=True)
+        return {**outcome, 'terminal_state': task.execution_state,
+                'task_id': task.task_id, 'retry_required': task.retry_required,
+                'original_result_preserved': True}
 
     def reconcile_orphaned_terminal(
         self,
@@ -3657,6 +3768,7 @@ class TaskRegistry:
         execution_ref: str | None = None,
         *,
         retain_history: bool = False,
+        _delivery_reconciled: bool = False,
     ) -> None:
         """Release the mutable lease, optionally archiving execution history.
 
@@ -3679,7 +3791,7 @@ class TaskRegistry:
                     (task_id,),
                 ).fetchone()
             from execution_liveness import release_allowed
-            if row is not None and (
+            if row is not None and not _delivery_reconciled and (
                     row["stage"] == "RECOVERY_REQUIRED" or
                     not release_allowed(conn, row["execution_ref"])):
                 raise TaskRegistryError("lease release requires fresh exact owner terminal evidence")
