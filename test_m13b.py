@@ -1238,10 +1238,10 @@ class DynamicToolProtocolTests(unittest.TestCase):
         client.thread_start(cwd="/tmp", dynamic_tools=[spec])
         self.assertEqual(transport.sent[0]["params"]["dynamicTools"], [spec])
 
-    def test_public_catalog_remains_nine_without_shell_tools(self):
+    def test_public_catalog_includes_adoption_without_shell_tools(self):
         names = tuple(item["name"] for item in tool_definitions())
         self.assertEqual(names, DEFAULT_TOOL_NAMES)
-        self.assertEqual(len(names), 9)
+        self.assertEqual(len(names), 10)
         self.assertFalse(any("shell" in name or "host_exec" in name or "ssh" in name for name in names))
 
     def test_dynamic_tool_schema_has_no_raw_identity_or_shell_fields(self):

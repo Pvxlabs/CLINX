@@ -109,13 +109,13 @@ class ThreadIdentityTests(unittest.TestCase):
 
     def test_scope(self):
         self.assertEqual(self.reader.read(thread_id=A,project='other')['error_code'],'THREAD_SCOPE_MISMATCH')
-        self.assertEqual(self.reader.read(thread_id=A,host='other')['error_code'],'THREAD_SCOPE_MISMATCH')
+        self.assertEqual(self.reader.read(thread_id=A,host='other')['error_code'],'UNKNOWN_THREAD_HOST')
         self.sql('UPDATE tasks SET cwd=?',(str(self.root/'outside'),))
-        self.assertEqual(self.reader.read(thread_id=A)['error_code'],'THREAD_ACCESS_DENIED')
+        self.assertEqual(self.reader.read(thread_id=A)['lookup_status'],'RESOLVED')
 
     def test_unknown_unbound_and_unavailable(self):
         r=self.reader.read(thread_id=C)
-        self.assertEqual(r['lookup_status'],'THREAD_LOOKUP_UNAVAILABLE');self.assertEqual(r['provider_existence'],'UNKNOWN')
+        self.assertEqual(r['lookup_status'],'NATIVE_INDEX_UNAVAILABLE')
         self.native(C)
         self.assertEqual(self.reader.read(thread_id=C,context=True)['lookup_status'],'THREAD_UNBOUND')
         self.assertEqual(self.reader.read(thread_id=A,context=True)['context_status'],'CONTEXT_UNAVAILABLE')
@@ -207,7 +207,8 @@ class ThreadIdentityTests(unittest.TestCase):
     def test_output_budget_and_no_tool_payloads(self):
         self.native(turns=30)
         r=self.reader.read(thread_id=A,context=True,recent_turns=2,max_bytes=1024)
-        self.assertLessEqual(r['provenance']['source_bytes'],1024)
+        self.assertLessEqual(r['provenance']['source_bytes'],512*1024)
+        self.assertLessEqual(len(((r.get('last_user_intent') or '')+(r.get('last_codex_result') or '')).encode()),1024)
         self.assertLessEqual(len(r['provenance']['context_turn_refs']),2)
         self.assertTrue(r['context_truncated'])
 

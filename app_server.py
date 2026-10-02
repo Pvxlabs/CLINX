@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import select
+import socket
 import struct
 import subprocess
 import threading
@@ -533,6 +534,56 @@ class LocalStdioTransport(WebSocketStdioTransport):
     """Run the local app-server proxy command over a stdio byte tunnel."""
 
 
+class UnixSocketTransport(WebSocketStdioTransport):
+    """Connect to an existing daemon only. No proxy, process or auto-start path."""
+
+    class Bytes:
+        def __init__(self, path, timeout):
+            self.path, self.timeout, self.sock = str(path), timeout, None
+
+        def connect(self):
+            connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                connection.settimeout(self.timeout)
+                connection.connect(self.path)
+            except OSError:
+                connection.close()
+                raise
+            self.sock = connection
+
+        def send_bytes(self, data):
+            self.sock.sendall(data)
+
+        def receive_bytes(self, size, timeout_seconds):
+            self.sock.settimeout(timeout_seconds)
+            try:
+                data = self.sock.recv(size)
+            except TimeoutError as exc:
+                raise AppServerTransportError("existing provider receive timed out") from exc
+            if not data:
+                raise AppServerTransportError("existing provider disconnected")
+            return data
+
+        def close(self):
+            if self.sock is not None:
+                self.sock.close()
+                self.sock = None
+
+    def __init__(self, path, *, timeout_seconds=3):
+        self.command = ()
+        self.timeout_seconds = timeout_seconds
+        self.websocket_path = "/"
+        self._connected = False
+        self._byte_transport = self.Bytes(path, timeout_seconds)
+
+    def connect(self):
+        try:
+            super().connect()
+        except Exception:
+            self.close()
+            raise
+
+
 @dataclasses.dataclass(frozen=True)
 class InitializeInfo:
     server_name: str | None
@@ -636,6 +687,9 @@ class CodexAppServerClient:
         self.provider_endpoint: str | None = None
         self._delivery_waiting_requests = []
         self._flushing_delivery_waiters = False
+        self._owned_thread_ids: set[str] = set()
+        self._owned_turns: dict[str, str] = {}
+        self.writer_release: dict[str, str] = {}
 
     def _endpoint_identity(self) -> dict[str, Any] | None:
         if self.provider_endpoint is None:
@@ -726,6 +780,10 @@ class CodexAppServerClient:
             self.close()
 
     def close(self) -> None:
+        # Only a successfully claimed, not-running subscription belongs here.
+        # An uncertain active turn is never interrupted or unsubscribed by cleanup.
+        for thread_id in tuple(self._owned_thread_ids - self._owned_turns.keys()):
+            self._release_owned_subscription(thread_id)
         self._dynamic_registry_generation += 1
         self._dynamic_listener_id = None
         if self._delivery_ledger is not None:
@@ -743,6 +801,21 @@ class CodexAppServerClient:
         self._dynamic_connection_generation = None
         self._server_request_records.clear()
         self.transport.close()
+
+    def _release_owned_subscription(self, thread_id: str) -> None:
+        if thread_id not in self._owned_thread_ids:
+            return
+        try:
+            result = self._request('thread/unsubscribe', {'threadId': thread_id})
+            status = result.get('status') if isinstance(result, dict) else None
+            if status not in ('unsubscribed', 'notSubscribed', 'notLoaded'):
+                raise AppServerProtocolError('Invalid thread/unsubscribe response')
+            self.writer_release[thread_id] = status
+        except Exception as exc:
+            self.writer_release[thread_id] = 'UNCONFIRMED:' + type(exc).__name__
+        finally:
+            # No blind RPC retry on close; transport teardown is connection-local.
+            self._owned_thread_ids.discard(thread_id)
 
     @staticmethod
     def _server_request_key(request_id: Any) -> tuple[type[Any], Any] | None:
@@ -923,10 +996,17 @@ class CodexAppServerClient:
             raise
 
     def _send_server_response(self, request: dict[str, Any]) -> None:
+        if getattr(self, 'read_only_observer', False):
+            return
         if request.get("method") == "item/tool/call":
             params = request.get("params", {})
             if self._dynamic_tool_handler is None or (
                 isinstance(params, dict) and params.get("threadId") != self._dynamic_thread_id
+            ) or (
+                isinstance(params, dict) and self._dynamic_turn_id is not None
+                and params.get('turnId') != self._dynamic_turn_id
+            ) or (
+                isinstance(params, dict) and params.get('turnId') in self._dynamic_retired_turn_ids
             ):
                 # Shared providers broadcast to subscribers. An observer must
                 # never race the owning connection with an unsupported reply.
@@ -1155,16 +1235,10 @@ class CodexAppServerClient:
             params = request.get("params")
             supplied_turn = params.get("turnId") if isinstance(params, dict) else None
             if supplied_turn != turn_id or supplied_turn in self._dynamic_retired_turn_ids:
-                response = self._dynamic_failure_response(
-                    AppServerProtocolError("dynamic tool turn identity did not match start response")
-                )
-                try:
-                    self._cache_and_send_server_response(request.get("id"), response, record)
-                except AppServerTransportError:
-                    # The failure result is cached in the request registry;
-                    # duplicate delivery can retry it without callback work.
-                    self._dynamic_staged_requests.pop(0)
-                    raise
+                # The start response proved this is another turn's broadcast.
+                # Even an error response would race that turn's actual owner.
+                if record is not None:
+                    record.state = 'foreign_turn'
                 self._dynamic_staged_requests.pop(0)
                 continue
             try:
@@ -1228,6 +1302,9 @@ class CodexAppServerClient:
             observed = turn.get("id") if isinstance(turn, dict) else params.get("turnId")
             if params.get("threadId") != thread_id or observed != turn_id:
                 return False
+            if self._owned_turns.get(thread_id) == turn_id:
+                self._owned_turns.pop(thread_id)
+                self._release_owned_subscription(thread_id)
             if handoff is not None:
                 handoff(message)  # persist/wake only; never re-enter this transport
             return True
@@ -1275,6 +1352,10 @@ class CodexAppServerClient:
         self._supervisor.start()
 
     def _request(self, method: str, params: dict[str, Any] | None = None) -> Any:
+        if getattr(self, 'read_only_observer', False) and method not in {
+            'initialize', 'thread/read', 'thread/turns/list', 'thread/items/list',
+        }:
+            raise AppServerProtocolError('Read-only native observer cannot claim or mutate a thread')
         request_id = str(uuid.uuid4())
         request: dict[str, Any] = {"id": request_id, "method": method}
         if params is not None:
@@ -1545,21 +1626,28 @@ class CodexAppServerClient:
         if developer_instructions is not None:
             params["developerInstructions"] = developer_instructions
         result = self._request("thread/start", params)
-        return _thread_result(result, "thread/start")
+        thread = _thread_result(result, "thread/start")
+        self._owned_thread_ids.add(thread['id'])
+        return thread
 
     def thread_resume(
         self, thread_id: str, *, dynamic_tools: list[dict[str, Any]] | None = None,
         developer_instructions: str | None = None
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"threadId": thread_id}
+        params: dict[str, Any] = {"threadId": thread_id, "excludeTurns": True}
         if dynamic_tools is not None:
             if not isinstance(dynamic_tools, list) or not dynamic_tools:
                 raise AppServerProtocolError("dynamic_tools must be a non-empty array")
-            params["dynamicTools"] = dynamic_tools
+            # 0.156.1 stores the thread's tools at thread/start. Its resume
+            # schema has no dynamicTools field; never pretend to replace it.
         if developer_instructions is not None:
             params["developerInstructions"] = developer_instructions
         result = self._request("thread/resume", params)
-        return _thread_result(result, "thread/resume")
+        thread = _thread_result(result, "thread/resume")
+        if thread.get('id') != thread_id:
+            raise AppServerProtocolError('thread/resume returned a different thread')
+        self._owned_thread_ids.add(thread_id)
+        return thread
 
     def thread_name_set(self, thread_id: str, name: str) -> None:
         self._request("thread/name/set", {"threadId": thread_id, "name": name})
@@ -1695,6 +1783,7 @@ class CodexAppServerClient:
         turn = result.get("turn")
         if not isinstance(turn, dict) or not isinstance(turn.get("id"), str):
             raise AppServerProtocolError("turn/start result is missing turn.id")
+        self._owned_turns[thread_id] = turn['id']
         return TurnStartInfo(
             turn_id=turn["id"],
             model=_optional_string(result.get("model")) or model,

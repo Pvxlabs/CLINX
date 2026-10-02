@@ -63,7 +63,7 @@ class AdoptionTests(unittest.TestCase):
             self.assertEqual(len(dispatcher.tasks.list_tasks(project="pilot")), 1)
             self.assertFalse(any(call[0] == "turn/start" for call in second.calls))
 
-    def test_unloaded_thread_is_resumed_only_to_verify_direct_input(self):
+    def test_unloaded_thread_is_adopted_without_claiming_writer(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "dev"
             root.mkdir()
@@ -80,7 +80,7 @@ class AdoptionTests(unittest.TestCase):
             self._adopt(dispatcher, client)
             self.assertEqual(
                 [call[0] for call in client.calls],
-                ["initialize", "thread/read", "thread/resume", "thread/read"],
+                ["initialize", "thread/read"],
             )
             self.assertFalse(any(call[0] == "turn/start" for call in client.calls))
 
@@ -90,7 +90,6 @@ class AdoptionTests(unittest.TestCase):
             {"sessionId": ""},
             {"cwd": "/wrong"},
             {"ephemeral": True},
-            {"canAcceptDirectInput": False},
             {"gitInfo": {"originUrl": "wrong", "branch": "main"}},
             {"gitInfo": {"originUrl": "https://example.invalid/pilot.git", "branch": "other"}},
         )

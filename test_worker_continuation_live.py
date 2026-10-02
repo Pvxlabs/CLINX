@@ -59,6 +59,8 @@ def test_real_normal_batch_and_continuation(tmp_path):
         peer_root = tmp_path/'peer'
         peer_root.mkdir()
         peer_cfg = watchers.enter_context(isolated_provider(cfg, peer_root, native_home=tmp_path/'codex-home'))
+        dispatcher.cfg = dataclasses.replace(cfg, app_server=dataclasses.replace(cfg.app_server,
+            native_socket=peer_cfg.app_server.local_socket))
         target = SimpleNamespace(target_host='p620',transport='local',alias='read-only-observer')
         observers = {}
         for name, observer_cfg in [('same_endpoint',cfg),('other_endpoint',peer_cfg)]:
@@ -66,8 +68,13 @@ def test_real_normal_batch_and_continuation(tmp_path):
             client.initialize(client_name='clinx-qualification-observer', client_title='CLINX qualification observer', client_version='1')
             observers[name] = client
         try:
-            for turn in range(2):
+            for turn in range(3):
                 if turn:
+                    if turn == 1:
+                        # Desktop-equivalent protocol subscription on another
+                        # real daemon sharing this disposable native home.
+                        observers['other_endpoint'].thread_resume(binding.thread_id)
+                        assert observers['other_endpoint'].thread_read(binding.thread_id)['status']['type'] == 'idle'
                     prompt = 'Read the host identity and working directory again and summarize this follow-up. Do not change files.'
                     prepared=integration.prepare_execution(approved=True,task_action=('continue' if registry.get_task(started['task_ref']).status == 'ACTIVE' else 'reopen'),task_ref=started['task_ref'],prompt=prompt)
                 started=integration.start_execution(approved=True, prepared_execution_ref=prepared['prepared_execution_ref'])

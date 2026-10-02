@@ -1688,7 +1688,8 @@ class AppServerClientTests(unittest.TestCase):
         initialize_request = transport.sent[0]
         self.assertEqual(initialize_request["method"], "initialize")
         resume_request = next(item for item in transport.sent if item["method"] == "thread/resume")
-        self.assertEqual(resume_request["params"]["dynamicTools"], resume_spec)
+        self.assertNotIn("dynamicTools", resume_request["params"])
+        self.assertTrue(resume_request["params"]["excludeTurns"])
         self.assertEqual(initialize_request["params"]["clientInfo"]["name"], "bridge")
         self.assertEqual(transport.sent[1], {"method": "initialized"})
 
@@ -1703,7 +1704,7 @@ class AppServerClientTests(unittest.TestCase):
         self.assertEqual(len(resumes), 1)
         self.assertEqual(
             resumes[0]["params"],
-            {"threadId": "durable-thread", "dynamicTools": resume_spec},
+            {"threadId": "durable-thread", "excludeTurns": True},
         )
 
         turn_request = next(item for item in transport.sent if item.get("method") == "turn/start")

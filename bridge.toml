@@ -22,6 +22,8 @@ approval = "never"
 
 [app_server]
 local_socket = "clinx-provider.sock"
+# Existing Desktop daemon: exact read/idle-owner routing only; never auto-start.
+native_socket = "/home/pvxlabs/.codex/app-server-control/app-server-control.sock"
 # This is the configured remote transport only. Runtime/target host equality
 # selects the local proxy command and never constructs an SSH command.
 transport = "ssh"
@@ -90,6 +92,7 @@ operation_classes = ["READ_ONLY_HOST"]
 # projects are not selected by M5 automatically.
 [workspaces.p620]
 host = "p620"
+codex_host_ids = ["remote-ssh-discovered:p620"]
 root = "/home/pvxlabs/dev"
 allow_existing_projects = true
 allow_new_projects = false

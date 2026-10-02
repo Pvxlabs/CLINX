@@ -360,7 +360,7 @@ def test_pa04_continuous_tool_binding_rejects_old_turn_and_runs_new_once(tmp_pat
         assert ("B", "turn-1") not in calls
         assert calls.count(("B", "turn-2")) == 1
         responses = [m for m in transport.sent if m.get("id") in {"old-request-in-new-turn", "tool-2"}]
-        assert len([m for m in responses if m.get("id") == "old-request-in-new-turn"]) == 1
+        assert len([m for m in responses if m.get("id") == "old-request-in-new-turn"]) == 0
     finally:
         adapter.close()
 
@@ -389,8 +389,7 @@ def test_pa04_pre_response_turn_mismatch_has_no_callback_side_effect(tmp_path):
         )
         assert calls == []
         responses = [item for item in transport.sent if item.get("id") == "wrong-before-reply"]
-        assert len(responses) == 1
-        assert responses[0]["result"]["success"] is False
+        assert responses == []
     finally:
         adapter.close()
 
@@ -530,24 +529,22 @@ def test_pa04_staged_batch_failure_preserves_tail_and_response_cache(failed_id):
         client.close()
 
 
-def test_pa04_staged_wrong_turn_failure_is_visible_and_retryable():
+def test_pa04_staged_foreign_turn_never_races_its_owner():
     transport = StagedBatchResponseFailureTransport({"wrong"})
     calls: list[str] = []
     client = make_staged_client(transport, calls)
     request = transport.tool("turn-other", "wrong")
     try:
         client._send_server_response(request)
-        with pytest.raises(AppServerTransportError):
-            client.attach_dynamic_tool_turn(transport.thread, "turn-1")
+        client.attach_dynamic_tool_turn(transport.thread, "turn-1")
         assert calls == []
         assert not client._dynamic_staged_requests
         record = client._server_request_records[(str, "wrong")]
-        assert record.state == "response_pending"
+        assert record.state == "foreign_turn"
         client._send_server_response(dict(request))
         assert calls == []
         responses = [message for message in transport.sent if message.get("id") == "wrong" and "result" in message]
-        assert len(responses) == 2
-        assert responses[-1]["result"]["success"] is False
+        assert responses == []
     finally:
         client.close()
 
@@ -785,7 +782,7 @@ def test_pa04_retire_and_close_fence_staged_requests_from_new_handlers():
         client.attach_dynamic_tool_turn(transport.thread, "turn-new")
         client._send_server_response(dict(old_request))
         assert calls == []
-        assert transport.sent[-1]["result"]["success"] is False
+        assert transport.sent == []
 
         client.close()
         replacement_transport = StagedBatchResponseFailureTransport()
