@@ -3,3 +3,6 @@ pytest==9.1.1
 pytest-subtests==0.15.0
 ruff==0.16.10
 mypy==2.4.0
+
+# Explicit development-only backend; never loaded by production pairing.
+spake2==0.9

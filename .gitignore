@@ -13,3 +13,5 @@ MonitorApp/.build/
 .ruff_cache/
 .pytest_cache/
 .discovery-deps312/
+
+native/opaque_pairing/target/

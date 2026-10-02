@@ -1,7 +1,7 @@
 """PAKE adapter and pairing window; no home-grown password exchange.
 
-python-spake2 0.9 explicitly disclaims constant-time execution. This adapter is
-hard-gated DEV_ONLY. Replace/qualify the backend before production admission.
+Production uses opaque-ke RFC 9807 with built-in mutual key confirmation.
+python-spake2 remains an explicitly selected, incompatible DEV_ONLY backend.
 """
 
 from __future__ import annotations
@@ -20,6 +20,8 @@ from .identity import DeviceError
 
 
 class PairingProtocol(Protocol):
+    """One-shot backend boundary. OPAQUE returns wire messages, DEV returns a key."""
+
     security_status: str
 
     def start(self) -> bytes: ...
@@ -107,6 +109,21 @@ class PairingWindow:
         self._next_open = 0.0
         self._busy: str | None = None
         self.failures = 0
+        self._timer: threading.Timer | None = None
+
+    def close(self) -> None:
+        with self._lock:
+            self._code = None
+            self._id = None
+            if self._timer:
+                self._timer.cancel()
+                self._timer = None
+
+    def _expire(self, window_id: str | None) -> None:
+        with self._lock:
+            if self._id == window_id:
+                self._code = None
+                self._id = None
 
     def open(self) -> str:
         with self._lock:
@@ -119,6 +136,11 @@ class PairingWindow:
             self._next_open = self._expires
             self._next_attempt = now
             self.failures = 0
+            if self._timer:
+                self._timer.cancel()
+            self._timer = threading.Timer(self.lifetime, self._expire, (self._id,))
+            self._timer.daemon = True
+            self._timer.start()
             return self._code
 
     def _active(self) -> None:
@@ -160,3 +182,122 @@ class PairingWindow:
                 if self.failures >= self.max_failures:
                     self._code = None
                     self._id = None
+
+
+# Exact protocol selection, never negotiation or implicit fallback.
+PRODUCTION_PROTOCOL = "OPAQUE-3DH-RISTRETTO255-SHA512-ARGON2I-v1"
+DEV_PROTOCOL = "DEV-SPAKE2-PYTHON-v1"
+PRODUCTION_TRUST = "OPAQUE_V1"
+
+
+def production_backend() -> Any:
+    try:
+        import _clinx_opaque as backend
+
+        if backend.BACKEND_ID != PRODUCTION_PROTOCOL or backend.OPAQUE_KE_VERSION != "4.0.1":
+            raise DeviceError("PRODUCTION_PAKE_VERSION_MISMATCH")
+        return backend
+    except (ImportError, AttributeError, OSError):
+        raise DeviceError("PRODUCTION_PAKE_UNAVAILABLE") from None
+
+
+def backend_status(*, allow_dev: bool = False) -> str:
+    if allow_dev:
+        return "DEV_ONLY"
+    try:
+        production_backend()
+    except DeviceError:
+        return "BACKEND_UNAVAILABLE"
+    return PRODUCTION_TRUST
+
+
+def pairing_binding(
+    client: dict[str, Any],
+    server: dict[str, Any],
+    window_id: str,
+    session_id: str,
+    client_nonce: str,
+) -> tuple[bytes, bytes, bytes]:
+    """RFC 9807 context and explicit role identifiers, identical at both ends."""
+    import re
+
+    from .identity import public_record
+
+    client, server = public_record(client), public_record(server)
+    if client["node_id"] == server["node_id"] or client["public_key"] == server["public_key"]:
+        raise DeviceError("DUPLICATE_PAIRING_IDENTITY")
+    if any(
+        not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{32}", value)
+        for value in (window_id, session_id, client_nonce)
+    ):
+        raise DeviceError("INVALID_PAIRING_SESSION")
+
+    def canonical(value: dict[str, Any]) -> bytes:
+        return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+    client_id = canonical(dict(role="initiator", identity=client))
+    server_id = canonical(dict(role="acceptor", identity=server))
+    context = canonical(
+        dict(
+            service="CLINX_LOCAL_PAIRING",
+            version=2,
+            protocol=PRODUCTION_PROTOCOL,
+            window_id=window_id,
+            session_id=session_id,
+            client_nonce=client_nonce,
+            initiator=client,
+            acceptor=server,
+        )
+    )
+    return context, client_id, server_id
+
+
+class OpaqueClientProtocol:
+    """KE2 verifies the server; finish returns KE3, never a Python session key."""
+
+    security_status = PRODUCTION_TRUST
+
+    def __init__(self, code: str, binding: tuple[bytes, bytes, bytes]):
+        backend = production_backend()
+        try:
+            self._exchange = backend.Client(code.encode("ascii"), *binding)
+        except (ValueError, UnicodeError):
+            raise DeviceError("PAIRING_FAILED") from None
+
+    def start(self) -> bytes:
+        try:
+            return self._exchange.start()
+        except ValueError:
+            raise DeviceError("PAIRING_FAILED") from None
+
+    def finish(self, inbound: bytes) -> bytes:
+        try:
+            return self._exchange.finish(inbound)
+        except ValueError:
+            raise DeviceError("PAIRING_FAILED") from None
+
+
+class OpaqueServerProtocol:
+    """Local ephemeral registration plus KE2; finish verifies KE3 in opaque-ke."""
+
+    security_status = PRODUCTION_TRUST
+
+    def __init__(self, code: str, binding: tuple[bytes, bytes, bytes], inbound: bytes):
+        backend = production_backend()
+        try:
+            self._exchange = backend.Server(code.encode("ascii"), *binding, inbound)
+        except (ValueError, UnicodeError):
+            raise DeviceError("PAIRING_FAILED") from None
+
+    def start(self) -> bytes:
+        try:
+            return self._exchange.start()
+        except ValueError:
+            raise DeviceError("PAIRING_FAILED") from None
+
+    def finish(self, inbound: bytes) -> bytes:
+        try:
+            self._exchange.finish(inbound)
+            return b""
+        except ValueError:
+            raise DeviceError("PAIRING_FAILED") from None

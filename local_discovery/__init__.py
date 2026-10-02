@@ -2,4 +2,5 @@
 
 PROTOCOL_VERSION = 1
 SERVICE_TYPE = "_clinx._tcp.local."
-SECURITY_STATUS = "BLOCKED"
+# Backend availability must be checked at runtime; this is not an audit badge.
+SECURITY_STATUS = "REQUIRES_BACKEND_CHECK"
