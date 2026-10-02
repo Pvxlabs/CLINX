@@ -1,0 +1,7 @@
+# Optional LAN device dependencies. Legacy CLINX remains stdlib-only.
+cryptography==50.0.2
+zeroconf==0.151.5
+ifaddr==0.2.0
+# SECURITY_BLOCKER: upstream explicitly disclaims constant-time execution.
+# This backend is gated DEV_ONLY; dependency installation does not enable it.
+spake2==0.9

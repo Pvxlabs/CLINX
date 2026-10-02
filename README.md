@@ -122,11 +122,24 @@ direction, not universal capabilities claimed by this repository today.
 - Keep the core small and stable; put integrations in adapters.
 - Prefer real dogfood and runtime evidence over mock-only confidence.
 
+## Nearby devices (Local Discovery v1)
+
+The optional `bin/clinx` launcher opens `devices` by default. It browses private
+LAN nodes, shows persistent device trust, and authenticates known peers with
+mutual TLS. Existing local/SSH provider and manual host paths remain available.
+
+**Security status: BLOCKED for production pairing.** The current SPAKE2 backend
+is explicitly `DEV_ONLY` because it is not constant-time. Pairing and using
+development trust require `--allow-dev-pairing`; no execution authority is
+granted by device trust. See [Local Discovery v1](docs/LOCAL_DISCOVERY_V1.md) for
+isolated setup, the two-device flow, architecture, test evidence, and blockers.
+
 ## Getting started
 
 Requirements: macOS or Linux, Python 3.11+, Git, a configured Codex
 app-server/proxy transport, Linear MCP for the bridge workflow, and a Linear
-personal API key. The repository has no required Python packages.
+personal API key. The legacy bridge has no required Python packages; optional device discovery uses
+`requirements-discovery.txt`.
 
 Start the bounded MCP adapter locally:
 
@@ -165,9 +178,9 @@ registry data.
 ## Boundaries and status
 
 CLINX currently supports local or explicitly configured SSH-stdio provider
-transport. This repository does not itself publish an unauthenticated HTTP
-endpoint. Remote discovery requires an authenticated, TLS-terminated MCP
-boundary supplied by the deployment environment.
+transport. This repository does not publish an unauthenticated HTTP/MCP endpoint. The optional
+LAN listener only enrolls and authenticates device identities; remote MCP execution
+still requires the existing authenticated deployment boundary and authorization.
 
 CLINX does not push, merge, deploy, grant Linear `Done`, or expose arbitrary
 shell access. Host operations are bounded by registered project identity,
