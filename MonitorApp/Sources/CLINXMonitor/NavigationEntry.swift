@@ -10,5 +10,6 @@ struct NavigationEntry: Identifiable, Equatable {
     let project: String?
     let host: String?
     let timeWindow: TimeWindow
+    let order: ExecutionOrder
     let search: String
 }

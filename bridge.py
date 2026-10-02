@@ -2792,9 +2792,18 @@ class TaskDispatcher:
         runtime.register(identity)
         configure(thread_id, turn_id, lambda message: runtime.notify(identity, message))
 
-    def recover_execution_completion(self, execution_ref: str) -> dict[str, Any]:
+    @serialized_execution
+    def recover_execution_completion(self, execution_ref: str, *, restore_cancelled: bool = False) -> dict[str, Any]:
         # Explicit maintenance operation. No global lease sweep or new turn.
         runtime = CompletionRuntime(self.tasks, self.reconcile_execution)
+        if restore_cancelled:
+            from execution_liveness import restore_cancelled_execution
+            from native_provider import observe_execution
+            identity = runtime.identity_for(execution_ref)
+            retained = self.tasks.get_execution_record(execution_ref)
+            if retained and retained.get("stage") == "CANCELLED" and "released_at" in retained:
+                evidence = observe_execution(self.cfg, identity.thread_id, identity.turn_id)
+                restore_cancelled_execution(self.tasks, identity, evidence)
         return runtime.recover(execution_ref)
 
     @staticmethod
@@ -6806,6 +6815,8 @@ def build_parser() -> argparse.ArgumentParser:
     tasks_topic.add_argument("--max-bytes", type=int, default=TopicStatusReader.MAX_TOPIC_BYTES)
     recover = sub.add_parser("recover-execution", help="Recover one exact completion; never start a turn")
     recover.add_argument("execution_ref")
+    recover.add_argument("--restore-cancelled", action="store_true",
+                         help="Restore a released cancellation only with a fresh exact active owner")
     sub.add_parser("once", help="Poll once and execute at most max_batch issues")
     sub.add_parser("run", help="Run foreground polling loop")
     return parser
@@ -6826,7 +6837,8 @@ def main() -> int:
 
     if args.command == "recover-execution":
         try:
-            result = TaskDispatcher(cfg, initialize_host_executor=False).recover_execution_completion(args.execution_ref)
+            result = TaskDispatcher(cfg, initialize_host_executor=False).recover_execution_completion(
+                args.execution_ref, restore_cancelled=args.restore_cancelled)
             print(json.dumps(result, sort_keys=True))
             return 0 if result.get("completion_delivery") == "DONE" else 1
         except Exception as exc:

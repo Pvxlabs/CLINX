@@ -20,9 +20,9 @@ struct StatusGlyphView: View {
                     // Leave room for the centered stroke without changing glyph layout.
                     .frame(width: size + 4, height: size + 4)
                     .frame(width: size, height: size)
-            case .octagon:
+            case .circleMinus:
                 ZStack {
-                    Image(systemName: "octagon.fill").resizable().foregroundStyle(color)
+                    Circle().fill(color)
                     Capsule().fill(.white).frame(width: size * 0.34, height: 1.5)
                 }
             case .squareCross:

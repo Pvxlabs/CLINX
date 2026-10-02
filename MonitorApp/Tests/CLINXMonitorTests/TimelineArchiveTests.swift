@@ -102,6 +102,50 @@ final class TimelineArchiveTests: XCTestCase {
         XCTAssertTrue(other.currentArchives.isEmpty)
     }
 
+    @MainActor
+    func testFinishedTasksArchiveAndRestoreAndStayHiddenAfterRefresh() async throws {
+        let suite = "CLINXFinishedArchiveTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let service = SyntheticObserverService(scenario: .healthy)
+        let store = MonitorStore(service: service, defaults: defaults)
+        await store.refresh()
+        store.view = .recent
+        for status in [MonitorStatus.completed, .cancelled] {
+            let task = try XCTUnwrap(store.visibleTasks.first { store.status(of: $0) == status })
+            let count = store.visibleTasks.count
+            store.archiveLocally(task)
+            XCTAssertFalse(store.visibleTasks.contains { $0.taskRef == task.taskRef })
+            XCTAssertEqual(store.counts[.recent], count - 1)
+            await store.refresh()
+            XCTAssertTrue(store.isLocallyArchived(task))
+            let archive = try XCTUnwrap(store.currentArchives.first { $0.taskRef == task.taskRef })
+            store.restoreLocalArchive(archive.id)
+            XCTAssertTrue(store.visibleTasks.contains { $0.taskRef == task.taskRef })
+            XCTAssertEqual(store.allTasks.first { $0.taskRef == task.taskRef }?.state, task.state)
+        }
+    }
+
+    func testOrderingUsesTheRequestedTimestampAndStableTieBreaks() throws {
+        let task = try XCTUnwrap(SyntheticTasks.all().first)
+        func dated(_ ref: String, started: String, progress: String) throws -> ObservedTask {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(task)) as? [String: Any])
+            json["taskRef"] = ref
+            var times = try XCTUnwrap(json["timestamps"] as? [String: Any])
+            times["startedAt"] = started
+            times["lastProgressAt"] = progress
+            json["timestamps"] = times
+            return try JSONDecoder().decode(ObservedTask.self, from: JSONSerialization.data(withJSONObject: json))
+        }
+        let older = try dated("a", started: "2026-10-01T00:00:00Z", progress: "2026-10-02T12:00:00Z")
+        let newer = try dated("b", started: "2026-10-02T00:00:00Z", progress: "2026-10-02T11:00:00Z")
+        XCTAssertEqual(ExecutionOrder.activity.ordered([newer, older]).map(\.taskRef), ["a", "b"])
+        XCTAssertEqual(ExecutionOrder.newest.ordered([older, newer]).map(\.taskRef), ["b", "a"])
+        XCTAssertEqual(ExecutionOrder.oldest.ordered([newer, older]).map(\.taskRef), ["a", "b"])
+        let tie = try dated("c", started: "2026-10-02T00:00:00Z", progress: "2026-10-02T11:00:00Z")
+        XCTAssertEqual(ExecutionOrder.newest.ordered([tie, newer]).map(\.taskRef), ["b", "c"])
+    }
+
     func testLatestTenUsesFullDatesAcrossMidnightAndExpandsAll() throws {
         let task = try XCTUnwrap(SyntheticTasks.all().first)
         let events = (0..<12).map { index in

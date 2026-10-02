@@ -149,7 +149,7 @@ private struct SidebarItemView: View {
 
     @ViewBuilder private func glyph(size: CGFloat) -> some View {
         switch view {
-        case .blocked: StatusGlyphView(glyph: .octagon, color: DS.Palette.warning, size: size)
+        case .blocked: StatusGlyphView(glyph: .circleMinus, color: DS.Palette.warning, size: size)
         case .failed: StatusGlyphView(glyph: .squareCross, color: DS.Palette.error, size: size)
         case .completed: StatusGlyphView(glyph: .circleCheck, color: DS.Palette.success, size: size)
         case .active: Image(systemName: "waveform.path.ecg").font(.system(size: size))
