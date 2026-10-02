@@ -220,7 +220,7 @@ class M12PreparationAndStartTests(unittest.TestCase):
         prepare = tools["clinx_prepare_execution"]
         self.assertEqual(
             prepare["inputSchema"]["properties"]["network_access"],
-            {"type": "boolean", "default": False},
+            {"type": "boolean"},
         )
         self.assertEqual(
             tools["clinx_start_execution"]["inputSchema"]["properties"].keys(),
@@ -737,7 +737,7 @@ class M12MCPSurfaceTests(unittest.TestCase):
             raise AssertionError("legacy execute must not be the default path")
 
     def test_default_catalog_adds_start_and_keeps_legacy_execute_hidden(self):
-        self.assertEqual(len(DEFAULT_TOOL_NAMES), 10)
+        self.assertEqual(len(DEFAULT_TOOL_NAMES), 13)
         self.assertIn("clinx_start_execution", DEFAULT_TOOL_NAMES)
         self.assertIn("clinx_cancel_execution", DEFAULT_TOOL_NAMES)
         self.assertNotIn("clinx_execute", DEFAULT_TOOL_NAMES)

@@ -1,5 +1,9 @@
 # 原生开发执行与受控发布边界
 
+当前接口与运行语义见 [Canonical Task execution authority](EXECUTION_AUTHORITY.md)。
+2026-10-02 已实现正式重新授权、参数化 workflow 和同一 Task 的 Provider 合约绑定；
+是否已激活及生产验收结果以当前 acceptance receipt 为准。下文保留 2026-10-01 的设计与验证历史。
+
 2026-10-01。本次为本地源码修复，不代表 CLINX 运行态已经升级或 ORION application 已部署。
 
 ## 已实现的开发默认值
@@ -30,14 +34,14 @@ policy、route、lease、target 和 operation 校验。开发权限不包含生�
 
 生产长期应采用一次配置的受控工作流入口和任务级目标授权；版本、制品 SHA 和 plan
 作为经部署器验证的参数，不作为每次新增的注册项。不新增 `orion_controller_*_<sha>`
-或 release 专用脚本，不建立第二条竞争发布链。**通用生产入口及其任务授权联接尚待实现和验收**；
+或 release 专用脚本，不建立第二条竞争发布链。**当时通用生产入口及其任务授权联接尚待实现和验收**；
 本次没有开放生产权限、注册/激活入口或验证生产发布。
 
 Host receipt、结果投递、任务状态是三个独立事实。receipt 已完成而 Provider 报错时，
 只恢复结果投递/对账；操作未知或已完成时不得为恢复通信重放 mutation。
 controller adoption 完成不能当作 application deploy 完成。
 
-## 旧任务重新授权：当前无正式接口
+## 2026-10-01 历史状态：当时无正式接口
 
 源码核查：`mcp_server.py` 的正式工具只有 prepare/start/cancel 及上下文查询；
 `ClinxIntegration.prepare_execution` 拒绝覆盖 sealed policy；
@@ -47,7 +51,7 @@ controller adoption 完成不能当作 application deploy 完成。
 因此没有可提供的已实现重新授权调用。不得修改运行库 `tasks.sqlite3`、伪造审批，
 或通过新任务/默认回退将旧授权升级。
 
-待实现的最小接口设计（以下名称是提案，当前不可调用）：
+当时的最小接口设计提案（现行接口见 EXECUTION_AUTHORITY.md）：
 
 - `prepare_policy_reauthorization(task_ref, expected_policy_hash, target_policy, goal_scope, reason)`：
   由正式外层操作入口提交，返回不可变请求、权限差异、原/目标策略摘要及有效期。

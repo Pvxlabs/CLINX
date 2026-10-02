@@ -84,6 +84,7 @@ class HostExecutorConfig:
     network_targets: tuple[RegisteredTarget, ...] = ()
     local_commands: tuple[RegisteredTarget, ...] = ()
     trusted_workspace_roots: tuple[Path, ...] = ()
+    workflows: tuple = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -106,6 +107,7 @@ class _Command:
     argv: tuple[str, ...]
     target_identity: str | None = None
     mutating: bool = False
+    resource_key: str | None = None
 
 
 def _now() -> str:
@@ -359,6 +361,24 @@ class HostExecutor:
         capability = request.capability
         operation = request.operation
         arguments = request.arguments
+        if capability == "LOCAL_HOST_PROCESS" and operation.startswith("workflow:"):
+            self._arguments(arguments, required=("target", "parameters"))
+            target = self._text_argument(arguments, "target")
+            registered = next((w for w in self.config.workflows
+                               if w.operation == operation and w.target == target), None)
+            if registered is None:
+                raise TargetNotRegistered("workflow/target is not registered")
+            if request.operation_class != registered.operation_class:
+                raise AuthorityDenied("workflow operation class mismatch")
+            if request.policy.operation_scopes is None or not request.policy.permits_operation(
+                    capability, operation, request.operation_class, target):
+                raise AuthorityDenied("workflow requires an explicit task operation/target grant")
+            try:
+                argv = registered.render(arguments["parameters"])
+            except ValueError as exc:
+                raise InvalidArguments(str(exc)) from exc
+            return _Command(argv, target, request.operation_class == PRODUCTION_MUTATION,
+                            registered.resource)
         spec = operation_catalog(self.config).get(capability, {}).get(operation)
         if spec is None:
             if capability == "LOCAL_HOST_PROCESS" and operation.startswith("registered_command:"):
@@ -662,6 +682,11 @@ class HostExecutor:
         if request.route.workspace.worktree_key != expected_worktree:
             raise TargetNotRegistered("executor route does not match the registered worktree")
         command = self._command(request)
+        scope_spec = operation_catalog(self.config).get(request.capability, {}).get(request.operation, {})
+        scope_target = (command.target_identity or "") if 'registered_targets' in scope_spec else ""
+        if not request.policy.permits_operation(request.capability, request.operation,
+                request.operation_class, scope_target):
+            raise AuthorityDenied("operation/target is outside sealed task authority")
         if shutil.which(command.argv[0], path=self._executor_path()) is None:
             raise CapabilityUnavailable("operation executable is unavailable on the configured host")
         self.registry.validate_host_operation_binding(
@@ -691,6 +716,7 @@ class HostExecutor:
             [self._redact(value) for value in command.argv], separators=(",", ":")
         )
         self.registry.begin_host_execution(
+            resource_key=command.resource_key,
             host_execution_ref=host_execution_ref,
             task_id=request.task_ref,
             execution_ref=request.execution_ref,

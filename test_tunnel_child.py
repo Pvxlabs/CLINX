@@ -134,6 +134,9 @@ class TunnelChildCompatibilityTests(unittest.TestCase):
                     "clinx_prepare_execution",
                     "clinx_start_execution",
                     "clinx_cancel_execution",
+                    "clinx_get_effective_authority",
+                    "clinx_prepare_policy_reauthorization",
+                    "clinx_apply_policy_reauthorization",
                     "clinx_adopt_conversation",
                 ],
             )

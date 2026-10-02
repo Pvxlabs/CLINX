@@ -27,7 +27,7 @@ from task_registry import TaskRegistry, TaskRegistryError
 MCP_PROTOCOL_VERSION = "2025-06-18"
 SERVER_DISCOVER_PROTOCOL_VERSION = "2026-07-28"
 SERVER_NAME = "clinx"
-SERVER_VERSION = "m12"
+SERVER_VERSION = "execution-authority-v1"
 READ_ONLY_TOOL_NAMES = (
     "clinx_find_task",
     "clinx_get_context",
@@ -37,7 +37,7 @@ READ_ONLY_TOOL_NAMES = (
     "clinx_get_capabilities",
     "clinx_prepare_execution",
 )
-DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_adopt_conversation")
+DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_effective_authority", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization", "clinx_adopt_conversation")
 
 
 class MCPServerError(RuntimeError):
@@ -116,6 +116,43 @@ def _routing_identity_schema() -> dict[str, Any]:
     })
 
 
+def _operation_scope_schema():
+    return _json_schema({
+        'capability': {'type': 'string', 'enum': list(HOST_CAPABILITIES)},
+        'operation': {'type': 'string', 'minLength': 1},
+        'operation_class': {'type': 'string', 'enum': list(OPERATION_CLASSES)},
+        'target': {'type': 'string'},
+    }, ['capability', 'operation', 'operation_class', 'target'])
+
+
+def _authority_tools():
+    scope = {'type': 'array', 'items': _operation_scope_schema(), 'maxItems': 128}
+    target = _json_schema({
+        'execution_surface': {'type': 'string', 'enum': list(EXECUTION_SURFACES)},
+        'required_capabilities': {'type': 'array', 'items': {'type': 'string', 'enum': list(HOST_CAPABILITIES)}},
+        'operation_classes': {'type': 'array', 'items': {'type': 'string', 'enum': list(OPERATION_CLASSES)}},
+        'production_mutation_intent': {'type': 'boolean'}, 'operation_scopes': scope,
+    })
+    return [
+        {'name': 'clinx_get_effective_authority',
+         'description': 'Read effective FUTURE execution authority for the exact canonical task. Separate policy, operation/target grants, client exposure and runtime health. Discovery never grants authority.',
+         'inputSchema': _json_schema({'task_ref': {'type': 'string'}}, ['task_ref']),
+         'annotations': {'readOnlyHint': True, 'destructiveHint': False}},
+        {'name': 'clinx_prepare_policy_reauthorization',
+         'description': 'Prepare a reviewed authority change on the SAME task. Existing authorization must cover the exact target scope. No execution starts; historical execution policies remain unchanged. Only the outer operator may call this, never the managed worker.',
+         'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
+             'task_ref': {'type': 'string'}, 'expected_policy_hash': {'type': 'string', 'pattern': '^[0-9a-f]{64}$'},
+             'target_policy': target, 'network_access': {'type': 'boolean'}, 'reason': {'type': 'string', 'minLength': 1}},
+             ['approved', 'task_ref', 'expected_policy_hash', 'target_policy', 'reason']),
+         'annotations': {'readOnlyHint': False, 'destructiveHint': False}},
+        {'name': 'clinx_apply_policy_reauthorization',
+         'description': 'Apply exactly one prepared authority change with explicit operator approval, CAS and immutable audit. Idempotent. Active ownership or unresolved side effects block application. Does not execute or replay deployment.',
+         'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
+             'prepared_reauthorization_ref': {'type': 'string'}}, ['approved', 'prepared_reauthorization_ref']),
+         'annotations': {'readOnlyHint': False, 'destructiveHint': True}},
+    ]
+
+
 def _execution_policy_schema() -> dict[str, Any]:
     return _json_schema({
         "contract": {"type": "string", "const": "CLINX_EXECUTION_POLICY_V1"},
@@ -128,6 +165,7 @@ def _execution_policy_schema() -> dict[str, Any]:
         "production_mutation_intent": {"type": "boolean"},
         "host_executor_default": {"type": "boolean", "const": False},
         "business_action_authority": {"type": "boolean", "const": False},
+        "operation_scopes": {"type": "array", "items": _operation_scope_schema()},
     })
 
 
@@ -674,7 +712,29 @@ def _execute_tool_definition() -> dict[str, Any]:
 
 def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
     """Return the public catalog, with execution opt-in for internal use only."""
-    tools = _read_only_tool_definitions()
+    tools = _read_only_tool_definitions() + _authority_tools()
+    authority_outputs = {
+        'task_ref': {'type': 'string'}, 'policy_version': {'type': 'integer'},
+        'policy_hash': {'type': 'string'}, 'expected_policy_hash': {'type': 'string'},
+        'prepared_reauthorization_ref': {'type': 'string'}, 'reauthorization_ref': {'type': 'string'},
+        'idempotent': {'type': 'boolean'}, 'execution_started': {'type': 'boolean', 'const': False},
+        'future_execution_policy': {'type': ['object', 'null']}, 'new_policy': {'type': 'object'},
+        'previous_policy': {'type': 'object'}, 'requested_scope': {'type': 'object'},
+        'effective_authority': {'type': 'object'}, 'operations': {'type': 'object'},
+        'expires_at': {'type': 'string'}, 'network_access': {'type': 'boolean'},
+        'backend_implemented': {'type': 'boolean'}, 'mcp_exposed': {'type': 'boolean'},
+        'client_exposure': {'type': 'string'}, 'runtime_health': {'type': 'string'},
+        'read_only': {'type': 'boolean'},
+    }
+    for tool in tools:
+        if tool['name'] in {'clinx_get_effective_authority', 'clinx_prepare_policy_reauthorization', 'clinx_apply_policy_reauthorization'}:
+            tool['outputSchema'] = _json_schema(authority_outputs)
+    for tool in tools:
+        if tool['name'] == 'clinx_prepare_execution':
+            tool['inputSchema']['properties']['requested_operations'] = {
+                'type': 'array', 'items': _operation_scope_schema(), 'maxItems': 128,
+                'description': 'Structured intent and authorized exact operation/target scope. Required for workflow dispatch; never infer production authority from prompt keywords.'}
+            tool['inputSchema']['properties']['network_access'].pop('default', None)
     from thread_identity import ID_PATTERN
     uri_schema = {"type": "string", "maxLength": 2048, "pattern": "^codex://threads/" + ID_PATTERN + r"(?:\?[^\s#]*)?$"}
     for tool in tools:
@@ -824,6 +884,12 @@ class ClinxMCPServer:
             result = self.integration.adopt_conversation(**arguments)
         elif name == "clinx_get_capabilities":
             result = self.integration.get_capabilities(**arguments)
+        elif name == "clinx_get_effective_authority":
+            result = self.integration.get_effective_authority(**arguments)
+        elif name == "clinx_prepare_policy_reauthorization":
+            result = self.integration.prepare_policy_reauthorization(**arguments)
+        elif name == "clinx_apply_policy_reauthorization":
+            result = self.integration.apply_policy_reauthorization(**arguments)
         elif name == "clinx_prepare_execution":
             result = self.integration.prepare_execution(**arguments)
         elif name == "clinx_start_execution":
@@ -941,7 +1007,18 @@ class ClinxMCPServer:
             except app_server.AppServerError as exc:
                 result = self._tool_result(self._app_server_error_result(exc), is_error=True)
             except (M9IntegrationError, TaskRegistryError, bridge.BridgeError, KeyError, TypeError, ValueError) as exc:
-                result = self._tool_result({"error": str(exc)}, is_error=True)
+                payload = {"error": str(exc)}
+                code = str(exc).split(':', 1)[0]
+                if code in {'AUTHORITY_REAUTHORIZATION_REQUIRED', 'POLICY_REAUTHORIZATION_BLOCKED',
+                            'POLICY_IDENTITY_CONFLICT', 'TARGET_NOT_AUTHORIZED', 'HOST_EXECUTOR_UNAVAILABLE',
+                            'WORKFLOW_EXECUTABLE_UNAVAILABLE', 'OPERATION_NOT_IMPLEMENTED'}:
+                    payload.update({'failure_code': code, 'execution_started': False,
+                        'evaluation_scope': 'PROPOSED_EXECUTION_ONLY_PRIOR_EVIDENCE_UNCHANGED',
+                        'root_blocker': {'layer': 'AUTHORITY' if code.startswith(('AUTHORITY', 'POLICY', 'TARGET')) else 'CAPABILITY',
+                                         'status': 'BLOCKED', 'reason': str(exc)},
+                        'downstream': {'QUALIFICATION': 'NOT_RUN', 'CAPACITY': 'UNVERIFIED',
+                                       'DEPLOYMENT': 'NOT_RUN', 'READBACK': 'NOT_RUN', 'OBSERVATION': 'NOT_RUN'}})
+                result = self._tool_result(payload, is_error=True)
         else:
             raise MCPRequestError(-32601, f"method not found: {method}")
 

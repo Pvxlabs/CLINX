@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 from typing import Any
@@ -1338,6 +1339,13 @@ class ClinxIntegration:
             "available_meaning": "CONFIGURATION_ENABLED",
             "capabilities_kind": "INFORMATIONAL_LOCAL_PROBES",
             "runtime_health": "NOT_PROBED",
+            "control_runtime": {
+                "process_id": os.getpid(),
+                "source_root": str(Path(__file__).resolve().parent),
+                "source_observation": "LOADED_MODULE_LOCATION_NOT_GIT_HEAD",
+                "authority_tools": ["clinx_get_effective_authority", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization"],
+                "outer_client_exposure": "NOT_OBSERVED",
+            },
             "request_contract": {
                 "execution_surface": HOST_EXECUTOR,
                 "required_capabilities": list(HOST_CAPABILITIES),
@@ -1415,11 +1423,103 @@ class ClinxIntegration:
                 "and approved=true. New development tasks use SANDBOX_WORKSPACE "
                 "by default, or NETWORKED_SANDBOX with network_access=true. "
                 "Host capabilities require an explicit policy request; continuation "
-                "preserves the sealed task policy. Linear is optional audit/history compatibility "
+                "preserves the sealed task policy. Describe required Host work with requested_operations "
+                "(exact capability/operation/class/target), and request network explicitly. "
+                "Use clinx_get_effective_authority then prepare/apply_policy_reauthorization "
+                "when the user's authorization expands; never launch an incapable deployment turn. "
+                "Reauthorization affects future executions only and does not start deployment. "
+                "Linear is optional audit/history compatibility "
                 "and is never required for Codex execution."
             ),
             "read_only": True,
         }
+
+    def _check_operation_requirements(self, policy, requirements=None):
+        from host_contract import operation_catalog
+        import os
+        if policy is None or policy.execution_surface != HOST_EXECUTOR:
+            return
+        scopes = requirements if requirements is not None else policy.operation_scopes
+        if scopes is None:
+            return  # Historical V1 policy; workflows still require exact grants.
+        config = self.cfg.host_executor
+        if not config.enabled:
+            raise M9IntegrationError('HOST_EXECUTOR_UNAVAILABLE')
+        catalog = operation_catalog(config)
+        for cap, op, cls, target in scopes:
+            spec = catalog.get(cap, {}).get(op)
+            if spec is None:
+                raise M9IntegrationError('OPERATION_NOT_IMPLEMENTED: ' + cap + '/' + op)
+            if cls not in spec['operation_classes']:
+                raise M9IntegrationError('OPERATION_CLASS_NOT_SUPPORTED: ' + op)
+            targets = spec.get('registered_targets')
+            if targets is not None and not any(t['identity'] == target and cls in t['operation_classes'] for t in targets):
+                raise M9IntegrationError('TARGET_NOT_AUTHORIZED: ' + target)
+            if targets is None and target:
+                raise M9IntegrationError('INVALID_TARGET_SCOPE: ' + target)
+            if op.startswith('workflow:'):
+                workflow = next(w for w in config.workflows if w.operation == op and w.target == target)
+                if not os.access(workflow.argv[0], os.X_OK):
+                    raise M9IntegrationError('WORKFLOW_EXECUTABLE_UNAVAILABLE: ' + op)
+
+    def get_effective_authority(self, *, task_ref):
+        from host_contract import executable_contract
+        task = self.registry.get_task(task_ref)
+        policy = parse_execution_policy(task.execution_policy_json)
+        route = parse_routing_identity(task.routing_identity_json)
+        if policy is None and route:
+            policy = legacy_policy_for_route(route)
+        identity = self.registry.get_task_policy_identity(task_ref)
+        contract = executable_contract(self.cfg.host_executor, policy=policy)
+        return {'task_ref': task_ref, **identity, 'future_execution_policy': policy.as_dict() if policy else None,
+                'effective_authority': contract['effective_authority'], 'operations': contract['capabilities'],
+                'network_access': bool(route and route.network_policy.network_access),
+                'backend_implemented': True, 'mcp_exposed': True, 'client_exposure': 'NOT_OBSERVED',
+                'runtime_health': 'NOT_PROBED', 'read_only': True}
+
+    def prepare_policy_reauthorization(self, *, approved=False, task_ref, expected_policy_hash,
+                                       target_policy, reason, network_access=None):
+        from execution_semantics import normalize_surface, normalize_authority, normalize_network_policy
+        if approved is not True:
+            raise M9IntegrationError('explicit approved=true is required for policy preparation')
+        if not isinstance(target_policy, dict) or set(target_policy) - {
+                'execution_surface', 'required_capabilities', 'operation_classes',
+                'production_mutation_intent', 'operation_scopes'}:
+            raise M9IntegrationError('invalid target_policy fields')
+        task = self.registry.get_task(task_ref)
+        route = parse_routing_identity(task.routing_identity_json)
+        if route is None:
+            raise M9IntegrationError('task route unavailable')
+        network = route.network_policy.network_access if network_access is None else network_access
+        policy = build_execution_policy(**target_policy, network_access=network)
+        if policy.execution_surface == HOST_EXECUTOR and not policy.operation_scopes:
+            raise M9IntegrationError('reauthorization requires exact operation_scopes')
+        self._check_operation_requirements(policy)
+        updated = dataclasses.replace(route, surface=normalize_surface(policy.route_surface),
+            authority=normalize_authority(scopes=policy.authority_scopes),
+            network_policy=normalize_network_policy(network))
+        return self.registry.prepare_policy_reauthorization(task_id=task_ref, expected_policy_hash=expected_policy_hash,
+            new_policy=policy, new_route=updated, requested_scope={'policy': policy.as_dict(), 'network_access': network}, reason=reason)
+
+    def apply_policy_reauthorization(self, *, prepared_reauthorization_ref, approved=False):
+        if approved is not True:
+            raise M9IntegrationError('explicit approved=true is required for policy reauthorization')
+        with self.registry._connect() as conn:
+            req = conn.execute('SELECT * FROM policy_reauthorizations WHERE reauthorization_ref=?',
+                               (prepared_reauthorization_ref,)).fetchone()
+            applied = conn.execute('SELECT 1 FROM task_policy_versions WHERE reauthorization_ref=?',
+                                   (prepared_reauthorization_ref,)).fetchone()
+        if req is None:
+            raise M9IntegrationError('unknown prepared reauthorization')
+        if not applied:
+            policy = parse_execution_policy(req['new_policy_json'])
+            self._check_operation_requirements(policy)
+            binding = self.registry.get_binding(req['task_id'])
+            if binding and getattr(self.dispatcher, '_uses_default_client_factory', False):
+                # Observes all configured owners; never resumes, interrupts or starts.
+                from native_provider import select_writer_client
+                select_writer_client(self.cfg, binding.thread_id)
+        return self.registry.apply_policy_reauthorization(prepared_reauthorization_ref, approved=approved)
 
     def _linear_project_name(self) -> str:
         configured = getattr(self.cfg, "linear_project_name", None)
@@ -1459,11 +1559,12 @@ class ClinxIntegration:
         reasoning_effort: str | None = None,
         reasoning: str | None = None,
         execution_mode: str = "normal",
-        network_access: bool = False,
+        network_access: bool | None = None,
         execution_surface: str | None = None,
         required_capabilities: list[str] | None = None,
         operation_classes: list[str] | None = None,
         production_mutation_intent: bool | None = None,
+        requested_operations: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """Prepare an integrity-checked CLINX execution command without dispatching."""
         if approved is not True:
@@ -1486,7 +1587,7 @@ class ClinxIntegration:
             raise M9IntegrationError("task_mode must be new or continue")
         if execution_mode not in {"normal", "fast"}:
             raise M9IntegrationError("execution_mode must be normal or fast")
-        if not isinstance(network_access, bool):
+        if network_access is not None and not isinstance(network_access, bool):
             raise M9IntegrationError("network_access must be a boolean")
         selected_model = self._validated_text("model", model, required=False) or "gpt-5.6-luna"
         selected_reasoning = (
@@ -1495,6 +1596,13 @@ class ClinxIntegration:
             or "high"
         )
 
+        from execution_policy import normalize_operation_scopes
+        requirements = normalize_operation_scopes(requested_operations)
+        if task_mode == 'new' and requirements:
+            required_capabilities = list(dict.fromkeys([*(required_capabilities or []), *(r[0] for r in requirements)]))
+            operation_classes = list(dict.fromkeys([*(operation_classes or []), *(r[2] for r in requirements)]))
+        if task_mode == 'new' and network_access is None:
+            network_access = False
         prepared_route = "{}"
         prepared_route_public: dict[str, Any] | None = None
         prepared_policy = None
@@ -1553,6 +1661,8 @@ class ClinxIntegration:
             prepared_route = task.routing_identity_json or "{}"
             parsed_route = parse_routing_identity(prepared_route)
             prepared_route_public = parsed_route.public_dict() if parsed_route is not None else None
+            if network_access is None:
+                network_access = bool(parsed_route and parsed_route.network_policy.network_access)
             existing_policy = parse_execution_policy(task.execution_policy_json)
             legacy_unknown_policy = False
             if existing_policy is None:
@@ -1584,6 +1694,7 @@ class ClinxIntegration:
                         else existing_policy.production_mutation_intent
                     ),
                     network_access=network_access,
+                    operation_scopes=existing_policy.as_dict().get("operation_scopes"),
                 )
             except ExecutionPolicyError as exc:
                 raise M9IntegrationError(str(exc)) from exc
@@ -1591,7 +1702,7 @@ class ClinxIntegration:
                 not legacy_unknown_policy
                 and requested_policy.as_dict() != existing_policy.as_dict()
             ):
-                raise M9IntegrationError("continuation cannot override the sealed execution policy")
+                raise M9IntegrationError("AUTHORITY_REAUTHORIZATION_REQUIRED: continuation cannot override the sealed execution policy; use clinx_prepare_policy_reauthorization")
             prepared_policy = requested_policy
         else:
             selected_host = self._validated_text("host", host)
@@ -1611,6 +1722,7 @@ class ClinxIntegration:
                         else production_mutation_intent
                     ),
                     network_access=network_access,
+                    operation_scopes=requested_operations,
                 )
             except ExecutionPolicyError as exc:
                 raise M9IntegrationError(str(exc)) from exc
@@ -1636,6 +1748,11 @@ class ClinxIntegration:
                 prepared_route_public = route.public_dict()
 
         assert prepared_policy is not None
+        if requirements:
+            for cap, op, cls, target in requirements:
+                if not prepared_policy.permits_operation(cap, op, cls, target):
+                    raise M9IntegrationError('AUTHORITY_REAUTHORIZATION_REQUIRED: requested operation exceeds current task policy; use clinx_prepare_policy_reauthorization')
+        self._check_operation_requirements(prepared_policy, requirements)
         if prepared_policy.execution_surface == HOST_EXECUTOR:
             executor = getattr(self.dispatcher, "host_executor", None)
             if executor is None:
@@ -1867,6 +1984,15 @@ class ClinxIntegration:
         if not isinstance(prepared_execution_ref, str) or not prepared_execution_ref.strip():
             raise M9IntegrationError("prepared_execution_ref is required")
         prepared = self.registry.verify_prepared_execution(prepared_execution_ref)
+        if prepared.status != 'DISPATCHED' and prepared.task_ref:
+            current = self.registry.get_task(prepared.task_ref)
+            if (current.execution_policy_json != prepared.execution_policy_json and current.execution_policy_json != '{}'):
+                raise M9IntegrationError('POLICY_IDENTITY_CONFLICT: preparation is stale')
+            current_route = parse_routing_identity(current.routing_identity_json)
+            prepared_route = parse_routing_identity(prepared.routing_identity_json)
+            if current_route != prepared_route:
+                raise M9IntegrationError('POLICY_IDENTITY_CONFLICT: prepared route is stale')
+        self._check_operation_requirements(parse_execution_policy(prepared.execution_policy_json))
         if prepared.status == "DISPATCHED":
             if not prepared.resulting_execution_ref or not prepared.resulting_task_id:
                 raise M9IntegrationError("dispatched preparation has incomplete result")

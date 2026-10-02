@@ -1241,7 +1241,7 @@ class DynamicToolProtocolTests(unittest.TestCase):
     def test_public_catalog_includes_adoption_without_shell_tools(self):
         names = tuple(item["name"] for item in tool_definitions())
         self.assertEqual(names, DEFAULT_TOOL_NAMES)
-        self.assertEqual(len(names), 10)
+        self.assertEqual(len(names), 13)
         self.assertFalse(any("shell" in name or "host_exec" in name or "ssh" in name for name in names))
 
     def test_dynamic_tool_schema_has_no_raw_identity_or_shell_fields(self):

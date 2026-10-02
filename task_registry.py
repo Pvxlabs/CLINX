@@ -27,7 +27,7 @@ from execution_semantics import (
     legacy_routing_identity,
     parse_routing_identity,
 )
-from execution_policy import ExecutionPolicy, parse_execution_policy
+from execution_policy import ExecutionPolicy, parse_execution_policy, policy_identity
 
 
 class TaskRegistryError(RuntimeError):
@@ -830,6 +830,49 @@ class TaskRegistry:
                     routing_identity_json TEXT NOT NULL DEFAULT '{}',
                     execution_policy_json TEXT NOT NULL DEFAULT '{}'
                 );
+                CREATE TABLE IF NOT EXISTS policy_reauthorizations (
+                    reauthorization_ref TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    expected_policy_hash TEXT NOT NULL,
+                    previous_policy_json TEXT NOT NULL,
+                    previous_route_json TEXT NOT NULL,
+                    new_policy_json TEXT NOT NULL,
+                    new_route_json TEXT NOT NULL,
+                    requested_scope_json TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    authority_source TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS task_policy_versions (
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    version INTEGER NOT NULL,
+                    reauthorization_ref TEXT UNIQUE,
+                    execution_policy_json TEXT NOT NULL,
+                    routing_identity_json TEXT NOT NULL,
+                    approved_scope_json TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    authority_source TEXT NOT NULL,
+                    applied_at TEXT NOT NULL,
+                    PRIMARY KEY(task_id, version)
+                );
+                CREATE TRIGGER IF NOT EXISTS policy_request_no_update BEFORE UPDATE ON policy_reauthorizations
+                    BEGIN SELECT RAISE(ABORT, 'immutable policy request'); END;
+                CREATE TRIGGER IF NOT EXISTS policy_request_no_delete BEFORE DELETE ON policy_reauthorizations
+                    BEGIN SELECT RAISE(ABORT, 'immutable policy request'); END;
+                CREATE TRIGGER IF NOT EXISTS policy_version_no_update BEFORE UPDATE ON task_policy_versions
+                    BEGIN SELECT RAISE(ABORT, 'immutable policy version'); END;
+                CREATE TRIGGER IF NOT EXISTS policy_version_no_delete BEFORE DELETE ON task_policy_versions
+                    BEGIN SELECT RAISE(ABORT, 'immutable policy version'); END;
+                CREATE TABLE IF NOT EXISTS production_resource_leases (
+                    resource_key TEXT PRIMARY KEY,
+                    fencing_epoch INTEGER NOT NULL,
+                    task_id TEXT NOT NULL,
+                    execution_ref TEXT NOT NULL,
+                    host_execution_ref TEXT NOT NULL,
+                    acquired_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS conversation_bindings (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
                     thread_id TEXT NOT NULL,
@@ -854,6 +897,25 @@ class TaskRegistry:
                     predecessor_status TEXT NOT NULL DEFAULT 'SUPERSEDED',
                     successor_status TEXT NOT NULL DEFAULT 'ACTIVE'
                 );
+                CREATE TABLE IF NOT EXISTS conversation_policy_lineage (
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    policy_version INTEGER NOT NULL,
+                    predecessor_thread TEXT NOT NULL,
+                    successor_thread TEXT NOT NULL UNIQUE,
+                    migration_reason TEXT NOT NULL,
+                    migrated_at TEXT NOT NULL,
+                    predecessor_session_id TEXT NOT NULL,
+                    predecessor_project_id TEXT,
+                    predecessor_app_server_version TEXT,
+                    predecessor_status TEXT NOT NULL DEFAULT 'SUPERSEDED',
+                    successor_status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    PRIMARY KEY(task_id, policy_version)
+                );
+                CREATE INDEX IF NOT EXISTS idx_policy_lineage_predecessor ON conversation_policy_lineage(predecessor_thread);
+                CREATE TRIGGER IF NOT EXISTS policy_lineage_no_update BEFORE UPDATE ON conversation_policy_lineage
+                    BEGIN SELECT RAISE(ABORT, 'immutable policy lineage'); END;
+                CREATE TRIGGER IF NOT EXISTS policy_lineage_no_delete BEFORE DELETE ON conversation_policy_lineage
+                    BEGIN SELECT RAISE(ABORT, 'immutable policy lineage'); END;
                 CREATE TABLE IF NOT EXISTS conversation_adoptions (
                     task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
                     thread_id TEXT NOT NULL UNIQUE,
@@ -1591,9 +1653,14 @@ class TaskRegistry:
     def get_binding_lineage(self, task_id: str) -> ConversationBindingLineage | None:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM conversation_binding_lineage WHERE task_id = ?", (task_id,)
+                "SELECT * FROM conversation_policy_lineage WHERE task_id=? ORDER BY policy_version DESC LIMIT 1", (task_id,)
             ).fetchone()
-        return ConversationBindingLineage(**dict(row)) if row is not None else None
+            if row is None:
+                row = conn.execute("SELECT * FROM conversation_binding_lineage WHERE task_id=?", (task_id,)).fetchone()
+        values = dict(row) if row is not None else None
+        if values is not None:
+            values.pop('policy_version', None)
+        return ConversationBindingLineage(**values) if values is not None else None
 
     def migrate_conversation_binding(
         self, *, task_id: str, successor_thread: str, successor_session_id: str,
@@ -2970,6 +3037,7 @@ class TaskRegistry:
                 (old.transport.stable_identifier, new.transport.stable_identifier, "transport"),
                 (old.workspace, new.workspace, "workspace"),
                 (old.authority, new.authority, "authority"),
+                (old.network_policy, new.network_policy, "network policy"),
                 (old.project_identity, new.project_identity, "project"),
             )
             for before, after, name in immutable_pairs:
@@ -3138,6 +3206,156 @@ class TaskRegistry:
             ).fetchone()
         return parse_routing_identity(row["routing_identity_json"] if row else None)
 
+    @staticmethod
+    def _task_policy_identity(conn, task):
+        version = conn.execute('SELECT COALESCE(MAX(version), 0) FROM task_policy_versions WHERE task_id=?',
+                               (task['task_id'],)).fetchone()[0]
+        return {'policy_version': version,
+                'policy_hash': policy_identity(task['execution_policy_json'], task['routing_identity_json'], version)}
+
+    def get_task_policy_identity(self, task_id):
+        with self._connect() as conn:
+            conn.execute('BEGIN')
+            task = conn.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+            if task is None:
+                raise TaskRegistryError('unknown task')
+            return self._task_policy_identity(conn, task)
+
+    @staticmethod
+    def _assert_authority_transition_safe(conn, task):
+        from tool_delivery import requires_reconciliation
+        task_id = task['task_id']
+        key = TaskRegistry.worktree_key(host=task['host'], cwd=task['cwd'],
+                                       repository_origin=task['repository_origin'])
+        if (task['codex_running'] or
+            conn.execute('SELECT 1 FROM executions WHERE task_id=?', (task_id,)).fetchone() or
+            conn.execute('SELECT 1 FROM worktree_leases WHERE worktree_key=? OR task_id=?', (key, task_id)).fetchone()):
+            raise TaskRegistryError('POLICY_REAUTHORIZATION_BLOCKED: active execution or workspace ownership')
+        TaskRegistry._assert_side_effects_resolved(conn, task_id)
+        if task['execution_state'] in {'RECOVERY_REQUIRED', 'RECONCILIATION_REQUIRED', 'DISPATCHING', 'CLAIMED', 'TURN_STARTED', 'CODEX_RUNNING'}:
+            raise TaskRegistryError('POLICY_REAUTHORIZATION_BLOCKED: execution ownership unresolved')
+
+    @staticmethod
+    def _assert_side_effects_resolved(conn, task_id):
+        from tool_delivery import requires_reconciliation
+        if conn.execute("SELECT 1 FROM host_executions WHERE task_id=? AND (completed_at IS NULL OR exit_code IS NULL OR timed_out=1)",
+                        (task_id,)).fetchone():
+            raise TaskRegistryError('POLICY_REAUTHORIZATION_BLOCKED: unresolved Host side effect')
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='host_tool_deliveries'").fetchone():
+            rows = conn.execute("""SELECT d.* FROM host_tool_deliveries d WHERE d.execution_ref IN
+                (SELECT execution_ref FROM execution_history WHERE task_id=? UNION
+                 SELECT execution_ref FROM host_executions WHERE task_id=?)""", (task_id, task_id)).fetchall()
+            if any(requires_reconciliation(row) for row in rows):
+                raise TaskRegistryError('POLICY_REAUTHORIZATION_BLOCKED: result delivery requires reconciliation')
+
+    def prepare_policy_reauthorization(self, *, task_id, expected_policy_hash, new_policy,
+                                       new_route, requested_scope, reason):
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 4000:
+            raise TaskRegistryError('reauthorization requires a bounded reason')
+        new_policy.validate_route(new_route)
+        with self._connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            task = conn.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+            if task is None or self._task_policy_identity(conn, task)['policy_hash'] != expected_policy_hash:
+                raise TaskRegistryError('POLICY_IDENTITY_CONFLICT')
+            old_route = parse_routing_identity(task['routing_identity_json'])
+            if old_route is None:
+                raise TaskRegistryError('task route identity unavailable')
+            for field in ('host', 'provider', 'transport', 'workspace', 'conversation', 'project_identity'):
+                if getattr(old_route, field) != getattr(new_route, field):
+                    raise TaskRegistryError('reauthorization cannot change ' + field)
+            ref = 'reauth_' + uuid.uuid4().hex
+            created = _now()
+            expires = (_datetime.datetime.fromisoformat(created) + _datetime.timedelta(minutes=15)).isoformat()
+            # MCP has no independently proven human subject. Record the actual
+            # operator assertion channel without manufacturing a user identity.
+            conn.execute("""INSERT INTO policy_reauthorizations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (ref, task_id, expected_policy_hash, task['execution_policy_json'], task['routing_identity_json'],
+                 new_policy.to_json(), new_route.to_json(), json.dumps(requested_scope, sort_keys=True),
+                 reason, 'MCP_OPERATOR_SUBJECT_UNAVAILABLE', 'EXPLICIT_OPERATOR_APPROVED_TRUE', created, expires))
+        return {'prepared_reauthorization_ref': ref, 'task_ref': task_id,
+                'expected_policy_hash': expected_policy_hash, 'previous_policy': json.loads(task['execution_policy_json']),
+                'new_policy': new_policy.as_dict(), 'requested_scope': requested_scope,
+                'expires_at': expires, 'execution_started': False}
+
+    def apply_policy_reauthorization(self, ref, *, approved):
+        if approved is not True:
+            raise TaskRegistryError('explicit approved=true is required for policy reauthorization')
+        with self._connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            request = conn.execute('SELECT * FROM policy_reauthorizations WHERE reauthorization_ref=?', (ref,)).fetchone()
+            if request is None:
+                raise TaskRegistryError('unknown prepared reauthorization')
+            applied = conn.execute('SELECT * FROM task_policy_versions WHERE reauthorization_ref=?', (ref,)).fetchone()
+            if applied:
+                return {'task_ref': applied['task_id'], 'policy_version': applied['version'],
+                        'policy_hash': policy_identity(applied['execution_policy_json'], applied['routing_identity_json'], applied['version']),
+                        'reauthorization_ref': ref, 'idempotent': True, 'execution_started': False}
+            if request['expires_at'] < _now():
+                raise TaskRegistryError('POLICY_REAUTHORIZATION_EXPIRED')
+            task = conn.execute('SELECT * FROM tasks WHERE task_id=?', (request['task_id'],)).fetchone()
+            identity = self._task_policy_identity(conn, task)
+            if identity['policy_hash'] != request['expected_policy_hash']:
+                raise TaskRegistryError('POLICY_IDENTITY_CONFLICT')
+            self._assert_authority_transition_safe(conn, task)
+            if identity['policy_version'] == 0:
+                conn.execute('INSERT OR IGNORE INTO task_policy_versions VALUES (?,?,?,?,?,?,?,?,?)',
+                    (task['task_id'], 0, None, task['execution_policy_json'], task['routing_identity_json'],
+                     '{}', 'HISTORICAL_RECORD', 'LEGACY_SNAPSHOT_NO_NEW_GRANT', _now()))
+            version = identity['policy_version'] + 1
+            conn.execute('INSERT INTO task_policy_versions VALUES (?,?,?,?,?,?,?,?,?)',
+                (task['task_id'], version, ref, request['new_policy_json'], request['new_route_json'],
+                 request['requested_scope_json'], request['actor'], request['authority_source'], _now()))
+            conn.execute('UPDATE tasks SET execution_policy_json=?, routing_identity_json=?, updated_at=? WHERE task_id=?',
+                (request['new_policy_json'], request['new_route_json'], _now(), task['task_id']))
+            # No lifecycle, result, checkpoint, execution or provider mutation.
+            return {'task_ref': task['task_id'], 'policy_version': version,
+                    'policy_hash': policy_identity(request['new_policy_json'], request['new_route_json'], version),
+                    'reauthorization_ref': ref, 'idempotent': False, 'execution_started': False}
+
+    def provider_policy_binding_current(self, task_id):
+        with self._connect() as conn:
+            version = conn.execute('SELECT COALESCE(MAX(version), 0) FROM task_policy_versions WHERE task_id=?', (task_id,)).fetchone()[0]
+            if version == 0:
+                return True
+            return conn.execute("""SELECT 1 FROM conversation_policy_lineage l JOIN conversation_bindings b
+                ON b.task_id=l.task_id AND b.thread_id=l.successor_thread
+                WHERE l.task_id=? AND l.policy_version=?""", (task_id, version)).fetchone() is not None
+
+    def bind_reauthorized_provider(self, *, task_id, execution_ref, expected_thread, successor, version):
+        """Bind a new tool contract only before a turn, under the claimed lease.
+
+        Provider 0.156.1 cannot change dynamicTools at resume. Preserve every
+        predecessor as queryable history; this changes no historical execution.
+        """
+        from execution_semantics import ConversationIdentity
+        with self._connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            task = conn.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+            old = conn.execute('SELECT * FROM conversation_bindings WHERE task_id=?', (task_id,)).fetchone()
+            execution = conn.execute('SELECT * FROM executions WHERE task_id=? AND execution_ref=?', (task_id, execution_ref)).fetchone()
+            if (old is None or old['thread_id'] != expected_thread or execution is None or
+                execution['turn_id'] is not None or execution['execution_state'] not in ('CLAIMED', 'DISPATCHING') or
+                self._task_policy_identity(conn, task)['policy_version'] != version):
+                raise TaskRegistryError('POLICY_PROVIDER_BINDING_CONFLICT')
+            if not conn.execute('SELECT 1 FROM worktree_leases WHERE task_id=? AND execution_ref=?', (task_id, execution_ref)).fetchone():
+                raise TaskRegistryError('POLICY_PROVIDER_LEASE_REQUIRED')
+            conn.execute("""INSERT INTO conversation_policy_lineage
+                (task_id,policy_version,predecessor_thread,successor_thread,migration_reason,migrated_at,
+                 predecessor_session_id,predecessor_project_id,predecessor_app_server_version)
+                VALUES (?,?,?,?,?,?,?,?,?)""",
+                (task_id, version, expected_thread, successor['id'], 'POLICY_REAUTHORIZATION', _now(),
+                 old['session_id'], old['project_id'], old['app_server_version']))
+            conn.execute("""UPDATE conversation_bindings SET thread_id=?,session_id=?,project_id=?,
+                bound_at=?,last_verified_at=? WHERE task_id=?""",
+                (successor['id'], successor['sessionId'], successor.get('projectId'), _now(), _now(), task_id))
+            route = parse_routing_identity(task['routing_identity_json'])
+            route = dataclasses.replace(route, conversation=ConversationIdentity(successor['id'], 'BOUND'))
+            conn.execute('UPDATE tasks SET routing_identity_json=?,updated_at=? WHERE task_id=?', (route.to_json(), _now(), task_id))
+            conn.execute('UPDATE executions SET routing_identity_json=? WHERE task_id=? AND execution_ref=?',
+                         (route.to_json(), task_id, execution_ref))
+        return self.get_binding(task_id), route
+
     def get_execution_policy(self, execution_ref: str) -> ExecutionPolicy | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -3188,6 +3406,7 @@ class TaskRegistry:
                     )
 
     def begin_host_execution(self, **values: Any) -> None:
+        resource_key = values.pop("resource_key", None)
         required = {
             "host_execution_ref", "task_id", "execution_ref",
             "routing_identity_json", "execution_policy_json", "host", "surface",
@@ -3201,6 +3420,36 @@ class TaskRegistry:
         columns = tuple(values)
         placeholders = ",".join("?" for _ in columns)
         with self._shadow_write_connection() as conn:
+            if resource_key:
+                if not conn.in_transaction:
+                    conn.execute('BEGIN IMMEDIATE')
+                if not conn.execute('SELECT 1 FROM worktree_leases WHERE task_id=? AND execution_ref=?',
+                                    (values['task_id'], values['execution_ref'])).fetchone():
+                    error = TaskRegistryError('PRODUCTION_RESOURCE_OWNERSHIP_LOST')
+                    error.command_not_dispatched = True
+                    error.code = 'PRODUCTION_RESOURCE_OWNERSHIP_LOST'
+                    raise error
+                old = conn.execute('SELECT * FROM production_resource_leases WHERE resource_key=?', (resource_key,)).fetchone()
+                epoch = 1
+                if old:
+                    from tool_delivery import requires_reconciliation
+                    previous = conn.execute('SELECT * FROM host_executions WHERE host_execution_ref=?', (old['host_execution_ref'],)).fetchone()
+                    safe = previous is not None and previous['completed_at'] and previous['exit_code'] is not None and not previous['timed_out']
+                    if safe and previous['tool_call_id']:
+                        delivery = conn.execute('SELECT * FROM host_tool_deliveries WHERE execution_ref=? AND tool_call_id=?',
+                            (old['execution_ref'], previous['tool_call_id'])).fetchone()
+                        safe = delivery is not None and not requires_reconciliation(delivery)
+                    if not safe:
+                        error = TaskRegistryError('PRODUCTION_RESOURCE_BUSY_OR_UNCERTAIN')
+                        error.command_not_dispatched = True
+                        error.code = 'PRODUCTION_RESOURCE_BUSY_OR_UNCERTAIN'
+                        raise error
+                    epoch = old['fencing_epoch'] + 1
+                conn.execute("""INSERT INTO production_resource_leases VALUES (?,?,?,?,?,?)
+                    ON CONFLICT(resource_key) DO UPDATE SET fencing_epoch=excluded.fencing_epoch,
+                    task_id=excluded.task_id, execution_ref=excluded.execution_ref,
+                    host_execution_ref=excluded.host_execution_ref, acquired_at=excluded.acquired_at""",
+                    (resource_key, epoch, values['task_id'], values['execution_ref'], values['host_execution_ref'], values['started_at']))
             conn.execute(
                 f"INSERT INTO host_executions({','.join(columns)}) VALUES ({placeholders})",
                 tuple(values[column] for column in columns),
@@ -3536,6 +3785,8 @@ class TaskRegistry:
         self, task_id: str, issue_id: str | None = None, *,
         execution_ref: str | None = None, retain: bool = False,
         preserve_uncertain: bool = False,
+        expected_policy_json: str | None = None,
+        expected_route_json: str | None = None,
     ) -> Iterator[TaskRecord]:
         task = self.get_task(task_id)
         if task.status == "ARCHIVED":
@@ -3543,6 +3794,12 @@ class TaskRegistry:
         with self._connect() as conn:
             try:
                 conn.execute("BEGIN IMMEDIATE")
+                current = conn.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+                if ((expected_policy_json is not None and current['execution_policy_json'] != expected_policy_json) or
+                    (expected_route_json is not None and current['routing_identity_json'] != expected_route_json)):
+                    raise TaskRegistryError('POLICY_IDENTITY_CONFLICT: preparation is stale')
+                task = TaskRecord(**dict(current))
+                self._assert_side_effects_resolved(conn, task_id)
                 try:
                     worktree_key = self.worktree_key(
                         host=task.host, cwd=task.cwd, repository_origin=task.repository_origin

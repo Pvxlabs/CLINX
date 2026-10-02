@@ -182,6 +182,9 @@ def test_catalog_is_consumed_by_discovery_dynamic_schema_and_dispatch(v2):
         assert discovered['capabilities'][capability]['operations'] == operations
         for operation, spec in operations.items():
             assert operation in description
+            if operation.startswith('workflow:'):
+                assert spec['registered_targets'][0]['parameter_schema']['additionalProperties'] is False
+                continue  # Exact workflow grants/parameters are exercised by test_execution_authority.
             assert spec['argument_schema']['additionalProperties'] is False
             args = {'argv': ['python3', '-V'], 'path': '.', 'name': '.clinx-host-executor-test'}
             args = {key: args.get(key, 'clinx.service') for key in spec['required_arguments']}

@@ -165,6 +165,10 @@ class ThreadIdentityReader:
                 ('anchors', 'SELECT * FROM context_anchors WHERE thread_id=?', (tid,)),
             ):
                 facts[name] = rows(c, sql, args)
+            has_policy_lineage = c.execute("SELECT 1 FROM sqlite_master WHERE name='conversation_policy_lineage'").fetchone()
+            if has_policy_lineage:
+                facts['predecessors'] += rows(c, 'SELECT * FROM conversation_policy_lineage WHERE predecessor_thread=?', (tid,))
+                facts['successors'] += rows(c, 'SELECT * FROM conversation_policy_lineage WHERE successor_thread=?', (tid,))
             ids = {r.get('task_id') or r.get('resulting_task_id') for group in facts.values() for r in group}
             ids.discard(None)
             if not ids:
@@ -181,6 +185,9 @@ class ThreadIdentityReader:
             current = c.execute('SELECT * FROM conversation_bindings WHERE task_id=?', (task['task_id'],)).fetchone()
             current = dict(current) if current else None
             lineage = c.execute('SELECT * FROM conversation_binding_lineage WHERE task_id=?', (task['task_id'],)).fetchone()
+            if has_policy_lineage:
+                lineage = c.execute('SELECT * FROM conversation_policy_lineage WHERE task_id=? ORDER BY policy_version DESC LIMIT 1',
+                                    (task['task_id'],)).fetchone() or lineage
             lineage = dict(lineage) if lineage else None
             executions = {r['execution_ref']: dict(r, association_source='EXECUTION_ROUTE', active_record=True) for r in facts['active'] if r['execution_ref']}
             for r in facts['history']:
