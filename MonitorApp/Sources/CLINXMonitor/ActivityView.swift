@@ -3,6 +3,24 @@ import SwiftUI
 
 struct ActivityView: View, Equatable {
     let task: ObservedTask
+    let service: (any ActivityServing)?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.task.taskRef == rhs.task.taskRef && lhs.task.executionRef == rhs.task.executionRef &&
+        lhs.task.hostOperations == rhs.task.hostOperations &&
+        lhs.task.hostOperationsHasMore == rhs.task.hostOperationsHasMore &&
+        lhs.task.exactResult == rhs.task.exactResult
+    }
+
+    var body: some View {
+        // Cache only parent snapshot inputs. The live feed owns a separate observation
+        // boundary so message publications cannot be skipped by this equality check.
+        ActivityContentView(task: task, service: service)
+    }
+}
+
+private struct ActivityContentView: View {
+    let task: ObservedTask
     @StateObject private var feed: ActivityStore
     @State private var following = true
     @State private var newActivity = false
@@ -12,16 +30,6 @@ struct ActivityView: View, Equatable {
         self.task = task
         _feed = StateObject(wrappedValue: ActivityStore(taskRef: task.taskRef,
             executionRef: task.executionRef ?? "", service: service))
-    }
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        // The parent refreshes snapshot timestamps every two seconds. Only fields
-        // rendered in this tab should invalidate its scroll tree. Source identity
-        // is handled by InspectorView's .id; feed changes still invalidate StateObject.
-        lhs.task.taskRef == rhs.task.taskRef && lhs.task.executionRef == rhs.task.executionRef &&
-        lhs.task.hostOperations == rhs.task.hostOperations &&
-        lhs.task.hostOperationsHasMore == rhs.task.hostOperationsHasMore &&
-        lhs.task.exactResult == rhs.task.exactResult
     }
 
     private var operations: [HostOperation] {

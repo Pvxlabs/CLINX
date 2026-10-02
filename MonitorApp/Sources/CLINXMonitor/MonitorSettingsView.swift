@@ -1,23 +1,72 @@
 import AppKit
 import SwiftUI
 
-/// Observer connection settings only — no execution settings exist in a read-only client.
-///
-/// Figma source of truth: the "Settings" screen (`SettingsPanel`, connection pane) of
-/// `CLINX Monitor UI/UX Redesign`. Presented as the native macOS Settings scene (⌘,).
+/// Read-only Monitor preferences, presented in the native macOS Settings scene.
 struct MonitorSettingsView: View {
     @ObservedObject var store: MonitorStore
+    @SceneStorage("monitor.settingsTab") private var selectedTab = SettingsTab.devices.rawValue
+
+    private enum SettingsTab: String, CaseIterable {
+        case devices = "Devices", connection = "Connection", appearance = "Appearance", shortcuts = "Shortcuts"
+
+        var symbol: String {
+            switch self {
+            case .devices: return "desktopcomputer"
+            case .connection: return "bolt.horizontal"
+            case .appearance: return "circle.lefthalf.filled"
+            case .shortcuts: return "keyboard"
+            }
+        }
+    }
 
     var body: some View {
-        TabView {
-            ConnectionSettingsView(store: store)
-                .tabItem { Label("Connection", systemImage: "bolt.horizontal") }
-            AppearanceSettingsView(store: store)
-                .tabItem { Label("Appearance", systemImage: "circle.lefthalf.filled") }
-            ShortcutSettingsView()
-                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                ForEach(SettingsTab.allCases, id: \.self) { tab in
+                    Button { selectedTab = tab.rawValue } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: tab.symbol).font(.system(size: 23))
+                                .frame(height: 26)
+                            Text(tab.rawValue).font(DS.Font.body)
+                        }
+                        .frame(width: 108, height: 64)
+                        .foregroundStyle(selectedTab == tab.rawValue ? DS.Palette.accent : DS.Palette.textSecondary)
+                        .background(RoundedRectangle(cornerRadius: 9)
+                            .fill(selectedTab == tab.rawValue ? Color.primary.opacity(0.07) : Color.clear))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selectedTab == tab.rawValue ? .isSelected : [])
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .overlay(alignment: .bottom) { Rectangle().fill(DS.Palette.divider).frame(height: 1) }
+
+            Group {
+                switch SettingsTab(rawValue: selectedTab) ?? .devices {
+                case .devices: DevicesSettingsView(monitor: store)
+                case .connection: ConnectionSettingsView(store: store)
+                case .appearance: AppearanceSettingsView(store: store)
+                case .shortcuts: ShortcutSettingsView()
+                }
+            }
+            .frame(height: 440)
         }
-        .frame(width: 560)
+        .frame(width: 620)
+        .background(SettingsWindowChrome())
+    }
+}
+
+private struct SettingsWindowChrome: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { WindowView() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class WindowView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.titleVisibility = .hidden
+        }
     }
 }
 
@@ -28,88 +77,91 @@ private struct ConnectionSettingsView: View {
     @State private var replacement = ""
     @State private var status: String?
     @State private var statusIsError = false
-    @State private var testing = false
     @State private var credentialStored = false
+    @State private var checkingCredential = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            field("Observer endpoint", hint: "CLINX observer read API. HTTPS only.") {
-                TextField("https://observer.example.ts.net", text: $endpoint)
-                    .textFieldStyle(.roundedBorder)
-                    .font(DS.Font.mono(11.5))
-            }
-            field("Credential", hint: "Read-scoped bearer token · stored in this Mac’s Keychain") {
-                HStack(spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "lock").font(.system(size: 10))
-                        Text(credentialStored ? "••••••••••••••••••••••" : "No credential stored")
-                            .font(DS.Font.mono(11.5))
-                    }
-                    .foregroundStyle(DS.Palette.textSecondary)
-                    .padding(.horizontal, 8)
-                    .frame(height: 24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(DS.Palette.surfaceSecondary))
-                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(DS.Palette.border, lineWidth: 1))
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Configure a manual Observer connection.")
+                .font(DS.Font.body).foregroundStyle(DS.Palette.textSecondary)
+                .frame(height: 24, alignment: .topLeading)
 
-                    SecureField("Replace…", text: $replacement)
+            HStack(spacing: 12) {
+                Image(systemName: "bolt.horizontal")
+                    .font(.system(size: 22)).foregroundStyle(DS.Palette.textSecondary)
+                    .frame(width: 34)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(store.linkedDeviceName ?? "Manual connection").font(DS.Font.bodyEmphasis)
+                    HStack(spacing: 6) {
+                        StatusGlyphView(glyph: statusGlyph, color: statusColor, size: 10)
+                        Text(statusText).font(DS.Font.meta).foregroundStyle(DS.Palette.textSecondary)
+                    }
+                }
+                Spacer()
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 10).fill(DS.Palette.surfaceSecondary))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Observer endpoint").font(DS.Font.bodyEmphasis).foregroundStyle(DS.Palette.textSecondary)
+                HStack(spacing: 8) {
+                    TextField("https://observer.example.ts.net", text: $endpoint)
+                        .textFieldStyle(.roundedBorder).font(DS.Font.mono(11.5))
+                        .accessibilityLabel("Observer endpoint")
+                    Button { saveEndpoint() } label: { Text("Save").frame(width: 64) }
+                        .disabled(endpoint == store.manualEndpoint)
+                }
+                Text("Private HTTPS address for the read-only Observer.")
+                    .font(DS.Font.micro).foregroundStyle(DS.Palette.textTertiary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("Credential").font(DS.Font.bodyEmphasis).foregroundStyle(DS.Palette.textSecondary)
+                    Spacer()
+                    Text(checkingCredential ? "Checking Keychain…" : (credentialStored ? "Saved in Keychain" : "Not saved"))
+                        .font(DS.Font.micro).foregroundStyle(DS.Palette.textTertiary)
+                    Menu {
+                        Button("Remove local credential", role: .destructive) { removeCredential() }
+                            .disabled(!credentialStored)
+                    } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 18)
+                    .accessibilityLabel("Credential options")
+                }
+                HStack(spacing: 8) {
+                    SecureField("Enter a new read-only token…", text: $replacement)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 130)
+                        .accessibilityLabel("New Observer credential")
                         .onSubmit { replaceCredential() }
-                    Button("Replace") { replaceCredential() }
+                    Button { replaceCredential() } label: { Text("Replace").frame(width: 64) }
                         .disabled(replacement.isEmpty)
                 }
+                Text("Stored securely on this Mac. Leave blank to keep the saved credential.")
+                    .font(DS.Font.micro).foregroundStyle(DS.Palette.textTertiary)
             }
-            field("Connection status", hint: nil) {
-                HStack(spacing: 8) {
-                    StatusGlyphView(glyph: statusGlyph, color: statusColor, size: 11)
-                    Text(statusText)
-                        .font(DS.Font.body)
-                        .foregroundStyle(DS.Palette.textPrimary)
-                }
-                .frame(height: 24)
-            }
-            field("Last successful", hint: nil) {
-                Text(lastSuccessText)
-                    .font(DS.Font.mono(11.5))
-                    .monospacedDigit()
-                    .foregroundStyle(DS.Palette.textPrimary)
-                    .frame(height: 24, alignment: .leading)
-            }
-            field("", hint: nil) {
-                HStack(spacing: 10) {
-                    Button("Test connection") { Task { await testConnection() } }
-                        .disabled(testing || endpoint.isEmpty)
-                    Button("Save endpoint") { saveEndpoint() }
-                        .disabled(endpoint == store.endpointText)
-                    Button("Remove local credential") { removeCredential() }
-                        .disabled(!credentialStored)
-                    if testing { ProgressView().controlSize(.small) }
-                }
-            }
+
             if let status {
-                Text(status)
-                    .font(DS.Font.meta)
+                Text(status).font(DS.Font.meta)
                     .foregroundStyle(statusIsError ? DS.Palette.error : DS.Palette.success)
-                    .padding(.top, 4)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer(minLength: 12)
-
+            Spacer(minLength: 0)
             HStack(spacing: 6) {
-                Image(systemName: "eye").font(.system(size: 11))
-                Text("Monitor is read-only. It has no execution controls and requests read scope only.")
-                    .font(DS.Font.micro)
+                Image(systemName: "lock.shield")
+                Text("Monitor access is read-only. Credentials stay in this Mac’s Keychain.")
             }
-            .foregroundStyle(DS.Palette.textTertiary)
-            .padding(.top, 8)
+            .font(DS.Font.micro).foregroundStyle(DS.Palette.textTertiary)
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .top) { Rectangle().fill(DS.Palette.divider).frame(height: 1) }
         }
-        .padding(20)
-        .frame(minHeight: 320)
-        .onAppear {
-            endpoint = store.endpointText
-            credentialStored = (try? ObserverKeychain.read()) != nil
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task {
+            endpoint = store.manualEndpoint
+            checkingCredential = true
+            credentialStored = await Task.detached { ObserverKeychain.contains() }.value
+            checkingCredential = false
         }
     }
 
@@ -131,17 +183,10 @@ private struct ConnectionSettingsView: View {
 
     private var statusText: String {
         switch store.connection7 {
-        case .connected: return "Connected · authority \(store.authority.label.lowercased()) · sync \(store.syncText)"
+        case .connected: return "Connected · synced \(store.syncText)"
         case .degraded: return "Degraded · \(store.syncText)"
         case .offline: return store.connectivityNote ?? "Offline"
         }
-    }
-
-    private var lastSuccessText: String {
-        guard let last = store.lastSuccessfulFetch else { return "—" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return "\(formatter.string(from: last)) (\(RelativeTime.ago(since: last)))"
     }
 
     private func saveEndpoint() {
@@ -183,65 +228,24 @@ private struct ConnectionSettingsView: View {
         }
     }
 
-    private func testConnection() async {
-        testing = true
-        defer { testing = false }
-        do {
-            guard let url = URL(string: endpoint) else { throw MonitorError.invalidEndpoint }
-            let client = try ObserverClient(baseURL: url)
-            let health = try await client.health()
-            statusIsError = !health.readOnly
-            status = health.readOnly
-                ? "Handshake ok · read scope verified · schema \(health.schemaVersion)"
-                : "Observer did not report a read-only schema."
-        } catch let error as MonitorError {
-            statusIsError = true
-            switch error {
-            case .server(let code): status = "Handshake failed · HTTP \(code)"
-            case .credentialUnavailable: status = "Credential unavailable in the Keychain"
-            case .invalidEndpoint: status = "Endpoint rejected before any request"
-            default: status = "Handshake failed · no valid read response"
-            }
-        } catch {
-            statusIsError = true
-            status = "Handshake failed"
-        }
-    }
-
-    private func field<Content: View>(_ label: String, hint: String?,
-                                      @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(label)
-                .font(DS.Font.body)
-                .foregroundStyle(DS.Palette.textSecondary)
-                .frame(width: 130, alignment: .trailing)
-                .padding(.top, 3)
-            VStack(alignment: .leading, spacing: 4) {
-                content()
-                if let hint {
-                    Text(hint)
-                        .font(DS.Font.micro)
-                        .foregroundStyle(DS.Palette.textTertiary)
-                }
-            }
-        }
-        .padding(.vertical, 6)
-    }
 }
 
 private struct AppearanceSettingsView: View {
     @ObservedObject var store: MonitorStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Appearance follows the macOS system setting. The redesign ships light and dark semantic tokens, so no separate appearance switch is needed.")
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Appearance automatically follows your Mac’s Light or Dark setting.")
                 .font(DS.Font.body)
                 .foregroundStyle(DS.Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Rectangle().fill(DS.Palette.divider).frame(height: 1)
 
-            Toggle("Use synthetic acceptance data", isOn: Binding(
+            HStack {
+                Text("Use synthetic acceptance data").font(DS.Font.body)
+                Spacer()
+                Toggle("Use synthetic acceptance data", isOn: Binding(
                 get: { store.syntheticScenario != nil },
                 set: { enabled in
                     if enabled {
@@ -250,7 +254,9 @@ private struct AppearanceSettingsView: View {
                         store.useLiveObserver()
                     }
                 }))
-            .toggleStyle(.switch)
+                .toggleStyle(.switch)
+                .labelsHidden()
+            }
 
             if store.syntheticScenario != nil {
                 HStack(spacing: 8) {
@@ -271,15 +277,15 @@ private struct AppearanceSettingsView: View {
                     .font(DS.Font.micro)
                     .foregroundStyle(DS.Palette.textTertiary)
             } else {
-                Text("Live mode reads the private P620 Observer with this Mac’s stored credential.")
+                Text("Live mode reads the selected Observer with this Mac’s stored credential.")
                     .font(DS.Font.micro)
                     .foregroundStyle(DS.Palette.textTertiary)
             }
 
             Spacer()
         }
-        .padding(20)
-        .frame(minHeight: 320)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -292,7 +298,7 @@ private struct ShortcutSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 0) {
+            VStack(spacing: 0) {
                 ForEach(rows.indices, id: \.self) { index in
                     HStack {
                         Text(rows[index].0)
@@ -301,14 +307,14 @@ private struct ShortcutSettingsView: View {
                         Spacer()
                         Kbd(text: rows[index].1)
                     }
-                    .padding(.horizontal, 8)
-                    .frame(height: 28)
+                    .padding(.horizontal, 4)
+                    .frame(height: 36)
                     .overlay(alignment: .bottom) { Rectangle().fill(DS.Palette.divider).frame(height: 1) }
                 }
             }
             Spacer()
         }
-        .padding(20)
-        .frame(minHeight: 320)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

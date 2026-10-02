@@ -133,6 +133,9 @@ def activity_database(path):
 class ActivityReader:
     def __init__(self, root):
         self.root = Path(root).expanduser().resolve()
+        # Remounting history can recover messages hidden by a stale WAL/SHM pair.
+        # Reject pre-restart cursors so clients reload rather than skip those rows.
+        self.generation = os.urandom(16).hex()
 
     @staticmethod
     def encode(scope, mode, position):
@@ -177,7 +180,7 @@ class ActivityReader:
                 if metadata[0] != "paginated":
                     return dict(page, reason="NATIVE_HISTORY_MODE_UNSUPPORTED")
             # Cursor cannot cross executions, turns or a replaced source database.
-            identity = [task_ref, eref, thread, turn, str(self.root), str(history.stat().st_ino)]
+            identity = [task_ref, eref, thread, turn, str(self.root), str(history.stat().st_ino), self.generation]
             scope = hashlib.sha256(json.dumps(identity).encode()).hexdigest()[:32]
             position = self.decode(after or before, scope, "after" if after else "before") if after or before else None
             with activity_database(history) as conn:

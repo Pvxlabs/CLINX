@@ -103,6 +103,9 @@ final class MonitorStore: ObservableObject {
     @Published private(set) var errorCategory: String?
     @Published private(set) var isRefreshing = false
     @Published private(set) var endpointText: String
+    @Published private(set) var linkedDeviceID: String?
+    @Published private(set) var linkedDeviceName: String?
+    var credentialAccount: String { linkedDeviceID.map { "device:\($0)" } ?? "p620-observer" }
     @Published private(set) var syntheticScenario: SyntheticScenario?
 
     // Presentation state
@@ -128,6 +131,7 @@ final class MonitorStore: ObservableObject {
     private var pollTask: Task<Void, Never>?
     private var eventCursor: String?
     private var selectionToken = 0
+    private var sourceToken = 0
     private var authFailed = false
     private var failureCount = 0
     private var failed = false
@@ -138,8 +142,10 @@ final class MonitorStore: ObservableObject {
             .flatMap { try? JSONDecoder().decode([LocalArchiveEntry].self, from: $0) } ?? []
         self.service = service
         endpointText = defaults.string(forKey: "monitor.endpoint") ?? ""
+        linkedDeviceID = defaults.string(forKey: "monitor.deviceID")
+        linkedDeviceName = defaults.string(forKey: "monitor.deviceName")
         if service == nil, !endpointText.isEmpty, let url = URL(string: endpointText) {
-            self.service = try? ObserverClient(baseURL: url)
+            self.service = try? ObserverClient(baseURL: url, credentialAccount: credentialAccount)
         }
     }
 
@@ -251,7 +257,7 @@ final class MonitorStore: ObservableObject {
     var connectivityDetail: String? {
         if let syntheticScenario { return syntheticScenario.connectivityDetail }
         switch connection {
-        case .setup: return "Open Settings (⌘,) to add the private HTTPS endpoint and credential."
+        case .setup: return "Open Settings (⌘,) → Devices to pair a nearby host, or use Connection for manual setup."
         case .error: return lastSuccessfulFetch == nil
             ? "No snapshot has been observed yet."
             : "Showing last known data from \(syncText)."
@@ -484,6 +490,11 @@ final class MonitorStore: ObservableObject {
     func configure(endpoint: String) throws {
         guard let url = URL(string: endpoint) else { throw MonitorError.invalidEndpoint }
         let newService = try ObserverClient(baseURL: url)
+        linkedDeviceID = nil
+        linkedDeviceName = nil
+        defaults.removeObject(forKey: "monitor.deviceID")
+        defaults.removeObject(forKey: "monitor.deviceName")
+        defaults.set(endpoint, forKey: "monitor.manualEndpoint")
         pollTask?.cancel()
         service = newService
         syntheticScenario = nil
@@ -492,6 +503,39 @@ final class MonitorStore: ObservableObject {
         resetForNewSource()
         start()
     }
+
+    /// Called only after candidate health validation and successful Keychain storage.
+    func configurePaired(endpoint: String, nodeID: String, name: String) throws {
+        guard let url = URL(string: endpoint) else { throw MonitorError.invalidEndpoint }
+        let client = try ObserverClient(baseURL: url, credentialAccount: "device:\(nodeID)")
+        if linkedDeviceID == nil { defaults.set(endpointText, forKey: "monitor.manualEndpoint") }
+        pollTask?.cancel()
+        service = client
+        syntheticScenario = nil
+        linkedDeviceID = nodeID
+        linkedDeviceName = name
+        endpointText = endpoint
+        defaults.set(endpoint, forKey: "monitor.endpoint")
+        defaults.set(nodeID, forKey: "monitor.deviceID")
+        defaults.set(name, forKey: "monitor.deviceName")
+        resetForNewSource()
+        start()
+    }
+
+    func disconnectPairedDevice() {
+        pollTask?.cancel()
+        service = nil
+        linkedDeviceID = nil
+        linkedDeviceName = nil
+        syntheticScenario = nil
+        endpointText = ""
+        defaults.removeObject(forKey: "monitor.deviceID")
+        defaults.removeObject(forKey: "monitor.deviceName")
+        defaults.removeObject(forKey: "monitor.endpoint")
+        resetForNewSource()
+    }
+
+    var manualEndpoint: String { defaults.string(forKey: "monitor.manualEndpoint") ?? endpointText }
 
     func credentialsChanged() {
         authFailed = false
@@ -513,7 +557,7 @@ final class MonitorStore: ObservableObject {
         pollTask?.cancel()
         syntheticScenario = nil
         if !endpointText.isEmpty, let url = URL(string: endpointText) {
-            service = try? ObserverClient(baseURL: url)
+            service = try? ObserverClient(baseURL: url, credentialAccount: credentialAccount)
         } else {
             service = nil
         }
@@ -522,6 +566,9 @@ final class MonitorStore: ObservableObject {
     }
 
     private func resetForNewSource() {
+        sourceToken += 1
+        selectionToken += 1
+        isRefreshing = false
         navigationHistory = []
         navigationIndex = nil
         active = []
@@ -569,13 +616,16 @@ final class MonitorStore: ObservableObject {
 
     func refresh() async {
         guard let service, !isRefreshing else { return }
+        let token = sourceToken
         isRefreshing = true
-        defer { isRefreshing = false }
+        defer { if token == sourceToken { isRefreshing = false } }
         do {
             let newHealth = try await service.health()
+            guard token == sourceToken else { return }
             guard newHealth.schemaVersion == "1", newHealth.readOnly else { throw MonitorError.incompatibleSchema }
             let activePage = try await service.tasks(active: true, offset: 0)
             let recentPage = try await service.tasks(active: false, offset: 0)
+            guard token == sourceToken else { return }
             try validate(activePage)
             try validate(recentPage)
             health = newHealth
@@ -588,6 +638,7 @@ final class MonitorStore: ObservableObject {
             failed = false; authFailed = false; failureCount = 0; errorCategory = nil
             if selectedRef != nil { await reloadSelected(using: service) }
         } catch {
+            guard token == sourceToken else { return }
             failed = true
             failureCount += 1
             if case MonitorError.server(401) = error { authFailed = true }
@@ -603,14 +654,17 @@ final class MonitorStore: ObservableObject {
 
     func loadMoreEvents() async {
         guard let service, let ref = selectedRef, eventHasMore || eventCursor != nil else { return }
+        let token = sourceToken
         do {
             let page = try await service.events(ref, after: eventCursor)
+            guard token == sourceToken else { return }
             try acceptEvents(page, ref: ref, reset: false)
         } catch MonitorError.server(409) {
+            guard token == sourceToken else { return }
             eventCursor = nil; events = []; eventHasMore = false
             selectionToken += 1
             await loadSelection(ref: ref, token: selectionToken)
-        } catch { errorCategory = Self.category(error) }
+        } catch { if token == sourceToken { errorCategory = Self.category(error) } }
     }
 
     private func acceptEvents(_ page: EventPage, ref: String, reset: Bool) throws {
@@ -627,10 +681,12 @@ final class MonitorStore: ObservableObject {
 
     func loadMore() async {
         guard let service else { return }
+        let token = sourceToken
         let isActive = view == .active || view == .blocked
         guard let offset = isActive ? activeNextOffset : recentNextOffset else { return }
         do {
             let page = try await service.tasks(active: isActive, offset: offset)
+            guard token == sourceToken else { return }
             try validate(page)
             if isActive {
                 active = Self.unique(active + page.items)
@@ -639,14 +695,16 @@ final class MonitorStore: ObservableObject {
                 recent = Self.unique(recent + page.items)
                 recentNextOffset = page.nextOffset
             }
-        } catch { errorCategory = Self.category(error) }
+        } catch { if token == sourceToken { errorCategory = Self.category(error) } }
     }
 
     /// Explicit overload retained for callers that page a specific list.
     func loadMore(active isActive: Bool) async {
         guard let service, let offset = isActive ? activeNextOffset : recentNextOffset else { return }
+        let token = sourceToken
         do {
             let page = try await service.tasks(active: isActive, offset: offset)
+            guard token == sourceToken else { return }
             try validate(page)
             if isActive {
                 active = Self.unique(active + page.items)
@@ -655,7 +713,7 @@ final class MonitorStore: ObservableObject {
                 recent = Self.unique(recent + page.items)
                 recentNextOffset = page.nextOffset
             }
-        } catch { errorCategory = Self.category(error) }
+        } catch { if token == sourceToken { errorCategory = Self.category(error) } }
     }
 
     private func validate(_ page: TaskPage) throws {

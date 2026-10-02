@@ -142,15 +142,18 @@ extension StageBadge.Tone {
 /// read-only, so it must never grow a container layer or an action affordance.
 struct RuntimeStatus: View {
     let state: RuntimeStatusState
+    var environment: String? = nil
+    private var source: String { environment ?? state.environment }
 
     var body: some View {
         HStack(spacing: 6) {
             Circle()
                 .fill(state.color)
                 .frame(width: 7, height: 7)
-            Text(state.environment)
+            Text(source)
                 .font(DS.Font.mono(10, weight: .bold))
                 .foregroundStyle(DS.Palette.textPrimary)
+                .lineLimit(1)
             Text("·")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(DS.Palette.textTertiary)
@@ -161,8 +164,8 @@ struct RuntimeStatus: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(state.environment), \(state.connection)")
-        .help("Runtime status — \(state.environment) \(state.connection.lowercased()). Read-only.")
+        .accessibilityLabel("\(source), \(state.connection)")
+        .help("Runtime status — \(source) \(state.connection.lowercased()). Read-only.")
     }
 }
 

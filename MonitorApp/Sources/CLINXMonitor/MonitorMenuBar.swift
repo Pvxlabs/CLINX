@@ -52,7 +52,7 @@ final class MonitorMenuBar: NSObject, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        connectionItem.title = "\(store.runtimeStatus.environment) · \(store.runtimeStatus.connection)"
+        connectionItem.title = "\(store.runtimeEnvironment.prefix(18)) · \(store.runtimeStatus.connection)"
         let counts = store.counts
         for (view, item) in categoryItems {
             item.title = "\(view.label) · \(counts[view, default: 0])"

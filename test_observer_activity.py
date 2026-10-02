@@ -81,6 +81,18 @@ class ActivityTests(unittest.TestCase):
         with sqlite3.connect(self.path) as c: c.execute('DELETE FROM thread_items')
         with self.assertRaises(APIError): self.read(after=page['next_cursor'])
 
+    def test_restart_rejects_old_cursor_and_reloads_recovered_feedback(self):
+        self.add(100, kind='commandExecution')
+        old = self.read()
+        self.assertEqual(old['items'], [])
+        # A refreshed mount can reveal older rows without advancing the high water mark.
+        self.add(1, 'Recovered public feedback')
+        restarted = ActivityReader(self.root)
+        with self.assertRaises(APIError) as error:
+            restarted.read('task_fixture', EXEC, after=old['next_cursor'])
+        self.assertEqual(error.exception.status, 409)
+        self.assertEqual(restarted.read('task_fixture', EXEC)['items'][0]['text'], 'Recovered public feedback')
+
     def test_display_allowlist_redaction_bounds_and_read_only(self):
         self.add(1, 'visible')
         self.add(2, 'PRIVATE_REASONING', phase='analysis')
