@@ -110,9 +110,10 @@ Current DATA registrations:
 | `ORION_DEPLOY:operation` | `orion-data` | `PRODUCTION_READ_ONLY` | `orion-data-node operation` |
 | `ORION_CONTROLLER_ADOPT:apply` | `orion-data` | `PRODUCTION_MUTATION` | `orion-deploy-controller-adopt --target data` |
 
-Deploy accepts `source_sha`, `scope=DATA`, `plan_digest` and `request_id`.
-Registered artifact root is `/opt/orion-data-node/release/DATA/<source_sha>`;
-plan is `/opt/orion-data-node/release/plans/<plan_digest>.json`. Those inputs must
+Deploy accepts `source_sha`, `scope=DATA`, `artifact_set` and `request_id`.
+`artifact_set` is one safe directory identity under the existing registered
+`/opt/orion-data-node/release` root; the controller reads its `data-node` subdirectory
+and unchanged `plan.json`. No new artifact staging layout is required. Those inputs must
 already be staged by the authorized ORION artifact workflow. Registration does
 not claim that artifacts are present or qualified, and does not stage/build them.
 The complete plan is passed unchanged to the DATA controller, which selects its

@@ -178,10 +178,10 @@ target = "orion-data"
 action = "apply"
 operation_class = "PRODUCTION_MUTATION"
 resource = "orion-data"
-argv = ["/usr/bin/ssh", "-T", "-o", "BatchMode=yes", "orion-data", "sudo", "-n", "/usr/local/bin/orion-data-node", "deploy", "{source_sha}", "--artifact-root", "/opt/orion-data-node/release/{scope}/{source_sha}", "--plan", "/opt/orion-data-node/release/plans/{plan_digest}.json", "--request-id", "{request_id}"]
+argv = ["/usr/bin/ssh", "-T", "-o", "BatchMode=yes", "orion-data", "sudo", "-n", "/usr/local/bin/orion-data-node", "deploy", "{source_sha}", "--artifact-root", "/opt/orion-data-node/release/{artifact_set}/data-node", "--plan", "/opt/orion-data-node/release/{artifact_set}/plan.json", "--request-id", "{request_id}"]
 parameters.source_sha.format = "source_sha"
 parameters.scope.enum = ["DATA"]
-parameters.plan_digest.format = "sha256"
+parameters.artifact_set.format = "identity"
 parameters.request_id.format = "identity"
 
 [host_executor.workflows.orion_data_operation]
