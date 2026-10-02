@@ -4193,9 +4193,17 @@ class TaskDispatcher:
                 return unknown("OWNER_CHANGED_DURING_OBSERVATION")
             record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, fresh)
         elif execution_ref and exact_turn_id:
-            # A single persisted transport route is the configured authority;
-            # a turn response must also come from the exact loaded thread.
-            observed = classify([dict(endpoint="execution-route", state=native_observer_state or "UNKNOWN",
+            # A single persisted transport route is the configured authority.
+            # Some app-server versions report a completed turn's thread as
+            # `notLoaded` after the turn leaves the in-memory cache. The exact
+            # turn row is still authoritative when it is terminal and the
+            # transport returned it from the bound endpoint; interrupted or
+            # unknown rows remain fail-closed as owner uncertainty.
+            route_state = native_observer_state or "UNKNOWN"
+            if (route_state in {"notLoaded", "unloaded"}
+                    and self._provider_terminal_outcome(self._turn_status(row)) is not None):
+                route_state = "idle"
+            observed = classify([dict(endpoint="execution-route", state=route_state,
                 thread_id=binding.thread_id, turn_id=row.get("id"), turn_status=row.get("status"))],
                 binding.thread_id, exact_turn_id)
             if observed["provider_liveness"] != "TERMINAL" or not observed["release_safe"]:
