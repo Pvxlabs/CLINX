@@ -39,6 +39,8 @@ def add_commands(sub: Any) -> None:
         if name == "pair":
             parser.add_argument("device", nargs="?", help="Device name/node ID, or accept")
         if name in {"pair", "serve"}:
+            parser.add_argument("--observer-config", type=Path,
+                                help="Explicitly share read-only Monitor connection with paired devices")
             parser.add_argument(
                 "--port", type=int, default=0, help="Advanced: listener port (default automatic)"
             )
@@ -105,8 +107,13 @@ def handle(args: argparse.Namespace) -> int:
                 "DEV_ONLY / SECURITY_BLOCKER: SPAKE2 backend is not constant-time.", file=sys.stderr
             )
         if args.command == "serve" or accepting:
+            from .observer_bootstrap import ObserverBootstrap
+            bootstrap = ObserverBootstrap(args.observer_config) if args.observer_config else None
+            if bootstrap:
+                bootstrap.connection()  # Validate locally before advertising.
             with DeviceServer(
-                identity, peers, port=args.port, allow_dev=args.allow_dev_pairing
+                identity, peers, port=args.port, allow_dev=args.allow_dev_pairing,
+                observer_bootstrap=bootstrap,
             ) as server:
                 with LanDiscovery(index) as discovery:
                     discovery.advertise(identity, server.port)

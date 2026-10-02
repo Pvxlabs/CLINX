@@ -2,6 +2,13 @@
 
 日期：2026-10-02。范围：隔离开发实现、源码审查、P620 同机验证和安装路径。未部署公共服务。
 
+后续 Monitor GUI 接入见 [LAN Pairing SPEC](monitor/LAN_PAIRING_SPEC.md)：增加单独的
+主机显式 opt-in `observer_connection` 操作，仅生产可信 mTLS 可取得只读 Observer
+配置。原有 identity session 仍无执行权限，默认 listener 不分享 Monitor 配置。
+CLI 的 TTY-only 输入保持；GUI 的一次性 PIN 使用父子进程私有管道单独一行，
+不使用 argv/env/文件/JSON 字段。最新 macOS 验证范围见
+[LAN Pairing acceptance](monitor/LAN_PAIRING_ACCEPTANCE.md)，不覆盖或扩大下文旧证据。
+
 ## 结论与精确范围
 
 | 项目 | 结论与证据范围 |

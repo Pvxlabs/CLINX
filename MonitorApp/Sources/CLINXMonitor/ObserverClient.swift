@@ -15,14 +15,13 @@ public protocol ObserverServing: Sendable {
 
 public enum ObserverKeychain {
     private static let service = "com.pvxlabs.clinx.monitor.observer"
-    private static let account = "p620-observer"
-    private static var query: [String: Any] {
+    private static func query(account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service, kSecAttrAccount as String: account,
          kSecAttrSynchronizable as String: false]
     }
-    public static func read() throws -> String {
-        var request = query
+    public static func read(account: String = "p620-observer") throws -> String {
+        var request = query(account: account)
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
@@ -31,13 +30,22 @@ public enum ObserverKeychain {
         else { throw MonitorError.credentialUnavailable }
         return value
     }
-    public static func replace(_ credential: String) throws {
+    static func contains(account: String = "p620-observer") -> Bool {
+        var request = query(account: account)
+        request[kSecMatchLimit as String] = kSecMatchLimitOne
+        request[kSecReturnAttributes as String] = true
+        request[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        let status = SecItemCopyMatching(request as CFDictionary, nil)
+        return status == errSecSuccess || status == errSecInteractionNotAllowed
+    }
+    public static func replace(_ credential: String, account: String = "p620-observer") throws {
         guard credential.range(of: "^[A-Za-z0-9_-]{32,256}$", options: .regularExpression) != nil
         else { throw MonitorError.credentialUnavailable }
         let attributes: [String: Any] = [
             kSecValueData as String: Data(credential.utf8),
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
+        let query = query(account: account)
         let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if updated == errSecItemNotFound {
             let added = query.merging(attributes) { _, new in new }
@@ -47,8 +55,8 @@ public enum ObserverKeychain {
             throw MonitorError.credentialUnavailable
         }
     }
-    public static func revokeLocal() throws {
-        let result = SecItemDelete(query as CFDictionary)
+    public static func revokeLocal(account: String = "p620-observer") throws {
+        let result = SecItemDelete(query(account: account) as CFDictionary)
         guard result == errSecSuccess || result == errSecItemNotFound
         else { throw MonitorError.credentialUnavailable }
     }
@@ -68,8 +76,13 @@ public actor ObserverClient: ObserverServing, ActivityServing {
     private let baseURL: URL
     private let session: URLSession
     private let credential: @Sendable () throws -> String
-    public init(baseURL: URL) throws {
-        try self.init(baseURL: baseURL, session: Self.makeSession(), credential: ObserverKeychain.read)
+    public init(baseURL: URL, credentialAccount: String = "p620-observer") throws {
+        try self.init(baseURL: baseURL, session: Self.makeSession(), credential: {
+            try ObserverKeychain.read(account: credentialAccount)
+        })
+    }
+    init(baseURL: URL, candidateCredential: String) throws {
+        try self.init(baseURL: baseURL, session: Self.makeSession(), credential: { candidateCredential })
     }
     // Internal injection permits transport tests without a real endpoint or credential.
     init(baseURL: URL, session: URLSession, credential: @escaping @Sendable () throws -> String) throws {
