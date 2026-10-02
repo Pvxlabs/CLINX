@@ -1,0 +1,31 @@
+{
+  "observed_at": "2026-10-02T04:30:24.009189+00:00",
+  "execution_ref": "exec_36780362f2e34f949fc52d6f3cd742c0",
+  "thread_id": "01a0fad0-8f53-76e0-ade9-71eca96bb4f7",
+  "turn_id": "01a0fad0-91df-77b3-bcd5-efaf73dd4fa7",
+  "observation": {
+    "provider_liveness": "LIVE",
+    "transport_health": "HEALTHY",
+    "liveness_reason": "EXACT_OWNER_ACTIVE",
+    "owner_endpoint": "/run/user/1001/clinx-provider.sock",
+    "ownership_conflict": false,
+    "release_safe": false,
+    "observations": [
+      {
+        "endpoint": "/run/user/1001/clinx-provider.sock",
+        "state": "active",
+        "thread_id": "01a0fad0-8f53-76e0-ade9-71eca96bb4f7",
+        "turn_id": "01a0fad0-91df-77b3-bcd5-efaf73dd4fa7",
+        "turn_status": "inProgress"
+      },
+      {
+        "endpoint": "/home/pvxlabs/.codex/app-server-control/app-server-control.sock",
+        "state": "notLoaded",
+        "thread_id": "01a0fad0-8f53-76e0-ade9-71eca96bb4f7",
+        "turn_id": "01a0fad0-91df-77b3-bcd5-efaf73dd4fa7",
+        "turn_status": "interrupted"
+      }
+    ]
+  },
+  "read_only": true
+}

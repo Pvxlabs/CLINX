@@ -147,6 +147,15 @@ def _public_task_schema() -> dict[str, Any]:
         "execution_state": {"type": "string"},
         "current_stage": {"type": "string"},
         "current_blocker": {"type": ["string", "null"]},
+        "provider_liveness": {"type": "string", "enum": ["LIVE", "TERMINAL", "UNKNOWN"]},
+        "transport_health": {"type": "string", "enum": ["HEALTHY", "DEGRADED", "UNAVAILABLE"]},
+        "last_provider_activity_at": {"type": ["string", "null"]},
+        "last_host_delivery_at": {"type": ["string", "null"]},
+        "last_live_owner_at": {"type": ["string", "null"]},
+        "liveness_observed_at": {"type": ["string", "null"]},
+        "liveness_reason": {"type": "string"},
+        "ownership_conflict": {"type": "boolean"},
+        "liveness_grace_seconds": {"type": "number"},
         "last_progress_at": {"type": "string"},
         "codex_running": {"type": "boolean"},
         "retry_required": {"type": "boolean"},
@@ -706,6 +715,16 @@ def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
         thread_properties.update({k: {"type": "boolean"} for k in ("is_current_thread", "context_truncated", "read_only")})
         thread_properties.update({k: {"type": "array", "items": {"type": "string"}} for k in ("binding_sources", "other_execution_refs")})
         thread_properties.update({k: {"type": "array", "items": {"type": "object"}} for k in ("dynamic_tool_deliveries", "host_executions")})
+        thread_properties.update({
+            "provider_liveness": {"type": "string"},
+            "transport_health": {"type": "string"},
+            "codex_running": {"type": "boolean"},
+            "ownership_conflict": {"type": "boolean"},
+            "liveness_grace_seconds": {"type": "number"},
+            "liveness_reason": {"type": "string"},
+            **{key: {"type": ["string", "null"]} for key in (
+                "last_provider_activity_at", "last_host_delivery_at", "last_live_owner_at", "liveness_observed_at")},
+        })
         thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "native_thread", "native_status", "task_current_projection", "execution_result", "provenance", "provider_delivery")})
         # Keep one strict root object for connector discovery and legacy clients.
         tool["outputSchema"]["properties"].update(thread_properties)

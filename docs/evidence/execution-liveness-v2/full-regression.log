@@ -1,0 +1,51 @@
+............................................................ [  7%]
+.............................................................. [ 14%]
+....................ss................................................................................................... [ 29%]
+................................................................................................................. [ 43%]
+................................................FFFF.........F. [ 51%]
+................................s.............................. [ 59%]
+........................................................................ [ 67%]
+........................................................................ [ 76%]
+........................................................................ [ 85%]
+...................................................... [ 92%]
+........................s....................................ss          [100%]
+=================================== FAILURES ===================================
+___________________ test_search_field_is_out_of_the_toolbar ____________________
+test_monitor_finalized_ui.py:77: in test_search_field_is_out_of_the_toolbar
+    toolbar = body(root, "@ToolbarContentBuilder private var toolbarContent")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test_monitor_finalized_ui.py:34: in body
+    start = source.index(marker)
+            ^^^^^^^^^^^^^^^^^^^^
+E   ValueError: substring not found
+______________ test_search_field_width_matches_the_compact_pages _______________
+test_monitor_finalized_ui.py:86: in test_search_field_width_matches_the_compact_pages
+    assert "static let searchFieldWidth: CGFloat = 210" in tokens
+E   AssertionError: assert 'static let searchFieldWidth: CGFloat = 210' in 'import AppKit\nimport SwiftUI\n\n/// Central design-token layer.\n///\n/// Values are read from the Figma source of t...(hex >> 8) & 0xFF) / 255,\n                  blue: CGFloat(hex & 0xFF) / 255,\n                  alpha: 1)\n    }\n}\n'
+___________ test_search_field_is_the_first_row_of_the_content_column ___________
+test_monitor_finalized_ui.py:93: in test_search_field_is_the_first_row_of_the_content_column
+    content = body(root, "} content: {")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+test_monitor_finalized_ui.py:34: in body
+    start = source.index(marker)
+            ^^^^^^^^^^^^^^^^^^^^
+E   ValueError: substring not found
+____________ test_main_content_bottom_inset_is_forty_in_every_pane _____________
+test_monitor_finalized_ui.py:109: in test_main_content_bottom_inset_is_forty_in_every_pane
+    assert root.count("bottom: DS.Metric.contentBottomInset") == 2, "both panes need the 40pt inset"
+E   AssertionError: both panes need the 40pt inset
+E   assert 0 == 2
+E    +  where 0 = <built-in method count of str object at 0x1d42b370>('bottom: DS.Metric.contentBottomInset')
+E    +    where <built-in method count of str object at 0x1d42b370> = 'import AppKit\nimport SwiftUI\n\n/// Three-pane desktop shell: Sidebar · List · Inspector, under one compact header.\...n    static func open() {\n        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)\n    }\n}\n'.count
+_________________ test_synthetic_semantics_are_still_distinct __________________
+test_monitor_finalized_ui.py:205: in test_synthetic_semantics_are_still_distinct
+    assert "Rectangle().fill(DS.Palette.synthetic).frame(height: 2)" in root, "purple window edge"
+E   AssertionError: purple window edge
+E   assert 'Rectangle().fill(DS.Palette.synthetic).frame(height: 2)' in 'import AppKit\nimport SwiftUI\n\n/// Three-pane desktop shell: Sidebar · List · Inspector, under one compact header.\...n    static func open() {\n        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)\n    }\n}\n'
+=========================== short test summary info ============================
+FAILED test_monitor_finalized_ui.py::test_search_field_is_out_of_the_toolbar
+FAILED test_monitor_finalized_ui.py::test_search_field_width_matches_the_compact_pages
+FAILED test_monitor_finalized_ui.py::test_search_field_is_the_first_row_of_the_content_column
+FAILED test_monitor_finalized_ui.py::test_main_content_bottom_inset_is_forty_in_every_pane
+FAILED test_monitor_finalized_ui.py::test_synthetic_semantics_are_still_distinct
+5 failed, 804 passed, 6 skipped, 112 subtests passed in 25.43s

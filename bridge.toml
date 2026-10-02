@@ -159,3 +159,12 @@ argv = ["/home/pvxlabs/dev/ORION/scripts/deploy/orion-release-df0ae3e-stage", "d
 [host_executor.local_commands.orion_df0_stage_core]
 operation_classes = ["PRODUCTION_MUTATION"]
 argv = ["/home/pvxlabs/dev/ORION/scripts/deploy/orion-release-df0ae3e-stage", "core"]
+
+[projects.clinx-local-discovery]
+linear_name = "CLINX Local Discovery"
+workspace = "p620"
+cwd = "/home/pvxlabs/dev/CLINX-worktrees/local-discovery-v1"
+repository_origin = "git@github.com:Pvxlabs/CLINX.git"
+branch = "codex/local-discovery-v1"
+read_only = false
+unexpected_origin_policy = "FAIL"
