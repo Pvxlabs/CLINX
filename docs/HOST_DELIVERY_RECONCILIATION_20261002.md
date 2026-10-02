@@ -30,3 +30,11 @@ owners, stale leases, wrong thread, or hash mismatch are rejected.
 This source change does not activate the shared runtime or reconcile any ORION
 execution. The installed release and runtime source must be read back and
 activated by the outer maintenance owner.
+
+## Control-release handoff
+
+Source commit: `b66cdf4b331955d6b5fb180b74c79478e1b426d0` on `main`, pushed to
+the registered `origin`. The previous source commit is
+`563e77cffc696d97b30be732cd4397550fb86e00`; restoring that commit is the source
+rollback boundary. No shared service restart or runtime activation is part of
+this handoff.
