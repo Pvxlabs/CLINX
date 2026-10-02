@@ -5,21 +5,21 @@ import Foundation
 
 // Draws the CLINX Monitor app icon and writes an .icns for the app bundle.
 //
-// Figma source of truth: `src/monitor/AppIcon.tsx` (page 17 “App Icon”) of the
-// `CLINX Monitor UI/UX Redesign` Make file. Geometry is the design's 1024 grid:
-// 824 tile at (100,100), 185 corner radius, ring radius 210 / 66 stroke centred at
-// (474,500) with a 59.7° opening on the right, execution dot r 64 at (506,500).
+// The accepted open-ring mark on a 1024 grid: 824 tile at (100,100),
+// 185 corner radius, ring radius 210 / 66 stroke, and a 59.7° right opening.
+// Center the visible stroked bounds, including the round caps: ring x =
+// 512 + 210 * (1 - cos(29.86°)) / 2 ≈ 526. Move the dot with the ring.
 // The drop shadow is dropped below 64px, exactly as the design notes.
 //
 // usage: swift Scripts/make-app-icon.swift <path/to/AppIcon.icns>
 
 let tileRect = CGRect(x: 100, y: 100, width: 824, height: 824)
 let edgeRect = CGRect(x: 101.5, y: 101.5, width: 821, height: 821)
-let ringCenter = CGPoint(x: 474, y: 500)
+let ringCenter = CGPoint(x: 526, y: 512)
 let ringRadius: CGFloat = 210
 let ringStroke: CGFloat = 66
 let gapHalfAngle = 29.86
-let dotCenter = CGPoint(x: 506, y: 500)
+let dotCenter = CGPoint(x: 558, y: 512)
 let dotRadius: CGFloat = 64
 
 let tileTop = CGColor(red: 0x2B / 255, green: 0x2C / 255, blue: 0x31 / 255, alpha: 1)
