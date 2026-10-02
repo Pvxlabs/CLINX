@@ -168,6 +168,15 @@ class ExecutionPolicy:
     def to_json(self) -> str:
         return json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":"))
 
+    def validate_new_task_authority(self) -> None:
+        """Require bounded production grants without rewriting legacy policies."""
+        if ({PRODUCTION_READ_ONLY, PRODUCTION_MUTATION}.intersection(self.operation_classes)
+                and not self.operation_scopes):
+            raise ExecutionPolicyError(
+                "PRODUCTION_SCOPE_REQUIRED: new production tasks require exact "
+                "operation_scopes (requested_operations in preparation)"
+            )
+
     @property
     def authority_scopes(self) -> tuple[str, ...]:
         scopes = {"workspace_write"}

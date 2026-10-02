@@ -26,6 +26,10 @@ snapshot → atomic workspace claim → native turn and/or registered Host opera
 `operation_class`, and registered `target` (empty for project/local operations).
 For a new Task, these facts select Host capability/classes and exact operation
 scopes. Production mutation additionally requires `production_mutation_intent`.
+Every new production Task requires these exact scopes, including legacy registered
+commands: capability/class alone is rejected by both prepare and direct dispatch.
+Historical unscoped policies remain readable and retain their sealed continuation
+behavior; they never grant the new workflows without explicit reauthorization.
 Native development remains the default. `network_access=true` enables native
 network; omission on continuation preserves the current route's value. Every
 managed turn sends its explicit network policy, including false.

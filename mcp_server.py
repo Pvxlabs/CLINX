@@ -1009,12 +1009,12 @@ class ClinxMCPServer:
             except (M9IntegrationError, TaskRegistryError, bridge.BridgeError, KeyError, TypeError, ValueError) as exc:
                 payload = {"error": str(exc)}
                 code = str(exc).split(':', 1)[0]
-                if code in {'AUTHORITY_REAUTHORIZATION_REQUIRED', 'POLICY_REAUTHORIZATION_BLOCKED',
+                if code in {'AUTHORITY_REAUTHORIZATION_REQUIRED', 'POLICY_REAUTHORIZATION_BLOCKED', 'PRODUCTION_SCOPE_REQUIRED',
                             'POLICY_IDENTITY_CONFLICT', 'TARGET_NOT_AUTHORIZED', 'HOST_EXECUTOR_UNAVAILABLE',
                             'WORKFLOW_EXECUTABLE_UNAVAILABLE', 'OPERATION_NOT_IMPLEMENTED'}:
                     payload.update({'failure_code': code, 'execution_started': False,
                         'evaluation_scope': 'PROPOSED_EXECUTION_ONLY_PRIOR_EVIDENCE_UNCHANGED',
-                        'root_blocker': {'layer': 'AUTHORITY' if code.startswith(('AUTHORITY', 'POLICY', 'TARGET')) else 'CAPABILITY',
+                        'root_blocker': {'layer': 'AUTHORITY' if code.startswith(('AUTHORITY', 'POLICY', 'TARGET', 'PRODUCTION_SCOPE')) else 'CAPABILITY',
                                          'status': 'BLOCKED', 'reason': str(exc)},
                         'downstream': {'QUALIFICATION': 'NOT_RUN', 'CAPACITY': 'UNVERIFIED',
                                        'DEPLOYMENT': 'NOT_RUN', 'READBACK': 'NOT_RUN', 'OBSERVATION': 'NOT_RUN'}})
