@@ -60,7 +60,7 @@ This self-signed identity is for local development, not distribution/notarizatio
 
 ### Read-only
 
-The client calls only the four ADR-006 GET routes. It has **no** execution controls: the
+The client calls the ADR-006 GET routes, including the Activity v1 addendum. It has **no** execution controls: the
 only verbs are Copy, Show, Filter and Refresh. Opening a task shows the current
 execution and its allowlisted event evidence; event history can be `PARTIAL` or
 `UNAVAILABLE`. Progress stays “Progress unavailable” unless the Observer persists a
@@ -77,3 +77,21 @@ the purple window edge and the scenario selector, and is served through the same
 The fixture in `Tests/CLINXMonitorTests/Fixtures` remains the schema example set. Acceptance
 on a real Mac still requires building and launching the app, connecting to an authorized
 Observer, and checking UI, Keychain, TLS and tailnet ACL behavior with real evidence.
+
+
+### Activity
+
+The Activity tab follows Raw snapshot. While visible it polls the exact execution's
+public persisted Codex feedback approximately every two seconds. The initial page
+contains the latest 40 messages; Load earlier feedback pages backwards. Revisions
+replace the same stable message ID. Scrolling upward pauses following and exposes
+Jump to latest / New activity. Tool activity uses the existing exact Host metadata;
+raw command output is not transported. Structured results remain separate from public
+feedback. A missing native source/turn or old Observer version is explicitly shown.
+Synthetic sources do not claim native feedback. Synced means last successful read,
+not provider liveness or the generation time of the last message.
+
+See ../docs/monitor/ACTIVITY_V1_SPEC.md and ACTIVITY_V1_ACCEPTANCE.md for contract and
+validation. The Observer unit exposes only the native state/history DB and WAL/SHM
+companions as read-only mounts. If Codex recreates these files, restart the standalone
+Observer to refresh its file mounts; this does not restart the provider or CLINX Core.

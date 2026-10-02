@@ -64,7 +64,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate, @unchecked Se
     }
 }
 
-public actor ObserverClient: ObserverServing {
+public actor ObserverClient: ObserverServing, ActivityServing {
     private let baseURL: URL
     private let session: URLSession
     private let credential: @Sendable () throws -> String
@@ -157,4 +157,24 @@ public actor ObserverClient: ObserverServing {
         guard value.schemaVersion == "1", value.taskRef == ref else { throw MonitorError.incompatibleSchema }
         return value
     }
+    public func activity(_ ref: String, execution: String, after: String?, before: String?) async throws -> ActivityPage {
+        guard after == nil || before == nil else { throw MonitorError.invalidEndpoint }
+        var query = [URLQueryItem(name: "execution_ref", value: try checkedRef(execution))]
+        for (key, value) in [("after", after), ("before", before)] {
+            if let value {
+                guard !value.isEmpty, value.count <= 1024,
+                      value.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil
+                else { throw MonitorError.invalidEndpoint }
+                query.append(URLQueryItem(name: key, value: value))
+            }
+        }
+        let page: ActivityPage = try await get("v1/tasks/" + checkedRef(ref) + "/activity", query: query)
+        guard page.schemaVersion == "1", page.taskRef == ref, page.executionRef == execution,
+              page.source == "CODEX_NATIVE_HISTORY", ["AVAILABLE", "UNAVAILABLE"].contains(page.availability),
+              page.items.count <= 40, page.items.allSatisfy({
+                  ["feedback", "result"].contains($0.kind) && $0.text.utf8.count <= 16384
+              }) else { throw MonitorError.incompatibleSchema }
+        return page
+    }
+
 }

@@ -19,7 +19,7 @@ call TaskRegistry initialization, MCP, dispatcher, provider transport, reconcili
 or host operations. There is no new authority table, event writer, state store or
 migration. Existing execution semantics remain untouched.
 
-Expose exactly four authenticated GET route shapes, loopback only; use private
+Initially expose four authenticated GET route shapes, loopback only; use private
 Tailscale Serve HTTPS at deployment. All authenticated devices joined to the trusted
 Tailnet may reach the private endpoint under the existing effective Tailnet policy.
 Tailnet membership is the network trust boundary; reaching the endpoint does not
@@ -57,3 +57,15 @@ OS-level DB write denial, TLS/ACL checks, bearer lifecycle drills, Mac compilati
 UI/energy testing and notifications are separate acceptance gates. This ADR grants
 no permission to restart CLINX, operate ORION, expose a service, or perform task
 Start/Cancel/Retry/Approve/Deploy.
+
+
+## 2026-10-02 addendum — Activity v1
+
+The authorized Activity extension adds GET /v1/tasks/{task_ref}/activity with a required
+execution_ref and an optional after OR before cursor. See monitor/ACTIVITY_V1_SPEC.md.
+Only exact execution-owned thread/turn bindings and P620 Codex native paginated
+public agentMessage records are eligible. This is a separate display read model,
+not authority/liveness evidence. No provider calls, registry initialization, history
+writes, internal reasoning or raw tool output are added. The standalone Observer
+reads the native state/history databases through read-only OS mounts and bounded
+SQLite transactions. Existing lifecycle/result serialization remains unchanged.

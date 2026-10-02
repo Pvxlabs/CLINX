@@ -5,6 +5,7 @@ Run separately from the authority. The HTTP listener is always loopback-only.
 """
 from __future__ import annotations
 
+import base64
 import contextlib
 import hashlib
 import hmac
@@ -98,10 +99,137 @@ def menu_state(state, running, retry, result):
     return "BLOCKED"  # unknown is visible uncertainty, never success
 
 
+# Activity uses the native paginated index, never provider RPC or execution writers.
+ACTIVITY_LIMIT, ACTIVITY_TEXT_LIMIT = 40, 16384
+UUID_PATTERN = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
+
+
+def activity_text(value):
+    if not isinstance(value, str):
+        return ""
+    # Redact before truncating; incomplete PEM blocks must not leak a prefix.
+    value = re.sub(r"-----BEGIN [^-]*PRIVATE KEY-----.*?(?:-----END [^-]*PRIVATE KEY-----|$)",
+                   "[REDACTED]", value, flags=re.S)
+    value = re.sub(r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,})\b", "[REDACTED]", value)
+    value = re.sub(r"(?i)\b(?:access[_-]?token|api[_-]?key|password|secret|token)\b[\"']?\s*[:=]\s*[\"']?[^\s,;\"']+",
+                   "[REDACTED]", value)
+    return safe_text(value, len(value)).encode("utf-8")[:ACTIVITY_TEXT_LIMIT].decode("utf-8", errors="ignore")
+
+
+@contextlib.contextmanager
+def activity_database(path):
+    with contextlib.closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.25)) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA query_only=ON")
+        steps = [0]
+        def budget():
+            steps[0] += 1000
+            return steps[0] > 250000
+        conn.set_progress_handler(budget, 1000)
+        conn.execute("BEGIN")
+        yield conn
+
+
+class ActivityReader:
+    def __init__(self, root):
+        self.root = Path(root).expanduser().resolve()
+
+    @staticmethod
+    def encode(scope, mode, position):
+        return base64.urlsafe_b64encode(json.dumps([scope, mode, *position]).encode()).decode().rstrip("=")
+
+    @staticmethod
+    def decode(value, scope, mode):
+        try:
+            if not isinstance(value, str) or len(value) > 1024:
+                raise ValueError()
+            row = json.loads(base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True))
+            if (not isinstance(row, list) or len(row) != 4 or row[:2] != [scope, mode]
+                    or type(row[2]) is not int or not 0 <= row[2] < 2**63
+                    or not isinstance(row[3], str) or len(row[3]) > 256):
+                raise ValueError()
+            return row[2], row[3]
+        except (ValueError, TypeError, UnicodeError):
+            raise APIError(409, "ACTIVITY_CURSOR_RESET_REQUIRED") from None
+
+    def read(self, task_ref, execution, after=None, before=None):
+        eref, turn = execution["execution_ref"], execution.get("turn_id")
+        route = object_json(execution.get("routing_identity_json"))
+        conversation, host, provider = (route.get(k) for k in ("conversation", "host", "provider"))
+        thread = conversation.get("binding") if isinstance(conversation, dict) else None
+        page = dict(schema_version="1", task_ref=task_ref, execution_ref=eref,
+                    observed_at=now(), source="CODEX_NATIVE_HISTORY", availability="UNAVAILABLE",
+                    reason=None, items=[], next_cursor=None, older_cursor=None, has_more=False)
+        if (not isinstance(thread, str) or not re.fullmatch(UUID_PATTERN, thread)
+                or not isinstance(turn, str) or not re.fullmatch(UUID_PATTERN, turn)):
+            return dict(page, reason="EXACT_TURN_UNAVAILABLE")
+        if not isinstance(host, dict) or host.get("stable_identifier") != "p620":
+            return dict(page, reason="NATIVE_HOST_UNAVAILABLE")
+        if not isinstance(provider, dict) or provider.get("stable_identifier") not in {"codex", "codex_app_server"}:
+            return dict(page, reason="PROVIDER_UNSUPPORTED")
+        try:
+            index = self.root / "state_5.sqlite"
+            history = self.root / "thread_history_1.sqlite"
+            with activity_database(index) as conn:
+                metadata = conn.execute("SELECT history_mode FROM threads WHERE id=?", (thread,)).fetchone()
+                if metadata is None:
+                    return dict(page, reason="NATIVE_THREAD_UNAVAILABLE")
+                if metadata[0] != "paginated":
+                    return dict(page, reason="NATIVE_HISTORY_MODE_UNSUPPORTED")
+            # Cursor cannot cross executions, turns or a replaced source database.
+            identity = [task_ref, eref, thread, turn, str(self.root), str(history.stat().st_ino)]
+            scope = hashlib.sha256(json.dumps(identity).encode()).hexdigest()[:32]
+            position = self.decode(after or before, scope, "after" if after else "before") if after or before else None
+            with activity_database(history) as conn:
+                exists = conn.execute("SELECT 1 FROM thread_turns WHERE thread_id=? AND turn_id=?", (thread, turn)).fetchone()
+                if not exists:
+                    return dict(page, reason="NATIVE_TURN_UNAVAILABLE")
+                high = conn.execute("SELECT updated_at_ordinal,item_id FROM thread_items WHERE thread_id=? AND turn_id=? "
+                                    "ORDER BY updated_at_ordinal DESC,item_id DESC LIMIT 1", (thread, turn)).fetchone()
+                high = tuple(high) if high else (0, "")
+                if after and position > high:
+                    raise APIError(409, "ACTIVITY_CURSOR_RESET_REQUIRED")
+                predicate = "thread_id=? AND turn_id=? AND item_type='agentMessage' AND json_valid(item_json)"
+                args = [thread, turn]
+                predicate += " AND coalesce(json_extract(item_json,'$.phase'),'') IN ('','commentary','final_answer')"
+                predicate += " AND coalesce(json_extract(item_json,'$.channel'),'') IN ('','commentary','final')"
+                if position:
+                    key = "updated_at_ordinal" if after else "rollout_ordinal"
+                    predicate += f" AND ({key},item_id) {'>' if after else '<'} (?,?)"
+                    args.extend(position)
+                order = "updated_at_ordinal ASC,item_id ASC" if after else "rollout_ordinal DESC,item_id DESC"
+                rows = conn.execute("SELECT item_id,rollout_ordinal,updated_at_ordinal,created_at_ms,"
+                    "substr(json_extract(item_json,'$.text'),1,?) AS text,"
+                    "length(CAST(json_extract(item_json,'$.text') AS BLOB)) AS byte_count,"
+                    "json_extract(item_json,'$.phase') AS phase FROM thread_items WHERE " + predicate +
+                    " ORDER BY " + order + " LIMIT ?", [ACTIVITY_TEXT_LIMIT + 1, *args, ACTIVITY_LIMIT + 1]).fetchall()
+            more = len(rows) > ACTIVITY_LIMIT
+            rows = rows[:ACTIVITY_LIMIT]
+            next_position = (rows[-1]["updated_at_ordinal"], rows[-1]["item_id"]) if after and more else high
+            older_position = (rows[-1]["rollout_ordinal"], rows[-1]["item_id"]) if rows and not after else None
+            items = []
+            for row in rows:
+                if not isinstance(row["text"], str) or not row["text"].strip():
+                    continue
+                items.append(dict(id=row["item_id"], ordinal=row["rollout_ordinal"], revision=row["updated_at_ordinal"],
+                                  timestamp_ms=row["created_at_ms"], kind="result" if row["phase"] == "final_answer" else "feedback",
+                                  text=activity_text(row["text"]), truncated=(row["byte_count"] or 0) > ACTIVITY_TEXT_LIMIT))
+            items.sort(key=lambda row: (row["ordinal"], row["id"]))
+            return dict(page, availability="AVAILABLE", items=items, has_more=more,
+                        next_cursor=self.encode(scope, "after", next_position),
+                        older_cursor=self.encode(scope, "before", older_position) if more and older_position else None)
+        except (OSError, sqlite3.Error) as error:
+            reason = "NATIVE_HISTORY_UNAVAILABLE"
+            if isinstance(error, sqlite3.OperationalError) and "interrupted" in str(error):
+                reason = "NATIVE_HISTORY_BUDGET_EXHAUSTED"
+            return dict(page, reason=reason)
+
+
 class ObserverStore:
     """Read-only repository adapter; each request gets a coherent SQLite snapshot."""
-    def __init__(self, path):
+    def __init__(self, path, native_home=None):
         self.path = Path(path).expanduser().resolve()
+        self.activity_reader = ActivityReader(native_home or Path.home() / ".codex")
 
     @contextlib.contextmanager
     def snapshot(self):
@@ -306,6 +434,20 @@ class ObserverStore:
                     "next_offset": offset + TASK_LIMIT if len(rows) > TASK_LIMIT else None,
                     "has_more": len(rows) > TASK_LIMIT}
 
+    def task_activity(self, task_ref, execution_ref, after=None, before=None):
+        with self.snapshot() as conn:
+            projection = self.project(conn, self.task_row(conn, task_ref), now())
+            if projection["execution_ref"] != execution_ref:
+                raise APIError(409, "ACTIVITY_EXECUTION_CHANGED")
+            rows = conn.execute(
+                "SELECT execution_ref,turn_id,routing_identity_json FROM executions WHERE task_id=? AND execution_ref=? "
+                "UNION ALL SELECT execution_ref,turn_id,routing_identity_json FROM execution_history WHERE task_id=? AND execution_ref=?",
+                (task_ref, execution_ref, task_ref, execution_ref)).fetchall()
+            if len(rows) != 1:
+                raise APIError(409, "ACTIVITY_EXECUTION_CHANGED")
+            execution = dict(rows[0])
+        return self.activity_reader.read(task_ref, execution, after, before)
+
     def task_events(self, task_ref, after):
         with self.snapshot() as conn:
             self.task_row(conn, task_ref)
@@ -348,6 +490,14 @@ class ObserverAPI:
             if not re.fullmatch(r"[0-9]{1,6}", raw_offset) or int(raw_offset) > 100000:
                 raise APIError(400, "INVALID_QUERY")
             return self.store.list_tasks(query["state"][0], int(raw_offset))
+        activity = re.fullmatch(r"/v1/tasks/([A-Za-z0-9_-]{1,128})/activity", url.path)
+        if activity:
+            eref = query.get("execution_ref", [""])[0]
+            if (set(query) - {"execution_ref", "after", "before"} or ("after" in query and "before" in query)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", eref)
+                    or any(not query[k][0] for k in ("after", "before") if k in query)):
+                raise APIError(400, "INVALID_QUERY")
+            return self.store.task_activity(activity[1], eref, query.get("after", [None])[0], query.get("before", [None])[0])
         match = re.fullmatch(r"/v1/tasks/([A-Za-z0-9_-]{1,128})(/events)?", url.path)
         if match:
             if match[2] and not set(query) - {"after"}:
