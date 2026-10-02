@@ -2321,6 +2321,40 @@ class TaskDispatcher:
         visit(value)
         return "\n".join(dict.fromkeys(parts))
 
+    @staticmethod
+    def _exact_final_result(text: str) -> str:
+        """Normalize an explicit native final report, never commentary/tool output.
+
+        Callers must establish an exact final agent item or task_complete event.
+        Keep the original report, including scope and NOT_RUN qualifications.
+        Existing strict/JSON contracts retain precedence, including their failures.
+        """
+        try:
+            parse_codex_result(text)
+            return text
+        except ResultParseError:
+            pass
+        if "CLINX_EXECUTION_RESULT" in text:
+            return text
+        declarations = [line.strip() for line in text.splitlines()
+                        if line.strip().startswith("FINAL_STATUS=")]
+        if len(declarations) != 1 or not re.fullmatch(
+            r"FINAL_STATUS=PASS(?:[ \t]*(?:\([^\r\n()]+\)|（[^\r\n（）]+）))?",
+            declarations[0],
+        ):
+            return text
+        # Require a standalone fenced result declaration, not a prose mention.
+        blocks = re.findall(r"^```(?:text)?[ \t]*\n(.*?)^```[ \t]*$", text, re.M | re.S)
+        if not any(declarations[0] in [line.strip() for line in block.splitlines()] for block in blocks):
+            return text
+        summary = " ".join(text.strip().split("\n\n", 1)[0].split())[:1000]
+        return (text + "\n\nCLINX_EXECUTION_RESULT\nSTATUS=PASS\n"
+                f"SUMMARY={summary}\n"
+                "CHANGED_FILES=UNKNOWN (see original native final report)\n"
+                f"VALIDATION=Exact native final response declares {declarations[0]}; "
+                "provider-reported qualification only; original scope and NOT_RUN limits retained above.\n"
+                "BLOCKERS=NONE\nNEXT_STATE=COMPLETED")
+
     def _execution_state(self, task_id: str, state: str, **kwargs: Any) -> None:
         """Persist machine execution state without changing Linear's coarse state."""
         self.tasks.set_execution_state(task_id, state, **kwargs)
@@ -3957,13 +3991,35 @@ class TaskDispatcher:
                         else:
                             summary_has_result = True
                     if not summary_has_result:
-                        item_page = client.thread_items_list(
-                            binding.thread_id, turn_id=exact_turn_id, limit=100,
-                            sort_direction="desc",
-                        )
-                        bounded_items = [
-                            item for item in item_page.get("data", ()) if isinstance(item, dict)
-                        ]
+                        # Fetch newest items singly: command output in an unrelated
+                        # older item can contain invalid UTF-8 in provider responses.
+                        # Only the exact final Agent response is completion evidence.
+                        item_cursor = None
+                        item_cursors: set[str] = set()
+                        for _ in range(20):
+                            item_page = client.thread_items_list(
+                                binding.thread_id, turn_id=exact_turn_id, limit=1,
+                                sort_direction="desc",
+                                **({"cursor": item_cursor} if item_cursor else {}),
+                            )
+                            for entry in item_page.get("data", ()):
+                                if not isinstance(entry, dict):
+                                    continue
+                                if entry.get("turnId", exact_turn_id) != exact_turn_id:
+                                    raise AppServerError("completion item belongs to a different turn")
+                                item = entry.get("item", entry)
+                                if (isinstance(item, dict) and item.get("type") == "agentMessage"
+                                        and item.get("phase") in {"final", "final_answer"}
+                                        and isinstance(item.get("text"), str)):
+                                    bounded_items = [{"type": "agentMessage", "text":
+                                        self._exact_final_result(item["text"])}]
+                                    break
+                            if bounded_items:
+                                break
+                            item_cursor = item_page.get("nextCursor")
+                            if not isinstance(item_cursor, str) or not item_cursor or item_cursor in item_cursors:
+                                break
+                            item_cursors.add(item_cursor)
         except DispatchContractError as exc:
             evidence = str(exc)
             if execution_ref:
@@ -4039,9 +4095,7 @@ class TaskDispatcher:
         if provider_outcome is not None:
             # A turn summary can contain both the prompt and its response.  Only
             # the provider response may satisfy the strict result contract.
-            raw_result = self._turn_text(row.get("items", row), assistant_only=True)
-            if not raw_result and bounded_items:
-                raw_result = self._turn_text(bounded_items, assistant_only=True)
+            raw_result = self._turn_text(bounded_items or row.get("items", row), assistant_only=True)
             if raw_result:
                 try:
                     parse_codex_result(raw_result)
@@ -4051,6 +4105,7 @@ class TaskDispatcher:
                 session_result = read_codex_completion_result(binding.thread_id, exact_turn_id)
                 if session_result:
                     try:
+                        session_result = self._exact_final_result(session_result)
                         parse_codex_result(session_result)
                     except ResultParseError:
                         pass
