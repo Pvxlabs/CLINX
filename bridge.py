@@ -2419,6 +2419,18 @@ class TaskDispatcher:
             ),
         )
 
+    def _lifecycle_client(self, target: TargetConfig, *, read_only: bool) -> CodexAppServerClient:
+        """Use the same native-owner selection for execution and observation."""
+        if (getattr(self, '_uses_default_client_factory', False)
+                and self.cfg.app_server.local_socket and target.transport == 'local'
+                and canonical_host(target.target_host) == canonical_host(self.cfg.runtime_host)):
+            from native_provider import select_execution_client
+            return select_execution_client(self.cfg, target.thread_id, read_only=read_only)
+        client = self.client_factory(target)
+        if read_only and isinstance(client, CodexAppServerClient):
+            client.read_only_observer = True
+        return client
+
     def _new_target(
         self,
         workspace: WorkspaceConfig,
@@ -3633,7 +3645,7 @@ class TaskDispatcher:
         bounded_items: list[dict[str, Any]] = []
         try:
             route = self._execution_route(task, execution_ref)
-            client = self.client_factory(self._target(workspace, project, binding, route))
+            client = self._lifecycle_client(self._target(workspace, project, binding, route), read_only=False)
             with client:
                 client.initialize(
                     client_name=self.cfg.app_server.client_name,
@@ -3833,6 +3845,7 @@ class TaskDispatcher:
 
         route: RoutingIdentity | None = None
         bounded_items: list[dict[str, Any]] = []
+        native_observer_state: str | None = None
         try:
             # An adopted conversation without a turn has no execution route yet.
             # Its sealed task route is sufficient for this read-only lookup.
@@ -3841,13 +3854,18 @@ class TaskDispatcher:
                      else self._execution_route(task, execution_ref, orphaned=orphaned))
             if route is None or not route.executable:
                 raise DispatchContractError("reconciliation routing identity is unavailable")
-            client = self.client_factory(self._target(workspace, project, binding, route))
+            client = self._lifecycle_client(self._target(workspace, project, binding, route), read_only=True)
             with client:
                 client.initialize(
                     client_name=self.cfg.app_server.client_name,
                     client_title=self.cfg.app_server.client_title,
                     client_version=self.cfg.app_server.client_version,
                 )
+                if getattr(client, 'execution_route_evidence', None) is not None:
+                    observed_thread = client.thread_read(binding.thread_id)
+                    if observed_thread.get('id') != binding.thread_id:
+                        raise AppServerError('native observer returned a different thread')
+                    native_observer_state = _status_type(observed_thread)
                 page = client.thread_turns_list(
                     binding.thread_id, limit=20, sort_direction="desc", items_view="summary"
                 )
@@ -3991,6 +4009,18 @@ class TaskDispatcher:
             return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
         status = self._turn_status(row)
         if status in {"cancelled", "canceled", "interrupted", "aborted"}:
+            if native_observer_state is not None and native_observer_state != 'idle':
+                # A non-owner renders another daemon's live turn as interrupted.
+                # Preserve the execution and lease; uncertainty is not cancellation.
+                evidence = 'native owner did not prove idle for an interrupted turn'
+                self.tasks.set_execution_state(
+                    task.task_id, 'TRANSPORT_UNCERTAIN', current_stage='reconciliation',
+                    current_blocker=evidence, codex_running=bool(task.codex_running),
+                    retry_required=True, failure_stage='reconciliation',
+                    failure_code='NATIVE_TERMINAL_UNPROVEN', failure_evidence=evidence,
+                )
+                return {'state': 'TRANSPORT_UNCERTAIN', 'authoritative': False,
+                        'failure_code': 'NATIVE_TERMINAL_UNPROVEN'}
             terminalize(
                 "CANCELLED", failure_stage="provider",
                 failure_code="TURN_CANCELLED", evidence=f"provider turn status={status}",
