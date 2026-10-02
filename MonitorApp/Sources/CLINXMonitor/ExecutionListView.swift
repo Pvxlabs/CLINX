@@ -123,7 +123,6 @@ struct ExecutionListView: View {
             ExecutionRowView(store: store,
                              task: task,
                              status: store.status(of: task),
-                             selected: store.selectedRef == task.taskRef,
                              dimmed: store.isStaleSnapshot) {
                 store.beginSelection(task.taskRef)
                 listFocused = true
@@ -198,11 +197,13 @@ struct ExecutionRowView: View {
     @ObservedObject var store: MonitorStore
     let task: ObservedTask
     let status: MonitorStatus
-    let selected: Bool
     let dimmed: Bool
     let onSelect: () -> Void
 
     @State private var hovering = false
+
+    // Read selection from the observed store, including when SwiftUI reuses a lazy row.
+    private var selected: Bool { store.selectedRef == task.taskRef }
 
     var body: some View {
         Button(action: onSelect) {
@@ -289,6 +290,7 @@ struct ExecutionRowView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(status.label), \(task.titleText), \(task.projectText) on \(task.hostText)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var tailColor: Color {

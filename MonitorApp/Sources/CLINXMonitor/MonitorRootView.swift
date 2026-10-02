@@ -17,6 +17,7 @@ struct MonitorRootView: View {
     @State private var navigationCloseTask: Task<Void, Never>?
     @State private var historyOpen = false
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Wide windows start with a docked sidebar; compact windows use the overlay drawer.
     private var sidebarDocked: Bool { sidebarExpanded ?? (windowWidth >= 1280) }
@@ -120,10 +121,11 @@ struct MonitorRootView: View {
                     .padding(.trailing, DS.Metric.runtimeStatusTrailingInset)
             }
             .overlay(alignment: .topLeading) {
-                if navigationOpen {
-                    ZStack(alignment: .topLeading) {
+                ZStack(alignment: .topLeading) {
+                    if navigationOpen {
                         Color.black.opacity(0.24)
                             .allowsHitTesting(false)
+                            .transition(.opacity)
                         Color.clear.contentShape(Rectangle())
                             .onTapGesture { navigationOpen = false }
                             .padding(.top, DS.Metric.contentHeaderHeight)
@@ -146,9 +148,19 @@ struct MonitorRootView: View {
                             updateNavigationHover()
                         }
                         .padding(.top, DS.Metric.contentHeaderHeight)
+                        .transition(reduceMotion ? .opacity : .move(edge: .leading))
+                        .zIndex(1)
                     }
-                    .ignoresSafeArea()
-                    .background {
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .clipped()
+                .ignoresSafeArea()
+                .allowsHitTesting(navigationOpen)
+                // Animate only the floating navigation, never the list or inspector layout.
+                .animation(reduceMotion ? .easeOut(duration: 0.12) : .easeInOut(duration: 0.24),
+                           value: navigationOpen)
+                .background {
+                    if navigationOpen {
                         Button("Close navigation", action: { navigationOpen = false })
                             .keyboardShortcut(.cancelAction)
                             .hidden()

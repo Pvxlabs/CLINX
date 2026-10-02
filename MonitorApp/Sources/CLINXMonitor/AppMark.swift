@@ -2,13 +2,8 @@ import SwiftUI
 
 /// The CLINX Monitor mark — an open ring observing one execution, “watched, never touched”.
 ///
-/// Figma source of truth: `src/monitor/AppIcon.tsx` (page 17 “App Icon”) and its toolbar use
-/// in `src/monitor/MonitorWindow.tsx` (`<AppIcon size={24} flat />`).
-///
-/// Geometry is taken from the design's 1024 grid: 824 tile at (100,100) with a 185 corner
-/// radius, an open ring of radius 210 and 66 stroke centred at (474,500) with its 59.7°
-/// opening on the right, and the indigo execution dot (r 64) at (506,500).
-/// `Scripts/make-app-icon.swift` draws the same figure for the bundle icon.
+/// The ring and dot share the centered geometry used by `Scripts/make-app-icon.swift`.
+/// The open ring's visible bounds, including its round caps, are centered on the tile.
 struct AppMark: View {
     var size: CGFloat = 24
     /// The design drops the drop shadow below 64px (`flat`).
@@ -51,14 +46,14 @@ struct AppMark: View {
             .stroke(Color(hex: 0xF4F4F5),
                     style: StrokeStyle(lineWidth: 66 * scale, lineCap: .round, lineJoin: .round))
             .frame(width: 420 * scale, height: 420 * scale)
-            .offset(x: (474 - 512) * scale, y: (500 - 512) * scale)
+            .offset(x: (526 - 512) * scale, y: 0)
     }
 
     private var executionDot: some View {
         Circle()
             .fill(Color(hex: 0x7C84E8))
             .frame(width: 128 * scale, height: 128 * scale)
-            .offset(x: (506 - 512) * scale, y: (500 - 512) * scale)
+            .offset(x: (558 - 512) * scale, y: 0)
     }
 }
 

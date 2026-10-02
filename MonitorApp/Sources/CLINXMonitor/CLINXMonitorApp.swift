@@ -1,23 +1,23 @@
+import AppKit
 import SwiftUI
 
 /// CLINX Monitor — a read-only macOS client for the private P620 Observer.
-///
-/// The redesign is a desktop window (Sidebar · List · Inspector) rather than a menu bar
-/// extra: the Figma source lists “Menu bar extra with attention count” under
-/// *Future suggestions — NOT in Phase 2 UI*.
 @main
 struct CLINXMonitorApp: App {
+    @NSApplicationDelegateAdaptor(MonitorAppDelegate.self) private var appDelegate
     @StateObject private var store = MonitorStore()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("CLINX Monitor", id: "monitor") {
             MonitorRootView(store: store)
                 .frame(minWidth: DS.Metric.windowMinWidth, minHeight: DS.Metric.windowMinHeight)
                 .onAppear {
+                    appDelegate.installMenu(store: store) { openWindow(id: "monitor") }
                     store.start()
                     CaptureHarness.startIfEnabled(store: store)
                 }
-                .onDisappear { store.stop() }
+                // The shared observer remains live when only the menu bar is visible.
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1440, height: 900)
@@ -27,6 +27,7 @@ struct CLINXMonitorApp: App {
         Settings {
             MonitorSettingsView(store: store)
         }
+
     }
 
     @CommandsBuilder private var commands: some Commands {
@@ -40,4 +41,27 @@ struct CLINXMonitorApp: App {
             }
         }
     }
+}
+
+@MainActor
+final class MonitorAppDelegate: NSObject, NSApplicationDelegate {
+    private var menuBar: MonitorMenuBar?
+
+    func installMenu(store: MonitorStore, openWindow: @escaping () -> Void) {
+        guard menuBar == nil else { return }
+        menuBar = MonitorMenuBar(store: store, openWindow: openWindow)
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        // In-place local rebuilds can leave Launch Services serving the previous icon.
+        // Use this bundle's artwork for the running Dock tile, without the named-image cache.
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = icon
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }

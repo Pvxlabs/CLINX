@@ -47,6 +47,15 @@ to authorize this stable app identity. The credential stays in Keychain; the app
 never stores the Mac login password. A locked Keychain can still require unlocking.
 This self-signed identity is for local development, not distribution/notarization.
 
+### Menu bar
+
+The CLINX ring in the macOS menu bar shows the Observer connection and the same
+archive-aware, filtered category counts as the window sidebar. Open Monitor or a
+category brings the existing window forward, or reopens it after closing. Refresh,
+Settings and Quit are also available. Closing the window keeps the read-only
+Observer polling for the menu bar; Quit ends the app. The monochrome template mark
+adapts to the system menu bar appearance.
+
 ### Keyboard shortcuts
 
 | Keys | Action |
