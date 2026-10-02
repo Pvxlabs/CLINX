@@ -2508,7 +2508,7 @@ class TaskDispatcher:
         properties["capability"]["enum"] = list(policy.required_capabilities)
         return spec
 
-    def _managed_host_prompt(self, prompt: str, policy: ExecutionPolicy) -> str:
+    def _managed_host_instructions(self, policy: ExecutionPolicy) -> str:
         result_contract = (
             "At the end return exactly one multiline result with every field: "
             "CLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<one concise paragraph>\n"
@@ -2526,10 +2526,10 @@ class TaskDispatcher:
                 "or reconciliation to create or operate another execution. "
                 "Report unavailable tools or denied access as blockers.\n"
                 + result_contract
-                + "END CLINX MANAGED EXECUTION CONTRACT\n\nCURRENT REQUEST:\n" + prompt
+                + "END CLINX MANAGED EXECUTION CONTRACT\n"
             )
         contract = {
-            "executable_contract": executable_contract(getattr(self.cfg, "host_executor", HostExecutorConfig()), policy=policy),
+            "executable_contract": "Use the exact operation catalog in the dynamic tool description.",
             "role": "already-approved execution worker; not the CLINX operator",
             "tool": "clinx.clinx_host_operation",
             "operation_classes": list(policy.operation_classes),
@@ -2557,9 +2557,13 @@ class TaskDispatcher:
             "Do not guess capability names or pass raw task, execution, host or cwd identities. "
             "Use continuation_state and execution_can_continue. A proven COMMAND_NOT_DISPATCHED "
             "rejection permits a new legal call; do not replay the original call. "
-            "Unresolved executed/dispatched result delivery requires reconciliation, never retry.\n"
+            "retry_allowed=false prohibits replay of the original operation, not the next legal operation. "
+            "A normal result permits continuing the task; delivery_state=PENDING is only a response "
+            "snapshot. CLINX transport tracks provider ACK and gates the next invocation internally. "
+            "Do not infer an ACK failure or stop from that snapshot. Only an explicit "
+            "RECONCILIATION_REQUIRED response is a delivery blocker. Never replay an operation.\n"
             + result_contract
-            + "END CLINX MANAGED EXECUTION CONTRACT\n\nCURRENT REQUEST:\n" + prompt
+            + "END CLINX MANAGED EXECUTION CONTRACT\n"
         )
 
     def _configure_host_turn(
@@ -2874,7 +2878,8 @@ class TaskDispatcher:
                 network_access=network_access, supplied=routing_identity,
                 execution_policy=policy,
             )
-            prompt = self._managed_host_prompt(prompt, policy)
+            developer_instructions = self._managed_host_instructions(policy)
+            prompt = title + "\n\n" + prompt
             task = self.tasks.create_task(
                 host=host or workspace.alias,
                 workspace_alias=workspace.alias,
@@ -2921,6 +2926,7 @@ class TaskDispatcher:
                             model=executable_model,
                             sandbox=self.cfg.sandbox,
                             ephemeral=False,
+                            developer_instructions=developer_instructions,
                             dynamic_tools=(
                                 [self._managed_host_spec(policy)]
                                 if policy.execution_surface == HOST_EXECUTOR
@@ -2974,6 +2980,7 @@ class TaskDispatcher:
                             routing_identity=route,
                             execution_ref=execution_ref,
                         )
+                        client.thread_name_set(new_thread_id, task.title)
                         self._configure_host_turn(
                             client=client,
                             task_id=leased.task_id,
@@ -3144,7 +3151,8 @@ class TaskDispatcher:
                 + "\nEND CLINX MIGRATION CONTEXT\n\nCURRENT REQUEST:\n"
                 + prompt
             )
-        managed_prompt = self._managed_host_prompt(managed_prompt, policy)
+        developer_instructions = self._managed_host_instructions(policy)
+        managed_prompt = task.title + "\n\n" + managed_prompt
         with self.tasks.execution(
             task.task_id, issue_id, execution_ref=execution_ref,
             retain=bool(execution_ref and execution_ref.startswith("exec_")),
@@ -3173,16 +3181,16 @@ class TaskDispatcher:
                         )
                     thread = self._read_and_guard(client, target, initialize_info)
                     turn_start_guard(thread)
-                    if policy.execution_surface == HOST_EXECUTOR:
-                        # Dynamic tool server requests are routed to a listener on the
-                        # current app-server connection. Existing loaded threads still
-                        # need resume so this connection, rather than the thread/start
-                        # connection, owns the listener for the managed turn.
-                        client.thread_resume(
-                            binding.thread_id, dynamic_tools=[self._managed_host_spec(policy)]
-                        )
-                        thread = self._read_and_guard(client, target, initialize_info)
-                        turn_start_guard(thread)
+                    # This is the authorized writer continuation, never a read-path resume.
+                    client.thread_resume(
+                        binding.thread_id,
+                        dynamic_tools=([self._managed_host_spec(policy)]
+                                       if policy.execution_surface == HOST_EXECUTOR else None),
+                        developer_instructions=developer_instructions,
+                    )
+                    client.thread_name_set(binding.thread_id, task.title)
+                    thread = self._read_and_guard(client, target, initialize_info)
+                    turn_start_guard(thread)
                     self.tasks.mark_verified(
                         task.task_id,
                         app_server_version=self._initialize_version(

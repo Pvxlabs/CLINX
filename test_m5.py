@@ -201,6 +201,9 @@ class FakeM5Client:
         self.thread = None
         self.initialize_info = app_server.InitializeInfo("codex", "0.152.1", "codex-cli 0.152.1")
 
+    def thread_name_set(self, thread_id, name):
+        self.calls.append(("thread/name/set", thread_id, name))
+
     def __enter__(self):
         return self
 
@@ -231,7 +234,7 @@ class FakeM5Client:
             raise app_server.AppServerRemoteError("thread/read", {"message": "missing"})
         return self.thread
 
-    def thread_resume(self, thread_id):
+    def thread_resume(self, thread_id, **kwargs):
         self.calls.append(("thread/resume", thread_id))
         return self.thread
 
@@ -314,7 +317,7 @@ class TaskDispatcherTests(unittest.TestCase):
             self.assertEqual(created.reasoning_effort, "high")
             self.assertEqual(
                 [call[0] for call in first_client.calls],
-                ["initialize", "thread/start", "thread/read", "turn/start"],
+                ["initialize", "thread/start", "thread/read", "thread/name/set", "turn/start"],
             )
             self.assertEqual(
                 next(call for call in first_client.calls if call[0] == "turn/start")[1],
@@ -337,7 +340,7 @@ class TaskDispatcherTests(unittest.TestCase):
             self.assertEqual(turn[3]["reasoning_effort"], "low")
             self.assertEqual(
                 [call[0] for call in second_client.calls],
-                ["initialize", "thread/read", "turn/start"],
+                ["initialize", "thread/read", "thread/resume", "thread/name/set", "thread/read", "turn/start"],
             )
 
     def test_identity_failure_and_missing_binding_fail_before_turn(self):

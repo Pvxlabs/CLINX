@@ -42,6 +42,8 @@ class Wire:
             return
         if method == 'initialize':
             result = {'serverInfo': {'name': 'codex', 'version': 'test'}}
+        elif method == 'thread/name/set':
+            result = {}
         elif method == 'model/list':
             result = {'data': [{'id': 'model', 'supportedReasoningEfforts': []}]}
         elif method in {'thread/start','thread/read','thread/resume'}:
@@ -390,7 +392,7 @@ def test_bad_host_parameters_rejected_before_executor(setup, monkeypatch):
         from host_executor import AuthorityDenied
         with pytest.raises((bridge.DispatchContractError, AuthorityDenied)):
             client._dynamic_tool_handler({'arguments':{**fields,'arguments':{}}})
-    prompt=dispatcher._managed_host_prompt('write a test',policy)
+    prompt=dispatcher._managed_host_instructions(policy)
     assert 'Do not call clinx_prepare_execution' in prompt
     assert 'development_command' in prompt
     client.close()

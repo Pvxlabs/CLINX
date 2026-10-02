@@ -369,7 +369,7 @@ class M124OrphanedLeaseTests(unittest.TestCase):
         )
         self.assertIsNone(registry.get_active_execution("exec_stale"))
 
-    def test_get_status_self_heals_null_ref_terminal_owner_durably_and_idempotently(self):
+    def test_get_status_is_read_only_and_explicit_recovery_is_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             integration, registry, _dispatcher, task = make_fixture(root)
@@ -377,6 +377,11 @@ class M124OrphanedLeaseTests(unittest.TestCase):
             integration.dispatcher = dispatcher
             self._orphan(registry, task)
 
+            before = registry.get_task(task.task_id)
+            status = integration.get_status(task_ref=task.task_id)
+            self.assertEqual(registry.get_task(task.task_id), before)
+            self.assertEqual(dispatcher.reconcile_calls, [])
+            dispatcher.reconcile_execution(None, task_id=task.task_id)
             status = integration.get_status(task_ref=task.task_id)
             self.assertEqual(status["EXECUTION_STATE"], "COMPLETED")
             self.assertFalse(status["CODEX_RUNNING"])
@@ -425,7 +430,7 @@ class M124OrphanedLeaseTests(unittest.TestCase):
                 host=task.host, cwd=task.cwd, repository_origin=task.repository_origin
             ))
 
-    def test_missing_execution_row_is_reconciled_from_task_fallback(self):
+    def test_missing_execution_row_requires_explicit_recovery(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             integration, registry, _dispatcher, task = make_fixture(root)
@@ -436,6 +441,9 @@ class M124OrphanedLeaseTests(unittest.TestCase):
                 turn_id="turn-legacy", codex_running=True,
             )
 
+            self.assertTrue(integration.get_status(task_ref=task.task_id)["CODEX_RUNNING"])
+            self.assertEqual(dispatcher.reconcile_calls, [])
+            dispatcher.reconcile_execution(None, task_id=task.task_id)
             status = integration.get_status(task_ref=task.task_id)
             self.assertEqual(status["EXECUTION_STATE"], "COMPLETED")
             self.assertFalse(status["CODEX_RUNNING"])

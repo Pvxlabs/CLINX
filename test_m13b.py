@@ -353,6 +353,9 @@ class ProviderThreadMigrationTests(unittest.TestCase):
             self.calls.append(("initialize", kwargs))
             return app_server.InitializeInfo("codex", "test", "test")
 
+        def thread_name_set(self, thread_id, name):
+            self.calls.append(("thread/name/set", thread_id, name))
+
         def thread_start(self, **kwargs):
             self.calls.append(("thread/start", kwargs))
             return {"id": self.thread_id, "sessionId": self.thread_id, "projectId": None}
@@ -366,7 +369,7 @@ class ProviderThreadMigrationTests(unittest.TestCase):
                 "canAcceptDirectInput": True, "status": {"type": self.status},
             }
 
-        def thread_resume(self, thread_id, *, dynamic_tools=None):
+        def thread_resume(self, thread_id, *, dynamic_tools=None, developer_instructions=None):
             self.calls.append(("thread/resume", thread_id, {"dynamicTools": dynamic_tools}))
             return self.thread_read(thread_id)
 

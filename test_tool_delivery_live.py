@@ -1,7 +1,7 @@
 """Opt-in real Provider fault acceptance; never injected into a shared task.
 
 CLINX_LIVE_DELIVERY_ACCEPTANCE=1 python3 -m pytest -q -s test_tool_delivery_live.py
-Uses the configured owned socket and existing machine authentication. All task,
+Uses an isolated endpoint/state and existing machine authentication. All task,
 lease, result and Host writes are isolated in pytest's temporary workspace.
 """
 import dataclasses
@@ -14,6 +14,7 @@ import time
 import pytest
 
 import bridge
+from provider_qualification import isolated_provider
 from m9_integration import ClinxIntegration
 from mcp_server import ClinxMCPServer
 from task_registry import TaskRegistry, WorkspaceConfig
@@ -22,7 +23,7 @@ from tool_delivery import ToolDeliveryLedger
 
 @pytest.mark.skipif(os.environ.get('CLINX_LIVE_DELIVERY_ACCEPTANCE') != '1',
                     reason='explicit real Provider acceptance opt-in required')
-def test_real_provider_rejection_after_host_exit_never_reexecutes(tmp_path):
+def test_real_provider_rejection_after_host_exit_never_reexecutes(request, tmp_path):
     root = tmp_path / 'project'
     root.mkdir()
     subprocess.run(['git', 'init', '-q', '-b', 'main', str(root)], check=True)
@@ -30,6 +31,9 @@ def test_real_provider_rejection_after_host_exit_never_reexecutes(tmp_path):
                     '-c', 'user.email=acceptance@example.invalid', 'commit', '-q',
                     '--allow-empty', '-m', 'Initialize disposable delivery fixture'], check=True)
     cfg = bridge.BridgeConfig.load(Path(__file__).with_name('bridge.toml'))
+    isolated = isolated_provider(cfg, tmp_path)
+    cfg = isolated.__enter__()
+    request.addfinalizer(lambda: isolated.__exit__(None, None, None))
     assert cfg.app_server.local_socket, 'an owned Provider endpoint is required'
     cfg = dataclasses.replace(cfg, task_db_path=tmp_path/'tasks.sqlite3',
         projects=(bridge.ProjectMapping(linear_name='Delivery fault acceptance', alias='delivery-fault',

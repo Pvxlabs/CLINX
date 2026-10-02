@@ -30,6 +30,8 @@ class HistoricalConversationAdoptionTests(unittest.TestCase):
                     conn.execute("UPDATE tasks SET codex_running=1, execution_state='CODEX_RUNNING', current_stage='CODEX_RUNNING' WHERE task_id=?", (task_id,))
                 client.thread_turns_list = lambda *args, **kwargs: {"data": [{"id": "turn-hit", "status": turn_status}], "nextCursor": cursor}
                 integration.get_status(task_ref=task_id)
+                self.assertTrue(registry.get_task(task_id).codex_running)
+                integration.dispatcher.reconcile_execution(None, task_id=task_id)
                 self.assertEqual(bool(registry.get_task(task_id).codex_running), expected)
                 self.assertFalse(any(call[0] in {"thread/start", "thread/resume", "turn/start"} for call in client.calls))
 

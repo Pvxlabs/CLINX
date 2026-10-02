@@ -12,7 +12,7 @@ clinx_get_status(codex_uri="codex://threads/01a0a673-d5d6-7761-b9bf-97db5bc7e50c
 
 两个 selector 互斥，禁止同时提供 task_ref 或 query；host/project 仅收窄授权范围。
 execution_ref 可联合精确 selector，必须属于该 thread。旧 status(execution_ref)、
-context/status(task_ref)、project+query 仍保留原契约。
+context(task_ref)、project+query 保留原 selector 契约；status 的所有 selector 均只读。
 
 ## 身份、执行与上下文
 
@@ -28,7 +28,12 @@ resulting_thread_id/resulting_execution_ref、context_checkpoints 与 context_an
 
 查询使用 mode=ro、query_only、短读事务。读取完成后再次读取相同精确事实并比较 fingerprint；
 变化返回 THREAD_IDENTITY_CHANGED_DURING_READ。文件读取期间不持有数据库事务或写锁。
-普通 task_ref/status 既有 recovery 语义不改变；thread 分支在该语义之前直接返回。
+普通 task_ref/status 与 execution_ref/status 也不再自动 reclaim/reconcile/finalize。
+task_ref 精确选择当前关联 execution，Host receipts、delivery ledger 与 result 均限制到该 execution；
+历史 thread 查询仍限制到被查 thread，不能借用当前 task 的执行事实。
+`provider_delivery` 分开汇总持久化 ACK 与 Worker 原始响应描述；
+`worker_pending_is_stale_snapshot=true` 表示 Worker 写了等待 ACK，但账本已全部 DELIVERED。
+这个标志不修改 Worker 的 BLOCKED，也不替代业务验收。恢复由显式 recovery 或已有 completion runtime 负责。
 
 首版使用已运行本机 Codex 的 state_5.sqlite 中 threads 主键定位 rollout_path；
 仅读取 native root 内、文件名精确匹配 ID、session_meta.id/cwd 经核实的文件。
