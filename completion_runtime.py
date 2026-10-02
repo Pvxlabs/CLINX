@@ -202,6 +202,11 @@ class CompletionRuntime:
                                    (identity.execution_ref,)).fetchone()
                 if row is None:
                     raise CompletionIdentityError('completion handoff was not durably registered')
+        if method == "turn/completed" and exact and updated:
+            from execution_liveness import completion_activity
+            # A notification only schedules reconciliation; it cannot consume
+            # the handoff or turn a transport failure into terminal evidence.
+            completion_activity(self.registry, identity)
         self._wake.set()
 
     def inspect(self, execution_ref: str) -> dict[str, Any] | None:
@@ -229,14 +234,14 @@ class CompletionRuntime:
                     lease = conn.execute('SELECT 1 FROM worktree_leases WHERE execution_ref=? LIMIT 1',
                                          (execution_ref,)).fetchone()
                 execution = self.registry.get_execution_record(execution_ref)
-                if (record is not None and record.task_id == identity.task_id and record.turn_id == identity.turn_id
+                if not result.get("authoritative"):
+                    error = "TERMINAL_NOT_YET_PROVEN"
+                elif (record is not None and record.task_id == identity.task_id and record.turn_id == identity.turn_id
                         and lease is None and execution is not None
                         and execution['stage'] in {'COMPLETED','BLOCKED','FAILED','CANCELLED'}):
                     state = 'DONE'
                 elif (lease is None and execution is not None and execution['stage'] == 'CANCELLED'):
                     state = 'DONE'  # cancellation has its existing separate result contract
-                elif not result.get('authoritative'):
-                    error = 'TERMINAL_NOT_YET_PROVEN'
             except CompletionIdentityError:
                 state, error = 'HOLD', 'COMPLETION_IDENTITY_MISMATCH'
                 result = {'state': 'HOLD', 'authoritative': False, 'failure_code': error}

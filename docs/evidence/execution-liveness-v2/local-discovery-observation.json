@@ -1,0 +1,59 @@
+{
+  "observed_at": "2026-10-02T04:28:25.047344+00:00",
+  "thread_id": "01a0fab5-1096-7fb0-bce7-33fcfe617204",
+  "registered_turn_id": "01a0fab5-134c-7162-8285-e1e2734031cb",
+  "thread_observation": {
+    "state": "UNKNOWN",
+    "owner_endpoint": null,
+    "ownership_conflict": false,
+    "observations": [
+      {
+        "endpoint": "/run/user/1001/clinx-provider.sock",
+        "state": "notLoaded",
+        "thread_id": "01a0fab5-1096-7fb0-bce7-33fcfe617204",
+        "session_id": "01a0fab5-1096-7fb0-bce7-33fcfe617204",
+        "cwd": "/home/pvxlabs/dev/CLINX-worktrees/local-discovery-v1",
+        "turn_id": "01a0fab5-134c-7162-8285-e1e2734031cb",
+        "turn_status": "completed",
+        "source": "LIVE_THREAD_READ"
+      },
+      {
+        "endpoint": "/home/pvxlabs/.codex/app-server-control/app-server-control.sock",
+        "state": "notLoaded",
+        "thread_id": "01a0fab5-1096-7fb0-bce7-33fcfe617204",
+        "session_id": "01a0fab5-1096-7fb0-bce7-33fcfe617204",
+        "cwd": "/home/pvxlabs/dev/CLINX-worktrees/local-discovery-v1",
+        "turn_id": "01a0fab5-134c-7162-8285-e1e2734031cb",
+        "turn_status": "completed",
+        "source": "LIVE_THREAD_READ"
+      }
+    ],
+    "source": "LIVE_PROVIDER_OBSERVATION",
+    "writer_claimed": false
+  },
+  "exact_execution_observation": {
+    "provider_liveness": "UNKNOWN",
+    "transport_health": "HEALTHY",
+    "liveness_reason": "OWNER_UNCONFIRMED",
+    "owner_endpoint": null,
+    "ownership_conflict": false,
+    "release_safe": false,
+    "observations": [
+      {
+        "endpoint": "/run/user/1001/clinx-provider.sock",
+        "state": "notLoaded",
+        "thread_id": "01a0fab5-1096-7fb0-bce7-33fcfe617204",
+        "turn_id": "01a0fab5-134c-7162-8285-e1e2734031cb",
+        "turn_status": "completed"
+      },
+      {
+        "endpoint": "/home/pvxlabs/.codex/app-server-control/app-server-control.sock",
+        "state": "notLoaded",
+        "thread_id": "01a0fab5-1096-7fb0-bce7-33fcfe617204",
+        "turn_id": "01a0fab5-134c-7162-8285-e1e2734031cb",
+        "turn_status": "completed"
+      }
+    ]
+  },
+  "read_only": true
+}

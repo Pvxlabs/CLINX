@@ -1072,6 +1072,8 @@ class TaskRegistry:
             if "turn_id" not in execution_columns:
                 conn.execute("ALTER TABLE executions ADD COLUMN turn_id TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_executions_ref ON executions(execution_ref)")
+            from execution_liveness import SCHEMA
+            conn.execute(SCHEMA)
             from thread_identity import INDEX_SQL
             for index_sql in INDEX_SQL:
                 conn.execute(index_sql)
@@ -1203,6 +1205,11 @@ class TaskRegistry:
                    LEFT JOIN executions e ON e.task_id=l.task_id"""
             ).fetchall()
             for row in rows:
+                from execution_liveness import read_row
+                if (read_row(conn, row["execution_ref"] or row["lease_execution_ref"]) is not None or
+                        row["execution_stage"] == "RECOVERY_REQUIRED" or
+                        row["task_execution_state"] == "RECOVERY_REQUIRED"):
+                    continue
                 task_terminal = (
                     row["task_execution_state"] in TERMINAL_EXECUTION_STAGES
                     and not bool(row["task_codex_running"])
@@ -1715,7 +1722,7 @@ class TaskRegistry:
         )
         current_stage = "RECOVERY_REQUIRED" if execution_state == "RECOVERY_REQUIRED" else execution_state
         blocker = "historical conversation requires recovery" if execution_state == "RECOVERY_REQUIRED" else None
-        codex_running = 1 if execution_state == "CODEX_RUNNING" else 0
+        codex_running = 0  # imported history does not establish a live provider owner
         retry_required = 1 if execution_state == "RECOVERY_REQUIRED" else 0
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -2338,6 +2345,8 @@ class TaskRegistry:
             and active_hint["turn_id"] is None
         )
         running = task.codex_running if codex_running is _UNSET else bool(codex_running)
+        if state in {"TRANSPORT_UNCERTAIN", "RECOVERY_REQUIRED"}:
+            running = False
         if state == "CODEX_RUNNING":
             running = True
             # A pre-ownership V1 row has NULL ownership columns after the
@@ -2360,6 +2369,13 @@ class TaskRegistry:
         }:
             running = False
         effective_turn = task.turn_id if turn_id is _UNSET else turn_id
+        if running:
+            from execution_liveness import public_status, read_row
+            with self._connect() as conn:
+                observed_ref = active_hint["execution_ref"] if active_hint_owned else None
+                observed = read_row(conn, observed_ref)
+                running = bool(observed and observed["turn_id"] == effective_turn and
+                               public_status(conn, observed_ref)["codex_running"])
         if running and not effective_turn:
             raise TaskRegistryError("CODEX_RUNNING requires an exact turn_id")
         stage = task.current_stage if current_stage is _UNSET else current_stage
@@ -2428,7 +2444,7 @@ class TaskRegistry:
                     execution_owned_turn = effective_turn
                 execution_owned_stage = (
                     active_execution["stage"]
-                    if active_execution["stage"] in TERMINAL_EXECUTION_STAGES
+                    if active_execution["stage"] in TERMINAL_EXECUTION_STAGES - {"RECOVERY_REQUIRED"}
                     else str(stage or state)
                 )
                 execution_owned_state = (
@@ -2499,6 +2515,9 @@ class TaskRegistry:
                         "failure_evidence": effective_failure_evidence,
                     },
                 )
+        if state == "RECOVERY_REQUIRED" and active_hint_owned and active_hint["execution_ref"]:
+            from execution_liveness import require_reobservation
+            require_reobservation(self, active_hint["execution_ref"])
         return self.get_task(task_id)
 
     def request_cancellation(self, execution_ref: str) -> TaskRecord:
@@ -2513,7 +2532,7 @@ class TaskRegistry:
             return task
         if task.execution_state not in {
             "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
-            "TRANSPORT_UNCERTAIN",
+            "TRANSPORT_UNCERTAIN", "RECOVERY_REQUIRED",
         }:
             raise TaskRegistryError(f"Execution is not active: {execution_ref}")
         return self.set_execution_state(
@@ -2540,7 +2559,7 @@ class TaskRegistry:
             "CANCELLATION_PENDING",
             current_stage="CANCELLATION_PENDING",
             current_blocker="provider cancellation could not be confirmed",
-            codex_running=True,
+            codex_running=False,
             retry_required=True,
             failure_stage="cancel",
             failure_code="PROVIDER_UNAVAILABLE",
@@ -2549,6 +2568,10 @@ class TaskRegistry:
         )
 
     def finalize_cancellation(self, execution_ref: str) -> TaskRecord:
+        from execution_liveness import release_allowed
+        with self._connect() as conn:
+            if not release_allowed(conn, execution_ref):
+                raise TaskRegistryError("cancellation requires fresh exact owner terminal evidence")
         active = self.get_active_execution(execution_ref)
         if active is None:
             raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
@@ -2589,6 +2612,11 @@ class TaskRegistry:
             "COMPLETED", "FAILED", "RECOVERY_REQUIRED", "BLOCKED", "CANCELLED",
         }:
             raise TaskRegistryError(f"Unsupported terminal reconciliation state: {state}")
+        if state != "RECOVERY_REQUIRED":
+            from execution_liveness import release_allowed
+            with self._connect() as conn:
+                if not release_allowed(conn, execution_ref):
+                    raise TaskRegistryError("terminal reconciliation requires fresh exact owner evidence")
         active = self.get_active_execution(execution_ref)
         if active is None:
             # A prior finalizer may have committed terminal state before
@@ -2657,7 +2685,8 @@ class TaskRegistry:
         # Keep the terminal execution row so its creation-time routing
         # identity remains available for status/readback.  Only the mutable
         # worktree lease is released here.
-        self.release_execution(task.task_id, execution_ref, retain_history=True)
+        if state != "RECOVERY_REQUIRED":
+            self.release_execution(task.task_id, execution_ref, retain_history=True)
         return task
 
     def reconcile_orphaned_terminal(
@@ -2698,7 +2727,7 @@ class TaskRegistry:
         if lease is not None and lease["execution_ref"] is not None:
             return None
         if task.execution_state in {
-            "COMPLETED", "FAILED", "BLOCKED", "RECOVERY_REQUIRED", "CANCELLED",
+            "COMPLETED", "FAILED", "BLOCKED", "CANCELLED",
             "STOPPED", "IN_REVIEW",
         } and not task.codex_running:
             # The durable terminal projection already won.  A repeated read is
@@ -2716,7 +2745,8 @@ class TaskRegistry:
             failure_code=failure_code,
             failure_evidence=evidence,
         )
-        self.release_execution(task_id, None)
+        if state != "RECOVERY_REQUIRED":
+            self.release_execution(task_id, None)
         return reconciled
 
     def get_execution_result(self, execution_ref: str) -> ExecutionResultRecord | None:
@@ -2851,7 +2881,7 @@ class TaskRegistry:
                           t.current_stage, t.codex_running
                    FROM executions e JOIN tasks t ON t.task_id=e.task_id
                    WHERE e.execution_ref=?
-                     AND e.stage NOT IN ('CANCELLED','COMPLETED','FAILED','IN_REVIEW','BLOCKED','RECOVERY_REQUIRED','STOPPED')""",
+                     AND e.stage NOT IN ('CANCELLED','COMPLETED','FAILED','IN_REVIEW','BLOCKED','STOPPED')""",
                 (execution_ref,),
             ).fetchone()
         return dict(row) if row is not None else None
@@ -3386,6 +3416,11 @@ class TaskRegistry:
                     "FROM executions WHERE task_id=?",
                     (task_id,),
                 ).fetchone()
+            from execution_liveness import release_allowed
+            if row is not None and (
+                    row["stage"] == "RECOVERY_REQUIRED" or
+                    not release_allowed(conn, row["execution_ref"])):
+                raise TaskRegistryError("lease release requires fresh exact owner terminal evidence")
             lease = None
             if row is not None:
                 lease = conn.execute(
@@ -3580,7 +3615,7 @@ class TaskRegistry:
             terminal = False
             try:
                 terminal = self.get_task(task_id).execution_state in {
-                    "COMPLETED", "FAILED", "IN_REVIEW", "BLOCKED", "RECOVERY_REQUIRED",
+                    "COMPLETED", "FAILED", "IN_REVIEW", "BLOCKED",
                     "CANCELLED", "STOPPED",
                 }
             except UnknownTaskError:
@@ -3602,6 +3637,12 @@ class TaskRegistry:
                     if keep_uncertain:
                         conn.execute("UPDATE executions SET stage='TRANSPORT_UNCERTAIN' WHERE task_id=? AND execution_ref=?",
                                      (task_id, execution_ref))
+            if execution_ref:
+                from execution_liveness import release_allowed
+                with self._connect() as conn:
+                    keep_uncertain = keep_uncertain or not release_allowed(conn, execution_ref)
+                    held = conn.execute("SELECT stage FROM executions WHERE execution_ref=?", (execution_ref,)).fetchone()
+                    keep_uncertain = keep_uncertain or bool(held and held["stage"] == "RECOVERY_REQUIRED")
             if not keep_uncertain and (not retain or not completed or terminal):
                 self.release_execution(
                     task_id,
