@@ -13,6 +13,12 @@ mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$binary_dir/CLINXMonitor" "$app_dir/Contents/MacOS/CLINXMonitor"
 cp Info.plist "$app_dir/Contents/Info.plist"
 
+# Matching, narrowly scoped adapter source; secrets travel only on inherited pipes.
+discovery_dir="$app_dir/Contents/Resources/Discovery"
+mkdir -p "$discovery_dir/local_discovery"
+cp ../local_discovery/*.py "$discovery_dir/local_discovery/"
+cp ../execution_semantics.py "$discovery_dir/"
+
 # App icon, drawn from the design's AppIcon spec. Generation is best-effort: a failure
 # leaves the bundle on the default icon rather than breaking the build.
 icon_path="$app_dir/Contents/Resources/AppIcon.icns"

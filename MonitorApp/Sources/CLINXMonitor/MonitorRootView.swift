@@ -144,7 +144,7 @@ struct MonitorRootView: View {
             // Environment + connection live here now: one transparent, read-only label in the
             // window's bottom-right corner rather than a capsule in the toolbar.
             .overlay(alignment: .bottomTrailing) {
-                RuntimeStatus(state: store.runtimeStatus)
+                RuntimeStatus(state: store.runtimeStatus, environment: store.runtimeEnvironment)
                     .help([store.connectivityNote, store.connectivityDetail, store.connectivityTail]
                         .compactMap { $0 }.joined(separator: " · "))
                     .padding(.bottom, DS.Metric.runtimeStatusBottomInset)

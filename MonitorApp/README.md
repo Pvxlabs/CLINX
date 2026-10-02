@@ -102,5 +102,63 @@ not provider liveness or the generation time of the last message.
 
 See ../docs/monitor/ACTIVITY_V1_SPEC.md and ACTIVITY_V1_ACCEPTANCE.md for contract and
 validation. The Observer unit exposes only the native state/history DB and WAL/SHM
-companions as read-only mounts. If Codex recreates these files, restart the standalone
-Observer to refresh its file mounts; this does not restart the provider or CLINX Core.
+companions as read-only mounts. The companion `clinx-observer-history-guard.timer`
+checks their identities every five seconds and refreshes only an active standalone
+Observer when Codex replaces a file. Observer restart invalidates Activity cursors
+so the client reloads recovered feedback. The Provider and CLINX Core keep running.
+# Nearby devices and pairing
+
+Settings → **Devices** discovers CLINX hosts on the same local network. Select
+**Pair…**, enter the code displayed by that host, and choose **Pair and connect**.
+After production OPAQUE authentication the App requests the host's explicitly
+shared read-only Observer configuration, verifies its health, and saves a
+device-specific credential in Keychain. Relaunch uses that saved connection;
+**Connect** on a paired device needs no new code. **Disconnect** stops using it;
+**Forget device…** removes this Mac's trust and saved credential.
+
+The existing **Connection** tab remains the manual configuration route. Pairing or
+health failures do not replace the current connection. Pairing success followed by
+a service failure offers **Connect Monitor** without making you pair again.
+
+Local developer setup (Python 3.13, uv, Rust and Xcode command-line tools):
+
+```sh
+sh MonitorApp/Scripts/setup-discovery-runtime.sh
+sh MonitorApp/Scripts/build-app.sh
+```
+
+The dedicated runtime is installed under
+`~/Library/Application Support/CLINX Monitor/DiscoveryRuntime`; matching adapter
+sources are copied into the signed App. The runtime must be installed on each Mac;
+the App reports when it is unavailable. It does not silently use an unqualified
+cryptographic backend. This is a local installation flow, not a notarized standalone
+installer with an embedded Python distribution.
+
+Host opt-in uses an owner-only (0600) JSON file, for example:
+
+```json
+{
+  "share_read_only_observer": true,
+  "endpoint": "https://your-host.your-tailnet.ts.net:8449",
+  "credential_file": "/home/your-user/.config/clinx-observer/observer.env"
+}
+```
+
+In the host's configured CLINX environment, run:
+
+```sh
+clinx pair accept --observer-config ~/.config/clinx-observer/monitor-pairing.json
+```
+
+This displays a local one-use, 60-second code. Leave the process running for trusted
+reconnections, or use `clinx serve --observer-config …` after the pairing process
+exits. Only one listener can own the device identity at a time. Later pairing needs
+a new local `pair accept` window. A normal listener without this option grants no
+Monitor access. Shared read-only bearer credentials are not per-peer revocable on
+the host: rotate the Observer bearer to revoke previously issued copies.
+
+Discovery and initial pairing use LAN multicast/TLS. The Observer retains its
+configured private HTTPS route (currently Tailnet HTTPS on P620), which must also
+be reachable. Discovery does not cross routed VPN subnets. See
+[the implementation contract](../docs/monitor/LAN_PAIRING_SPEC.md) and
+[acceptance evidence](../docs/monitor/LAN_PAIRING_ACCEPTANCE.md).

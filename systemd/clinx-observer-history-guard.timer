@@ -1,0 +1,11 @@
+[Unit]
+Description=Check CLINX Observer history file identity
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=5s
+AccuracySec=1s
+Unit=clinx-observer-history-guard.service
+
+[Install]
+WantedBy=timers.target

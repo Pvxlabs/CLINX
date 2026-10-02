@@ -26,6 +26,9 @@ explicitly excluding analysis/reasoning. Stable item ID + creation order + revis
 Latest 40 initially; bounded older pages and revision-based incremental updates include
 edits to existing items. Opaque cursors bind task/execution/thread/turn/source identity
 and direction. 16 KiB text per item, <=40 items/page; visible truncation marker.
+Cursor scope also includes the Observer reader lifetime. A remount/restart returns
+409 for an older cursor, allowing the existing client reset path to reload rows that
+were invisible through stale SQLite WAL/SHM mounts.
 Secrets scrubbed before transport; no arbitrary nested content or raw protocol JSON.
 Poll time is not proof of provider liveness. Source availability and message time remain
 separate. Native projection lag is a limitation until measured with a running task.
@@ -72,3 +75,10 @@ Commit/push and activation outcomes reported independently.
 - Performance follow-up validated: 59 Swift tests, Release build/sign, actual P620 reconnection
   and screenshot passed. User confirmed continuous long-feedback scrolling is "明显顺畅了";
   M2 closed again. New-message end-to-end latency remains the separate M3 pending measurement.
+- 2026-10-02 history-refresh correction: native WAL/SHM replacement left the
+  Observer's individual read-only file binds on old inodes. A companion host-side
+  timer stats the six fixed source/mounted paths every five seconds and try-restarts
+  only an active Observer when the identities differ. It never reads message contents,
+  writes databases, or controls the Provider/Core. The HTTP sandbox remains unchanged.
+  The Mac's equality optimization now wraps only snapshot inputs; the stateful Activity
+  content observes its live feed below that boundary.

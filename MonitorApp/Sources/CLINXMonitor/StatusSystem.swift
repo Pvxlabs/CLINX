@@ -208,6 +208,9 @@ enum RuntimeStatusState: String, CaseIterable, Identifiable {
 
 @MainActor
 extension MonitorStore {
+    var runtimeEnvironment: String {
+        syntheticScenario != nil ? "SYNTHETIC" : (linkedDeviceName ?? runtimeStatus.environment)
+    }
     /// The docked indicator's state. Synthetic fixtures always read as synthetic — the
     /// fixture scenario, not the Observer link, is what the user must never mistake for live.
     var runtimeStatus: RuntimeStatusState {
