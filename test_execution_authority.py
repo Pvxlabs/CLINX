@@ -181,11 +181,11 @@ def test_registered_path_templates_cannot_inject_path_or_shell(tmp_path):
     import bridge
     cfg=bridge.BridgeConfig.load(Path(__file__).with_name('bridge.toml'))
     workflow=next(w for w in cfg.host_executor.workflows if w.identity=='ORION_DEPLOY' and w.action=='apply')
-    params={'source_sha':'a'*40,'scope':'DATA','plan_digest':'b'*64,'request_id':'safe-01'}
+    params={'source_sha':'a'*40,'scope':'DATA','artifact_set':'l25-phase-a-safe','request_id':'safe-01'}
     argv=workflow.render(params)
-    assert '/opt/orion-data-node/release/DATA/'+'a'*40 in argv
+    assert '/opt/orion-data-node/release/l25-phase-a-safe/data-node' in argv
     assert argv[4]=='orion-data' and 'CORE' not in argv
-    for key, bad in [('source_sha','../x'),('scope','CORE'),('request_id','a;id'),('request_id','a/b'),('plan_digest','--help')]:
+    for key, bad in [('source_sha','../x'),('scope','CORE'),('request_id','a;id'),('request_id','a/b'),('artifact_set','../escape')]:
         with pytest.raises(ValueError):
             workflow.render({**params,key:bad})
     with pytest.raises(ValueError):

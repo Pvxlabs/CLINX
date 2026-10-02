@@ -103,8 +103,12 @@ def load_workflows(rows):
                 if '..' in Path(literal).parts:
                     raise ValueError('workflow path template traversal')
                 placeholders.update(names)
-        if placeholders != set(parameters):
+        unused = set(parameters) - placeholders
+        if placeholders - set(parameters) or any(
+                'enum' not in parameters[name] or len(parameters[name]['enum']) != 1 for name in unused):
             raise ValueError('workflow template/schema mismatch')
+        # Singleton enums may constrain intent (e.g. DATA scope) without adding
+        # unsupported flags to an existing controller's CLI.
         key = (row['identity'], row['target'], row['action'])
         if key in identities:
             raise ValueError('duplicate workflow registration')
