@@ -5,6 +5,29 @@ import XCTest
 
 final class WindowChromeTests: XCTestCase {
     @MainActor
+    func testRepeatedWindowUpdatesDoNotRewriteDragPolicy() {
+        _ = NSApplication.shared
+        let window = DragPolicyWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
+                                      styleMask: [.titled, .closable, .resizable],
+                                      backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.isMovableByWindowBackground = true
+        let host = NSHostingView(rootView: Color.clear.background(FullSizeContentConfigurator()))
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        let writes = window.dragPolicyWrites
+        XCTAssertFalse(window.isMovableByWindowBackground,
+                       "animated content must not participate in window dragging")
+        for _ in 0..<100 {
+            NotificationCenter.default.post(name: NSWindow.didUpdateNotification, object: window)
+        }
+        XCTAssertEqual(window.dragPolicyWrites, writes,
+                       "window updates must not invalidate AppKit's drag regions again")
+        assertAlignment(window)
+    }
+
+    @MainActor
     func testFullSizeWindowKeepsNativeButtonsInsideTheSingleHeader() {
         let window = makeWindow()
         defer { window.close() }
@@ -74,6 +97,18 @@ final class WindowChromeTests: XCTestCase {
                               file: file, line: line)
                 ancestor = view.superview
             }
+        }
+    }
+}
+
+private final class DragPolicyWindow: NSWindow {
+    var dragPolicyWrites = 0
+
+    override var isMovableByWindowBackground: Bool {
+        get { super.isMovableByWindowBackground }
+        set {
+            dragPolicyWrites += 1
+            super.isMovableByWindowBackground = newValue
         }
     }
 }

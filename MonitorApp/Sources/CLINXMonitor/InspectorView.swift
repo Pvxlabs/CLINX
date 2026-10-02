@@ -125,14 +125,16 @@ struct InspectorView: View {
     }
 
     private func timeline(_ task: ObservedTask, status: MonitorStatus) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionLabel(title: "Timeline", trailing: "\(task.timeline.count) events")
-            if task.timeline.isEmpty {
+        let items = task.timeline
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionLabel(title: "Timeline", trailing: "\(items.count) events")
+            if items.isEmpty {
                 Text("No available event evidence")
                     .font(DS.Font.meta)
                     .foregroundStyle(DS.Palette.textTertiary)
             } else {
-                TimelineView(items: task.timeline, live: status == .running)
+                TimelineView(items: items, live: status == .running)
+                    .id(task.executionRef ?? task.taskRef)
             }
             HStack(spacing: 10) {
                 Text("Coverage \(store.eventCoverage)")
@@ -426,11 +428,17 @@ struct BlockerPanelView: View {
 struct TimelineView: View {
     let items: [TimelineItem]
     let live: Bool
+    @State private var expanded = false
+
+    static func visibleItems(_ items: [TimelineItem], expanded: Bool) -> [TimelineItem] {
+        expanded ? items : Array(items.suffix(10))
+    }
 
     var body: some View {
+        let visible = Self.visibleItems(items, expanded: expanded)
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(items.indices, id: \.self) { index in
-                TimelineRowView(item: items[index], last: index == items.count - 1 && !live)
+            ForEach(visible) { item in
+                TimelineRowView(item: item, last: item.id == visible.last?.id && !live)
             }
             if live {
                 HStack(spacing: 12) {
@@ -444,6 +452,15 @@ struct TimelineView: View {
                         .foregroundStyle(DS.Palette.textTertiary)
                 }
                 .padding(.top, 2)
+            }
+            if items.count > 10 {
+                Button(expanded ? "Show latest 10" : "Show all \(items.count) events") {
+                    expanded.toggle()
+                }
+                .buttonStyle(.plain)
+                .font(DS.Font.meta)
+                .foregroundStyle(DS.Palette.accent)
+                .padding(.top, 8)
             }
         }
     }
@@ -461,7 +478,7 @@ struct TimelineRowView: View {
                 .lineLimit(1)
                 .fixedSize()
                 .foregroundStyle(DS.Palette.textTertiary)
-                .frame(width: 66, alignment: .trailing)
+                .frame(width: 66, alignment: .leading)
                 .padding(.top, 1)
 
             ZStack(alignment: .top) {
