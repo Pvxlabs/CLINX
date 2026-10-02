@@ -106,7 +106,8 @@ struct MonitorRootView: View {
     /// One compact header: native traffic lights on the left and refresh/settings on the right.
     private var header: some View {
         HStack(spacing: 0) {
-            Spacer(minLength: 0)
+            WindowDragRegion()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack(spacing: 10) {
                 ToolbarIconButton(system: "arrow.clockwise", help: "Refresh  ⌘R") {
                     Task { await store.refresh() }

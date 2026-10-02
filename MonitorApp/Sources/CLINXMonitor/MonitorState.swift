@@ -97,6 +97,10 @@ final class MonitorStore: ObservableObject {
     @Published var timeWindow: TimeWindow = .day
     @Published var settingsPresented = false
     @Published private(set) var selectedRef: String?
+    @Published private(set) var localArchives: [LocalArchiveEntry]
+
+    private let defaults: UserDefaults
+    private static let archiveKey = "monitor.localArchives.v1"
 
     private var service: (any ObserverServing)?
     private var pollTask: Task<Void, Never>?
@@ -106,9 +110,12 @@ final class MonitorStore: ObservableObject {
     private var failureCount = 0
     private var failed = false
 
-    init(service: (any ObserverServing)? = nil) {
+    init(service: (any ObserverServing)? = nil, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        localArchives = defaults.data(forKey: Self.archiveKey)
+            .flatMap { try? JSONDecoder().decode([LocalArchiveEntry].self, from: $0) } ?? []
         self.service = service
-        endpointText = UserDefaults.standard.string(forKey: "monitor.endpoint") ?? ""
+        endpointText = defaults.string(forKey: "monitor.endpoint") ?? ""
         if service == nil, !endpointText.isEmpty, let url = URL(string: endpointText) {
             self.service = try? ObserverClient(baseURL: url)
         }
@@ -117,6 +124,38 @@ final class MonitorStore: ObservableObject {
     // MARK: - Derived state
 
     var allTasks: [ObservedTask] { Self.unique(active + recent) }
+
+    private var archiveSource: String {
+        syntheticScenario.map { "synthetic:\($0.rawValue)" } ?? endpointText
+    }
+
+    var currentArchives: [LocalArchiveEntry] { localArchives.filter { $0.source == archiveSource } }
+
+    func isLocallyArchived(_ task: ObservedTask) -> Bool {
+        localArchives.contains { $0.matches(task, source: archiveSource) }
+    }
+
+    func archiveLocally(_ task: ObservedTask) {
+        guard status(of: task).isAttention, !isLocallyArchived(task) else { return }
+        localArchives.append(LocalArchiveEntry(id: UUID(), source: archiveSource,
+                                              taskRef: task.taskRef, executionRef: task.executionRef,
+                                              title: task.titleText))
+        persistArchives()
+        if selectedRef == task.taskRef {
+            selectionToken += 1
+            clearSelection()
+        }
+    }
+
+    func restoreLocalArchive(_ id: UUID) {
+        localArchives.removeAll { $0.id == id }
+        persistArchives()
+    }
+
+    private func persistArchives() {
+        guard let data = try? JSONEncoder().encode(localArchives) else { return }
+        defaults.set(data, forKey: Self.archiveKey)
+    }
 
     var connection: ConnectionState {
         if let syntheticScenario { return Self.connection(for: syntheticScenario) }
@@ -212,9 +251,13 @@ final class MonitorStore: ObservableObject {
     func status(of task: ObservedTask) -> MonitorStatus { task.status(freshness: freshness) }
 
     var counts: [MonitorView: Int] {
-        var result: [MonitorView: Int] = [:]
-        for view in MonitorView.allCases {
-            result[view] = allTasks.filter { view.matches(status(of: $0)) }.count
+        var result = Dictionary(uniqueKeysWithValues: MonitorView.allCases.map { ($0, 0) })
+        let freshness = freshness
+        for task in allTasks where !isLocallyArchived(task) {
+            let status = task.status(freshness: freshness)
+            for view in MonitorView.allCases where view.matches(status) {
+                result[view, default: 0] += 1
+            }
         }
         return result
     }
@@ -233,6 +276,7 @@ final class MonitorStore: ObservableObject {
 
     var visibleTasks: [ObservedTask] {
         allTasks
+            .filter { !isLocallyArchived($0) }
             .filter { view.matches(status(of: $0)) }
             .filter { projectFilter == nil || $0.projectText == projectFilter }
             .filter { hostFilter == nil || $0.hostText == hostFilter }
@@ -359,7 +403,7 @@ final class MonitorStore: ObservableObject {
         service = newService
         syntheticScenario = nil
         endpointText = endpoint
-        UserDefaults.standard.set(endpoint, forKey: "monitor.endpoint") // Public endpoint only.
+        defaults.set(endpoint, forKey: "monitor.endpoint") // Public endpoint only.
         resetForNewSource()
         start()
     }
