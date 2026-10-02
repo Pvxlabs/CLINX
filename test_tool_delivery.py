@@ -208,6 +208,9 @@ def test_historical_blocked_result_is_immutable(delivery):
     result = finalizer.finalize(execution_ref=d.ref, task_id=d.task.task_id, turn_id='turn',
                                 raw_result=None, provider_outcome='PROVIDER_DISCONNECTED')
     assert result.status == 'BLOCKED'
+    assert result.terminal_state == 'RECOVERY_REQUIRED'
+    assert d.host.registry.has_execution_lease(d.ref)
+    assert not d.host.registry.get_task(d.task.task_id).retry_required
     before = d.host.registry.get_execution_result(d.ref)
     # Even a later provider acknowledgement cannot rewrite an existing result.
     d.acknowledge()
@@ -215,6 +218,7 @@ def test_historical_blocked_result_is_immutable(delivery):
                        raw_result='CLINX_EXECUTION_RESULT\nSTATUS=PASS\nSUMMARY=late claim\n'
                                   'CHANGED_FILES=NONE\nVALIDATION=late\nBLOCKERS=NONE\nNEXT_STATE=COMPLETED')
     assert d.host.registry.get_execution_result(d.ref) == before
+    assert d.host.registry.has_execution_lease(d.ref)
 
 
 @pytest.mark.parametrize('change', [{'namespace': 'missing'}, {'connectionGeneration': 2}])
@@ -248,7 +252,7 @@ def test_rejection_after_execution_is_not_not_executed_or_retryable(delivery, re
         d.ref, 'CLINX_EXECUTION_RESULT\nSTATUS=PASS\nSUMMARY=worker claim\nCHANGED_FILES=NONE\n'
         'VALIDATION=claim\nBLOCKERS=NONE\nNEXT_STATE=COMPLETED',
         provider_outcome='PROVIDER_TERMINAL', provider_status='completed')
-    assert decision.terminal_state == 'BLOCKED'
+    assert decision.terminal_state == 'RECOVERY_REQUIRED'
     assert decision.failure_code == 'RESULT_DELIVERY_FAILED_AFTER_EXECUTION'
     assert decision.retry_required is False
     assert d.host.registry.list_host_executions(execution_ref=d.ref)[0]['exit_code'] == 0

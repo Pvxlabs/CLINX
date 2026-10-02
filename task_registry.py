@@ -1054,6 +1054,19 @@ class TaskRegistry:
                 );
                 CREATE INDEX IF NOT EXISTS idx_execution_results_task
                     ON execution_results(task_id, received_at DESC);
+                CREATE TABLE IF NOT EXISTS result_ingestions (
+                    execution_ref TEXT NOT NULL, evidence_sha256 TEXT NOT NULL,
+                    evidence_json TEXT NOT NULL, failure_code TEXT, received_at TEXT NOT NULL,
+                    PRIMARY KEY(execution_ref,evidence_sha256)
+                );
+                CREATE TABLE IF NOT EXISTS result_reconciliation_audit (
+                    execution_ref TEXT NOT NULL, expected_result_sha256 TEXT NOT NULL,
+                    source_sha256 TEXT NOT NULL, new_result_sha256 TEXT NOT NULL,
+                    previous_result_json TEXT NOT NULL, previous_execution_json TEXT NOT NULL,
+                    previous_task_json TEXT NOT NULL, evidence_json TEXT NOT NULL,
+                    reconciled_at TEXT NOT NULL,
+                    PRIMARY KEY(execution_ref,expected_result_sha256,source_sha256)
+                );
                 CREATE TABLE IF NOT EXISTS host_executions (
                     host_execution_ref TEXT PRIMARY KEY,
                     task_id TEXT NOT NULL REFERENCES tasks(task_id),

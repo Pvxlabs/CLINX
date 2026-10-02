@@ -75,7 +75,7 @@ class M13SemanticsTests(unittest.TestCase):
         from m9_integration import parse_codex_result
         self.assertEqual(parse_codex_result(text).summary, "provider response")
 
-    def test_result_parser_ignores_echoed_example_before_actual_result(self):
+    def test_result_parser_rejects_multiple_result_blocks(self):
         from m9_integration import parse_execution_result
         text = (
             "Example contract:\n"
@@ -95,7 +95,9 @@ class M13SemanticsTests(unittest.TestCase):
             "BLOCKERS=NONE\n"
             "NEXT_STATE=COMPLETED"
         )
-        self.assertEqual(parse_execution_result(text).summary, "actual provider result")
+        from m9_integration import ResultParseError
+        with self.assertRaisesRegex(ResultParseError, "multiple CLINX result blocks"):
+            parse_execution_result(text)
 
     def test_host_identity_separates_stable_display_machine_and_alias(self):
         identity = normalize_host(
@@ -637,7 +639,7 @@ class M13LifecycleRoutingTests(unittest.TestCase):
             self.assertEqual(stored.next_state, "BLOCKED")
             self.assertEqual(registry.get_task(task.task_id).execution_state, "BLOCKED")
 
-    def test_completed_turn_without_marker_uses_exact_host_success_evidence(self):
+    def test_host_success_cannot_replace_missing_final_result(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             registry = TaskRegistry(root / "tasks.sqlite3")
@@ -671,14 +673,15 @@ class M13LifecycleRoutingTests(unittest.TestCase):
             dispatcher.client_factory = lambda target: Provider(target)
             reconciled = dispatcher.reconcile_execution("exec_host_success")
 
-            self.assertEqual(reconciled["state"], "COMPLETED")
+            self.assertEqual(reconciled["state"], "BLOCKED")
             stored = registry.get_execution_result("exec_host_success")
             self.assertIsNotNone(stored)
-            self.assertEqual(stored.status, "PASS")
-            self.assertEqual(stored.next_state, "COMPLETED")
-            self.assertIn("exit_code=0", stored.validation)
+            self.assertEqual(stored.status, "BLOCKED")
+            self.assertEqual(stored.next_state, "BLOCKED")
+            self.assertEqual(reconciled["failure_code"], "RESULT_MARKER_MISSING")
+            self.assertFalse(registry.get_task(task.task_id).retry_required)
 
-    def test_completed_turn_without_marker_accepts_recovered_host_validation(self):
+    def test_recovered_host_validation_cannot_replace_missing_result(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             registry = TaskRegistry(root / "tasks.sqlite3")
@@ -721,12 +724,12 @@ class M13LifecycleRoutingTests(unittest.TestCase):
             dispatcher.client_factory = lambda target: Provider(target)
             reconciled = dispatcher.reconcile_execution("exec_host_recovered")
 
-            self.assertEqual(reconciled["state"], "COMPLETED")
+            self.assertEqual(reconciled["state"], "BLOCKED")
             stored = registry.get_execution_result("exec_host_recovered")
             self.assertIsNotNone(stored)
-            self.assertEqual(stored.status, "PASS")
-            self.assertIn("hostexec_failed=COMMAND_FAILED/exit_code=1", stored.validation)
-            self.assertIn("hostexec_validation=SUCCEEDED/exit_code=0", stored.validation)
+            self.assertEqual(stored.status, "BLOCKED")
+            self.assertEqual(reconciled["failure_code"], "RESULT_MARKER_MISSING")
+            self.assertFalse(registry.get_task(task.task_id).retry_required)
 
     def test_completed_turn_without_marker_does_not_ignore_latest_host_failure(self):
         with tempfile.TemporaryDirectory() as td:

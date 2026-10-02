@@ -102,7 +102,7 @@ class Server:
 
     def turn(self):
         return {'id': self.turn_id, 'status': self.status,
-                'items': [{'type': 'agentMessage', 'text': RESULT}]}
+                'items': [{'type': 'agentMessage', 'phase': 'final_answer', 'text': RESULT}]}
 
     def terminal(self):
         return {'method': 'turn/completed', 'params': {'threadId': self.thread_id, 'turn': self.turn()}}
