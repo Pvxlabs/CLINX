@@ -23,6 +23,13 @@ def requires_reconciliation(row):
     """Only proven non-dispatch or known completion AND delivery clears uncertainty."""
     if row['execution_state'] == 'COMMAND_NOT_DISPATCHED':
         return False
+    # A maintenance reconciliation may clear the uncertainty while preserving
+    # the original FAILED delivery and Provider rejection.  It never rewrites
+    # the delivery to DELIVERED.
+    reconciliation_state = (row['reconciliation_state'] if 'reconciliation_state' in row.keys()
+                            else None)
+    if reconciliation_state == 'RESOLVED':
+        return False
     return not (row['execution_state'] in {'COMMAND_EXECUTION_FAILED', 'COMMAND_EXECUTED_RESULT_DELIVERED'}
                 and row['delivery_state'] == 'DELIVERED' and row['host_exit_code'] is not None)
 
@@ -75,7 +82,23 @@ class ToolDeliveryLedger:
                 execution_state TEXT NOT NULL, delivery_state TEXT NOT NULL,
                 failure_code TEXT, admitted_at REAL NOT NULL,
                 host_completed_at REAL, response_sent_at REAL, acknowledged_at REAL,
+                provider_item_json TEXT, provider_failure_sha256 TEXT,
+                provider_observed_at REAL,
+                reconciliation_state TEXT NOT NULL DEFAULT 'OPEN',
+                reconciled_at REAL, reconciliation_json TEXT,
                 PRIMARY KEY(execution_ref,tool_call_id))''')
+            columns = {row[1] for row in conn.execute('PRAGMA table_info(host_tool_deliveries)')}
+            migrations = {
+                'provider_item_json': 'ALTER TABLE host_tool_deliveries ADD COLUMN provider_item_json TEXT',
+                'provider_failure_sha256': 'ALTER TABLE host_tool_deliveries ADD COLUMN provider_failure_sha256 TEXT',
+                'provider_observed_at': 'ALTER TABLE host_tool_deliveries ADD COLUMN provider_observed_at REAL',
+                'reconciliation_state': "ALTER TABLE host_tool_deliveries ADD COLUMN reconciliation_state TEXT NOT NULL DEFAULT 'OPEN'",
+                'reconciled_at': 'ALTER TABLE host_tool_deliveries ADD COLUMN reconciled_at REAL',
+                'reconciliation_json': 'ALTER TABLE host_tool_deliveries ADD COLUMN reconciliation_json TEXT',
+            }
+            for name, statement in migrations.items():
+                if name not in columns:
+                    conn.execute(statement)
 
     @staticmethod
     def records(registry, execution_ref: str):
@@ -96,6 +119,10 @@ class ToolDeliveryLedger:
             conn.execute('BEGIN IMMEDIATE')
             rows = conn.execute('SELECT * FROM host_tool_deliveries WHERE execution_ref=?',
                                 (self.execution_ref,)).fetchall()
+            if any(row['reconciliation_state'] == 'RESOLVED' for row in rows):
+                raise DeliveryReconciliationRequired(
+                    'execution delivery was reconciled; a new execution is required'
+                )
             for row in rows:
                 if row['tool_call_id'] == call_id:
                     error = ToolCallReplayRejected('tool call already recorded; replay never executes Host again')
@@ -181,7 +208,9 @@ class ToolDeliveryLedger:
             identity = json.loads(row['identity_json'])
             if (params.get('threadId'), params.get('turnId')) != (identity['thread_id'], identity['turn_id']):
                 return
-            if (item.get('namespace'), item.get('tool')) != (identity['namespace'], identity['tool']):
+            item_identity = (item.get('namespace'), item.get('tool'))
+            if item_identity != (identity['namespace'], identity['tool']) and not (
+                    item.get('success') is False and item_identity == (None, None)):
                 return
             if owner is not None and any(identity.get(k) != v for k, v in owner.items()):
                 return
@@ -202,16 +231,115 @@ class ToolDeliveryLedger:
                                   and body.get('execution_ref') == self.execution_ref)
             delivered = ((delivered and item.get('success') is True) or
                          (rejection_delivered and item.get('success') is False)) and row['response_sent_at'] is not None
+            provider_json = json.dumps(item, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+            provider_hash = hashlib.sha256(provider_json.encode('utf-8')).hexdigest()
             state = row['execution_state']
             if delivered and row['host_exit_code'] == 0:
                 state = 'COMMAND_EXECUTED_RESULT_DELIVERED'
             elif not delivered and row['host_exit_code'] == 0:
                 state = 'COMMAND_EXECUTED_RESULT_DELIVERY_FAILED'
+            failure_code = (row['failure_code'] if row['execution_state'] == 'COMMAND_NOT_DISPATCHED' else
+                None if delivered else ('RESULT_DELIVERY_FAILED_AFTER_EXECUTION'
+                    if row['host_exit_code'] is not None else 'RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH'))
             conn.execute('''UPDATE host_tool_deliveries SET delivery_state=?,execution_state=?,
-                failure_code=?,acknowledged_at=? WHERE execution_ref=? AND tool_call_id=?''',
-                ('DELIVERED' if delivered else 'FAILED', state,
-                 row['failure_code'] if row['execution_state'] == 'COMMAND_NOT_DISPATCHED' else
-                 None if delivered else (
-                  'RESULT_DELIVERY_FAILED_AFTER_EXECUTION' if row['host_exit_code'] is not None else
-                  'RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH'),
-                 time.time(), self.execution_ref, call_id))
+                failure_code=?,acknowledged_at=?,provider_item_json=?,provider_failure_sha256=?,provider_observed_at=?
+                WHERE execution_ref=? AND tool_call_id=?''',
+                 ('DELIVERED' if delivered else 'FAILED', state, failure_code, time.time(),
+                  provider_json if not delivered else row['provider_item_json'],
+                  provider_hash if not delivered else row['provider_failure_sha256'],
+                  time.time() if not delivered else row['provider_observed_at'],
+                  self.execution_ref, call_id))
+
+    def reconcile_failed(self, call_id: str, *, proof: dict) -> dict:
+        """Resolve one known Host-success/provider-delivery failure without replay.
+
+        The proof is an identity/summary assertion.  Host and Provider evidence
+        is read from the durable ledger and every field is compared.  Delivery
+        remains FAILED so the original Provider rejection is never rewritten.
+        """
+        if not isinstance(proof, dict):
+            raise DeliveryReconciliationRequired('delivery reconciliation proof must be an object')
+        required = {'task_id', 'thread_id', 'turn_id', 'namespace', 'tool',
+                    'host_execution_ref', 'operation_class', 'capability',
+                    'operation', 'argv', 'mutating', 'provider_failure_sha256'}
+        if not required.issubset(proof):
+            raise DeliveryReconciliationRequired('delivery reconciliation requires exact identity and operation summary')
+        with self.registry._connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT * FROM host_tool_deliveries WHERE execution_ref=? AND tool_call_id=?',
+                               (self.execution_ref, call_id)).fetchone()
+            if row is None:
+                raise DeliveryReconciliationRequired('unknown Host delivery call')
+            if row['reconciliation_state'] == 'RESOLVED':
+                return {'state': 'ALREADY_APPLIED', 'execution_ref': self.execution_ref,
+                        'tool_call_id': call_id, 'delivery_state': row['delivery_state'],
+                        'reconciliation_state': 'RESOLVED'}
+            if row['delivery_state'] != 'FAILED' or row['execution_state'] != 'COMMAND_EXECUTED_RESULT_DELIVERY_FAILED':
+                raise DeliveryReconciliationRequired('delivery is not a known executed Provider failure')
+            if not row['provider_item_json'] or not row['provider_failure_sha256']:
+                raise DeliveryReconciliationRequired('Provider failure item evidence is missing')
+            if proof['provider_failure_sha256'] != row['provider_failure_sha256']:
+                raise DeliveryReconciliationRequired('Provider failure evidence hash mismatch')
+            identity = json.loads(row['identity_json'])
+            expected_identity = {
+                'task_id': identity.get('task_ref'), 'thread_id': identity.get('thread_id'),
+                'turn_id': identity.get('turn_id'), 'namespace': identity.get('namespace'),
+                'tool': identity.get('tool'),
+            }
+            for key, value in expected_identity.items():
+                if value is not None and proof[key] != value:
+                    raise DeliveryReconciliationRequired('delivery identity mismatch: ' + key)
+            host = conn.execute('SELECT * FROM host_executions WHERE host_execution_ref=?',
+                                (proof['host_execution_ref'],)).fetchone()
+            if host is None or host['execution_ref'] != self.execution_ref or host['tool_call_id'] != call_id:
+                raise DeliveryReconciliationRequired('Host receipt does not own this delivery')
+            if proof['task_id'] != host['task_id']:
+                raise DeliveryReconciliationRequired('delivery task identity does not match Host receipt')
+            if (host['completed_at'] is None or host['exit_code'] != 0
+                    or host['timed_out'] or host['result_state'] != 'SUCCEEDED'):
+                raise DeliveryReconciliationRequired('Host receipt is not a definitive successful completion')
+            if host['mutating'] is None:
+                raise DeliveryReconciliationRequired('Host mutating property is unknown')
+            if bool(host['mutating']):
+                raise DeliveryReconciliationRequired('mutating Host delivery requires the stricter reconciliation path')
+            for key, value in {'operation_class': host['operation_class'],
+                               'capability': host['capability'], 'operation': host['operation'],
+                               'mutating': bool(host['mutating'])}.items():
+                if proof[key] != value:
+                    raise DeliveryReconciliationRequired('Host operation summary mismatch: ' + key)
+            try:
+                argv = json.loads(host['argv_json'])
+            except (TypeError, ValueError):
+                raise DeliveryReconciliationRequired('Host argv evidence is malformed')
+            if proof['argv'] != argv:
+                raise DeliveryReconciliationRequired('Host argv summary mismatch')
+            provider = json.loads(row['provider_item_json'])
+            if provider.get('success') is not False:
+                raise DeliveryReconciliationRequired('Provider failure item identity is not exact')
+            if ((provider.get('namespace') not in (None, identity.get('namespace'))) or
+                    (provider.get('tool') not in (None, identity.get('tool')))):
+                raise DeliveryReconciliationRequired('Provider failure item identity is not exact')
+            stamp = time.time()
+            evidence = {'proof': proof, 'host_receipt': dict(host), 'provider_item': provider,
+                        'original_delivery_state': row['delivery_state'],
+                        'original_execution_state': row['execution_state']}
+            updated = conn.execute('''UPDATE host_tool_deliveries SET reconciliation_state='RESOLVED',
+                reconciled_at=?,reconciliation_json=? WHERE execution_ref=? AND tool_call_id=?
+                AND reconciliation_state='OPEN' ''',
+                (stamp, json.dumps(evidence, sort_keys=True, ensure_ascii=False),
+                 self.execution_ref, call_id)).rowcount
+            if updated != 1:
+                raise DeliveryReconciliationRequired('delivery reconciliation CAS lost')
+            conn.execute('''CREATE TABLE IF NOT EXISTS host_delivery_reconciliation_audit (
+                execution_ref TEXT NOT NULL, tool_call_id TEXT NOT NULL,
+                proof_json TEXT NOT NULL, host_receipt_json TEXT NOT NULL,
+                provider_item_json TEXT NOT NULL, reconciled_at REAL NOT NULL,
+                PRIMARY KEY(execution_ref,tool_call_id))''')
+            conn.execute('''INSERT INTO host_delivery_reconciliation_audit VALUES (?,?,?,?,?,?)''',
+                (self.execution_ref, call_id, json.dumps(proof, sort_keys=True),
+                 json.dumps(dict(host), sort_keys=True), row['provider_item_json'], stamp))
+            return {'state': 'RESOLVED', 'execution_ref': self.execution_ref,
+                    'tool_call_id': call_id, 'delivery_state': 'FAILED',
+                    'reconciliation_state': 'RESOLVED',
+                    'provider_failure_sha256': row['provider_failure_sha256'],
+                    'host_execution_ref': proof['host_execution_ref']}

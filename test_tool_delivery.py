@@ -12,7 +12,7 @@ import bridge
 import test_m13b as support
 from execution_policy import DEVELOPMENT_MUTATION, READ_ONLY_HOST
 from m9_integration import ExecutionFinalizer
-from tool_delivery import ToolDeliveryLedger
+from tool_delivery import DeliveryReconciliationRequired, ToolDeliveryLedger
 
 
 class Wire:
@@ -267,6 +267,74 @@ def test_wrong_ack_cannot_claim_delivery(delivery):
     assert rows(d)[0]['delivery_state'] == 'PENDING'
     d.acknowledge(host_ref='hostexec_foreign')
     assert rows(d)[0]['delivery_state'] == 'FAILED'
+
+
+def test_known_provider_failure_reconciles_without_host_replay(delivery):
+    d = delivery
+    d.request['params']['arguments']['readonly'] = True
+    d.client._send_server_response(d.request)
+    d.acknowledge(success=False)
+    row = rows(d)[0]
+    assert row['delivery_state'] == 'FAILED'
+    assert row['execution_state'] == 'COMMAND_EXECUTED_RESULT_DELIVERY_FAILED'
+    assert row['provider_failure_sha256']
+    identity = json.loads(row['identity_json'])
+    with d.host.registry._connect() as conn:
+        host = dict(conn.execute('SELECT * FROM host_executions WHERE host_execution_ref=?',
+                                 (row['host_execution_ref'],)).fetchone())
+    proof = {
+        'task_id': host['task_id'], 'thread_id': identity['thread_id'],
+        'turn_id': identity['turn_id'], 'namespace': identity['namespace'],
+        'tool': identity['tool'], 'host_execution_ref': row['host_execution_ref'],
+        'operation_class': host['operation_class'], 'capability': host['capability'],
+        'operation': host['operation'], 'argv': json.loads(host['argv_json']),
+        'mutating': bool(host['mutating']),
+        'provider_failure_sha256': row['provider_failure_sha256'],
+    }
+    outcome = d.ledger.reconcile_failed('call-1', proof=proof)
+    assert outcome['state'] == 'RESOLVED'
+    assert outcome['delivery_state'] == 'FAILED'
+    after = rows(d)[0]
+    assert after['reconciliation_state'] == 'RESOLVED'
+    assert after['reconciliation_required'] is False
+    assert d.ledger.reconcile_failed('call-1', proof=proof)['state'] == 'ALREADY_APPLIED'
+    with pytest.raises(DeliveryReconciliationRequired, match='new execution is required'):
+        d.ledger.admit({**d.request, 'params': {**d.request['params'], 'callId': 'call-2'}}, {})
+
+
+def test_registry_delivery_reconciliation_releases_only_old_execution(delivery):
+    d = delivery
+    d.request['params']['arguments']['readonly'] = True
+    d.host.registry.bind_conversation(task_id=d.task.task_id, thread_id='thread',
+                                      session_id='session', project_id=None, app_server_version='fixture')
+    d.client._send_server_response(d.request)
+    d.acknowledge(success=False)
+    row = rows(d)[0]
+    d.host.registry.set_execution_state(d.task.task_id, 'RECOVERY_REQUIRED',
+        current_stage='RECOVERY_REQUIRED', turn_id='turn', retry_required=True,
+        failure_code='RESULT_DELIVERY_FAILED_AFTER_EXECUTION',
+        failure_stage='delivery', failure_evidence='provider item persisted')
+    d.host.registry.record_execution_result(
+        execution_ref=d.ref, task_id=d.task.task_id, turn_id='turn', status='BLOCKED',
+        summary='Provider delivery rejected after Host success', changed_files='NONE',
+        validation='Host receipt and Provider item persisted',
+        blockers='RESULT_DELIVERY_FAILED_AFTER_EXECUTION: command retry prohibited',
+        next_state='BLOCKED', raw_result='CLINX_EXECUTION_RESULT\nSTATUS=BLOCKED')
+    identity = json.loads(row['identity_json'])
+    with d.host.registry._connect() as conn:
+        host = dict(conn.execute('SELECT * FROM host_executions WHERE host_execution_ref=?',
+                                 (row['host_execution_ref'],)).fetchone())
+    proof = {'task_id': host['task_id'], 'thread_id': identity['thread_id'], 'turn_id': identity['turn_id'],
+             'namespace': identity['namespace'], 'tool': identity['tool'],
+             'host_execution_ref': row['host_execution_ref'], 'operation_class': host['operation_class'],
+             'capability': host['capability'], 'operation': host['operation'],
+             'argv': json.loads(host['argv_json']), 'mutating': bool(host['mutating']),
+             'provider_failure_sha256': row['provider_failure_sha256']}
+    result = d.host.registry.reconcile_host_delivery_failure(d.ref, 'call-1', proof)
+    assert result['terminal_state'] == 'BLOCKED'
+    assert result['original_result_preserved'] is True
+    assert not d.host.registry.has_execution_lease(d.ref)
+    assert d.host.registry.get_execution_result(d.ref).status == 'BLOCKED'
 
 
 def test_owned_endpoint_has_no_shared_daemon_fallback(tmp_path):
