@@ -6,6 +6,7 @@ struct ExecutionListView: View {
     @ObservedObject var store: MonitorStore
     @FocusState private var listFocused: Bool
     @State private var filterOpen = false
+    @State private var archiveOpen = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -63,6 +64,13 @@ struct ExecutionListView: View {
                 .help("Clear host filter")
             }
 
+            if !store.currentArchives.isEmpty {
+                ToolbarIconButton(system: "archivebox", help: "Archived on this Mac (\(store.currentArchives.count))",
+                                  active: archiveOpen) { archiveOpen.toggle() }
+                    .popover(isPresented: $archiveOpen, arrowEdge: .bottom) {
+                        LocalArchiveView(store: store)
+                    }
+            }
             ToolbarIconButton(system: "line.3.horizontal.decrease", size: 13, help: "Filter",
                               active: filterOpen || store.projectFilter != nil || store.hostFilter != nil) {
                 filterOpen.toggle()
@@ -213,6 +221,8 @@ struct ExecutionRowView: View {
                         .font(DS.Font.meta)
                         .monospacedDigit()
                         .foregroundStyle(DS.Palette.textTertiary)
+                        .frame(minWidth: status.isAttention ? 58 : nil, alignment: .trailing)
+                        .opacity(hovering && status.isAttention ? 0 : 1)
                 }
                 HStack(spacing: 8) {
                     HStack(spacing: 2) {
@@ -249,11 +259,31 @@ struct ExecutionRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .topTrailing) {
+            if hovering && status.isAttention {
+                Button { store.archiveLocally(task) } label: {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DS.Palette.textTertiary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Archive on this Mac. Restore from the archive button above the list.")
+                .accessibilityLabel("Archive \(task.titleText) on this Mac")
+                .padding(.trailing, 16)
+                .padding(.top, 4)
+            }
+        }
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Copy title") { copy(task.titleText) }
             Button("Copy execution ID") { copy(task.executionText) }
             Button("Copy summary") { copy(summaryText) }
+            if status.isAttention {
+                Divider()
+                Button("Archive on this Mac") { store.archiveLocally(task) }
+            }
             Divider()
             Text("Read-only — no execution actions")
         }

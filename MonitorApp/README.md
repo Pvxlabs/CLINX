@@ -31,7 +31,23 @@ Design authority and code authority are kept separate:
 * **This code** owns the Observer contract: models, four authenticated GET routes, offset
   and cursor pagination, freshness and error semantics, Keychain credential storage.
 
-### Keyboard
+### Local build signing and Keychain authorization
+
+Run `Scripts/setup-local-signing.sh` once on a development Mac, then use
+`Scripts/build-app.sh`. The setup imports a non-extractable local code-signing key
+into the default Keychain, with private-key access limited to `/usr/bin/codesign`.
+It does not change system certificate trust. Temporary key material is removed.
+Keep this identity across rebuilds; do not replace the resulting signature with
+`codesign --sign -`. An existing development certificate can be selected through
+`CLINX_SIGNING_IDENTITY` (certificate common name).
+
+On the first launch after switching from ad-hoc signing, macOS may request access
+to the existing Observer credential. Choose **Always Allow** in that system dialog
+to authorize this stable app identity. The credential stays in Keychain; the app
+never stores the Mac login password. A locked Keychain can still require unlocking.
+This self-signed identity is for local development, not distribution/notarization.
+
+### Keyboard shortcuts
 
 | Keys | Action |
 | --- | --- |

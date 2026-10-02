@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
+signing_identity="${CLINX_SIGNING_IDENTITY:-CLINX Monitor Local Development}"
+if ! security find-certificate -c "$signing_identity" >/dev/null 2>&1; then
+    echo 'Missing signing certificate. Run Scripts/setup-local-signing.sh once, or set CLINX_SIGNING_IDENTITY.' >&2
+    exit 1
+fi
 swift build -c release
 binary_dir="$(swift build -c release --show-bin-path)"
 app_dir="$PWD/.build/CLINX Monitor.app"
@@ -18,4 +23,8 @@ else
     echo "warning: app icon generation failed; the bundle keeps the default icon" >&2
 fi
 
+# Keep the Keychain identity stable across rebuilds: certificate + bundle identifier,
+# instead of the changing binary hash produced by ad-hoc signing.
+codesign --force --sign "$signing_identity" --timestamp=none "$app_dir"
+codesign --verify --strict "$app_dir"
 echo "$app_dir"

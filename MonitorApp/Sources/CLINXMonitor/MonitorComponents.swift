@@ -12,21 +12,14 @@ struct StatusGlyphView: View {
     let color: Color
     var size: CGFloat = 12
 
-    @State private var spinning = false
-
     var body: some View {
         Group {
             switch glyph {
             case .spinner:
-                ZStack {
-                    Circle().stroke(color.opacity(0.25), lineWidth: 1.6)
-                    Circle()
-                        .trim(from: 0, to: 0.25)
-                        .stroke(color, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-                        .rotationEffect(.degrees(spinning ? 360 : 0))
-                        .animation(.linear(duration: 1.4).repeatForever(autoreverses: false), value: spinning)
-                }
-                .onAppear { spinning = true }
+                LayerSpinner(color: color)
+                    // Leave room for the centered stroke without changing glyph layout.
+                    .frame(width: size + 4, height: size + 4)
+                    .frame(width: size, height: size)
             case .octagon:
                 ZStack {
                     Image(systemName: "octagon.fill").resizable().foregroundStyle(color)

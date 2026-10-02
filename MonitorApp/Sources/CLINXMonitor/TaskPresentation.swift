@@ -5,6 +5,14 @@ import Foundation
 // and never exposes raw payloads.
 
 enum TimestampParser {
+    // Snapshot timestamps recur across rows, filters and inspector updates. Parse each
+    // immutable value once instead of doing ICU work repeatedly on the UI thread.
+    private static let parsedDates: NSCache<NSString, NSDate> = {
+        let cache = NSCache<NSString, NSDate>()
+        cache.countLimit = 2048
+        return cache
+    }()
+
     private static let withFraction: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -25,6 +33,7 @@ enum TimestampParser {
     /// so the fraction is normalised before parsing.
     static func date(from value: String?) -> Date? {
         guard let value, !value.isEmpty else { return nil }
+        if let date = parsedDates.object(forKey: value as NSString) { return date as Date }
         var normalized = value
         if let dot = value.firstIndex(of: ".") {
             var index = value.index(after: dot)
@@ -38,7 +47,9 @@ enum TimestampParser {
             let fraction = value[value.index(after: dot)..<index]
             normalized = String(value[value.startIndex..<dot]) + "." + fraction + String(value[tail...])
         }
-        return withFraction.date(from: normalized) ?? plain.date(from: normalized)
+        let date = withFraction.date(from: normalized) ?? plain.date(from: normalized)
+        if let date { parsedDates.setObject(date as NSDate, forKey: value as NSString) }
+        return date
     }
 }
 
@@ -134,7 +145,8 @@ extension ObservedTask {
                          kind: EventPresentation.kind(for: event.kind),
                          title: EventPresentation.title(for: event.kind),
                          meta: nil,
-                         mono: event.eventRef)
+                         mono: event.eventRef,
+                         occurredAt: TimestampParser.date(from: event.occurredAt))
         }
         for op in hostOperations {
             let start = TimestampParser.date(from: op.startedAt)
@@ -145,16 +157,20 @@ extension ObservedTask {
                                       kind: .dispatch,
                                       title: "Host command dispatched",
                                       meta: op.operation,
-                                      mono: op.hostExecutionRef))
+                                      mono: op.hostExecutionRef, occurredAt: start))
             if end != nil {
                 items.append(TimelineItem(id: op.hostExecutionRef + ".end",
                                           time: RelativeTime.clock(end),
                                           kind: failed ? .error : .done,
                                           title: failed ? "Host command failed" : "Host command completed",
                                           meta: (failed ? "exit \(op.exitCode ?? 1)" : "exit 0") + " · " + RelativeTime.duration(from: start, to: end),
-                                          mono: op.hostExecutionRef))
+                                          mono: op.hostExecutionRef, occurredAt: end))
             }
         }
-        return items.sorted { $0.time < $1.time }
+        return items.enumerated().sorted {
+            let lhs = $0.element.occurredAt ?? .distantPast
+            let rhs = $1.element.occurredAt ?? .distantPast
+            return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
+        }.map(\.element)
     }
 }
