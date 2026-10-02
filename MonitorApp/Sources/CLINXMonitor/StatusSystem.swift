@@ -351,6 +351,7 @@ struct TimelineItem: Identifiable, Equatable {
     let title: String
     let meta: String?
     let mono: String?
+    var occurredAt: Date? = nil
 }
 
 /// Observer event kinds → human timeline titles.

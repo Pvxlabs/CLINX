@@ -9,6 +9,7 @@ struct SidebarView: View {
     let rail: Bool
 
     var body: some View {
+        let counts = store.counts
         VStack(alignment: .leading, spacing: 0) {
             if !rail {
                 Text("Executions")
@@ -29,7 +30,7 @@ struct SidebarView: View {
                         .padding(.vertical, 6)
                         .padding(.horizontal, rail ? 0 : 8)
                 }
-                SidebarItemView(store: store, view: view, rail: rail)
+                SidebarItemView(store: store, view: view, rail: rail, count: counts[view] ?? 0)
             }
 
             if !rail {
@@ -82,11 +83,11 @@ private struct SidebarItemView: View {
     @ObservedObject var store: MonitorStore
     let view: MonitorView
     let rail: Bool
+    let count: Int
 
     @State private var hovering = false
 
     private var active: Bool { store.view == view }
-    private var count: Int { store.counts[view] ?? 0 }
     /// Attention colour comes from the view's shared rule, and only while the view
     /// actually holds entries — a "0" stays neutral grey on Blocked and Failed too.
     private var attention: MonitorStatus? {

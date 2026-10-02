@@ -16,7 +16,9 @@ struct FullSizeContentConfigurator: NSViewRepresentable {
         }
         if !window.titlebarAppearsTransparent { window.titlebarAppearsTransparent = true }
         if window.titleVisibility != .hidden { window.titleVisibility = .hidden }
-        window.isMovableByWindowBackground = true
+        // The header starts native window dragging explicitly. Background dragging makes AppKit
+        // traverse the animated SwiftUI content to rebuild drag regions every frame.
+        if window.isMovableByWindowBackground { window.isMovableByWindowBackground = false }
 
         // macOS owns fullscreen chrome (and its reveal animation). Restore our header
         // geometry once the window returns to its regular content surface.
@@ -46,6 +48,20 @@ struct FullSizeContentConfigurator: NSViewRepresentable {
             var frame = button.frame
             frame.origin.y = center - frame.height / 2
             button.frame = frame
+        }
+    }
+}
+
+/// Only the empty header starts a drag, without making animated content draggable.
+struct WindowDragRegion: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
         }
     }
 }
