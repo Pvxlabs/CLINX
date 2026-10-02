@@ -231,6 +231,8 @@ class AppServerConfig:
     transport: str = "local"
     command: tuple[str, ...] = ("codex", "app-server", "proxy")
     local_socket: str | None = None
+    native_socket: str | None = None
+    native_home: str | None = None
     ssh_binary: str = "ssh"
     ssh_alias: str | None = None
     ssh_args: tuple[str, ...] = ("-T",)
@@ -715,6 +717,13 @@ class BridgeConfig:
         local_socket = app_server_raw.get("local_socket")
         if local_socket is not None and (not isinstance(local_socket, str) or not local_socket.strip()):
             raise BridgeError("[app_server].local_socket must be a non-empty socket path")
+        native_socket = app_server_raw.get("native_socket")
+        if native_socket is not None and (not isinstance(native_socket, str) or not native_socket.strip()):
+            raise BridgeError("[app_server].native_socket must be a non-empty socket path")
+        native_home = app_server_raw.get('native_home')
+        if native_home is not None and (not isinstance(native_home, str) or not native_home.strip()
+                                       or not Path(native_home).expanduser().is_absolute()):
+            raise BridgeError('[app_server].native_home must be an absolute native history root')
         transport = str(app_server_raw.get("transport", "local")).strip().lower()
         if transport not in {"local", "ssh"}:
             raise BridgeError("[app_server].transport must be 'local' or 'ssh'")
@@ -806,11 +815,16 @@ class BridgeConfig:
                 root = str(row.get("root", "")).strip()
                 if not root:
                     raise BridgeError(f"Workspace {alias!r} requires root")
+                native_host_ids = row.get('codex_host_ids', [])
+                if (not isinstance(native_host_ids, list) or any(not isinstance(v, str) or not v
+                        for v in native_host_ids)):
+                    raise BridgeError(f'Workspace {alias!r} codex_host_ids must be a string array')
                 workspaces.append(
                     WorkspaceConfig(
                         alias=str(alias),
                         root=Path(root).expanduser().resolve(),
                         allow_existing_projects=bool(row.get("allow_existing_projects", True)),
+                        codex_host_ids=tuple(native_host_ids),
                         allow_new_projects=bool(row.get("allow_new_projects", False)),
                         host=(str(row["host"]).strip() if row.get("host") else None),
                         ssh_alias=(
@@ -949,6 +963,8 @@ class BridgeConfig:
             projects=tuple(projects),
             app_server=AppServerConfig(
                 local_socket=local_socket,
+                native_socket=native_socket,
+                native_home=str(Path(native_home).expanduser().resolve()) if native_home else None,
                 transport=transport,
                 command=command,
                 ssh_binary=str(app_server_raw.get("ssh_binary", "ssh")),
@@ -2229,6 +2245,7 @@ def _default_app_server_client(
     client = CodexAppServerClient(
         transport,
         timeout_seconds=cfg.app_server.request_timeout_seconds,
+        strict_dynamic_tool_binding=True,
     )
     client.provider_endpoint = str(endpoint) if endpoint is not None else None
     return client
@@ -2255,6 +2272,7 @@ class TaskDispatcher:
         self.client_factory = client_factory or (
             lambda target: _default_app_server_client(cfg, target)
         )
+        self._uses_default_client_factory = client_factory is None
         self.host_executor = HostExecutor(cfg.host_executor, self.tasks) if initialize_host_executor else None
         self.linear = linear
         self.projects = DynamicProjectResolver(self.workspaces, cfg.projects)
@@ -2798,18 +2816,12 @@ class TaskDispatcher:
             initialize_info=initialize_info,
             allow_unloaded=True,
         )
-        needs_resume = (
-            thread.get("canAcceptDirectInput") is None
-            and _status_type(thread) in {"notLoaded", "unloaded"}
-        )
-        if needs_resume:
-            client.thread_resume(target.thread_id)
-            thread = client.thread_read(target.thread_id)
         evidence = _repository_identity_evidence(thread)
         identity_guard(
             target,
             thread,
             initialize_info=initialize_info,
+            allow_unloaded=True,
             repository_evidence=evidence,
         )
         return thread
@@ -3039,11 +3051,13 @@ class TaskDispatcher:
                         failure_code="DISPATCH_IDENTITY_GUARD_FAILED",
                     )
                     raise
-                except AppServerError:
+                except AppServerError as exc:
                     self._execution_state(
                         leased.task_id, "RECOVERY_REQUIRED", current_stage="dispatch",
                         current_blocker="recoverable app-server failure", codex_running=False,
-                        retry_required=True,
+                        retry_required=True, failure_stage=getattr(exc, 'method', 'dispatch'),
+                        failure_code=getattr(exc, 'code', type(exc).__name__),
+                        failure_evidence=_context_text(str(exc), 4000),
                     )
                     raise
                 except Exception as exc:
@@ -3161,9 +3175,15 @@ class TaskDispatcher:
             self.last_task_id = leased.task_id
             self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
             target = self._target(workspace, project, binding, route)
-            client = self.client_factory(target)
+            client = None
             turn = None
             try:
+                if (getattr(self, '_uses_default_client_factory', False) and self.cfg.app_server.local_socket
+                        and canonical_host(target.target_host) == canonical_host(self.cfg.runtime_host)):
+                    from native_provider import select_writer_client
+                    client = select_writer_client(self.cfg, binding.thread_id)
+                else:
+                    client = self.client_factory(target)
                 self._execution_state(leased.task_id, "DISPATCHING", current_stage="identity guard")
                 with client:
                     initialize_info = client.initialize(
@@ -3180,7 +3200,8 @@ class TaskDispatcher:
                             resolved_model=executable_model,
                         )
                     thread = self._read_and_guard(client, target, initialize_info)
-                    turn_start_guard(thread)
+                    if _status_type(thread) not in {"idle", "notLoaded", "unloaded"}:
+                        turn_start_guard(thread)
                     # This is the authorized writer continuation, never a read-path resume.
                     client.thread_resume(
                         binding.thread_id,
@@ -3272,11 +3293,13 @@ class TaskDispatcher:
                     failure_code="DISPATCH_IDENTITY_GUARD_FAILED",
                 )
                 raise
-            except AppServerError:
+            except AppServerError as exc:
                 self._execution_state(
                     leased.task_id, "RECOVERY_REQUIRED", current_stage="dispatch",
                     current_blocker="recoverable app-server failure", codex_running=False,
-                    retry_required=True,
+                    retry_required=True, failure_stage=getattr(exc, 'method', 'dispatch'),
+                    failure_code=getattr(exc, 'code', type(exc).__name__),
+                    failure_evidence=_context_text(str(exc), 4000),
                 )
                 raise
             except Exception as exc:
@@ -3327,9 +3350,12 @@ class TaskDispatcher:
         execution_mode: str = "normal",
         task_index: "LinearTaskIndex | None" = None,
         task_index_project_id: str | None = None,
-        require_direct_input: bool = True,
+        require_direct_input: bool = False,
+        native_thread: dict[str, Any] | None = None,
+        include_created: bool = False,
+        reuse_existing: bool = False,
         discovery_evidence: str = "bounded exact conversation identity and project guard",
-    ) -> tuple[Any, DurableConversationBinding, TaskIndexRecord | None]:
+    ) -> tuple[Any, ...]:
         """Adopt one existing exact conversation without sending a turn."""
         if not thread_id.strip():
             raise DispatchContractError("Existing conversation adoption requires THREAD_ID")
@@ -3339,17 +3365,16 @@ class TaskDispatcher:
         project_evidence = _local_git_identity(str(project.repo))
         project_identity_guard(project, project_evidence)
         target = _read_only_transport_target(self.cfg, project)
-        client = self.client_factory(target)
-        with client:
+        from contextlib import nullcontext
+        client = self.client_factory(target) if native_thread is None else None
+        with client if client is not None else nullcontext():
             initialize_info = client.initialize(
                 client_name=self.cfg.app_server.client_name,
                 client_title=self.cfg.app_server.client_title,
                 client_version=self.cfg.app_server.client_version,
-            )
-            thread = client.thread_read(thread_id)
-            if require_direct_input and _status_type(thread) in {"notLoaded", "unloaded"}:
-                client.thread_resume(thread_id)
-                thread = client.thread_read(thread_id)
+            ) if client is not None else None
+            thread = client.thread_read(thread_id) if client is not None else native_thread
+            # Adoption only associates identity; never resume or claim a writer.
             if thread.get("ephemeral") is not False:
                 raise IdentityGuardError(
                     "DISPATCH_IDENTITY_GUARD=FAIL\n"
@@ -3387,9 +3412,8 @@ class TaskDispatcher:
                     initialize_info=initialize_info,
                     repository_evidence=evidence,
                 )
-            version = self._initialize_version(
-                initialize_info, target.app_server_version
-            )
+            version = (thread.get("cliVersion") if native_thread is not None else
+                       self._initialize_version(initialize_info, target.app_server_version))
             try:
                 selected_transport = target.transport or resolve_transport(
                     self.cfg.runtime_host,
@@ -3425,10 +3449,11 @@ class TaskDispatcher:
                     f"ADOPTION=FAIL: routing identity is unavailable: {exc}"
                 ) from exc
             existing = self.tasks.get_binding_by_thread(thread_id)
-            if existing is not None:
+            if existing is not None and not reuse_existing:
                 raise TaskRegistryError(
                     f"ADOPTION=FAIL: thread {thread_id} is already bound to task {existing.task_id}"
                 )
+            created = True
             try:
                 task, binding = self.tasks.adopt_task(
                     host=host or workspace.alias,
@@ -3458,10 +3483,15 @@ class TaskDispatcher:
                 if raced is None or "already bound" not in str(exc).casefold():
                     raise
                 task, binding = self.tasks.get_task(raced.task_id), raced
+                created = False
+                if (canonical_host(task.host) != canonical_host(host or workspace.host or workspace.alias)
+                        or Path(task.cwd).resolve() != Path(project.repo).resolve()
+                        or task.repository_origin != project.repository_origin or binding.session_id != session_id):
+                    raise IdentityGuardError("ADOPTION_IDENTITY_CONFLICT: concurrent binding disagrees")
         index = None
         if task_index is not None:
             index = task_index.sync(task.task_id, project_id=task_index_project_id)
-        return task, binding, index
+        return (task, binding, index, created) if include_created else (task, binding, index)
 
     def adopt_or_reuse_existing_conversation(
         self,
@@ -3475,13 +3505,18 @@ class TaskDispatcher:
         execution_mode: str = "normal",
         task_index: "LinearTaskIndex | None" = None,
         task_index_project_id: str | None = None,
-        require_direct_input: bool = True,
+        require_direct_input: bool = False,
+        native_thread: dict[str, Any] | None = None,
+        include_created: bool = False,
         discovery_evidence: str = "bounded exact conversation identity and project guard",
-    ) -> tuple[Any, DurableConversationBinding, TaskIndexRecord | None]:
+    ) -> tuple[Any, ...]:
         """Adopt a thread once, or reuse its canonical existing task binding."""
         existing = self.tasks.get_binding_by_thread(thread_id)
         if existing is not None:
             task = self.tasks.get_task(existing.task_id)
+            if native_thread is not None and (existing.session_id != native_thread.get('sessionId')
+                    or Path(task.cwd).resolve() != Path(native_thread['cwd']).resolve()):
+                raise IdentityGuardError('ADOPTION_IDENTITY_CONFLICT: existing native identity disagrees')
             if task.project_alias.casefold() != project_ref.casefold() and \
                     task.project_name.casefold() != project_ref.casefold():
                 raise TargetResolutionError(
@@ -3510,7 +3545,7 @@ class TaskDispatcher:
                 task_index.sync(task.task_id, project_id=task_index_project_id)
                 if task_index is not None else None
             )
-            return task, existing, index
+            return (task, existing, index, False) if include_created else (task, existing, index)
         return self.adopt_existing_conversation(
             project_ref=project_ref,
             host=host,
@@ -3522,6 +3557,8 @@ class TaskDispatcher:
             task_index=task_index,
             task_index_project_id=task_index_project_id,
             require_direct_input=require_direct_input,
+            native_thread=native_thread,
+            include_created=include_created, reuse_existing=True,
             discovery_evidence=discovery_evidence,
         )
 

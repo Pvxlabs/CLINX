@@ -861,18 +861,70 @@ class ClinxIntegration:
     def adopt_conversation(
         self,
         *,
-        project: str,
+        project: str | None = None,
         host: str | None = None,
         conversation_ref: str | None = None,
         query: str | None = None,
         title: str | None = None,
         summary: str | None = None,
+        thread_id: str | None = None,
+        codex_uri: str | None = None,
     ) -> dict[str, Any]:
         """Adopt one exact historical conversation without starting execution.
 
         Discovery is bounded and may select one candidate; the registry then
         performs the atomic binding.  A retry returns the existing task.
         """
+        if thread_id is not None or codex_uri is not None:
+            from thread_identity import ThreadIdentityReader, ThreadLookupError, resolve_selector
+            from native_history import NativeHistory
+            try:
+                if conversation_ref is not None:
+                    raise ThreadLookupError('IDENTITY_SELECTOR_CONFLICT', 'Use exactly one native selector')
+                tid, route_host, _ = resolve_selector(self.cfg, thread_id=thread_id, codex_uri=codex_uri,
+                                                      host=host, query=query)
+                reader = ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader)
+                observed = reader.read(thread_id=tid, host=route_host, project=project)
+                if observed.get('lookup_status') not in ('THREAD_UNBOUND', 'RESOLVED'):
+                    return dict(observed, adoption_status='BLOCKED', read_only=False, control_transferred=False)
+                native = NativeHistory(reader.native_root)
+                metadata = native.metadata(tid)
+                if metadata is None:
+                    raise ThreadLookupError('THREAD_NOT_FOUND', 'No exact native index record for adoption')
+                identity = native.identity(tid, metadata)
+                observation = observed.get('provider_observation', {})
+                for row in observation.get('observations', []):
+                    if row.get('session_id') and row['session_id'] != identity['sessionId']:
+                        raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Live session and native header disagree')
+                    if row.get('cwd') and Path(row['cwd']).resolve() != Path(identity['cwd']).resolve():
+                        raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Live and persisted native cwd disagree')
+                identity['status'] = {'type': observation.get('state', 'UNKNOWN')}
+                cwd = Path(identity['cwd']).resolve()
+                mappings = [p for p in self.cfg.projects if Path(p.repo).resolve() == cwd]
+                if len(mappings) > 1:
+                    raise ThreadLookupError('ADOPTION_IDENTITY_CONFLICT', 'Native cwd has multiple project mappings')
+                project_ref = mappings[0].project_alias if mappings else cwd.name
+                workspace, descriptor, _ = self.dispatcher.resolve_project(project_ref, host=route_host, project_mode='existing')
+                if Path(descriptor.cwd).resolve() != cwd:
+                    raise ThreadLookupError('ADOPTION_WORKSPACE_DENIED', 'Native cwd is not a trusted existing development project')
+                from task_registry import MAX_TASK_TITLE_LENGTH
+                native_title = (identity.get('name') or 'Native Codex conversation')[:MAX_TASK_TITLE_LENGTH]
+                task, binding, _, created = self.dispatcher.adopt_or_reuse_existing_conversation(
+                    project_ref=project_ref, host=route_host, thread_id=tid,
+                    title=title or native_title,
+                    summary=summary or 'Explicit native observation association; execution requires a separate request.',
+                    task_key='native-' + tid, task_index=None, require_direct_input=False,
+                    native_thread=identity, include_created=True, discovery_evidence='Exact authorized host + native state index + session header')
+                return {'adoption_status': 'ADOPTED' if created else 'ALREADY_ADOPTED',
+                    'task_ref': task.task_id, 'task_created': created, 'task': self._public(task),
+                    'thread_id': binding.thread_id, 'session_id': binding.session_id,
+                    'native_name': identity.get('name'), 'cwd': str(cwd), 'host': route_host,
+                    'provider_observation': observation, 'control_transferred': False,
+                    'execution_started': False, 'conversation_created': False,
+                    'new_codex_conversation_created': False, 'linear_audit': 'DEFERRED', 'read_only': False}
+            except ThreadLookupError as exc:
+                return {'adoption_status': 'BLOCKED', 'error_code': exc.code, 'unavailable_reason': exc.reason,
+                        'control_transferred': False, 'execution_started': False, 'read_only': False}
         if not isinstance(project, str) or not project.strip():
             raise M9IntegrationError("project is required for adoption")
         if bool(conversation_ref) == bool(query):
@@ -964,6 +1016,7 @@ class ClinxIntegration:
         thread_id: str | None = None,
         codex_uri: str | None = None,
         execution_ref: str | None = None,
+        cursor: str | None = None,
     ) -> dict[str, Any]:
         if thread_id is not None or codex_uri is not None:
             from thread_identity import ThreadIdentityReader
@@ -971,7 +1024,10 @@ class ClinxIntegration:
                 context=True, thread_id=thread_id, codex_uri=codex_uri,
                 task_ref=task_ref, query=query, host=host, project=project, execution_ref=execution_ref,
                 recent_turns=recent_turns if recent_turns is not None else 8, max_bytes=max_bytes if max_bytes is not None else 32000,
+                cursor=cursor,
             )
+        if cursor is not None:
+            raise M9IntegrationError('cursor requires an exact native thread selector')
         if execution_ref is not None:
             raise M9IntegrationError("execution_ref requires an exact thread selector for context")
         task = self.context_reader.resolve_task(
@@ -1122,11 +1178,11 @@ class ClinxIntegration:
                 candidates = []
                 for table in ("executions", "execution_history"):
                     candidates.extend(dict(row, active_record=table == "executions") for row in conn.execute(
-                        f"SELECT * FROM {table} WHERE task_id=?", (task.task_id,)) if row['execution_ref'])
+                        f"SELECT * FROM {table} WHERE task_id=? ORDER BY acquired_at DESC LIMIT 257", (task.task_id,)) if row['execution_ref'])
+                if len(candidates) > 256:
+                    raise M9IntegrationError('Task execution relation exceeds bounded lookup limit (256); use execution_ref')
             binding = self.registry.get_binding(task.task_id)
             candidates = [row for row in candidates if
-                ((row['active_record'] and row['stage'] not in TERMINAL_EXECUTION_STAGES)
-                 or not task.turn_id or row['turn_id'] == task.turn_id) and
                 (binding is None or json.loads(row['routing_identity_json']).get('conversation', {}).get('binding')
                  in (None, 'UNBOUND', 'UNKNOWN', 'BOUND', binding.thread_id))]
             try:
@@ -1227,6 +1283,7 @@ class ClinxIntegration:
         status["task_current_projection"] = {
             "execution_state": task.execution_state, "codex_running": bool(task.codex_running),
             "turn_id": task.turn_id, "current_stage": task.current_stage,
+            "failure_stage": task.failure_stage, "failure_code": task.failure_code, "failure_evidence": task.failure_evidence,
         }
         status["status_source"] = "PERSISTED_EXECUTION" if record else "TASK_PROJECTION"
         if record:
@@ -1234,6 +1291,13 @@ class ClinxIntegration:
             status["execution_state"] = status["EXECUTION_STATE"] = state
             status["execution_turn_ref"] = record.get("execution_owned_turn")
             status["CODEX_RUNNING"] = status["codex_running"] = record["stage"] not in TERMINAL_EXECUTION_STAGES and bool(task.codex_running)
+            status.update({key: record.get(key) for key in ('failure_stage','failure_code','failure_evidence')})
+            status['failure_source'] = ('EXECUTION_RECORD' if record.get('failure_code') else
+                'UNAVAILABLE_LEGACY' if record['stage'] in ('FAILED', 'BLOCKED', 'RECOVERY_REQUIRED') else 'NONE')
+            status['CURRENT_STAGE'] = status['current_stage'] = record['stage']
+            status['CURRENT_BLOCKER'] = status['current_blocker'] = record.get('failure_evidence')
+            status['TURN_PRESENT'] = bool(record.get('execution_owned_turn'))
+            status['turn_id'] = record.get('execution_owned_turn')
         return status
 
     def get_capabilities(self) -> dict[str, Any]:
@@ -1286,7 +1350,12 @@ class ClinxIntegration:
                 "read_only": True,
             },
             "context_read_only": True,
-            "thread_lookup": {"selectors": ["thread_id", "codex_uri"], "exact": True, "read_only": True, "fuzzy_fallback": False, "context_sources": ["CODEX_LOCAL_SESSION", "CLINX_CHECKPOINT"], "provider_connection": "NOT_STARTED", "instructions": "Use exact selectors directly; never call clinx_find_task first or put IDs in query."},
+            "thread_lookup": {"selectors": ["thread_id", "codex_uri"], "exact": True, "read_only": True, "fuzzy_fallback": False,
+                "context_sources": ["CODEX_NATIVE_HISTORY", "CODEX_LOCAL_SESSION", "CLINX_CHECKPOINT"],
+                "provider_connection": "EXISTING_SOCKET_ONLY_NO_START_NO_RESUME", "native_registration_required": False,
+                "host_ids": {w.alias: list(w.codex_host_ids) for w in getattr(self.cfg, 'workspaces', ())},
+                "adoption_tool": "clinx_adopt_conversation", "adoption_starts_execution": False,
+                "pagination": "host/thread/source scoped cursor", "instructions": "Use exact selectors directly; preserve Desktop hostId. Never call clinx_find_task first or put IDs in query."},
             "execution_available": True,
             "command_plane": "CLINX",
             "prepare_tool": "clinx_prepare_execution",

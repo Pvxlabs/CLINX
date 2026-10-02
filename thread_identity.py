@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+from urllib.parse import urlsplit, unquote, quote
 
 from task_registry import TERMINAL_EXECUTION_STAGES
 
@@ -38,12 +39,68 @@ def parse_selector(*, thread_id=None, codex_uri=None, task_ref=None, query=None)
     if (thread_id is not None and codex_uri is not None) or task_ref is not None or query is not None:
         raise ThreadLookupError("IDENTITY_SELECTOR_CONFLICT", "Thread selector cannot be combined with task_ref/query or another thread selector")
     if codex_uri is not None:
-        if not isinstance(codex_uri, str) or not re.fullmatch("codex://threads/" + ID_PATTERN, codex_uri):
-            raise ThreadLookupError("INVALID_CODEX_THREAD_URI", "Expected exactly codex://threads/<thread ID>")
-        return codex_uri[len("codex://threads/"):]
+        return _parse_uri(codex_uri)[0]
     if not isinstance(thread_id, str) or not re.fullmatch(ID_PATTERN, thread_id):
         raise ThreadLookupError("INVALID_THREAD_ID", "Expected a canonical hyphenated Codex UUID (not restricted to v4)")
     return thread_id
+
+
+def _parse_uri(uri):
+    error = ThreadLookupError('INVALID_CODEX_THREAD_URI', 'Expected codex://threads/<UUID> with at most one hostId parameter')
+    if not isinstance(uri, str) or any(ord(c) <= 32 or ord(c) == 127 for c in uri):
+        raise error
+    try:
+        parts = urlsplit(uri)
+    except ValueError:
+        raise error from None
+    if (not uri.startswith('codex://threads/') or parts.netloc != 'threads'
+            or parts.fragment or '#' in uri or not re.fullmatch('/' + ID_PATTERN, parts.path)):
+        raise error
+    host_id = None
+    if '?' in uri:
+        if not parts.query or '&' in parts.query or not parts.query.startswith('hostId='):
+            raise error
+        encoded = parts.query[len('hostId='):]
+        if not encoded or re.search(r'%(?![0-9A-Fa-f]{2})', encoded):
+            raise error
+        try:
+            host_id = unquote(encoded, encoding='utf-8', errors='strict')
+        except UnicodeError:
+            raise error from None
+        # One decoding only. No plus-as-space, double encoding, userinfo or address syntax.
+        if not re.fullmatch(r'[A-Za-z0-9_.:-]+', host_id) or '%' in host_id:
+            raise error
+    return parts.path[1:], host_id
+
+
+def resolve_selector(cfg, *, host=None, **selectors):
+    """Resolve only configured host identities, never a URI-supplied SSH address."""
+    from execution_semantics import normalize_host
+    tid = parse_selector(**selectors)
+    host_id = _parse_uri(selectors['codex_uri'])[1] if selectors.get('codex_uri') is not None else None
+    routes = {}
+    desktop = {}
+    for workspace in cfg.workspaces:
+        canonical = normalize_host(workspace.host or workspace.alias).stable_identifier
+        for alias in (workspace.alias, workspace.host, canonical, 'workstation-' + canonical):
+            if alias:
+                routes.setdefault(alias.casefold(), set()).add(canonical)
+        for alias in getattr(workspace, 'codex_host_ids', ()):
+            desktop.setdefault(alias, set()).add(canonical)
+    def unique(values, code):
+        if not values:
+            raise ThreadLookupError(code, 'Host is not an authorized configured route')
+        if len(values) != 1:
+            raise ThreadLookupError('THREAD_HOST_CONFLICT', 'Host has multiple configured routes')
+        return next(iter(values))
+    explicit = unique(routes.get(host.casefold()), 'UNKNOWN_THREAD_HOST') if isinstance(host, str) else None
+    if host is not None and not isinstance(host, str):
+        raise ThreadLookupError('UNKNOWN_THREAD_HOST', 'Host must be a configured route name')
+    routed = unique(desktop.get(host_id), 'UNKNOWN_CODEX_HOST_ID') if host_id is not None else None
+    if routed and explicit and routed != explicit:
+        raise ThreadLookupError('THREAD_HOST_CONFLICT', 'URI hostId conflicts with explicit host')
+    resolved = routed or explicit or unique(routes.get(cfg.runtime_host.casefold()), 'UNKNOWN_THREAD_HOST')
+    return tid, resolved, host_id
 
 
 @contextlib.contextmanager
@@ -70,9 +127,13 @@ def stamp():
 
 
 class ThreadIdentityReader:
-    def __init__(self, cfg, registry_path, context_reader, *, native_root=None):
+    def __init__(self, cfg, registry_path, context_reader, *, native_root=None, live_reader=None):
         self.cfg, self.path, self.reader = cfg, Path(registry_path), context_reader
-        self.native_root = Path(native_root or Path.home() / ".codex")
+        self.native_root = Path(native_root or getattr(cfg.app_server, 'native_home', None) or Path.home() / ".codex")
+        if native_root is None and live_reader is None:
+            from native_provider import observe_thread
+            live_reader = observe_thread
+        self.live_reader = live_reader
 
     def _scope(self, task, host=None, project=None):
         from execution_semantics import normalize_host
@@ -81,20 +142,12 @@ class ThreadIdentityReader:
             raise ThreadLookupError("THREAD_SCOPE_MISMATCH", "Host does not match the exact thread")
         if project is not None and project.casefold() not in {task['project_alias'].casefold(), task['project_name'].casefold()}:
             raise ThreadLookupError("THREAD_SCOPE_MISMATCH", "Project does not match the exact thread")
-        ws = next((w for w in self.cfg.workspaces if w.alias == task['workspace_alias'] and normalize_host(w.host or w.alias).stable_identifier == actual_host), None)
-        if ws is None:
-            raise ThreadLookupError("THREAD_ACCESS_DENIED", "Workspace is not registered for this host")
-        cwd = Path(task['cwd']).resolve()
-        mapping = next((m for m in self.cfg.projects if m.project_alias == task['project_alias'] and m.workspace_alias == ws.alias), None)
-        if mapping is not None:
-            allowed = cwd == Path(mapping.repo).resolve()
-        else:
-            allowed = ws.allow_existing_projects and cwd.parent == Path(ws.root).resolve() and cwd.name == task['project_alias']
-        if not allowed:
-            raise ThreadLookupError("THREAD_ACCESS_DENIED", "Persisted workspace is outside the current project scope")
+        # Workspace registration authorizes execution, not native history reads.
         return actual_host
 
     def _snapshot(self, tid, host, project, execution_ref):
+        if not self.path.exists():
+            return None
         with readonly(self.path) as c:
             indexes = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='index'")}
             if not set(INDEX_NAMES) <= indexes:
@@ -207,96 +260,59 @@ class ThreadIdentityReader:
         return ordered[-1], 'LATEST_THREAD_EXECUTION_BY_ACQUIRED_AT'
 
     def _native_metadata(self, tid):
-        try:
-            with readonly(self.native_root / 'state_5.sqlite') as c:
-                r = c.execute('SELECT id, cwd, rollout_path FROM threads WHERE id=?', (tid,)).fetchone()
-                return dict(r) if r else None
-        except sqlite3.Error:
-            return None
+        from native_history import NativeHistory
+        return NativeHistory(self.native_root).metadata(tid)
 
-    def _local_context(self, tid, metadata, recent_turns, max_bytes, anchor=None):
-        """Read only an indexed exact file and validate its session header and cwd."""
+    def _local_context(self, tid, metadata, recent_turns, max_bytes, anchor=None, *, host=None, cursor=None):
         if metadata is None:
             return None
-        path = Path(metadata['rollout_path']).resolve()
-        if not path.is_relative_to(self.native_root.resolve()) or not path.name.endswith('-' + tid + '.jsonl'):
-            return None
-        try:
-            with path.open('rb') as f:
-                head = f.readline(131072)
-                header = json.loads(head)
-                meta = header.get('payload', {})
-                if header.get('type') != 'session_meta' or meta.get('id') != tid or Path(meta.get('cwd', '')).resolve() != Path(metadata['cwd']).resolve():
-                    return None
-                f.seek(0, 2)
-                size = f.tell()
-                offset = max(0, size - max_bytes)
-                f.seek(offset)
-                data = f.read(max_bytes)
-            if offset:
-                data = data.split(b'\n', 1)[1] if b'\n' in data else b''
-            records = []
-            turns = []
-            for line in data.splitlines():
-                try:
-                    row = json.loads(line)
-                except (ValueError, UnicodeError):
-                    continue
-                if row.get('type') == 'turn_context':
-                    turn = row.get('payload', {}).get('turn_id')
-                    if turn and turn not in turns:
-                        turns.append(turn)
-                records.append(row)
-            allowed = {anchor} if anchor else set(turns[-recent_turns:])
-            if anchor and anchor not in turns:
-                return None
-            selected = []
-            current = None
-            for row in records:
-                if row.get('type') == 'turn_context':
-                    current = row.get('payload', {}).get('turn_id')
-                if allowed and current not in allowed:
-                    continue
-                if row.get('type') != 'response_item':
-                    continue
-                payload = row.get('payload', {})
-                # Only explicit user/assistant messages; never tool results or reasoning.
-                if payload.get('type') == 'message' and payload.get('role') in ('user', 'assistant'):
-                    selected.append(dict(payload, type=payload['role']))
-            users, agents, texts, _, roles = self.reader._collect_item_text(selected)
-            if not texts:
-                return None
-            users, agents, _, truncated = self.reader._bounded_messages(texts, roles, max_bytes)
-            return dict(context_source='CODEX_LOCAL_SESSION', context_scope='THREAD_RECENT', context_range='bounded-tail', context_truncated=bool(offset or truncated or len(turns) > recent_turns), last_user_intent=users[-1] if users else None, last_codex_result=agents[-1] if agents else None, provenance={'queried_thread_id': tid, 'context_turn_refs': [anchor] if anchor else turns[-recent_turns:], 'execution_attribution': 'NOT_CLAIMED', 'source_bytes': len(data), 'indexed_source': 'CODEX_STATE_THREADS_PRIMARY_KEY'})
-        except (OSError, ValueError, TypeError):
-            return None
+        from native_history import NativeHistory
+        return NativeHistory(self.native_root).context(tid, host or self.cfg.runtime_host,
+            metadata, recent_turns, max_bytes, anchor=anchor, cursor=cursor)
 
-    def read(self, *, context=False, thread_id=None, codex_uri=None, task_ref=None, query=None, host=None, project=None, execution_ref=None, recent_turns=8, max_bytes=32000):
+    def read(self, *, context=False, thread_id=None, codex_uri=None, task_ref=None, query=None, host=None, project=None, execution_ref=None, recent_turns=8, max_bytes=32000, cursor=None):
         tid = None
         try:
-            tid = parse_selector(thread_id=thread_id, codex_uri=codex_uri, task_ref=task_ref, query=query)
+            tid, host, host_id = resolve_selector(self.cfg, host=host, thread_id=thread_id, codex_uri=codex_uri, task_ref=task_ref, query=query)
             if type(recent_turns) is not int or not 1 <= recent_turns <= 20 or type(max_bytes) is not int or not 1024 <= max_bytes <= 128000:
                 raise ThreadLookupError('INVALID_CONTEXT_LIMIT', 'recent_turns must be 1..20 and max_bytes 1024..128000')
-            snapshot = self._snapshot(tid, host, project, execution_ref)
-            metadata = None
-            # The local index is only an authority for this machine's native files.
-            native_host = self.cfg.runtime_host.casefold()
-            resolved_host = snapshot['task']['host'].casefold() if snapshot else (host or native_host).casefold()
-            if resolved_host in (native_host, 'workstation-' + native_host):
+            from execution_semantics import normalize_host
+            if host != normalize_host(self.cfg.runtime_host).stable_identifier:
+                raise ThreadLookupError('NATIVE_HOST_UNAVAILABLE', 'Configured remote native reader is unavailable; no local fallback')
+            metadata, native_error = None, None
+            try:
                 metadata = self._native_metadata(tid)
+            except ThreadLookupError as exc:
+                native_error = exc
+            association_error = None
+            try:
+                snapshot = self._snapshot(tid, host, project, execution_ref)
+            except (sqlite3.Error, OSError) as exc:
+                if metadata is None or execution_ref is not None:
+                    raise
+                snapshot, association_error = None, 'CLINX_IDENTITY_STORAGE_UNAVAILABLE'
+            except ThreadLookupError as exc:
+                if metadata is None or execution_ref is not None or exc.code != 'THREAD_LOOKUP_UNAVAILABLE':
+                    raise
+                snapshot, association_error = None, exc.code
             if snapshot is None:
                 if metadata:
-                    matches = [m for m in self.cfg.projects if Path(m.repo).resolve() == Path(metadata['cwd']).resolve()]
-                    if len(matches) != 1:
-                        raise ThreadLookupError('THREAD_ACCESS_DENIED', 'Native thread is outside a unique registered project')
-                    mapping = matches[0]
-                    task = dict(host=self.cfg.runtime_host, workspace_alias=mapping.workspace_alias, project_alias=mapping.project_alias, project_name=mapping.linear_name, cwd=mapping.repo)
-                    self._scope(task, host, project)
                     if execution_ref is not None:
                         raise ThreadLookupError('THREAD_SCOPE_MISMATCH', 'No CLINX execution association for this native thread')
-                    output = dict(lookup_status='THREAD_UNBOUND', binding_status='NOT_FOUND', provider_existence='CONFIRMED', task_ref=None, project=mapping.project_alias, host=self.cfg.runtime_host, execution_state='UNKNOWN')
+                    if project is not None:
+                        matches = [m for m in self.cfg.projects if Path(m.repo).resolve() == Path(metadata['cwd']).resolve()
+                                   and project.casefold() in (m.project_alias.casefold(), m.linear_name.casefold())]
+                        if not matches and project != metadata['cwd'] and project != Path(metadata['cwd']).name:
+                            raise ThreadLookupError('THREAD_SCOPE_MISMATCH', 'Project selector disagrees with native cwd')
+                    output = dict(lookup_status='THREAD_UNBOUND', binding_status='NOT_FOUND', provider_existence='CONFIRMED',
+                        task_ref=None, execution_ref=None, project=None, host=host, execution_state='UNKNOWN')
+                    if association_error:
+                        output.update(binding_status='UNAVAILABLE', unavailable_reason=association_error)
+                elif native_error:
+                    raise native_error
                 else:
-                    output = dict(lookup_status='THREAD_LOOKUP_UNAVAILABLE', binding_status='NOT_FOUND', provider_existence='UNKNOWN', unavailable_reason='No binding; the local native index does not prove absence across all authorized provider history')
+                    output = dict(lookup_status='THREAD_NOT_FOUND', binding_status='NOT_FOUND', provider_existence='NOT_FOUND',
+                        unavailable_reason='Exact current-user native index has no row', absence_scope='CURRENT_USER_NATIVE_INDEX', task_ref=None, execution_ref=None)
             else:
                 task, selected = snapshot['task'], snapshot['selected']
                 current, lineage = snapshot['current'], snapshot['lineage']
@@ -307,9 +323,27 @@ class ThreadIdentityReader:
                 output.update(dynamic_tool_deliveries=snapshot['deliveries'], host_executions=snapshot['hosts'],
                     provider_delivery=delivery_summary(snapshot['deliveries'],
                         snapshot['result']['raw_result'] if snapshot['result'] else ''))
+                output.update({key: selected.get(key) if selected else None
+                               for key in ('failure_stage', 'failure_code', 'failure_evidence')})
+                output['failure_source'] = ('EXECUTION_RECORD' if selected and selected.get('failure_code') else
+                    'UNAVAILABLE_LEGACY' if selected and selected['stage'] in ('FAILED', 'BLOCKED', 'RECOVERY_REQUIRED') else 'NONE')
             if context and (snapshot or output['lookup_status'] == 'THREAD_UNBOUND'):
                 anchor = snapshot['facts']['anchors'][0]['turn_id'] if snapshot and snapshot['facts']['anchors'] else None
-                selected_context = self._local_context(tid, metadata, recent_turns, max_bytes, anchor)
+                if execution_ref is not None and snapshot:
+                    anchor = snapshot['selected']['turn_id']
+                selected_context = None
+                try:
+                    if execution_ref is None or anchor:
+                        selected_context = self._local_context(tid, metadata, recent_turns, max_bytes, anchor, host=host, cursor=cursor)
+                except ThreadLookupError as exc:
+                    if exc.code == 'INVALID_CONTEXT_CURSOR':
+                        raise
+                    output['context_unavailable_reason'] = exc.code
+                except (OSError, ValueError):
+                    output['context_unavailable_reason'] = 'NATIVE_HISTORY_UNAVAILABLE'
+                if selected_context and selected_context['context_status'] != 'AVAILABLE':
+                    output.update(selected_context)
+                    selected_context = None
                 if selected_context is None and snapshot:
                     checkpoints = snapshot['facts']['checkpoints']
                     if anchor:
@@ -322,13 +356,35 @@ class ThreadIdentityReader:
                         users, agents, _, truncated = self.reader._bounded_messages(texts, ['user', 'assistant'], max_bytes)
                         selected_context = dict(context_source='CLINX_CHECKPOINT', context_scope='THREAD_CHECKPOINT', context_range=p['timestamp'], context_truncated=truncated, last_user_intent=users[-1] if users else None, last_codex_result=agents[-1] if agents else None, provenance={'queried_thread_id': tid, 'context_turn_refs': [p['turn_id']] if p['turn_id'] else [], 'context_execution_ref': p['execution_id'], 'checkpoint_ref': p['checkpoint_id'], 'execution_attribution': 'CHECKPOINT_RECORDED_ASSOCIATION'})
                 if selected_context:
-                    output.update(selected_context, context_status='AVAILABLE')
+                    output.update(selected_context)
+                    output['context_status'] = 'AVAILABLE'
                 else:
-                    output.update(context_status='CONTEXT_UNAVAILABLE', context_source=None, context_unavailable_reason='No exact authorized indexed native file or same-thread checkpoint; provider transport is not started by this reader')
-            after = self._snapshot(tid, host, project, execution_ref)
+                    output.update(context_status='CONTEXT_UNAVAILABLE', context_source=output.get('context_source'), context_unavailable_reason=output.get('context_unavailable_reason', 'No display messages in this page or same-thread checkpoint'))
+            after = self._snapshot(tid, host, project, execution_ref) if association_error is None else None
             if bool(after) != bool(snapshot) or (snapshot and after['fingerprint'] != snapshot['fingerprint']):
                 raise ThreadLookupError('THREAD_LOOKUP_UNAVAILABLE', 'THREAD_IDENTITY_CHANGED_DURING_READ')
-            return dict(output, queried_thread_id=tid, codex_uri='codex://threads/' + tid, read_only=True, observed_at=stamp())
+            if metadata:
+                from bridge import _context_text
+                from native_history import NativeHistory
+                output['native_thread'] = {k: metadata.get(k) for k in ('cwd', 'history_mode', 'archived', 'created_at', 'updated_at')}
+                output['native_thread'].update(thread_id=tid,
+                    name=_context_text(metadata.get('name') or metadata.get('title') or '', 512))
+                output['status_source'] = output.get('status_source', 'NATIVE_PERSISTED_HISTORY')
+                output['native_status'] = NativeHistory(self.native_root).status(tid, metadata)
+            if self.live_reader is not None:
+                output['provider_observation'] = self.live_reader(self.cfg, tid)
+                if metadata is None and any(r.get('source') == 'LIVE_THREAD_READ' for r in output['provider_observation'].get('observations', [])):
+                    output.update(provider_existence='CONFIRMED')
+                    if snapshot is None:
+                        output.update(lookup_status='THREAD_LOOKUP_UNAVAILABLE', absence_scope=None,
+                                      unavailable_reason='Native index and live provider disagree; no association inferred')
+            else:
+                output.setdefault('provider_observation', {'state': 'UNKNOWN', 'reason': 'Live observation not configured'})
+            output['host'] = host
+            if context:
+                output.setdefault('context_status', 'CONTEXT_UNAVAILABLE')
+            return dict(output, queried_thread_id=tid, codex_uri='codex://threads/' + tid +
+                ('?hostId=' + quote(host_id, safe='') if host_id else ''), read_only=True, observed_at=stamp())
         except ThreadLookupError as e:
             return dict(error_code=e.code, lookup_status=e.code, unavailable_reason=e.reason, queried_thread_id=tid, read_only=True, observed_at=stamp())
         except (sqlite3.Error, OSError, ValueError, KeyError, TypeError):

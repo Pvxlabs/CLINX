@@ -80,6 +80,7 @@ class WorkspaceConfig:
     # Execution-host identity is separate from the optional remote SSH alias.
     host: str | None = None
     ssh_alias: str | None = None
+    codex_host_ids: tuple[str, ...] = ()
 
 
 class WorkspaceRegistry:
@@ -1120,6 +1121,12 @@ class TaskRegistry:
                 conn.execute("ALTER TABLE execution_history ADD COLUMN execution_state TEXT")
             if "turn_id" not in history_columns:
                 conn.execute("ALTER TABLE execution_history ADD COLUMN turn_id TEXT")
+            # Failure evidence belongs to the exact attempt, including failures
+            # before a provider turn exists. No backfill from mutable task state.
+            for table, columns in (("executions", execution_columns), ("execution_history", history_columns)):
+                for field in ("failure_stage", "failure_code", "failure_evidence"):
+                    if field not in columns:
+                        conn.execute(f"ALTER TABLE {table} ADD COLUMN {field} TEXT")
             conn.execute(
                 """UPDATE prepared_executions
                    SET logical_model = CASE WHEN logical_model = '' THEN model ELSE logical_model END,
@@ -1188,6 +1195,7 @@ class TaskRegistry:
                           e.issue_id, e.logical_model, e.resolved_model,
                           e.acquired_at, e.routing_identity_json,
                           e.execution_policy_json,
+                          e.failure_stage,e.failure_code,e.failure_evidence,
                           t.execution_state AS task_execution_state,
                           t.codex_running AS task_codex_running
                    FROM worktree_leases l
@@ -1214,8 +1222,8 @@ class TaskRegistry:
                         """INSERT OR IGNORE INTO execution_history
                            (execution_ref,task_id,issue_id,worktree_key,logical_model,
                             resolved_model,stage,execution_state,turn_id,acquired_at,
-                            routing_identity_json,execution_policy_json,released_at)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            routing_identity_json,execution_policy_json,released_at,failure_stage,failure_code,failure_evidence)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             execution_ref, row["task_id"], row["issue_id"],
                             row["worktree_key"], row["logical_model"],
@@ -1224,6 +1232,7 @@ class TaskRegistry:
                             row["execution_owned_state"], row["execution_owned_turn"], row["acquired_at"],
                             row["routing_identity_json"] or "{}",
                             row["execution_policy_json"] or "{}", _now(),
+                            row['failure_stage'], row['failure_code'], row['failure_evidence'],
                         ),
                     )
                     conn.execute(
@@ -2430,9 +2439,10 @@ class TaskRegistry:
                 if legacy_active_fallback:
                     execution_owned_stage = str(stage or state)
                 conn.execute(
-                    "UPDATE executions SET execution_state=?, stage=?, turn_id=? "
+                    "UPDATE executions SET execution_state=?, stage=?, turn_id=?, failure_stage=?, failure_code=?, failure_evidence=? "
                     "WHERE task_id=?",
-                    (execution_owned_state, execution_owned_stage, execution_owned_turn, task_id),
+                    (execution_owned_state, execution_owned_stage, execution_owned_turn,
+                     effective_failure_stage, effective_failure_code, effective_failure_evidence, task_id),
                 )
             if changed and self._shadow_store is not None:
                 if legacy_active_fallback:
@@ -2629,8 +2639,8 @@ class TaskRegistry:
             )
             with self._connect() as conn:
                 conn.execute(
-                    "UPDATE execution_history SET stage=? WHERE execution_ref=?",
-                    (state, execution_ref),
+                    "UPDATE execution_history SET stage=?,execution_state=?,failure_stage=?,failure_code=?,failure_evidence=? WHERE execution_ref=?",
+                    (state, state, failure_stage, failure_code, evidence, execution_ref),
                 )
             return task
         task = self.set_execution_state(
@@ -2878,7 +2888,15 @@ class TaskRegistry:
                        WHERE h.execution_ref=?""",
                     (execution_ref,),
                 ).fetchone()
-        return dict(row) if row is not None else None
+            if row is not None:
+                # Compatible with read-only clients before the startup migration.
+                failures = conn.execute('SELECT * FROM executions WHERE execution_ref=?', (execution_ref,)).fetchone()
+                if failures is None:
+                    failures = conn.execute('SELECT * FROM execution_history WHERE execution_ref=?', (execution_ref,)).fetchone()
+                result = dict(row)
+                result.update({k: dict(failures).get(k) for k in ('failure_stage', 'failure_code', 'failure_evidence')})
+                return result
+        return None
 
     def get_latest_execution_for_task(self, task_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -3386,10 +3404,10 @@ class TaskRegistry:
                     """INSERT OR IGNORE INTO execution_history
                        (execution_ref,task_id,issue_id,worktree_key,logical_model,
                         resolved_model,stage,execution_state,turn_id,acquired_at,
-                        routing_identity_json,execution_policy_json,released_at)
+                        routing_identity_json,execution_policy_json,released_at,failure_stage,failure_code,failure_evidence)
                        SELECT execution_ref,task_id,issue_id,worktree_key,logical_model,
                               resolved_model,stage,execution_state,turn_id,acquired_at,
-                              routing_identity_json,execution_policy_json,?
+                              routing_identity_json,execution_policy_json,?,failure_stage,failure_code,failure_evidence
                        FROM executions WHERE task_id=? AND execution_ref=?""",
                     (released_at, task_id, execution_ref),
                 )

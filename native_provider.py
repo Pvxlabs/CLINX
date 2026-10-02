@@ -1,0 +1,89 @@
+"""Exact existing-daemon observation and continuation routing.
+
+Endpoints come from host configuration, never a selector. No discovery scan,
+proxy startup, resume, unsubscribe or dynamic-tool response on the read plane.
+"""
+import os
+from pathlib import Path
+
+from app_server import AppServerError, AppServerProtocolError, CodexAppServerClient, UnixSocketTransport
+
+
+class NativeWriterError(AppServerProtocolError):
+    def __init__(self, code, reason):
+        self.code, self.method = code, 'writer_route'
+        super().__init__(code + ': ' + reason)
+
+
+def endpoints(cfg):
+    result = []
+    for value in (cfg.app_server.local_socket, getattr(cfg.app_server, 'native_socket', None)):
+        if not value:
+            continue
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / path
+        if str(path) not in result:
+            result.append(str(path))
+    return result
+
+
+def existing_client(endpoint, timeout=3, *, read_only=True):
+    client = CodexAppServerClient(UnixSocketTransport(endpoint, timeout_seconds=timeout),
+        timeout_seconds=timeout, strict_dynamic_tool_binding=True)
+    client.provider_endpoint = endpoint
+    client.read_only_observer = read_only
+    return client
+
+
+def observe_thread(cfg, tid):
+    observations = []
+    for endpoint in endpoints(cfg):
+        try:
+            with existing_client(endpoint) as client:
+                client.initialize(client_name=cfg.app_server.client_name, client_title=cfg.app_server.client_title,
+                                  client_version=cfg.app_server.client_version)
+                thread = client.thread_read(tid)
+                if thread.get('id') != tid:
+                    raise AppServerProtocolError('exact thread identity mismatch')
+                status = thread.get('status', {})
+                state = status.get('type') if isinstance(status, dict) else status
+                page = client.thread_turns_list(tid, limit=1, items_view='notLoaded')
+                turns = page['data']
+                turn = turns[0] if turns else {}
+                observations.append({'endpoint': endpoint, 'state': state or 'UNKNOWN',
+                    'thread_id': tid, 'session_id': thread.get('sessionId'), 'cwd': thread.get('cwd'),
+                    'turn_id': turn.get('id'), 'turn_status': turn.get('status'), 'source': 'LIVE_THREAD_READ'})
+        except FileNotFoundError:
+            observations.append({'endpoint': endpoint, 'state': 'OFFLINE', 'reason': 'SOCKET_NOT_PRESENT'})
+        except PermissionError:
+            observations.append({'endpoint': endpoint, 'state': 'UNKNOWN', 'reason': 'PROVIDER_ACCESS_DENIED'})
+        except (AppServerError, OSError):
+            observations.append({'endpoint': endpoint, 'state': 'UNKNOWN', 'reason': 'PROVIDER_READ_UNAVAILABLE'})
+    loaded = [r for r in observations if r['state'] not in ('UNKNOWN', 'OFFLINE', 'notLoaded', 'unloaded')]
+    return {'state': loaded[0]['state'] if len(loaded) == 1 else 'UNKNOWN',
+            'owner_endpoint': loaded[0]['endpoint'] if len(loaded) == 1 else None,
+            'ownership_conflict': len(loaded) > 1, 'observations': observations,
+            'source': 'LIVE_PROVIDER_OBSERVATION', 'writer_claimed': False}
+
+
+def select_writer_client(cfg, tid):
+    """Select a proved idle owner before one authorized resume; never retry resume."""
+    evidence = observe_thread(cfg, tid)
+    rows = evidence['observations']
+    # Persisted turn status can lag a live idle observation. Only live status
+    # proves an active owner; notLoaded is never an execution failure.
+    if any(r['state'] == 'active' for r in rows):
+        raise NativeWriterError('NATIVE_ACTIVE_OWNER', 'continuation cannot interrupt the native turn')
+    if evidence['ownership_conflict'] or any(r['state'] == 'UNKNOWN' for r in rows):
+        raise NativeWriterError('NATIVE_WRITER_OWNER_UNPROVEN', 'exact endpoint observation is incomplete or conflicting')
+    loaded = [r for r in rows if r['state'] not in ('OFFLINE', 'notLoaded', 'unloaded')]
+    if loaded and loaded[0]['state'] != 'idle':
+        raise NativeWriterError('NATIVE_WRITER_NOT_IDLE', 'loaded owner is not idle')
+    available = [r for r in rows if r['state'] in ('notLoaded', 'unloaded')]
+    endpoint = loaded[0]['endpoint'] if loaded else available[0]['endpoint'] if available else None
+    if endpoint is None:
+        raise NativeWriterError('NATIVE_WRITER_ENDPOINT_UNAVAILABLE', 'no configured existing endpoint is available')
+    client = existing_client(endpoint, cfg.app_server.request_timeout_seconds, read_only=False)
+    client.writer_route_evidence = evidence
+    return client

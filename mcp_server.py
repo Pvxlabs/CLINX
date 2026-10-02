@@ -37,7 +37,7 @@ READ_ONLY_TOOL_NAMES = (
     "clinx_get_capabilities",
     "clinx_prepare_execution",
 )
-DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution")
+DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_adopt_conversation")
 
 
 class MCPServerError(RuntimeError):
@@ -385,6 +385,8 @@ MCP_INSTRUCTIONS = (
     "When a user supplies thread_id or codex://threads/..., call clinx_get_context or "
     "clinx_get_status with the exact selector directly. Never call clinx_find_task first "
     "or put the ID in query. Historical execution is separate from task_current_projection. "
+    "Preserve Desktop URI hostId. Native reads require no task/project registration. "
+    "Only an explicit adoption request calls clinx_adopt_conversation; adoption never starts a turn. "
     "CLINX MCP is the authoritative read-only context and execution-preparation "
     "plane. execution.available=true means the execution capability exists; "
     "direct_mcp_execution=true is intentional. Execution uses CLINX as the "
@@ -665,6 +667,7 @@ def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
     """Return the public catalog, with execution opt-in for internal use only."""
     tools = _read_only_tool_definitions()
     from thread_identity import ID_PATTERN
+    uri_schema = {"type": "string", "maxLength": 2048, "pattern": "^codex://threads/" + ID_PATTERN + r"(?:\?[^\s#]*)?$"}
     for tool in tools:
         if tool["name"] == "clinx_get_capabilities":
             tool["outputSchema"]["properties"]["thread_lookup"] = {"type": "object"}
@@ -678,11 +681,12 @@ def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
         schema = tool["inputSchema"]
         schema["properties"].update({
             "thread_id": {"type": "string", "pattern": "^" + ID_PATTERN + "$"},
-            "codex_uri": {"type": "string", "pattern": "^codex://threads/" + ID_PATTERN + "$"},
+            "codex_uri": uri_schema,
             "execution_ref": {"type": "string"},
         })
         legacy = schema.pop("anyOf")
         if tool["name"] == "clinx_get_context":
+            schema["properties"]["cursor"] = {"type": "string", "maxLength": 1024}
             legacy = [{"allOf": [{"anyOf": legacy}, {"not": {"required": ["execution_ref"]}}]}]
         schema["anyOf"] = [
             {"anyOf": legacy, "not": {"anyOf": [{"required": ["thread_id"]}, {"required": ["codex_uri"]}]}},
@@ -697,15 +701,30 @@ def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
             "execution_ref", "execution_state", "selection_reason", "selection_scope", "execution_turn_ref",
             "status_source", "context_status", "context_source", "context_scope", "context_range",
             "context_unavailable_reason", "last_user_intent", "last_codex_result", "observed_at",
-            "binding_status", "provider_existence",
+            "binding_status", "provider_existence", "absence_scope", "next_cursor", "failure_stage", "failure_code", "failure_evidence", "failure_source",
         )}
         thread_properties.update({k: {"type": "boolean"} for k in ("is_current_thread", "context_truncated", "read_only")})
         thread_properties.update({k: {"type": "array", "items": {"type": "string"}} for k in ("binding_sources", "other_execution_refs")})
         thread_properties.update({k: {"type": "array", "items": {"type": "object"}} for k in ("dynamic_tool_deliveries", "host_executions")})
-        thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "task_current_projection", "execution_result", "provenance", "provider_delivery")})
+        thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "native_thread", "native_status", "task_current_projection", "execution_result", "provenance", "provider_delivery")})
         # Keep one strict root object for connector discovery and legacy clients.
         tool["outputSchema"]["properties"].update(thread_properties)
 
+    tools.append({
+        "name": "clinx_adopt_conversation",
+        "description": "Explicitly associate one native Codex thread with its canonical CLINX task. Accept the original Desktop URI including hostId. No project registration prerequisite, no new thread, resume, interrupt or execution; active owners keep control. Execution needs a separate current authorized request.",
+        "inputSchema": {"type": "object", "additionalProperties": False,
+            "properties": {"thread_id": {"type": "string", "pattern": "^" + ID_PATTERN + "$"},
+                "codex_uri": uri_schema, "host": {"type": "string"}, "project": {"type": "string"},
+                "title": {"type": "string", "maxLength": 240}, "summary": {"type": "string", "maxLength": 4000}},
+            "oneOf": [{"required": ["thread_id"], "not": {"required": ["codex_uri"]}},
+                      {"required": ["codex_uri"], "not": {"required": ["thread_id"]}}]},
+        "outputSchema": {"type": "object", "properties": {
+            "adoption_status": {"type": "string"}, "task_ref": {"type": ["string", "null"]},
+            "control_transferred": {"type": "boolean"}, "execution_started": {"type": "boolean"}},
+            "required": ["adoption_status", "control_transferred"], "additionalProperties": True},
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True},
+    })
     if include_execute:
         tools.append(_execute_tool_definition())
     return tools
@@ -732,7 +751,7 @@ def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
-def _public_json(value: Any) -> Any:
+def _public_json(value: Any, *, native_identity: bool = False) -> Any:
     """Defensive response scrubber for accidental internal-field leakage."""
     forbidden = {
         "thread_id", "threadId", "session_id", "sessionId", "turn_id", "turnId",
@@ -740,14 +759,16 @@ def _public_json(value: Any) -> Any:
         "cwd", "origin", "repository_origin", "branch", "raw_result", "credentials",
         "token", "api_key", "authorization",
     }
+    if native_identity:
+        forbidden -= {'thread_id', 'threadId', 'session_id', 'sessionId', 'turn_id', 'turnId', 'cwd'}
     if isinstance(value, dict):
         return {
-            key: _public_json(item)
+            key: _public_json(item, native_identity=native_identity)
             for key, item in value.items()
             if key not in forbidden
         }
     if isinstance(value, (list, tuple)):
-        return [_public_json(item) for item in value]
+        return [_public_json(item, native_identity=native_identity) for item in value]
     return value
 
 
@@ -780,6 +801,8 @@ class ClinxMCPServer:
             result = self.integration.list_projects(**arguments)
         elif name == "clinx_get_status":
             result = self.integration.get_status(**arguments)
+        elif name == "clinx_adopt_conversation":
+            result = self.integration.adopt_conversation(**arguments)
         elif name == "clinx_get_capabilities":
             result = self.integration.get_capabilities(**arguments)
         elif name == "clinx_prepare_execution":
@@ -811,7 +834,9 @@ class ClinxMCPServer:
                 result = self.executor(**arguments)
         else:
             raise MCPRequestError(-32602, f"unknown tool: {name}")
-        return _public_json(result)
+        return _public_json(result, native_identity=(name == 'clinx_adopt_conversation' or
+            (name in {'clinx_get_context', 'clinx_get_status'} and
+             any(k in arguments for k in ('thread_id', 'codex_uri')))))
 
     @staticmethod
     def _app_server_error_result(exc: app_server.AppServerError) -> dict[str, Any]:
@@ -833,8 +858,8 @@ class ClinxMCPServer:
             )
         elif isinstance(exc, app_server.AppServerProtocolError):
             payload.update(
-                failure_stage="APP_SERVER_PROTOCOL",
-                failure_code="MODEL_LIST_MALFORMED",
+                failure_stage=getattr(exc, 'method', 'APP_SERVER_PROTOCOL'),
+                failure_code=getattr(exc, 'code', 'MODEL_LIST_MALFORMED'),
             )
         else:
             payload.update(
