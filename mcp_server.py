@@ -255,6 +255,11 @@ def _status_output_schema() -> dict[str, Any]:
         "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
         "host_executions": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "dynamic_tool_deliveries": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "provider_delivery": {"type": "object", "additionalProperties": True},
+        "task_current_projection": {"type": "object", "additionalProperties": True},
+        "selection_reason": {"type": "string"},
+        "status_source": {"type": "string"},
+        "execution_turn_ref": {"type": ["string", "null"]},
         "EXECUTION_STATE": {"type": "string"},
         "CODEX_RUNNING": {"type": "boolean"},
         "CURRENT_STAGE": {"type": "string"},
@@ -696,7 +701,8 @@ def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
         )}
         thread_properties.update({k: {"type": "boolean"} for k in ("is_current_thread", "context_truncated", "read_only")})
         thread_properties.update({k: {"type": "array", "items": {"type": "string"}} for k in ("binding_sources", "other_execution_refs")})
-        thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "task_current_projection", "execution_result", "provenance")})
+        thread_properties.update({k: {"type": "array", "items": {"type": "object"}} for k in ("dynamic_tool_deliveries", "host_executions")})
+        thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "task_current_projection", "execution_result", "provenance", "provider_delivery")})
         # Keep one strict root object for connector discovery and legacy clients.
         tool["outputSchema"]["properties"].update(thread_properties)
 

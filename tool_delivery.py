@@ -27,19 +27,38 @@ def requires_reconciliation(row):
                 and row['delivery_state'] == 'DELIVERED' and row['host_exit_code'] is not None)
 
 
+def ack_in_flight(row):
+    return (row['delivery_state'] == 'PENDING' and row['host_exit_code'] is not None
+            and row['response_sent_at'] is not None and row['failure_code'] is None)
+
+
+def delivery_summary(records, raw_result=''):
+    states = [r['delivery_state'] for r in records]
+    state = ('NO_HOST_CALLS' if not states else 'DELIVERED' if all(s == 'DELIVERED' for s in states)
+             else 'FAILED' if 'FAILED' in states else 'PENDING')
+    mentions_pending = any(token in (raw_result or '') for token in
+                           ('AWAITING_PROVIDER_ACK', 'COMMAND_EXECUTED_RESULT_DELIVERY_PENDING'))
+    return {'source': 'PERSISTED_DELIVERY_LEDGER', 'state': state, 'count': len(states),
+            'worker_reported_pending': mentions_pending,
+            'worker_pending_is_stale_snapshot': mentions_pending and state == 'DELIVERED',
+            'business_result_independent': True,
+            'reconciliation_required': any(r['reconciliation_required'] for r in records)}
+
+
 def certainty(row):
     state = row['execution_state']
     unresolved = requires_reconciliation(row)
+    pending = (row['delivery_state'] == 'PENDING' and row['host_exit_code'] is not None
+               and row['failure_code'] is None)
     side = ('NOT_EXECUTED' if state == 'COMMAND_NOT_DISPATCHED' else
-            'UNKNOWN' if row['host_exit_code'] is None else
-            'EXECUTED_OR_POSSIBLY_EXECUTED' if unresolved else 'EXECUTED')
-    return {'side_effect_certainty': side, 'reconciliation_required': unresolved,
+            'UNKNOWN' if row['host_exit_code'] is None else 'EXECUTED')
+    return {'side_effect_certainty': side, 'reconciliation_required': unresolved and not pending,
             'execution_can_continue': not unresolved, 'retry_required': False,
             'result_certainty': 'KNOWN' if row['host_exit_code'] is not None else 'UNKNOWN',
             'host_dispatched': False if state == 'COMMAND_NOT_DISPATCHED' else True if row['host_exit_code'] is not None else None,
-            'continuation_state': 'RECONCILIATION_REQUIRED' if unresolved else 'SAFE_TO_CONTINUE',
+            'continuation_state': 'WAITING_INTERNAL_ACK' if pending else 'RECONCILIATION_REQUIRED' if unresolved else 'SAFE_TO_CONTINUE',
             'retry_allowed': False,
-            'failure_stage': 'PRE_DISPATCH_VALIDATION' if state == 'COMMAND_NOT_DISPATCHED' else 'RESULT_DELIVERY' if unresolved else 'HOST_EXECUTION' if row['host_exit_code'] else None}
+            'failure_stage': 'PRE_DISPATCH_VALIDATION' if state == 'COMMAND_NOT_DISPATCHED' else 'RESULT_DELIVERY' if unresolved and not pending else 'HOST_EXECUTION' if row['host_exit_code'] else None}
 
 
 class ToolDeliveryLedger:
@@ -97,7 +116,7 @@ class ToolDeliveryLedger:
         if not host_ref or result.get('execution_ref') != self.execution_ref:
             raise DeliveryReconciliationRequired('Host result correlation is missing or changed')
         state = ('COMMAND_DISPATCHED' if result.get('exit_code') is None else
-                 'COMMAND_EXECUTED_RESULT_DELIVERY_FAILED' if result.get('exit_code') == 0
+                 'COMMAND_EXECUTED_RESULT_DELIVERY_PENDING' if result.get('exit_code') == 0
                  else 'COMMAND_EXECUTION_FAILED')
         with self.registry._connect() as conn:
             host = conn.execute('SELECT execution_ref,tool_call_id,exit_code FROM host_executions '
@@ -107,10 +126,9 @@ class ToolDeliveryLedger:
             if host['exit_code'] != result.get('exit_code'):
                 raise DeliveryReconciliationRequired('Host result does not match durable completion evidence')
             conn.execute('''UPDATE host_tool_deliveries SET host_execution_ref=?,host_exit_code=?,
-                execution_state=?,host_completed_at=?,failure_code=?
+                execution_state=CASE WHEN delivery_state='FAILED' AND ?='COMMAND_EXECUTED_RESULT_DELIVERY_PENDING' THEN 'COMMAND_EXECUTED_RESULT_DELIVERY_FAILED' ELSE ? END,host_completed_at=?,failure_code=CASE WHEN delivery_state='FAILED' THEN failure_code ELSE NULL END
                 WHERE execution_ref=? AND tool_call_id=?''',
-                (host_ref, result.get('exit_code'), state, time.time(),
-                 'RESULT_DELIVERY_FAILED_AFTER_EXECUTION', self.execution_ref, call_id))
+                (host_ref, result.get('exit_code'), state, state, time.time(), self.execution_ref, call_id))
 
     def sent(self, call_id, request_id):
         with self.registry._connect() as conn:
@@ -147,7 +165,7 @@ class ToolDeliveryLedger:
             if row['delivery_state'] == 'PENDING':
                 self.failed(row['tool_call_id'])
 
-    def observe(self, message):
+    def observe(self, message, *, owner=None):
         if message.get('method') != 'item/completed':
             return
         params = message.get('params', {})
@@ -165,7 +183,10 @@ class ToolDeliveryLedger:
                 return
             if (item.get('namespace'), item.get('tool')) != (identity['namespace'], identity['tool']):
                 return
+            if owner is not None and any(identity.get(k) != v for k, v in owner.items()):
+                return
             delivered = False
+            rejection_delivered = False
             for part in item.get('contentItems', item.get('content_items', [])) or []:
                 if not isinstance(part, dict):
                     continue
@@ -173,17 +194,24 @@ class ToolDeliveryLedger:
                     body = json.loads(part.get('text', ''))
                 except (ValueError, TypeError):
                     continue
+                if isinstance(body, dict) and row['execution_state'] == 'COMMAND_NOT_DISPATCHED':
+                    rejection_delivered |= (body.get('execution_state') == 'COMMAND_NOT_DISPATCHED'
+                                            and body.get('result_state') == row['failure_code'])
                 if isinstance(body, dict) and row['host_execution_ref']:
                     delivered |= (body.get('host_execution_ref') == row['host_execution_ref']
                                   and body.get('execution_ref') == self.execution_ref)
-            delivered = delivered and item.get('success') is True and row['response_sent_at'] is not None
+            delivered = ((delivered and item.get('success') is True) or
+                         (rejection_delivered and item.get('success') is False)) and row['response_sent_at'] is not None
             state = row['execution_state']
             if delivered and row['host_exit_code'] == 0:
                 state = 'COMMAND_EXECUTED_RESULT_DELIVERED'
+            elif not delivered and row['host_exit_code'] == 0:
+                state = 'COMMAND_EXECUTED_RESULT_DELIVERY_FAILED'
             conn.execute('''UPDATE host_tool_deliveries SET delivery_state=?,execution_state=?,
                 failure_code=?,acknowledged_at=? WHERE execution_ref=? AND tool_call_id=?''',
                 ('DELIVERED' if delivered else 'FAILED', state,
-                 None if delivered else (row['failure_code'] if row['execution_state'] == 'COMMAND_NOT_DISPATCHED' else
+                 row['failure_code'] if row['execution_state'] == 'COMMAND_NOT_DISPATCHED' else
+                 None if delivered else (
                   'RESULT_DELIVERY_FAILED_AFTER_EXECUTION' if row['host_exit_code'] is not None else
                   'RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH'),
                  time.time(), self.execution_ref, call_id))
