@@ -334,7 +334,7 @@ class M13PersistenceTests(unittest.TestCase):
     def test_retained_recovery_can_reconcile_only_its_exact_terminal_turn(self):
         with tempfile.TemporaryDirectory() as td:
             registry = TaskRegistry(Path(td) / "tasks.sqlite3")
-            task = make_task(registry)
+            task = make_task(registry, routing=route(conversation_binding="thread-retry"))
             with registry.execution(task.task_id, execution_ref="exec_retry", retain=True):
                 registry.set_execution_state(
                     task.task_id, "CODEX_RUNNING", current_stage="Codex turn",
@@ -344,6 +344,13 @@ class M13PersistenceTests(unittest.TestCase):
                 "exec_retry", "RECOVERY_REQUIRED", retry_required=True,
             )
 
+            with self.assertRaisesRegex(TaskRegistryError, "fresh exact owner"):
+                registry.reconcile_terminal("exec_retry", "COMPLETED")
+            from execution_liveness import classify, record
+            record(registry, "exec_retry", "thread-retry", "turn-retry",
+                   classify([dict(endpoint="owner", state="idle", thread_id="thread-retry",
+                                  turn_id="turn-retry", turn_status="completed")],
+                            "thread-retry", "turn-retry"))
             reconciled = registry.reconcile_terminal("exec_retry", "COMPLETED")
 
             self.assertEqual(reconciled.execution_state, "COMPLETED")
@@ -461,6 +468,10 @@ class M13LifecycleRoutingTests(unittest.TestCase):
 
         def turn_interrupt(self, _thread_id, _turn_id):
             return {"ok": True}
+
+        def thread_read(self, thread_id):
+            return {"id": thread_id, "status": {"type":
+                "active" if self.thread_turns_list(thread_id)["data"][0]["status"] == "inProgress" else "idle"}}
 
         def thread_turns_list(self, _thread_id, **_kwargs):
             return {
@@ -1037,7 +1048,7 @@ class M13LifecycleRoutingTests(unittest.TestCase):
             self.assertEqual(current.failure_code, "PROVIDER_DISCONNECTED")
             self.assertIsNone(registry.get_active_execution("exec_provider_disconnected"))
 
-    def test_closed_provider_transport_enters_disconnected_finalizer_path(self):
+    def test_closed_provider_transport_retains_unknown_execution(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             registry = TaskRegistry(root / "tasks.sqlite3")
@@ -1051,12 +1062,13 @@ class M13LifecycleRoutingTests(unittest.TestCase):
             dispatcher.client_factory = lambda target: Provider(target)
             reconciled = dispatcher.reconcile_execution("exec_transport_closed")
 
-            self.assertEqual(reconciled["state"], "BLOCKED")
+            self.assertEqual(reconciled["state"], "TRANSPORT_UNCERTAIN")
             current = registry.get_task(task.task_id)
-            self.assertEqual(current.execution_state, "BLOCKED")
-            self.assertEqual(current.failure_code, "PROVIDER_DISCONNECTED")
+            self.assertEqual(current.execution_state, "TRANSPORT_UNCERTAIN")
+            self.assertEqual(current.failure_code, "PROVIDER_UNAVAILABLE")
             self.assertNotEqual(current.execution_state, "RECOVERY_REQUIRED")
-            self.assertIn("byte transport closed", current.failure_evidence)
+            self.assertFalse(current.codex_running)
+            self.assertTrue(registry.has_execution_lease("exec_transport_closed"))
 
     def test_retained_recovery_provider_failure_enters_finalizer_and_leaves_recovery(self):
         with tempfile.TemporaryDirectory() as td:
