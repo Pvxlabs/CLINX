@@ -38,6 +38,7 @@ class Provider(lifecycle_tests.M13LifecycleRoutingTests.FakeProvider):
 
     def turn_interrupt(self, thread_id, turn_id):
         self.calls.append((thread_id, turn_id))
+        self.state, self.turn_status = "idle", "interrupted"
         return True
 
 
@@ -79,7 +80,7 @@ def test_unloaded_interrupted_is_uncertainty_not_cancellation(tmp_path, monkeypa
     assert result["state"] == "TRANSPORT_UNCERTAIN"
     assert not result["authoritative"]
     assert registry.get_active_execution(EXEC) is not None
-    assert registry.get_task(task.task_id).codex_running
+    assert not registry.get_task(task.task_id).codex_running
 
 
 def test_cancel_targets_actual_owner_without_resuming(tmp_path, monkeypatch):

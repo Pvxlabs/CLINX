@@ -138,7 +138,7 @@ def test_stale_worker_blocker_read_is_exact_and_never_finalized_again(delivery):
         historical = integration.get_status(execution_ref=d.ref)
         assert historical['provider_delivery']['count'] == 5
         assert historical['CODEX_RUNNING'] is False
-        assert historical['task_current_projection']['codex_running'] is True
+        assert historical['task_current_projection']['codex_running'] is False
 
 
 def test_predispatch_rejection_ack_is_delivered_and_next_call_is_legal(delivery):

@@ -327,6 +327,10 @@ class ThreadIdentityReader:
                                for key in ('failure_stage', 'failure_code', 'failure_evidence')})
                 output['failure_source'] = ('EXECUTION_RECORD' if selected and selected.get('failure_code') else
                     'UNAVAILABLE_LEGACY' if selected and selected['stage'] in ('FAILED', 'BLOCKED', 'RECOVERY_REQUIRED') else 'NONE')
+            from execution_liveness import public_status
+            if self.path.exists():
+                with readonly(self.path) as conn:
+                    output.update(public_status(conn, output.get("execution_ref")))
             if context and (snapshot or output['lookup_status'] == 'THREAD_UNBOUND'):
                 anchor = snapshot['facts']['anchors'][0]['turn_id'] if snapshot and snapshot['facts']['anchors'] else None
                 if execution_ref is not None and snapshot:

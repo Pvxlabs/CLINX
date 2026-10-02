@@ -190,7 +190,8 @@ class M9ResultTests(unittest.TestCase):
 
             self.assertEqual(status["execution_ref"], "PVX-1783")
             self.assertEqual(status["EXECUTION_STATE"], "CODEX_RUNNING")
-            self.assertTrue(status["CODEX_RUNNING"])
+            self.assertFalse(status["CODEX_RUNNING"])
+            self.assertEqual(status["provider_liveness"], "UNKNOWN")
             self.assertTrue(status["TURN_PRESENT"])
 
 

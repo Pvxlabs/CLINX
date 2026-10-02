@@ -347,6 +347,11 @@ def test_process_exit_after_result_commit_is_recoverable(setup):
 from task_registry import TaskRegistry
 from m9_integration import ExecutionFinalizer
 registry = TaskRegistry(sys.argv[1])
+from execution_liveness import classify, record
+route = registry.get_execution_routing_identity('exec_crash')
+record(registry, 'exec_crash', route.conversation.binding, sys.argv[3],
+       classify([dict(endpoint='scripted-owner', state='idle', thread_id=route.conversation.binding,
+                      turn_id=sys.argv[3], turn_status='completed')], route.conversation.binding, sys.argv[3]))
 registry.release_execution = lambda *a, **k: os._exit(79)
 ExecutionFinalizer(registry).finalize(execution_ref='exec_crash',task_id=sys.argv[2],turn_id=sys.argv[3],raw_result=sys.argv[4])
 '''
