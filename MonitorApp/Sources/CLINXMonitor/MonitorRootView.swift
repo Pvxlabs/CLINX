@@ -5,22 +5,27 @@ import SwiftUI
 ///
 /// Figma source of truth: the hand-tuned `MonitorWindow` renders in
 /// `CLINX Monitor UI/UX Redesign` (`OgzTpC5hnbctXciUVN6wri`), page `5:3841` (Live / Healthy).
-/// The header is a single 38pt bar — native traffic lights and the two
+/// The header is a single 38pt bar — native traffic lights and the
 /// tool buttons all sit on that one level; there is no separate macOS toolbar or search row.
 struct MonitorRootView: View {
     @ObservedObject var store: MonitorStore
     @State private var windowWidth: CGFloat = 1440
+    @State private var sidebarExpanded: Bool?
+    @State private var navigationOpen = false
+    @State private var navigationButtonHovered = false
+    @State private var navigationDrawerHovered = false
+    @State private var navigationCloseTask: Task<Void, Never>?
+    @State private var historyOpen = false
     @Environment(\.displayScale) private var displayScale
 
-    /// Breakpoints follow the design's three reference sizes: 1440 desktop (full sidebar +
-    /// 384 list), 1100 compact (rail + 340 list), 900 compact (rail + 300 list).
-    private var rail: Bool { windowWidth < 1280 }
+    /// Wide windows start with a docked sidebar; compact windows use the overlay drawer.
+    private var sidebarDocked: Bool { sidebarExpanded ?? (windowWidth >= 1280) }
     private var listWidth: CGFloat {
         if windowWidth < 1000 { return DS.Metric.listWidthNarrow }
         if windowWidth < 1280 { return DS.Metric.listWidthMedium }
         return DS.Metric.listWidthWide
     }
-    private var sidebarWidth: CGFloat { rail ? DS.Metric.sidebarRailWidth : DS.Metric.sidebarWidth }
+    private var sidebarWidth: CGFloat { sidebarDocked ? DS.Metric.sidebarWidth : 8 }
     private var inspectorWidth: CGFloat { max(0, windowWidth - sidebarWidth - listWidth) }
     private var inspectorStacked: Bool { inspectorWidth < DS.Metric.inspectorStackThreshold }
     private var borderWidth: CGFloat { 1 / max(displayScale, 1) }
@@ -31,7 +36,13 @@ struct MonitorRootView: View {
                 VStack(spacing: 0) {
                     header
                     HStack(spacing: 0) {
-                        SidebarView(store: store, rail: rail)
+                        Group {
+                            if sidebarDocked {
+                                SidebarView(store: store, rail: false)
+                            } else {
+                                Color.clear
+                            }
+                        }
                             .frame(width: sidebarWidth)
                             .captureGeometry("sidebar")
                             .background(DS.Palette.canvas)
@@ -81,6 +92,24 @@ struct MonitorRootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea()
+            .overlay(alignment: .topLeading) {
+                if historyOpen {
+                    ZStack(alignment: .topLeading) {
+                        Color.clear.contentShape(Rectangle())
+                            .onTapGesture { historyOpen = false }
+                        NavigationHistoryView(store: store) { historyOpen = false }
+                            .frame(width: min(520, max(280, proxy.size.width - 140)))
+                            .background(DS.Palette.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(DS.Palette.border, lineWidth: borderWidth))
+                            .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+                            .padding(.top, DS.Metric.contentHeaderHeight)
+                            .padding(.leading, 124)
+                    }
+                    .ignoresSafeArea()
+                }
+            }
             // Environment + connection live here now: one transparent, read-only label in the
             // window's bottom-right corner rather than a capsule in the toolbar.
             .overlay(alignment: .bottomTrailing) {
@@ -90,12 +119,54 @@ struct MonitorRootView: View {
                     .padding(.bottom, DS.Metric.runtimeStatusBottomInset)
                     .padding(.trailing, DS.Metric.runtimeStatusTrailingInset)
             }
+            .overlay(alignment: .topLeading) {
+                if navigationOpen {
+                    ZStack(alignment: .topLeading) {
+                        Color.black.opacity(0.24)
+                            .allowsHitTesting(false)
+                        Color.clear.contentShape(Rectangle())
+                            .onTapGesture { navigationOpen = false }
+                            .padding(.top, DS.Metric.contentHeaderHeight)
+                        VStack(spacing: 4) {
+                            HStack {
+                                Text("Navigation").font(DS.Font.bodyEmphasis)
+                                Spacer()
+                            }
+                            .frame(height: 26)
+                            .padding(.horizontal, 18)
+                            .padding(.top, 10)
+                            SidebarView(store: store, rail: false) { navigationOpen = false }
+                        }
+                        .frame(width: DS.Metric.sidebarWidth + 32)
+                        .background(DS.Palette.canvas)
+                        .clipShape(PanelShape(radius: 12, corners: [.topRight, .bottomRight]))
+                        .shadow(color: .black.opacity(0.12), radius: 12, x: 4)
+                        .onHover { hovering in
+                            navigationDrawerHovered = hovering
+                            updateNavigationHover()
+                        }
+                        .padding(.top, DS.Metric.contentHeaderHeight)
+                    }
+                    .ignoresSafeArea()
+                    .background {
+                        Button("Close navigation", action: { navigationOpen = false })
+                            .keyboardShortcut(.cancelAction)
+                            .hidden()
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
             .onAppear { windowWidth = proxy.size.width }
             .onChange(of: proxy.size.width) { windowWidth = $0 }
+            .onDisappear { navigationCloseTask?.cancel() }
         }
         .background(FullSizeContentConfigurator())
         .onExitCommand {
-            if store.selectedRef != nil {
+            if navigationOpen {
+                navigationOpen = false
+            } else if historyOpen {
+                historyOpen = false
+            } else if store.selectedRef != nil {
                 store.clearSelection()
             }
         }
@@ -103,9 +174,56 @@ struct MonitorRootView: View {
 
     // MARK: header
 
-    /// One compact header: native traffic lights on the left and refresh/settings on the right.
+    private func updateNavigationHover() {
+        navigationCloseTask?.cancel()
+        if navigationButtonHovered || navigationDrawerHovered {
+            if !sidebarDocked {
+                historyOpen = false
+                navigationOpen = true
+            }
+        } else {
+            // Bridge the small gap between the toolbar button and the drawer without flicker.
+            navigationCloseTask = Task { @MainActor in
+                do { try await Task.sleep(nanoseconds: 180_000_000) } catch { return }
+                if !navigationButtonHovered && !navigationDrawerHovered { navigationOpen = false }
+            }
+        }
+    }
+
+    /// One compact header with navigation following the native traffic lights.
     private var header: some View {
         HStack(spacing: 0) {
+            WindowDragRegion().frame(width: 90)
+            HStack(spacing: 6) {
+                ToolbarIconButton(system: "sidebar.left", size: 14,
+                                  help: sidebarDocked ? "Collapse sidebar" : "Expand sidebar",
+                                  active: navigationOpen) {
+                    navigationCloseTask?.cancel()
+                    historyOpen = false
+                    sidebarExpanded = !sidebarDocked
+                    navigationOpen = false
+                }
+                .accessibilityLabel(sidebarDocked ? "Collapse sidebar" : "Expand sidebar")
+                .onHover { hovering in
+                    navigationButtonHovered = hovering
+                    updateNavigationHover()
+                }
+                ToolbarIconButton(system: "clock", size: 14, help: "Opened history", active: historyOpen) {
+                    historyOpen.toggle()
+                }
+                .accessibilityLabel("Opened history")
+                ToolbarIconButton(system: "chevron.left", help: "Back  ⌘[") { store.goBack() }
+                    .disabled(!store.canGoBack)
+                    .opacity(store.canGoBack ? 1 : 0.35)
+                    .accessibilityLabel("Back")
+                    .keyboardShortcut("[", modifiers: .command)
+                ToolbarIconButton(system: "chevron.right", help: "Forward  ⌘]") { store.goForward() }
+                    .disabled(!store.canGoForward)
+                    .opacity(store.canGoForward ? 1 : 0.35)
+                    .accessibilityLabel("Forward")
+                    .keyboardShortcut("]", modifiers: .command)
+            }
+            .padding(.trailing, 8)
             WindowDragRegion()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack(spacing: 10) {
