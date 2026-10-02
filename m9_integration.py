@@ -693,6 +693,12 @@ class ExecutionFinalizer:
         }:
             raise TaskRegistryError(f"Unsupported provider terminal outcome: {provider_outcome}")
         execution = self._validate_owner(execution_ref, task_id, turn_id)
+        from execution_liveness import release_allowed
+        with self.registry._connect() as conn:
+            safe_release = release_allowed(conn, execution_ref)
+        if self.registry.has_execution_lease(execution_ref) and not safe_release:
+            raise TaskRegistryError("finalizer requires fresh exact owner terminal evidence")
+
         existing = self.registry.get_execution_result(execution_ref)
         active = self.registry.get_active_execution(execution_ref)
         retained_recovery = active is None and execution.get("stage") == "RECOVERY_REQUIRED"
@@ -1298,6 +1304,14 @@ class ClinxIntegration:
             status['CURRENT_BLOCKER'] = status['current_blocker'] = record.get('failure_evidence')
             status['TURN_PRESENT'] = bool(record.get('execution_owned_turn'))
             status['turn_id'] = record.get('execution_owned_turn')
+        from execution_liveness import public_status
+        with self.registry._connect() as conn:
+            liveness = public_status(conn, execution_ref)
+        status.update(liveness)
+        status["CODEX_RUNNING"] = liveness["codex_running"]
+        # The task subprojection must not expose the historical boolean as live.
+        status["task_current_projection"]["codex_running"] = (
+            liveness["codex_running"] and task.turn_id == status.get("execution_turn_ref"))
         return status
 
     def get_capabilities(self) -> dict[str, Any]:

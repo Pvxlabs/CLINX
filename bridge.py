@@ -2419,13 +2419,13 @@ class TaskDispatcher:
             ),
         )
 
-    def _lifecycle_client(self, target: TargetConfig, *, read_only: bool) -> CodexAppServerClient:
+    def _lifecycle_client(self, target: TargetConfig, *, read_only: bool, turn_id: str | None = None) -> CodexAppServerClient:
         """Use the same native-owner selection for execution and observation."""
         if (getattr(self, '_uses_default_client_factory', False)
                 and self.cfg.app_server.local_socket and target.transport == 'local'
                 and canonical_host(target.target_host) == canonical_host(self.cfg.runtime_host)):
             from native_provider import select_execution_client
-            return select_execution_client(self.cfg, target.thread_id, read_only=read_only)
+            return select_execution_client(self.cfg, target.thread_id, read_only=read_only, turn_id=turn_id)
         client = self.client_factory(target)
         if read_only and isinstance(client, CodexAppServerClient):
             client.read_only_observer = True
@@ -3645,7 +3645,7 @@ class TaskDispatcher:
         bounded_items: list[dict[str, Any]] = []
         try:
             route = self._execution_route(task, execution_ref)
-            client = self._lifecycle_client(self._target(workspace, project, binding, route), read_only=False)
+            client = self._lifecycle_client(self._target(workspace, project, binding, route), read_only=False, turn_id=task.turn_id)
             with client:
                 client.initialize(
                     client_name=self.cfg.app_server.client_name,
@@ -3666,6 +3666,15 @@ class TaskDispatcher:
                 "retry_required": True,
                 "routing_identity": route.public_dict() if route is not None else None,
             }
+        if getattr(client, "execution_route_evidence", None) is not None:
+            from native_provider import observe_execution
+            from execution_liveness import record as record_liveness
+            evidence = observe_execution(self.cfg, binding.thread_id, task.turn_id)
+            record_liveness(self.tasks, execution_ref, binding.thread_id, task.turn_id, evidence)
+            if not evidence["release_safe"]:
+                return {"execution_ref": execution_ref, "task_ref": task.task_id,
+                        "status": "CANCELLATION_PENDING", "cancel_requested": True,
+                        "cancel_confirmed": False, "retry_required": True}
         cancelled = ExecutionFinalizer(
             self.tasks, getattr(self, "linear", None)
         ).finalize_cancellation(
@@ -3723,7 +3732,6 @@ class TaskDispatcher:
             latest = self.tasks.get_latest_execution_for_task(task_id)
             orphaned = bool(
                 (latest is None or latest.get("execution_ref") is None)
-                and task.codex_running
                 and task.execution_state in {
                     "CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING",
                     "TRANSPORT_UNCERTAIN", "CANCEL_REQUESTED", "CANCELLATION_PENDING",
@@ -3733,19 +3741,18 @@ class TaskDispatcher:
                 return {"state": "UNKNOWN", "authoritative": False}
         elif active is None:
             retained = self.tasks.get_execution_record(execution_ref or "")
-            if retained is not None:
-                persisted = self.tasks.get_execution_result(execution_ref or "")
-                if persisted is not None:
-                    recovered = ExecutionFinalizer(self.tasks, getattr(self, "linear", None)).finalize(
-                        execution_ref=execution_ref, task_id=persisted.task_id,
-                        turn_id=persisted.turn_id, raw_result=persisted.raw_result,
-                    )
-                    return {"state": recovered.terminal_state, "authoritative": True, "finalized": True}
-            if retained is None or retained.get("stage") != "RECOVERY_REQUIRED":
+            persisted = self.tasks.get_execution_result(execution_ref or "")
+            held = self.tasks.has_execution_lease(execution_ref or "")
+            if retained is not None and persisted is not None and not held:
+                recovered = ExecutionFinalizer(self.tasks, getattr(self, "linear", None)).finalize(
+                    execution_ref=execution_ref, task_id=persisted.task_id,
+                    turn_id=persisted.turn_id, raw_result=persisted.raw_result,
+                )
+                return {"state": recovered.terminal_state, "authoritative": True, "finalized": True}
+            if retained is None or not (held or retained.get("stage") == "RECOVERY_REQUIRED"):
                 return {"state": "UNKNOWN", "authoritative": False}
             task = self.tasks.get_task(retained["task_id"])
-            if task.execution_state != "RECOVERY_REQUIRED" or not task.retry_required:
-                return {"state": "UNKNOWN", "authoritative": False}
+            # A partial finalizer commit is re-observed before releasing its lease.
             retained_recovery = True
         else:
             task = self.tasks.get_task(active["task_id"])
@@ -3765,9 +3772,24 @@ class TaskDispatcher:
                 "terminal provider evidence without an exact finalizer-owned path"
             )
 
+        from execution_liveness import classify, record as record_liveness
+        def unknown(reason, evidence=None):
+            observed = evidence or classify([], "", "")
+            if evidence is None:
+                observed["liveness_reason"] = reason
+            if execution_ref and exact_turn_id and binding:
+                return record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, observed)
+            self.tasks.set_execution_state(task.task_id, "TRANSPORT_UNCERTAIN",
+                current_stage="reconciliation", current_blocker=reason,
+                codex_running=False, retry_required=True)
+            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False,
+                    "provider_liveness": "UNKNOWN", "transport_health": observed["transport_health"],
+                    "codex_running": False, "liveness_reason": reason}
+
+        exact_turn_id = None
         binding = self.tasks.get_binding(task.task_id)
         if binding is None:
-            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
+            return unknown("EXACT_IDENTITY_UNAVAILABLE")
         prepared = (
             self.tasks.get_prepared_execution_for_execution(execution_ref)
             if execution_ref else None
@@ -3777,7 +3799,7 @@ class TaskDispatcher:
             else task.turn_id
         )
         if not exact_turn_id and not (orphaned and self.tasks.get_adoption(task.task_id)):
-            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
+            return unknown("EXACT_IDENTITY_UNAVAILABLE")
         workspace = self.workspaces.resolve(task.workspace_alias)
         project_path = self.workspaces.validate_path(workspace, Path(task.cwd))
         project = ProjectMapping(
@@ -3846,6 +3868,7 @@ class TaskDispatcher:
         route: RoutingIdentity | None = None
         bounded_items: list[dict[str, Any]] = []
         native_observer_state: str | None = None
+        native_evidence = None
         try:
             # An adopted conversation without a turn has no execution route yet.
             # Its sealed task route is sufficient for this read-only lookup.
@@ -3854,14 +3877,20 @@ class TaskDispatcher:
                      else self._execution_route(task, execution_ref, orphaned=orphaned))
             if route is None or not route.executable:
                 raise DispatchContractError("reconciliation routing identity is unavailable")
-            client = self._lifecycle_client(self._target(workspace, project, binding, route), read_only=True)
+            client = self._lifecycle_client(self._target(workspace, project, binding, route),
+                                            read_only=True, turn_id=exact_turn_id)
+            native_evidence = getattr(client, "execution_route_evidence", None)
+            if native_evidence and "provider_liveness" in native_evidence:
+                projected = record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, native_evidence)
+                if native_evidence["provider_liveness"] != "TERMINAL" or not native_evidence["release_safe"]:
+                    return projected
             with client:
                 client.initialize(
                     client_name=self.cfg.app_server.client_name,
                     client_title=self.cfg.app_server.client_title,
                     client_version=self.cfg.app_server.client_version,
                 )
-                if getattr(client, 'execution_route_evidence', None) is not None:
+                if hasattr(client, "thread_read"):
                     observed_thread = client.thread_read(binding.thread_id)
                     if observed_thread.get('id') != binding.thread_id:
                         raise AppServerError('native observer returned a different thread')
@@ -3928,12 +3957,15 @@ class TaskDispatcher:
                         ]
         except DispatchContractError as exc:
             evidence = str(exc)
+            if execution_ref:
+                from execution_liveness import invalidate
+                invalidate(self.tasks, execution_ref, "ROUTING_IDENTITY_UNAVAILABLE")
             if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
                 if orphaned:
                     self.tasks.set_execution_state(
                         task.task_id, "CANCELLATION_PENDING",
                         current_stage="CANCELLATION_PENDING",
-                        current_blocker=evidence[:2000], codex_running=True,
+                        current_blocker=evidence[:2000], codex_running=False,
                         retry_required=True, failure_stage="routing",
                         failure_code="ROUTING_IDENTITY_UNAVAILABLE",
                         failure_evidence=evidence[:4000],
@@ -3949,7 +3981,7 @@ class TaskDispatcher:
             self.tasks.set_execution_state(
                 task.task_id, "RECOVERY_REQUIRED",
                 current_stage="routing", current_blocker=evidence[:2000],
-                codex_running=bool(task.codex_running), retry_required=True,
+                codex_running=False, retry_required=True,
                 failure_stage="routing", failure_code="ROUTING_IDENTITY_UNAVAILABLE",
                 failure_evidence=evidence[:4000],
             )
@@ -3959,68 +3991,35 @@ class TaskDispatcher:
                 "failure_code": "ROUTING_IDENTITY_UNAVAILABLE",
                 "evidence": evidence,
             }
-        except AppServerError as exc:
-            evidence = str(exc)
-            # A child exit/closed byte channel is definitive disconnect
-            # evidence for this exact execution. Generic reachability failure
-            # remains retryable observation uncertainty.
-            if reclaim_stale and ("exit " in evidence.casefold() or "transport closed" in evidence.casefold()):
-                return finalize_provider(
-                    "PROVIDER_DISCONNECTED", evidence,
-                )
-            if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
-                self.tasks.mark_cancellation_pending(execution_ref, evidence=evidence)
-                return {"state": "CANCELLATION_PENDING", "authoritative": False, "evidence": evidence}
-            self.tasks.set_execution_state(
-                task.task_id, "TRANSPORT_UNCERTAIN", current_stage="reconciliation",
-                current_blocker=evidence[:2000], codex_running=bool(task.codex_running),
-                retry_required=True, failure_stage="transport",
-                failure_code="PROVIDER_UNAVAILABLE", failure_evidence=evidence[:4000],
-            )
-            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False, "evidence": evidence}
         except Exception as exc:
-            evidence = str(exc)
-            if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
-                self.tasks.mark_cancellation_pending(execution_ref, evidence=evidence)
-                return {"state": "CANCELLATION_PENDING", "authoritative": False, "evidence": evidence}
-            self.tasks.set_execution_state(
-                task.task_id, "TRANSPORT_UNCERTAIN", current_stage="reconciliation",
-                current_blocker=evidence[:2000], codex_running=bool(task.codex_running),
-                retry_required=True, failure_stage="transport",
-                failure_code="PROVIDER_UNAVAILABLE", failure_evidence=evidence[:4000],
-            )
-            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False, "evidence": evidence}
+            return unknown("PROVIDER_UNAVAILABLE", getattr(exc, "liveness_evidence", None))
         rows = [item for item in page.get("data", ()) if isinstance(item, dict)]
         row = next((item for item in rows if item.get("id") == exact_turn_id), None)
         if row is None:
-            if task.execution_state in {"CANCEL_REQUESTED", "CANCELLATION_PENDING"}:
-                self.tasks.mark_cancellation_pending(
-                    execution_ref,
-                    evidence="bounded thread/turns/list did not contain the exact turn",
-                )
-                return {"state": "CANCELLATION_PENDING", "authoritative": False}
-            self.tasks.set_execution_state(
-                task.task_id, "TRANSPORT_UNCERTAIN", current_stage="reconciliation",
-                current_blocker="exact turn was not present in bounded provider history",
-                codex_running=bool(task.codex_running), retry_required=True,
-                failure_stage="reconciliation", failure_code="TURN_NOT_OBSERVED",
-                failure_evidence="bounded thread/turns/list did not contain the exact turn",
-            )
-            return {"state": "TRANSPORT_UNCERTAIN", "authoritative": False}
+            return unknown("TURN_NOT_OBSERVED")
         status = self._turn_status(row)
+        if native_evidence and "provider_liveness" in native_evidence:
+            # Re-observe all configured endpoints immediately before any finalizer.
+            # A live owner reappearing here wins, even after recovery was projected.
+            from native_provider import observe_execution
+            fresh = observe_execution(self.cfg, binding.thread_id, exact_turn_id)
+            if (fresh["provider_liveness"] != "TERMINAL" or not fresh["release_safe"]):
+                return record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, fresh)
+            fresh_owner = next(r for r in fresh["observations"] if r["endpoint"] == fresh["owner_endpoint"])
+            if (fresh["owner_endpoint"] != native_evidence["owner_endpoint"] or
+                    self._turn_status({"status": fresh_owner.get("turn_status")}) != status):
+                return unknown("OWNER_CHANGED_DURING_OBSERVATION")
+            record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, fresh)
+        elif execution_ref and exact_turn_id:
+            # A single persisted transport route is the configured authority;
+            # a turn response must also come from the exact loaded thread.
+            observed = classify([dict(endpoint="execution-route", state=native_observer_state or "UNKNOWN",
+                thread_id=binding.thread_id, turn_id=row.get("id"), turn_status=row.get("status"))],
+                binding.thread_id, exact_turn_id)
+            projected = record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, observed)
+            if observed["provider_liveness"] != "TERMINAL" or not observed["release_safe"]:
+                return projected
         if status in {"cancelled", "canceled", "interrupted", "aborted"}:
-            if native_observer_state is not None and native_observer_state != 'idle':
-                # A non-owner renders another daemon's live turn as interrupted.
-                # Preserve the execution and lease; uncertainty is not cancellation.
-                evidence = 'native owner did not prove idle for an interrupted turn'
-                self.tasks.set_execution_state(
-                    task.task_id, 'TRANSPORT_UNCERTAIN', current_stage='reconciliation',
-                    current_blocker=evidence, codex_running=bool(task.codex_running),
-                    retry_required=True, failure_stage='reconciliation',
-                    failure_code='NATIVE_TERMINAL_UNPROVEN', failure_evidence=evidence,
-                )
-                return {'state': 'TRANSPORT_UNCERTAIN', 'authoritative': False,
-                        'failure_code': 'NATIVE_TERMINAL_UNPROVEN'}
             terminalize(
                 "CANCELLED", failure_stage="provider",
                 failure_code="TURN_CANCELLED", evidence=f"provider turn status={status}",
@@ -4050,7 +4049,7 @@ class TaskDispatcher:
                         raw_result = session_result
 
             return finalize_provider(provider_outcome, status, raw_result)
-        return {"state": "CODEX_RUNNING", "authoritative": False, "status": status}
+        return unknown("UNRECOGNIZED_TURN_STATUS")
 
     def reconcile_task(self, task_id: str) -> dict[str, Any]:
         """Reconcile a task's exact bound turn, including legacy null-ref state."""
