@@ -48,7 +48,7 @@ Swift 代码仍需在 macOS 13+ SDK 编译确认 `.onChange(of:)` 的兼容重�
 
 ```
 BASE_SHA=edeea54f5d2b871a88c8180950eb91f0856fd43c
-COMMIT_SHA=4ac2e24
+COMMIT_SHA=4ac2e2419f6a07c12b4760596350aeb76af11e1b
 WORKTREE=/home/pvxlabs/dev/clinx-terminal-state-fix-20261003
 BRANCH=codex/fix-native-terminal-state-20261003
 MAIN_WORKTREE_MUTATION=NONE
