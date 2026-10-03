@@ -18,6 +18,48 @@ from thread_identity import ThreadLookupError, readonly
 SCAN_BYTES = 512 * 1024
 SQL_STEPS = 250_000
 
+# Native turn status is a provider fact.  Keep the original value in the
+# payload and derive a small, stable vocabulary for read-plane presentation.
+# This vocabulary never changes a managed execution_state.
+_NATIVE_STATUS_ALIASES = {
+    'inprogress': 'RUNNING',
+    'running': 'RUNNING',
+    'active': 'RUNNING',
+    'started': 'RUNNING',
+    'processing': 'RUNNING',
+    'completed': 'COMPLETED',
+    'succeeded': 'COMPLETED',
+    'success': 'COMPLETED',
+    'failed': 'FAILED',
+    'error': 'FAILED',
+    'errored': 'FAILED',
+    'systemerror': 'FAILED',
+    'timeout': 'TIMED_OUT',
+    'timedout': 'TIMED_OUT',
+    'cancelled': 'CANCELLED',
+    'canceled': 'CANCELLED',
+    'interrupted': 'INTERRUPTED',
+    'aborted': 'INTERRUPTED',
+    'disconnected': 'DISCONNECTED',
+    'connectionlost': 'DISCONNECTED',
+    'connectionclosed': 'DISCONNECTED',
+}
+_NATIVE_TERMINAL_STATES = frozenset({
+    'COMPLETED', 'FAILED', 'TIMED_OUT', 'CANCELLED', 'INTERRUPTED', 'DISCONNECTED',
+})
+
+
+def normalize_native_status(value):
+    """Return a presentation token without treating missing data as active."""
+    if isinstance(value, dict):
+        value = value.get('type') or value.get('status') or value.get('state')
+    key = str(value or '').replace('_', '').replace('-', '').casefold()
+    return _NATIVE_STATUS_ALIASES.get(key, 'UNKNOWN')
+
+
+def native_status_is_terminal(value):
+    return normalize_native_status(value) in _NATIVE_TERMINAL_STATES
+
 
 def cursor_encode(tid, host, mode, before):
     return base64.urlsafe_b64encode(json.dumps([1, tid, host, mode, before]).encode()).decode().rstrip('=')
@@ -140,15 +182,26 @@ class NativeHistory:
                 'identity_source': 'CODEX_STATE_AND_SESSION_HEADER'}
 
     def status(self, tid, metadata):
+        base = {
+            'source': 'NATIVE_PERSISTED_HISTORY',
+            'status': None,
+            'state': 'UNKNOWN',
+            'terminal': False,
+        }
         if metadata.get('history_mode') != 'paginated':
-            return {'source': 'NATIVE_PERSISTED_HISTORY', 'state': 'UNKNOWN'}
+            return dict(base, reason='NATIVE_HISTORY_MODE_UNSUPPORTED')
         try:
             with readonly(self.root / 'thread_history_1.sqlite') as conn:
                 row = conn.execute('SELECT turn_id,status,started_at,completed_at FROM thread_turns '
                     'WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1', (tid,)).fetchone()
-                return {'source': 'NATIVE_PERSISTED_HISTORY', **dict(row)} if row else {'state': 'UNKNOWN'}
-        except sqlite3.Error:
-            return {'source': 'NATIVE_PERSISTED_HISTORY', 'state': 'UNKNOWN', 'reason': 'NATIVE_HISTORY_UNAVAILABLE'}
+                if row is None:
+                    return dict(base, reason='NATIVE_TURN_UNAVAILABLE')
+                value = dict(row)
+                state = normalize_native_status(value.get('status'))
+                return dict(base, **value, state=state,
+                            terminal=native_status_is_terminal(value.get('status')))
+        except (OSError, sqlite3.Error):
+            return dict(base, reason='NATIVE_HISTORY_UNAVAILABLE')
 
     def _paginated(self, tid, host, metadata, recent_turns, max_bytes, anchor, cursor):
         before = cursor_decode(cursor, tid, host, 'paginated')
