@@ -85,6 +85,28 @@ final class ActivityTests: XCTestCase {
         XCTAssertTrue(store.messages.isEmpty)
         XCTAssertNil(store.cursor)
     }
+
+    func testScrollObserverPublishesOnlyBottomStateTransitions() {
+        var transition = ActivityScrollTransition()
+
+        XCTAssertEqual(transition.update(false), false)
+        XCTAssertNil(transition.update(false))
+        XCTAssertNil(transition.update(false))
+        XCTAssertEqual(transition.update(true), true)
+        XCTAssertNil(transition.update(true))
+        XCTAssertEqual(transition.update(false), false)
+    }
+
+    func testTerminalActivityRunStopsAfterResultTail() async throws {
+        let service = TerminalActivityService()
+        let store = ActivityStore(taskRef: "task_test", executionRef: "exec_test",
+                                  service: service, terminal: true)
+
+        await store.run()
+
+        XCTAssertEqual(await service.requestCount, 1)
+        XCTAssertEqual(store.messages.map(\.kind), ["result"])
+    }
 }
 
 private struct EmptyDeltaActivityService: ActivityServing {
@@ -102,5 +124,14 @@ private actor DelayedActivityService: ActivityServing {
     func finish() {
         continuation?.resume(returning: page([message("a", 1, 1, "late")]))
         continuation = nil
+    }
+}
+
+private actor TerminalActivityService: ActivityServing {
+    private(set) var requestCount = 0
+
+    func activity(_ ref: String, execution: String, after: String?, before: String?) async throws -> ActivityPage {
+        requestCount += 1
+        return page([message("result", 1, 1, "最终报告" )])
     }
 }

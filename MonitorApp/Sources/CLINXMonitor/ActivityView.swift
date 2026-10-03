@@ -19,17 +19,38 @@ struct ActivityView: View, Equatable {
     }
 }
 
+/// Converts the high-frequency AppKit live-scroll stream into the two states the UI needs.
+/// `nil` means the notification was a duplicate and must not invalidate SwiftUI state.
+struct ActivityScrollTransition {
+    private(set) var last: Bool? = nil
+
+    mutating func update(_ atBottom: Bool) -> Bool? {
+        guard last != atBottom else { return nil }
+        last = atBottom
+        return atBottom
+    }
+}
+
 private struct ActivityContentView: View {
     let task: ObservedTask
     @StateObject private var feed: ActivityStore
     @State private var following = true
     @State private var newActivity = false
     @State private var loadingEarlier = false
+    @State private var scrollScheduled = false
 
     init(task: ObservedTask, service: (any ActivityServing)?) {
         self.task = task
         _feed = StateObject(wrappedValue: ActivityStore(taskRef: task.taskRef,
-            executionRef: task.executionRef ?? "", service: service))
+            executionRef: task.executionRef ?? "", service: service,
+            terminal: Self.isTerminal(task)))
+    }
+
+    private static func isTerminal(_ task: ObservedTask) -> Bool {
+        switch task.monitorStatus {
+        case .completed, .failed, .cancelled, .blocked: return true
+        case .running, .stale, .unknown: return false
+        }
     }
 
     private var operations: [HostOperation] {
@@ -127,6 +148,7 @@ private struct ActivityContentView: View {
                     if !following {
                         Button {
                             following = true; newActivity = false
+                            scrollScheduled = false
                             proxy.scrollTo("activity-bottom", anchor: .bottom)
                         } label: {
                             Label(newActivity ? "New activity" : "Jump to latest", systemImage: "arrow.down")
@@ -146,12 +168,18 @@ private struct ActivityContentView: View {
             }
         }
         .task { await feed.run() }
+        .onChange(of: task.monitorStatus) { feed.updateTerminal(Self.isTerminal(task)) }
         .onDisappear { feed.stop() }
     }
 
     private func followUpdates(_ proxy: ScrollViewProxy) {
         if following {
-            DispatchQueue.main.async { proxy.scrollTo("activity-bottom", anchor: .bottom) }
+            guard !scrollScheduled else { return }
+            scrollScheduled = true
+            DispatchQueue.main.async {
+                if following { proxy.scrollTo("activity-bottom", anchor: .bottom) }
+                scrollScheduled = false
+            }
         } else { newActivity = true }
     }
 }
@@ -197,6 +225,7 @@ private struct ActivityScrollObserver: NSViewRepresentable {
     final class Probe: NSView {
         var changed: ((Bool) -> Void)?
         private var observer: NSObjectProtocol?
+        private var transition = ActivityScrollTransition()
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             disconnect()
@@ -209,12 +238,13 @@ private struct ActivityScrollObserver: NSViewRepresentable {
                 object: scroll, queue: .main) { [weak self, weak scroll] _ in
                     guard let self, let scroll, let document = scroll.documentView else { return }
                     let bottom = document.bounds.maxY - scroll.contentView.bounds.maxY < 40
-                    self.changed?(bottom)
+                    if let value = self.transition.update(bottom) { self.changed?(value) }
                 }
         }
         func disconnect() {
             if let observer { NotificationCenter.default.removeObserver(observer) }
             observer = nil
+            transition = ActivityScrollTransition()
         }
         deinit { disconnect() }
     }
