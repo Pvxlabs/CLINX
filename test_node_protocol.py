@@ -174,9 +174,24 @@ def test_cross_process_rpc_route_is_real_transport():
     process.start()
     address = queue.get(timeout=5)
     try:
-        result = NodeRPCClient(address, allow_insecure_loopback=True).read(thread_id="air-thread", user_scope="user-a")
+        client = NodeRPCClient(address, allow_insecure_loopback=True)
+        result = client.read(thread_id="air-thread", user_scope="user-a")
         assert result["source_node_id"] == "air"
         assert result["lookup_status"] == "THREAD_UNBOUND"
+        # The centre router uses the same real RPC client as its node reader;
+        # this proves the cross-process hop is not a mock-only success path.
+        registry = NodeRegistry(":memory:")
+        router = NodeRouter(registry, user_scope="user-a")
+        router.attach(
+            record("air"),
+            reader=lambda request: client.read(
+                thread_id=request["thread_id"], user_scope=request["user_scope"]
+            ),
+            scope=scope(),
+        )
+        routed = router.read(thread_id="air-thread", node_id="air")
+        assert routed["source_node_id"] == "air"
+        assert routed["coverage"]["complete"] is True
     finally:
         process.join(timeout=5)
         if process.is_alive():
