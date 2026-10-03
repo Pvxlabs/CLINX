@@ -30,3 +30,14 @@ Air 上的 Monitor App 已构建、签名、安装并通过真实窗口读回；
 ## 最小解阻动作
 
 需要在 P620 以独立于当前 MCP/Provider 的正式维护入口启用与当前候选版本匹配的 Node centre 服务，使用现有受信身份/配对窗口完成 Air pairing，并明确授予可撤销的 read_sessions；若要交付执行，还需在 Air helper 接入 canonical Task/Execution/policy/provider 回调并由中心显式授予 execute_tasks。完成后才可重新安装同一候选、执行真实 MCP Air 来源读回和专用执行验收。
+
+## Monitor 与原生交付字段
+
+| 项目 | 结论 | 证据 |
+|---|---|---|
+| MONITOR_SOURCE_INTEGRATION | PASS | 已从 P620 精确分支接入完整 native terminal / Monitor 提交链，并保留 Air 节点协议改动；mcp_server.py、native_history.py、thread_identity.py 未用整文件覆盖。 |
+| SWIFT_BUILD | PASS | MonitorApp/Scripts/build-app.sh 成功；实际安装 bundle 含 DiscoveryRuntime、OPAQUE wheel、NodeService 与 Swift arm64 executable；签名严格校验通过。 |
+| SWIFT_TESTS | PASS | swift test --scratch-path /private/tmp/clinx-air-final-swift-20261003：72 tests、0 failures；Activity/Monitor 定向范围 16 passed。 |
+| PYTHON_REGRESSION | PARTIAL | OPAQUE 隔离 wheel 后 956 passed、39 failed、9 skipped、118 subtests；完整分类见 docs/AIR_PYTHON_FAILURE_TRIAGE_20261003.md。 |
+| TERMINAL_STATUS_GUI_ACCEPTANCE | PASS（本机） | 实际安装 App 显示历史 task/execution 的精确 Inspector 身份、Blocked 终态和 40 条事件 Activity；这不是 Air 节点注册通过。 |
+| SCROLL_HANG_ROOT_CAUSE | 未确认 | 本机长 Activity 上下滚动、底部更新、分页与文本选择未复现原现场卡死；sample 栈为 SwiftUI layout/accessibility，不能把本机未复现写成原现场根因已证实。 |
