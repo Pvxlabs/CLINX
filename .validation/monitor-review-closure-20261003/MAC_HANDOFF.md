@@ -23,7 +23,7 @@ swift test
 open '.build/CLINX Monitor.app'
 ```
 
-本次代码修正提交为 `afe3c2f8119e406f704e9edf5ee4928ce9c6eb4f`，本报告随后作为本地交付提交保存在同一分支；基线为 `edeea54f5d2b871a88c8180950eb91f0856fd43c`。测试需至少包含 `CLINXMonitorTests.ActivityTests` 与 `MonitorStoreTests` 新增用例；整包 `swift test` 的通过数量和失败必须原样记录。不得把 Linux/P620 Python 结果写成 Swift 通过。
+本次代码修正提交为 `4ac2e24`（包含前序 `afe3c2f` 的实现与本次 canonical terminal guard），本报告随后作为本地交付提交保存在同一分支；基线为 `edeea54f5d2b871a88c8180950eb91f0856fd43c`。测试需至少包含 `CLINXMonitorTests.ActivityTests` 与 `MonitorStoreTests` 新增用例；整包 `swift test` 的通过数量和失败必须原样记录。不得把 Linux/P620 Python 结果写成 Swift 通过。
 
 ## 隔离与安装核对
 
@@ -60,7 +60,7 @@ open '.build/CLINX Monitor.app'
 WORKTREE=/home/pvxlabs/dev/clinx-terminal-state-fix-20261003
 BRANCH=codex/fix-native-terminal-state-20261003
 BASE_SHA=edeea54f5d2b871a88c8180950eb91f0856fd43c
-COMMIT_SHA=afe3c2f8119e406f704e9edf5ee4928ce9c6eb4f
+COMMIT_SHA=4ac2e24
 MAIN_WORKTREE_MUTATION=NONE
 OTHER_EXECUTION_CONTROL=NONE
 SHARED_RUNTIME_MUTATION=NONE
