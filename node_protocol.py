@@ -104,6 +104,89 @@ class SharingScope:
         return dataclasses.asdict(self)
 
 
+class NodeAuthorizationStore:
+    """Atomic, durable user approvals for a centre/node relationship.
+
+    The store is deliberately a small JSON file beside the existing device
+    identity.  It is changed through the product entrypoints, never by a
+    remote registration request, and contains no task or conversation data.
+    """
+
+    def __init__(self, root: str | Path, *, filename: str = "sharing.json"):
+        from local_discovery.identity import PrivateStore
+
+        self._store = PrivateStore(Path(root).expanduser())
+        self.filename = filename
+        self._lock = threading.RLock()
+
+    def _read(self) -> dict[str, Any]:
+        raw = self._store.read(self.filename)
+        if raw is None:
+            return {"schema_version": 1, "scopes": {}}
+        scopes = raw.get("scopes")
+        if not isinstance(scopes, dict):
+            raise NodeProtocolError("INVALID_SHARING_STORE", "Sharing approvals are invalid")
+        return raw
+
+    def get(self, peer_id: str) -> SharingScope | None:
+        with self._lock, self._store.lock():
+            raw = self._read()
+            value = raw["scopes"].get(peer_id)
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise NodeProtocolError("INVALID_SHARING_STORE", "Sharing approval is invalid")
+        return SharingScope(
+            user_scope=value["user_scope"],
+            read_sessions=bool(value.get("read_sessions", False)),
+            execute_tasks=bool(value.get("execute_tasks", False)),
+            providers=tuple(value.get("providers", (SUPPORTED_PROVIDER,))),
+            revoked=bool(value.get("revoked", False)),
+            updated_at=value.get("updated_at", _now()),
+        )
+
+    def grant(
+        self,
+        peer_id: str,
+        *,
+        user_scope: str,
+        read_sessions: bool = False,
+        execute_tasks: bool = False,
+        providers: tuple[str, ...] = (SUPPORTED_PROVIDER,),
+    ) -> SharingScope:
+        scope = SharingScope(
+            user_scope=user_scope,
+            read_sessions=read_sessions,
+            execute_tasks=execute_tasks,
+            providers=providers,
+            revoked=False,
+            updated_at=_now(),
+        )
+        self._write(peer_id, scope)
+        return scope
+
+    def revoke(self, peer_id: str, *, user_scope: str | None = None) -> SharingScope:
+        existing = self.get(peer_id)
+        scope = SharingScope(
+            user_scope=user_scope or (existing.user_scope if existing else "default"),
+            read_sessions=False,
+            execute_tasks=False,
+            providers=existing.providers if existing else (SUPPORTED_PROVIDER,),
+            revoked=True,
+            updated_at=_now(),
+        )
+        self._write(peer_id, scope)
+        return scope
+
+    def _write(self, peer_id: str, scope: SharingScope) -> None:
+        _text("peer_id", peer_id, max_len=63)
+        with self._lock, self._store.lock():
+            raw = self._read()
+            scopes = dict(raw["scopes"])
+            scopes[peer_id] = scope.as_dict()
+            self._store.write(self.filename, {"schema_version": 1, "scopes": scopes})
+
+
 @dataclasses.dataclass(frozen=True)
 class NodeRecord:
     node_id: str
@@ -408,6 +491,47 @@ class NodeRegistry:
         with self._lock, self._conn:
             self._conn.execute("UPDATE nodes SET state=?,last_seen=? WHERE node_id=?", (state, _now(), node_id))
 
+    def update_endpoint(self, node_id: str, endpoint: str) -> None:
+        endpoint = _text("endpoint", endpoint, max_len=256)
+        with self._lock, self._conn:
+            self._conn.execute("UPDATE nodes SET endpoint=? WHERE node_id=?", (endpoint, node_id))
+
+    def refresh_states(self) -> None:
+        """Mark expired authenticated observations offline before routing."""
+        with self._lock, self._conn:
+            rows = self._conn.execute(
+                "SELECT node_id,last_seen,stale_after_seconds,state FROM nodes"
+            ).fetchall()
+            for row in rows:
+                if row["state"] in {"REVOKED", "VERSION_INCOMPATIBLE"}:
+                    continue
+                age = _age_seconds(row["last_seen"])
+                if age is None or age > row["stale_after_seconds"]:
+                    self._conn.execute(
+                        "UPDATE nodes SET state='OFFLINE' WHERE node_id=?", (row["node_id"],)
+                    )
+
+    def authorize(self, node_id: str, scope: SharingScope) -> None:
+        """Persist an explicit centre-side approval without changing identity."""
+        with self._lock, self._conn:
+            row = self._conn.execute("SELECT node_id FROM nodes WHERE node_id=?", (node_id,)).fetchone()
+            if row is None:
+                raise NodeProtocolError("UNKNOWN_NODE", "Cannot authorize an unregistered node")
+            self._conn.execute(
+                """INSERT INTO sharing_scopes VALUES (?,?,?,?,?,?,?)
+                   ON CONFLICT(node_id,user_scope) DO UPDATE SET
+                   read_sessions=excluded.read_sessions, execute_tasks=excluded.execute_tasks,
+                   providers_json=excluded.providers_json, revoked=excluded.revoked,
+                   updated_at=excluded.updated_at""",
+                (node_id, scope.user_scope, int(scope.read_sessions), int(scope.execute_tasks),
+                 json.dumps(scope.providers), int(scope.revoked), scope.updated_at),
+            )
+            state = "REVOKED" if scope.revoked else "ONLINE"
+            self._conn.execute(
+                "UPDATE nodes SET user_scope=?,authorized=?,state=? WHERE node_id=?",
+                (scope.user_scope, int(not scope.revoked), state, node_id),
+            )
+
     def list_nodes(self, *, user_scope: str | None = None, authorized_only: bool = False) -> list[NodeRecord]:
         sql, args = "SELECT * FROM nodes", []
         where = []
@@ -501,20 +625,45 @@ class NodeService:
         self.start_execution = start_execution
         self.status_execution = status_execution
         self.cancel_execution = cancel_execution
+        self._scope_lock = threading.RLock()
+
+    def set_scope(self, scope: SharingScope) -> None:
+        """Apply the latest centre approval without replacing the service."""
+        with self._scope_lock:
+            self.scope = scope
+            self.record = dataclasses.replace(
+                self.record,
+                user_scope=scope.user_scope,
+                authorized=not scope.revoked,
+                state=("REVOKED" if scope.revoked else
+                       "ONLINE" if self.record.state == "REVOKED" else self.record.state),
+            )
+
+    def _snapshot(self) -> tuple[NodeRecord, SharingScope]:
+        with self._scope_lock:
+            return self.record, self.scope
+
+    def set_state(self, state: str, *, last_seen: str | None = None) -> None:
+        if state not in {"ONLINE", "OFFLINE", "DEGRADED", "UNKNOWN", "REVOKED", "VERSION_INCOMPATIBLE"}:
+            raise ValueError("invalid node state")
+        with self._scope_lock:
+            self.record = dataclasses.replace(self.record, state=state, last_seen=last_seen or self.record.last_seen)
 
     def _authorize(self, operation: str, request: Mapping[str, Any]) -> None:
-        if request.get("node_id") not in (None, self.record.node_id):
+        record, scope = self._snapshot()
+        if request.get("node_id") not in (None, record.node_id):
             raise NodeProtocolError("NODE_TARGET_MISMATCH", "Request targets another node")
-        if request.get("user_scope") not in (None, self.scope.user_scope):
+        if request.get("user_scope") not in (None, scope.user_scope):
             raise NodeProtocolError("USER_SCOPE_DENIED", "Request user scope is not shared with this node")
         provider = request.get("provider", SUPPORTED_PROVIDER)
-        if not self.record.trusted or not self.record.authorized or not self.scope.allows(operation, provider):
+        if not record.trusted or not record.authorized or not scope.allows(operation, provider):
             raise NodeProtocolError("SHARING_SCOPE_DENIED", "The approved sharing scope does not allow this operation")
-        if self.record.protocol_version != NODE_PROTOCOL_VERSION or not self.record.version_compatible:
+        if record.protocol_version != NODE_PROTOCOL_VERSION or not record.version_compatible:
             raise NodeProtocolError("NODE_VERSION_INCOMPATIBLE", "Node protocol version is incompatible")
 
     def _identity(self, request: Mapping[str, Any]) -> SessionIdentity:
-        return SessionIdentity(self.record.node_id, self.scope.user_scope, request.get("provider", SUPPORTED_PROVIDER), request["thread_id"], request.get("source_version", "1"))
+        record, scope = self._snapshot()
+        return SessionIdentity(record.node_id, scope.user_scope, request.get("provider", SUPPORTED_PROVIDER), request["thread_id"], request.get("source_version", "1"))
 
     def read(self, request: Mapping[str, Any]) -> dict[str, Any]:
         self._authorize("session.read", request)
@@ -534,7 +683,8 @@ class NodeService:
             kwargs["cursor"] = provider_cursor
         result = dict(self.read_thread(thread_id, **kwargs))
         result.setdefault("queried_thread_id", thread_id)
-        result.update(node_id=self.record.node_id, user_scope=self.scope.user_scope, provider=identity.provider, source_node_id=self.record.node_id, source_observed_at=_now(), read_only=True)
+        record, scope = self._snapshot()
+        result.update(node_id=record.node_id, user_scope=scope.user_scope, provider=identity.provider, source_node_id=record.node_id, source_observed_at=_now(), read_only=True)
         if result.get("next_cursor"):
             result["next_cursor"] = _encode_provider_cursor(
                 node_id=identity.node_id, user_scope=identity.user_scope,
@@ -548,7 +698,8 @@ class NodeService:
     def status(self, request: Mapping[str, Any]) -> dict[str, Any]:
         self._authorize("session.status", request)
         result = dict(self.status_thread(request["thread_id"]))
-        result.update(node_id=self.record.node_id, user_scope=self.scope.user_scope, provider=request.get("provider", SUPPORTED_PROVIDER), source_node_id=self.record.node_id, source_observed_at=_now(), read_only=True)
+        record, scope = self._snapshot()
+        result.update(node_id=record.node_id, user_scope=scope.user_scope, provider=request.get("provider", SUPPORTED_PROVIDER), source_node_id=record.node_id, source_observed_at=_now(), read_only=True)
         return result
 
     def _idempotent(self, operation: str, request: Mapping[str, Any], callback: Callable[..., Mapping[str, Any]] | None, *, mutating: bool = True, claimed: bool = False) -> dict[str, Any]:
@@ -630,11 +781,13 @@ class NodeService:
 class NodeRouter:
     """Centre-side exact routing and bounded unknown-source discovery."""
 
-    def __init__(self, registry: NodeRegistry, *, user_scope: str, local_node_id: str | None = None, max_workers: int = 4, timeout_seconds: float = 2.0):
+    def __init__(self, registry: NodeRegistry, *, user_scope: str, local_node_id: str | None = None, max_workers: int = 4, timeout_seconds: float = 2.0, remote_client_factory: Callable[[NodeRecord], Any] | None = None):
         self.registry, self.user_scope, self.local_node_id = registry, _text("user_scope", user_scope), local_node_id
         self.max_workers, self.timeout_seconds = max(1, min(max_workers, 16)), max(0.05, timeout_seconds)
         self._readers: dict[str, Callable[[Mapping[str, Any]], Mapping[str, Any]]] = {}
         self._executors: dict[str, Callable[[str, Mapping[str, Any]], Mapping[str, Any]]] = {}
+        self._remote_client_factory = remote_client_factory
+        self._remote_clients: dict[str, Any] = {}
 
     def attach(self, record: NodeRecord, *, reader: Callable[[Mapping[str, Any]], Mapping[str, Any]], executor: Callable[[str, Mapping[str, Any]], Mapping[str, Any]] | None = None, scope: SharingScope | None = None) -> None:
         self.registry.register(record, scope)
@@ -642,7 +795,35 @@ class NodeRouter:
         if executor is not None:
             self._executors[record.node_id] = executor
 
+    def set_remote_client_factory(self, factory: Callable[[NodeRecord], Any] | None) -> None:
+        self._remote_client_factory = factory
+
+    def attach_remote(self, record: NodeRecord, client: Any, *, scope: SharingScope | None = None) -> None:
+        """Attach a real NodeRPCClient; registration remains centre-owned."""
+        self.registry.register(record, scope)
+        self._remote_clients[record.node_id] = client
+        self._readers[record.node_id] = lambda request, rpc=client: rpc.call(request)
+        self._executors[record.node_id] = lambda operation, request, rpc=client: rpc.execute(
+            operation, **{key: value for key, value in request.items() if key != "operation"}
+        )
+
+    def _reader_for(self, record: NodeRecord) -> Callable[[Mapping[str, Any]], Mapping[str, Any]] | None:
+        reader = self._readers.get(record.node_id)
+        if reader is not None:
+            return reader
+        if self._remote_client_factory is None or not record.endpoint:
+            return None
+        try:
+            client = self._remote_client_factory(record)
+        except Exception:
+            return None
+        if client is None:
+            return None
+        self.attach_remote(record, client)
+        return self._readers.get(record.node_id)
+
     def nodes(self) -> list[dict[str, Any]]:
+        self.registry.refresh_states()
         return [record.as_dict() | {"scope": (self.registry.scope(record.node_id, self.user_scope).as_dict() if self.registry.scope(record.node_id, self.user_scope) else None)} for record in self.registry.list_nodes(user_scope=self.user_scope)]
 
     def _node_for(self, *, node_id: str | None = None, host: str | None = None) -> NodeRecord:
@@ -670,13 +851,14 @@ class NodeRouter:
         )
 
     def read(self, *, thread_id: str, node_id: str | None = None, host: str | None = None, provider: str = SUPPORTED_PROVIDER, cursor: str | None = None, recent_turns: int = 8, max_bytes: int = 32000) -> dict[str, Any]:
+        self.registry.refresh_states()
         request = {"operation": "session.read", "protocol_version": NODE_PROTOCOL_VERSION, "thread_id": thread_id, "user_scope": self.user_scope, "provider": provider, "recent_turns": recent_turns, "max_bytes": max_bytes}
         if cursor is not None: request["cursor"] = cursor
         if node_id or host:
             record = self._node_for(node_id=node_id, host=host)
             if record.user_scope != self.user_scope or not record.authorized or not record.trusted:
                 return {"error_code": "SHARING_SCOPE_DENIED", "lookup_status": "SHARING_SCOPE_DENIED", "coverage": {"requested_node_id": record.node_id}}
-            reader = self._readers.get(record.node_id)
+            reader = self._reader_for(record)
             if reader is None or record.stale or record.state == "OFFLINE":
                 return {"error_code": "NODE_OFFLINE", "lookup_status": "NODE_OFFLINE", "coverage": {"requested_node_id": record.node_id, "stale": record.stale}}
             try:
@@ -686,7 +868,7 @@ class NodeRouter:
             self.registry.touch(record.node_id)
             return result | {"source_node_id": record.node_id, "coverage": {"requested_node_id": record.node_id, "complete": True, "nodes_queried": [record.node_id]}}
 
-        records = [record for record in self.registry.list_nodes(user_scope=self.user_scope, authorized_only=True) if record.node_id in self._readers]
+        records = [record for record in self.registry.list_nodes(user_scope=self.user_scope, authorized_only=True) if self._reader_for(record) is not None]
         if not records:
             return {"error_code": "THREAD_LOOKUP_UNAVAILABLE", "lookup_status": "THREAD_LOOKUP_UNAVAILABLE", "coverage": {"complete": False, "nodes_queried": [], "reason": "NO_AUTHORIZED_NODES"}}
         results: list[tuple[NodeRecord, Mapping[str, Any] | None, str]] = []
@@ -694,7 +876,10 @@ class NodeRouter:
             if record.stale or record.state == "OFFLINE":
                 return record, None, "OFFLINE"
             try:
-                result = dict(self._readers[record.node_id](request))
+                reader = self._reader_for(record)
+                if reader is None:
+                    return record, None, "UNAVAILABLE"
+                result = dict(reader(request))
                 self.registry.touch(record.node_id)
                 return record, result, "OK"
             except (OSError, TimeoutError, socket.timeout, concurrent.futures.TimeoutError):
@@ -727,9 +912,14 @@ class NodeRouter:
         return {"error_code": "THREAD_NOT_FOUND", "lookup_status": "THREAD_NOT_FOUND", "absence_scope": "AUTHORIZED_NODE_SET", "coverage": coverage, "read_only": True}
 
     def execute(self, *, node_id: str, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
+        self.registry.refresh_states()
         record = self._node_for(node_id=node_id)
         if record.user_scope != self.user_scope or not record.authorized or not record.trusted:
             return {"error_code": "SHARING_SCOPE_DENIED", "execution_started": False, "node_id": node_id}
+        if record.stale or record.state == "OFFLINE":
+            return {"error_code": "NODE_OFFLINE", "execution_started": False, "node_id": node_id}
+        if record.node_id not in self._executors:
+            self._reader_for(record)
         executor = self._executors.get(record.node_id)
         if executor is None:
             return {"error_code": "NODE_EXECUTION_UNAVAILABLE", "execution_started": False, "node_id": node_id}
@@ -751,7 +941,7 @@ class _RPCHandler(socketserver.StreamRequestHandler):
             request = json.loads(line)
             if not isinstance(request, dict):
                 raise ValueError()
-            result = server.service.handle(request)
+            result = server.handle_request(request, self.request, self.client_address)
         except Exception:
             result = {"error_code": "INVALID_NODE_REQUEST", "read_only": True}
         payload = json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode() + b"\n"
@@ -767,25 +957,38 @@ class NodeRPCServer:
     are accepted only for an explicitly enabled loopback test server.
     """
 
-    def __init__(self, service: NodeService, *, address: str = "127.0.0.1", port: int = 0, ssl_context: ssl.SSLContext | None = None, allow_insecure_loopback: bool = False):
-        if ssl_context is None and not (allow_insecure_loopback and address in {"127.0.0.1", "::1"}):
+    def __init__(self, service: Any, *, address: str = "127.0.0.1", port: int = 0, ssl_context: ssl.SSLContext | None = None, ssl_context_factory: Callable[[], ssl.SSLContext] | None = None, request_handler: Callable[..., Mapping[str, Any]] | None = None, allow_insecure_loopback: bool = False):
+        if ssl_context is None and ssl_context_factory is None and not (allow_insecure_loopback and address in {"127.0.0.1", "::1"}):
             raise ValueError("NodeRPCServer requires mTLS or explicit loopback test mode")
         self.service = service
+        self.request_handler = request_handler
         owner = self
         class Server(socketserver.ThreadingTCPServer):
             allow_reuse_address = True
             daemon_threads = True
             def get_request(self):
                 sock, addr = super().get_request()
-                if owner.ssl_context is not None:
-                    sock = owner.ssl_context.wrap_socket(sock, server_side=True)
+                sock.settimeout(5)
+                context = owner.ssl_context_factory() if owner.ssl_context_factory else owner.ssl_context
+                if context is not None:
+                    try:
+                        sock = context.wrap_socket(sock, server_side=True)
+                    except Exception:
+                        sock.close()
+                        raise
                 return sock, addr
         self.ssl_context = ssl_context
+        self.ssl_context_factory = ssl_context_factory
         self.server = Server((address, port), _RPCHandler)
         self.server.owner = self  # type: ignore[attr-defined]
         self.address = self.server.server_address
         self._thread = threading.Thread(target=self.server.serve_forever, name="clinx-node-rpc", daemon=True)
         self._thread.start()
+
+    def handle_request(self, request: Mapping[str, Any], sock: Any, address: Any) -> dict[str, Any]:
+        if self.request_handler is not None:
+            return dict(self.request_handler(request, sock, address))
+        return dict(self.service.handle(request))
 
     def close(self) -> None:
         self.server.shutdown(); self.server.server_close(); self._thread.join(timeout=2)
