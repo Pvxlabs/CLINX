@@ -117,8 +117,8 @@ def check_candidate(
 
 
 class LanTransport:
-    def __init__(self, identity: NodeIdentity, peers: TrustedPeerStore, *, allow_dev: bool = False):
-        self.identity, self.peers, self.allow_dev = identity, peers, allow_dev
+    def __init__(self, identity: NodeIdentity, peers: TrustedPeerStore, *, allow_dev: bool = False, allow_direct: bool = False):
+        self.identity, self.peers, self.allow_dev, self.allow_direct = identity, peers, allow_dev, allow_direct
 
     def _connect(self, candidate: Candidate, *, pairing: bool) -> ssl.SSLSocket:
         check_candidate(candidate, self.peers, pairing=pairing)
@@ -134,7 +134,8 @@ class LanTransport:
             context.load_verify_locations(cadata=peer["certificate"])
             self.identity.load_tls_credentials(context)
         for address, port in candidate.endpoints:
-            lan_address(address)
+            if not self.allow_direct:
+                lan_address(address)
             raw = None
             sock = None
             try:
