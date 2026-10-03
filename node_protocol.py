@@ -218,6 +218,75 @@ def decode_cursor(
         raise NodeProtocolError("INVALID_CONTEXT_CURSOR", "Cursor is bound to another node, user, provider, thread or source") from None
 
 
+def _encode_provider_cursor(
+    *,
+    node_id: str,
+    user_scope: str,
+    provider: str,
+    native_thread_id: str,
+    source: str,
+    source_version: str,
+    provider_cursor: str,
+    secret: bytes | str | None = None,
+) -> str:
+    """Bind an opaque provider page token to this node context.
+
+    Native providers are allowed to choose their own cursor format.  The node
+    envelope prevents that token from being replayed for another node/user/
+    provider/thread/source while keeping the provider payload opaque to the
+    centre index.
+    """
+    if not isinstance(provider_cursor, str) or not provider_cursor or len(provider_cursor) > 4096:
+        raise ValueError("provider cursor must be a bounded non-empty string")
+    body = [2, node_id, user_scope, provider, native_thread_id, source, source_version, provider_cursor]
+    raw = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()
+    if secret:
+        key = secret.encode() if isinstance(secret, str) else secret
+        raw += b"." + hmac.new(key, raw, hashlib.sha256).hexdigest().encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _decode_node_cursor(
+    cursor: str,
+    *,
+    node_id: str,
+    user_scope: str,
+    provider: str,
+    native_thread_id: str,
+    source: str,
+    source_version: str,
+    secret: bytes | str | None = None,
+) -> str | None:
+    """Decode a node cursor and return the provider token it carries.
+
+    Version 1 cursors (the public integer-offset helper) remain accepted for
+    callers that page a node-owned projection.  Version 2 carries the opaque
+    native provider token used by ``NativeHistory``.
+    """
+    try:
+        if not isinstance(cursor, str) or len(cursor) > 8192:
+            raise ValueError()
+        raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
+        if secret:
+            payload, signature = raw.rsplit(b".", 1)
+            key = secret.encode() if isinstance(secret, str) else secret
+            expected = hmac.new(key, payload, hashlib.sha256).hexdigest().encode()
+            if not hmac.compare_digest(signature, expected):
+                raise ValueError()
+            raw = payload
+        value = json.loads(raw)
+        expected = [value[0], node_id, user_scope, provider, native_thread_id, source, source_version]
+        if len(value) != 8 or value[:7] != expected:
+            raise ValueError()
+        if value[0] == 1 and type(value[7]) is int and value[7] >= 0:
+            return None
+        if value[0] == 2 and isinstance(value[7], str) and value[7]:
+            return value[7]
+        raise ValueError()
+    except (ValueError, TypeError, IndexError, json.JSONDecodeError):
+        raise NodeProtocolError("INVALID_CONTEXT_CURSOR", "Cursor is bound to another node, user, provider, thread or source") from None
+
+
 class NodeRegistry:
     """Incremental centre index; it never stores native conversation bodies."""
 
@@ -451,13 +520,29 @@ class NodeService:
         self._authorize("session.read", request)
         thread_id = _text("thread_id", request.get("thread_id"), max_len=256)
         identity = self._identity(request)
+        source = request.get("source", "native")
+        provider_cursor = None
         if request.get("cursor"):
-            decode_cursor(request["cursor"], node_id=identity.node_id, user_scope=identity.user_scope, provider=identity.provider, native_thread_id=thread_id, source=request.get("source", "native"), source_version=identity.source_version, secret=self.registry.cursor_secret)
-        kwargs = {key: request[key] for key in ("cursor", "recent_turns", "max_bytes") if key in request}
+            provider_cursor = _decode_node_cursor(
+                request["cursor"], node_id=identity.node_id, user_scope=identity.user_scope,
+                provider=identity.provider, native_thread_id=thread_id,
+                source=source, source_version=identity.source_version,
+                secret=self.registry.cursor_secret,
+            )
+        kwargs = {key: request[key] for key in ("recent_turns", "max_bytes") if key in request}
+        if provider_cursor is not None:
+            kwargs["cursor"] = provider_cursor
         result = dict(self.read_thread(thread_id, **kwargs))
         result.setdefault("queried_thread_id", thread_id)
         result.update(node_id=self.record.node_id, user_scope=self.scope.user_scope, provider=identity.provider, source_node_id=self.record.node_id, source_observed_at=_now(), read_only=True)
-        self.registry.update_thread(identity, source=request.get("source", "native"), status={"lookup_status": result.get("lookup_status"), "context_status": result.get("context_status")})
+        if result.get("next_cursor"):
+            result["next_cursor"] = _encode_provider_cursor(
+                node_id=identity.node_id, user_scope=identity.user_scope,
+                provider=identity.provider, native_thread_id=thread_id,
+                source=source, source_version=identity.source_version,
+                provider_cursor=result["next_cursor"], secret=self.registry.cursor_secret,
+            )
+        self.registry.update_thread(identity, source=source, status={"lookup_status": result.get("lookup_status"), "context_status": result.get("context_status")})
         return result
 
     def status(self, request: Mapping[str, Any]) -> dict[str, Any]:

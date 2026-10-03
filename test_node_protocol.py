@@ -121,6 +121,40 @@ def test_node_service_read_has_no_execution_side_effect_and_idempotent_start():
     assert denied.handle({"operation": "execution.prepare", "request_id": "x", "user_scope": "user-a"})["error_code"] == "SHARING_SCOPE_DENIED"
 
 
+def test_node_service_wraps_native_provider_cursor_without_cross_context_replay():
+    registry = NodeRegistry(":memory:", cursor_secret="cursor-secret")
+    seen: list[str | None] = []
+
+    def read_thread(thread_id, **kwargs):
+        seen.append(kwargs.get("cursor"))
+        return {
+            "queried_thread_id": thread_id,
+            "lookup_status": "THREAD_UNBOUND",
+            "provider_existence": "CONFIRMED",
+            "next_cursor": "native-provider-page-2" if len(seen) == 1 else None,
+        }
+
+    service = NodeService(
+        record("air"), registry, scope=scope(), read_thread=read_thread
+    )
+    first = service.handle({"operation": "session.read", "thread_id": "t", "user_scope": "user-a"})
+    assert first["next_cursor"]
+    second = service.handle({
+        "operation": "session.read", "thread_id": "t", "user_scope": "user-a",
+        "cursor": first["next_cursor"],
+    })
+    assert second["lookup_status"] == "THREAD_UNBOUND"
+    assert seen == [None, "native-provider-page-2"]
+    other = NodeService(
+        record("imac"), registry, scope=scope(), read_thread=read_thread
+    )
+    rejected = other.handle({
+        "operation": "session.read", "thread_id": "t", "user_scope": "user-a",
+        "cursor": first["next_cursor"],
+    })
+    assert rejected["error_code"] == "INVALID_CONTEXT_CURSOR"
+
+
 def _rpc_child(queue):
     registry = NodeRegistry(":memory:")
     service = NodeService(
