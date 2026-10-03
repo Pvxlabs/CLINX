@@ -1,6 +1,6 @@
 # CLINX Air＋P620 多设备节点实现与验收报告（2026-10-04）
 
-本报告追加本轮实现事实，不改写历史报告中的 PASS/BLOCKED。范围仅为 CLINX；未操作 ORION。交付分支为 `codex/air-node-delivery-20261003`，最终 HEAD 为 `1cc61f80e914a50477ac3ed63bfad40b976e1aa4`，已推送到 origin，未声称已合并。
+本报告追加本轮实现事实，不改写历史报告中的 PASS/BLOCKED。范围仅为 CLINX；未操作 ORION。交付分支为 `codex/air-node-delivery-20261003`，当前最终 HEAD 为 `5522b98`（产品制品构建基于前一产品提交 `1cc61f8`，其后仅追加本报告），已推送到 origin，未声称已合并。
 
 ## 本轮新增产品实现
 
@@ -144,4 +144,3 @@ P620 registry 中 Air 记录为 ONLINE，endpoint 为中心根据连接观测到
 2. **Linear 追加评论**：实现与证据已保存在仓库和 validation artifacts，Linear app connector 需要重新认证后才能追加事实；既有历史记录没有被改写。
 
 历史 execution 的 PUSH/MERGE/ACTIVATION/SWIFT_BUILD/SWIFT_TESTS/MACOS_GUI_ACCEPTANCE/BLOCKED 事实保持不变；本报告只追加本轮新的实现、制品和运行证据。
-
