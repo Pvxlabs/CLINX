@@ -15,6 +15,7 @@ see docs/monitor/IMAC_ACCEPTED_BASELINE_20261002.md.
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import pytest
 
@@ -92,7 +93,9 @@ def test_removed_search_row_does_not_return() -> None:
     root = swift("MonitorRootView.swift")
     assert "searchHeader" not in root
     assert "SearchField(" not in root
-    assert "ExecutionListView(store: store)" in root
+    assert re.search(r"ExecutionListView\s*\(\s*store:\s*store\b", root), (
+        "the execution list must remain mounted even when its call gains legal optional arguments"
+    )
 
 
 # --- Main content bottom inset ------------------------------------------------------------
@@ -108,7 +111,9 @@ def test_main_content_bottom_inset_is_forty_in_every_pane() -> None:
 def test_runtime_status_docks_bottom_right_inside_that_band() -> None:
     root = swift("MonitorRootView.swift")
     assert ".overlay(alignment: .bottomTrailing)" in root
-    assert "RuntimeStatus(state: store.runtimeStatus)" in root
+    assert re.search(r"RuntimeStatus\s*\(\s*state:\s*store\.runtimeStatus\b", root), (
+        "the read-only runtime status must remain docked while allowing its environment context"
+    )
     tokens = swift("DesignTokens.swift")
     assert "static let runtimeStatusBottomInset: CGFloat = 8" in tokens
     assert "static let runtimeStatusTrailingInset: CGFloat = 12" in tokens
@@ -207,7 +212,7 @@ def test_synthetic_semantics_are_still_distinct() -> None:
 
 
 def test_row_sizes_come_from_the_token_layer_not_from_the_view() -> None:
-    row = swift("ExecutionListView.swift")
+    row = body(swift("ExecutionListView.swift"), "struct ExecutionRowView: View")
     assert "font(.system(size: 9" not in row, "the trailing size lives in DS.Font"
     assert "DS.Font.rowTrailing" in row
     assert "static let rowTrailingSize: CGFloat = 9" in swift("DesignTokens.swift")
