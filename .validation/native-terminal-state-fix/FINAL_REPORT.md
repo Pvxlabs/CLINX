@@ -31,6 +31,7 @@ READ_ONLY_SIDE_EFFECTS=reader 使用 SQLite `mode=ro`、`PRAGMA query_only=ON` �
 
 PROTECTED_EXECUTION=exec_1c81107b4f5c485eb170eb219ad1674a
 PARALLEL_ISOLATION=本 execution 只在锁定 worktree `/home/pvxlabs/dev/clinx-terminal-state-fix-20261003` 修改；测试缓存和隔离目录位于 `.validation/native-terminal-state-fix`；未向主 worktree、受保护 execution、其他 worktree 或共享 socket/端口写入控制操作。
+INTEGRATION_INTERSECTION=并行主 worktree 当前自然修改了 `mcp_server.py` 的 `_read_only_tool_definitions`、`tool_definitions`、`ClinxMCPServer` 路由，以及 `thread_identity.py` 的 `ThreadIdentityReader.read`（新增 node routing 参数/分支）。集成时保留这些 node_id 变化，并把本分支的 `native_history` 规范化与 `native_display_state` 字段合并到同一 exact-thread 返回路径；不要用任一 worktree 的整文件覆盖另一方。`docs/THREAD_IDENTITY.md`、测试 fixture 和报告为本修复独占变更。
 MAIN_WORKTREE_MUTATION=NONE
 OTHER_EXECUTION_CONTROL=NONE
 SHARED_RUNTIME_MUTATION=NONE
