@@ -61,6 +61,7 @@ private struct ActivityContentView: View {
         // A result is terminal only when it carries a terminal outcome. A blocked or
         // retry-required presentation state alone can still represent active work.
         guard let resultStatus = task.exactResult?.status else { return false }
+        guard ["completed", "failed", "cancelled"].contains(task.monitorStatus.rawValue) else { return false }
         return ["PASS", "FAILED", "CANCELLED"].contains(resultStatus)
     }
 
