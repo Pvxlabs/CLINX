@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+launcher_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$launcher_dir/.." && pwd)
+state_dir=${CLINX_NODE_CENTRE_STATE:-${HOME}/.local/state/clinx/node-centre}
+node_id=${CLINX_NODE_ID:-$(hostname | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_.-]/-/g' | cut -c1-63)}
+registry_path=${CLINX_NODE_REGISTRY:-${HOME}/.local/state/clinx/tasks.sqlite3.nodes.sqlite3}
+exec "${CLINX_PYTHON:-python3}" "$repo_root/node_centre_entrypoint.py" \
+  --state "$state_dir" --node-id "$node_id" serve \
+  --registry "$registry_path" \
+  --bind "${CLINX_NODE_CENTRE_BIND:-0.0.0.0}" \
+  --port "${CLINX_NODE_CENTRE_PORT:-8771}" \
+  --stale-after "${CLINX_NODE_CENTRE_STALE_AFTER:-45}"

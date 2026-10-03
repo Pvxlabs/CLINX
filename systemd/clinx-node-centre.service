@@ -1,0 +1,17 @@
+[Unit]
+Description=CLINX authenticated multi-device node centre
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/lib/clinx-control/current
+EnvironmentFile=-%h/.config/clinx/node-centre.env
+ExecStart=%h/.local/lib/clinx-control/current/bin/clinx-node-centre
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
