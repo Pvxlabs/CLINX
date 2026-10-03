@@ -294,12 +294,13 @@ class DeviceServer:
         address: str = "0.0.0.0",
         port: int = 0,
         allow_dev: bool = False,
+        allow_direct: bool = False,
         window: PairingWindow | None = None,
         observer_bootstrap: Any = None,
     ):
         if address != "0.0.0.0":
             lan_address(address)
-        self.identity, self.peers, self.allow_dev = identity, peers, allow_dev
+        self.identity, self.peers, self.allow_dev, self.allow_direct = identity, peers, allow_dev, allow_direct
         self.window = window or PairingWindow()
         self.observer_bootstrap = observer_bootstrap
         self._slots = threading.BoundedSemaphore(16)
@@ -326,7 +327,8 @@ class DeviceServer:
             def handle(self) -> None:
                 try:
                     # LAN v1 rejects public source addresses even on a wildcard bind.
-                    lan_address(self.client_address[0])
+                    if not owner.allow_direct:
+                        lan_address(self.client_address[0])
                     self.request.settimeout(5)
                     with owner._context().wrap_socket(self.request, server_side=True) as sock:
                         owner._handle(sock)

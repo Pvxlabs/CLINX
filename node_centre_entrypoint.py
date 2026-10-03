@@ -85,7 +85,7 @@ def main(argv=None) -> int:
         print(json.dumps({"paired": True, "node_id": session.node_id, "authority_granted": False}))
         return 0
     if args.command == "pair-listen":
-        with DeviceServer(identity, peers, address=args.bind, port=args.port) as server:
+        with DeviceServer(identity, peers, address=args.bind, port=args.port, allow_direct=True) as server:
             code = server.window.open()
             print(json.dumps({"identity": identity.public, "port": server.port, "pairing_code": code}), flush=True)
             threading.Event().wait(min(120, max(1, args.seconds)))
