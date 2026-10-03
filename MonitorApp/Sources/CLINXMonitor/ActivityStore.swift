@@ -17,20 +17,38 @@ final class ActivityStore: ObservableObject {
     private let taskRef: String
     private let executionRef: String
     private let service: (any ActivityServing)?
+    private var terminal: Bool
+    private var terminalPollsRemaining: Int
     private var generation = 0
     private var requestInFlight = false
 
-    init(taskRef: String, executionRef: String, service: (any ActivityServing)?) {
+    init(taskRef: String, executionRef: String, service: (any ActivityServing)?, terminal: Bool = false) {
         self.taskRef = taskRef
         self.executionRef = executionRef
         self.service = service
+        self.terminal = terminal
+        terminalPollsRemaining = terminal ? 3 : 0
+    }
+
+    func updateTerminal(_ value: Bool) {
+        guard terminal != value else { return }
+        terminal = value
+        if value { terminalPollsRemaining = 3 }
     }
 
     func run() async {
         generation += 1
         while !Task.isCancelled {
             await refresh()
-            do { try await Task.sleep(nanoseconds: notice == nil ? 2_000_000_000 : 10_000_000_000) }
+            if terminal {
+                terminalPollsRemaining -= 1
+                if hasTerminalMessage || terminalPollsRemaining <= 0 { return }
+            }
+            do {
+                let delay: UInt64 = terminal ? 1_000_000_000 :
+                    (notice == nil ? 2_000_000_000 : 10_000_000_000)
+                try await Task.sleep(nanoseconds: delay)
+            }
             catch { return }
         }
     }
@@ -91,13 +109,25 @@ final class ActivityStore: ObservableObject {
                 notice = "1,000 messages loaded. Reopen Activity to return to the latest messages."
                 return
             }
+            let byteCount = merged.values.reduce(into: 0) { $0 += $1.text.utf8.count }
+            guard byteCount <= 16 * 1024 * 1024 else {
+                reachedLimit = true
+                notice = "Activity reached its 16 MB display limit. Reopen Activity to return to the latest messages."
+                return
+            }
             let ordered = merged.values.sorted { ($0.ordinal, $0.id) < ($1.ordinal, $1.id) }
-            if ordered != messages { messages = ordered }
+            if ordered != messages {
+                messages = ordered
+            }
         }
         if !older { cursor = page.nextCursor }
         if (older || initial) && olderCursor != page.olderCursor { olderCursor = page.olderCursor }
         if notice != nil { notice = nil }
         syncStatus.lastFetch = TimestampParser.date(from: page.observedAt) ?? Date()
+    }
+
+    private var hasTerminalMessage: Bool {
+        messages.contains { $0.kind.lowercased() == "result" }
     }
 
     private static func unavailableText(_ reason: String?) -> String {

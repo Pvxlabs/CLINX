@@ -4,6 +4,7 @@ import Foundation
 struct NavigationEntry: Identifiable, Equatable {
     let id = UUID()
     let taskRef: String
+    let executionRef: String?
     let title: String
     let status: MonitorStatus
     let view: MonitorView

@@ -117,6 +117,7 @@ final class MonitorStore: ObservableObject {
     @Published var executionOrder: ExecutionOrder = .activity
     @Published var settingsPresented = false
     @Published private(set) var selectedRef: String?
+    @Published private(set) var selectedExecutionRef: String?
     @Published private(set) var localArchives: [LocalArchiveEntry]
     @Published private(set) var navigationHistory: [NavigationEntry] = []
     @Published private(set) var navigationIndex: Int?
@@ -151,7 +152,10 @@ final class MonitorStore: ObservableObject {
 
     // MARK: - Derived state
 
-    var allTasks: [ObservedTask] { Self.unique(active + recent) }
+    /// Rows are executions, not just task names. A task can have a historical terminal
+    /// execution in the recent page while a newer execution is active. Merge exact
+    /// identities by observation freshness and keep different executions separate.
+    var allTasks: [ObservedTask] { Self.merge(active + recent) }
 
     private var archiveSource: String {
         syntheticScenario.map { "synthetic:\($0.rawValue)" } ?? endpointText
@@ -170,7 +174,7 @@ final class MonitorStore: ObservableObject {
                                               title: task.titleText))
         persistArchives()
         removeHistory(for: task.taskRef)
-        if selectedRef == task.taskRef {
+        if selectedRef == task.taskRef && selectedExecutionRef == task.executionRef {
             selectionToken += 1
             clearSelection()
         }
@@ -388,21 +392,25 @@ final class MonitorStore: ObservableObject {
         timeWindow = entry.timeWindow
         executionOrder = entry.order
         searchText = entry.search
-        beginSelection(entry.taskRef, recordHistory: false)
+        beginSelection(entry.taskRef, executionRef: entry.executionRef, recordHistory: false)
     }
 
-    private func recordVisit(_ ref: String) {
-        guard let task = allTasks.first(where: { $0.taskRef == ref }), !isLocallyArchived(task) else { return }
+    private func recordVisit(_ ref: String, executionRef: String? = nil) {
+        guard let task = allTasks.first(where: {
+            $0.taskRef == ref && (executionRef == nil || $0.executionRef == executionRef)
+        }), !isLocallyArchived(task) else { return }
         if let index = navigationIndex {
             let current = navigationHistory[index]
-            if current.taskRef == ref && current.view == view && current.project == projectFilter
+            if current.taskRef == ref && current.executionRef == task.executionRef
+                && current.view == view && current.project == projectFilter
                 && current.host == hostFilter && current.timeWindow == timeWindow
                 && current.order == executionOrder && current.search == searchText {
                 return
             }
             navigationHistory = Array(navigationHistory.prefix(index + 1))
         }
-        navigationHistory.append(NavigationEntry(taskRef: ref, title: task.titleText, status: status(of: task), view: view,
+        navigationHistory.append(NavigationEntry(taskRef: ref, executionRef: task.executionRef,
+                                                title: task.titleText, status: status(of: task), view: view,
                                                 project: projectFilter, host: hostFilter,
                                                 timeWindow: timeWindow, order: executionOrder, search: searchText))
         if navigationHistory.count > 50 { navigationHistory.removeFirst() }
@@ -418,7 +426,10 @@ final class MonitorStore: ObservableObject {
 
     func selectionIndex() -> Int? {
         guard let selectedRef else { return nil }
-        return visibleTasks.firstIndex { $0.taskRef == selectedRef }
+        return visibleTasks.firstIndex {
+            $0.taskRef == selectedRef &&
+                (selectedExecutionRef == nil || $0.executionRef == selectedExecutionRef)
+        }
     }
 
     func moveSelection(by delta: Int) {
@@ -426,20 +437,26 @@ final class MonitorStore: ObservableObject {
         guard !tasks.isEmpty else { return }
         let current = selectionIndex() ?? (delta > 0 ? -1 : tasks.count)
         let next = min(max(0, current + delta), tasks.count - 1)
-        beginSelection(tasks[next].taskRef)
+        beginSelection(tasks[next].taskRef, executionRef: tasks[next].executionRef)
     }
 
     /// Highlights immediately (no wait on I/O) and loads the detail in the background.
-    func beginSelection(_ ref: String, recordHistory: Bool = true) {
-        if recordHistory { recordVisit(ref) }
+    func beginSelection(_ ref: String, executionRef: String? = nil, recordHistory: Bool = true) {
+        let task = allTasks.first(where: {
+            $0.taskRef == ref && (executionRef == nil || $0.executionRef == executionRef)
+        })
+        let exactExecution = executionRef ?? task?.executionRef
+        if recordHistory { recordVisit(ref, executionRef: exactExecution) }
         selectedRef = ref
+        selectedExecutionRef = exactExecution
         selectionToken += 1
         let token = selectionToken
-        Task { await loadSelection(ref: ref, token: token) }
+        Task { await loadSelection(ref: ref, expectedExecutionRef: exactExecution, token: token) }
     }
 
     func clearSelection() {
         selectedRef = nil
+        selectedExecutionRef = nil
         selected = nil
         events = []
         eventCursor = nil
@@ -448,19 +465,27 @@ final class MonitorStore: ObservableObject {
     }
 
     /// Awaits the detail load; used by tests and by callers that need the result.
-    func select(_ ref: String) async {
-        recordVisit(ref)
+    func select(_ ref: String, executionRef: String? = nil) async {
+        let task = allTasks.first(where: {
+            $0.taskRef == ref && (executionRef == nil || $0.executionRef == executionRef)
+        })
+        let exactExecution = executionRef ?? task?.executionRef
+        recordVisit(ref, executionRef: exactExecution)
         selectedRef = ref
+        selectedExecutionRef = exactExecution
         selectionToken += 1
-        await loadSelection(ref: ref, token: selectionToken)
+        await loadSelection(ref: ref, expectedExecutionRef: exactExecution, token: selectionToken)
     }
 
-    private func loadSelection(ref: String, token: Int) async {
+    private func loadSelection(ref: String, expectedExecutionRef: String?, token: Int) async {
         guard let service, token == selectionToken else { return }
-        if selected?.taskRef != ref { selected = nil; events = []; eventCursor = nil; eventHasMore = false }
+        if selected?.taskRef != ref || selected?.executionRef != expectedExecutionRef {
+            selected = nil; events = []; eventCursor = nil; eventHasMore = false
+        }
         do {
             let detail = try await service.task(ref)
             guard detail.taskRef == ref, detail.schemaVersion == "1",
+                  expectedExecutionRef == nil || detail.executionRef == expectedExecutionRef,
                   detail.mutationBoundary.observerReadOnly,
                   detail.mutationBoundary.allowedActions.isEmpty else { throw MonitorError.incompatibleSchema }
             guard token == selectionToken else { return }
@@ -474,8 +499,8 @@ final class MonitorStore: ObservableObject {
                       observed >= previous else { return row }
                 return detail
             }
-            active = active.map(refreshed)
-            recent = recent.map(refreshed)
+            active = Self.merge(active.map(refreshed))
+            recent = Self.merge(recent.map(refreshed))
             let page = try await service.events(ref, after: nil)
             guard token == selectionToken else { return }
             try acceptEvents(page, ref: ref, reset: true)
@@ -575,6 +600,7 @@ final class MonitorStore: ObservableObject {
         recent = []
         selected = nil
         selectedRef = nil
+        selectedExecutionRef = nil
         events = []
         eventCursor = nil
         eventCoverage = "UNKNOWN"
@@ -629,8 +655,8 @@ final class MonitorStore: ObservableObject {
             try validate(activePage)
             try validate(recentPage)
             health = newHealth
-            active = Self.unique(activePage.items + (activePage.hasMore ? Array(active.dropFirst(50)) : []))
-            recent = Self.unique(recentPage.items + (recentPage.hasMore ? Array(recent.dropFirst(50)) : []))
+            active = Self.merge(activePage.items + (activePage.hasMore ? Array(active.dropFirst(50)) : []))
+            recent = Self.merge(recentPage.items + (recentPage.hasMore ? Array(recent.dropFirst(50)) : []))
             activeNextOffset = active.count > 50 ? activeNextOffset : activePage.nextOffset
             recentNextOffset = recent.count > 50 ? recentNextOffset : recentPage.nextOffset
             lastObservedAt = activePage.observedAt
@@ -649,7 +675,7 @@ final class MonitorStore: ObservableObject {
     private func reloadSelected(using service: any ObserverServing) async {
         guard let ref = selectedRef else { return }
         selectionToken += 1
-        await loadSelection(ref: ref, token: selectionToken)
+        await loadSelection(ref: ref, expectedExecutionRef: selectedExecutionRef, token: selectionToken)
     }
 
     func loadMoreEvents() async {
@@ -663,7 +689,7 @@ final class MonitorStore: ObservableObject {
             guard token == sourceToken else { return }
             eventCursor = nil; events = []; eventHasMore = false
             selectionToken += 1
-            await loadSelection(ref: ref, token: selectionToken)
+            await loadSelection(ref: ref, expectedExecutionRef: selectedExecutionRef, token: selectionToken)
         } catch { if token == sourceToken { errorCategory = Self.category(error) } }
     }
 
@@ -689,10 +715,10 @@ final class MonitorStore: ObservableObject {
             guard token == sourceToken else { return }
             try validate(page)
             if isActive {
-                active = Self.unique(active + page.items)
+                active = Self.merge(active + page.items)
                 activeNextOffset = page.nextOffset
             } else {
-                recent = Self.unique(recent + page.items)
+                recent = Self.merge(recent + page.items)
                 recentNextOffset = page.nextOffset
             }
         } catch { if token == sourceToken { errorCategory = Self.category(error) } }
@@ -707,10 +733,10 @@ final class MonitorStore: ObservableObject {
             guard token == sourceToken else { return }
             try validate(page)
             if isActive {
-                active = Self.unique(active + page.items)
+                active = Self.merge(active + page.items)
                 activeNextOffset = page.nextOffset
             } else {
-                recent = Self.unique(recent + page.items)
+                recent = Self.merge(recent + page.items)
                 recentNextOffset = page.nextOffset
             }
         } catch { if token == sourceToken { errorCategory = Self.category(error) } }
@@ -723,9 +749,38 @@ final class MonitorStore: ObservableObject {
         }) else { throw MonitorError.incompatibleSchema }
     }
 
-    private static func unique(_ tasks: [ObservedTask]) -> [ObservedTask] {
-        var seen = Set<String>()
-        return tasks.filter { seen.insert($0.taskRef).inserted }
+    private static func merge(_ tasks: [ObservedTask]) -> [ObservedTask] {
+        var positions: [String: Int] = [:]
+        var merged: [ObservedTask] = []
+        for candidate in tasks {
+            let key = candidate.executionIdentity
+            guard let index = positions[key] else {
+                positions[key] = merged.count
+                merged.append(candidate)
+                continue
+            }
+            if isNewer(candidate, than: merged[index]) { merged[index] = candidate }
+        }
+        return merged
+    }
+
+    private static func isNewer(_ candidate: ObservedTask, than current: ObservedTask) -> Bool {
+        guard candidate.executionRef == current.executionRef else { return false }
+        let candidateObserved = TimestampParser.date(from: candidate.timestamps.observedAt)
+        let currentObserved = TimestampParser.date(from: current.timestamps.observedAt)
+        if let candidateObserved, let currentObserved, candidateObserved != currentObserved {
+            return candidateObserved > currentObserved
+        }
+        if candidateObserved != nil, currentObserved == nil { return true }
+        if candidateObserved == currentObserved, candidate.monitorStatus != current.monitorStatus {
+            let terminal: (MonitorStatus) -> Bool = {
+                [.completed, .failed, .cancelled].contains($0)
+            }
+            if terminal(candidate.monitorStatus) != terminal(current.monitorStatus) {
+                return terminal(candidate.monitorStatus)
+            }
+        }
+        return false
     }
     private static func uniqueEvents(_ events: [ObserverEvent]) -> [ObserverEvent] {
         var seen = Set<String>()

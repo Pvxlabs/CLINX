@@ -115,12 +115,12 @@ struct ExecutionListView: View {
     }
 
     private func rows(_ tasks: [ObservedTask]) -> some View {
-        ForEach(tasks, id: \.taskRef) { task in
+        ForEach(tasks, id: \.executionIdentity) { task in
             ExecutionRowView(store: store,
                              task: task,
                              status: store.status(of: task),
                              dimmed: store.isStaleSnapshot) {
-                store.beginSelection(task.taskRef)
+                store.beginSelection(task.taskRef, executionRef: task.executionRef)
                 listFocused = true
             }
         }
@@ -199,7 +199,9 @@ struct ExecutionRowView: View {
     @State private var hovering = false
 
     // Read selection from the observed store, including when SwiftUI reuses a lazy row.
-    private var selected: Bool { store.selectedRef == task.taskRef }
+    private var selected: Bool {
+        store.selectedRef == task.taskRef && store.selectedExecutionRef == task.executionRef
+    }
 
     var body: some View {
         Button(action: onSelect) {
