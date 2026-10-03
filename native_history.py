@@ -13,7 +13,30 @@ import re
 from pathlib import Path
 import sqlite3
 
-from thread_identity import ThreadLookupError, readonly
+try:
+    # The full CLINX centre imports the shared identity reader.  The bundled
+    # user-session node intentionally ships only this read-only history
+    # module, so keep the same small primitives available without pulling the
+    # task registry or execution plane into the macOS helper.
+    from thread_identity import ThreadLookupError, readonly
+except ImportError:  # pragma: no cover - exercised by the standalone bundle
+    import contextlib
+
+    class ThreadLookupError(ValueError):
+        def __init__(self, code, reason):
+            super().__init__(reason)
+            self.code, self.reason = code, reason
+
+    @contextlib.contextmanager
+    def readonly(path):
+        conn = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA query_only=ON")
+            conn.execute("BEGIN")
+            yield conn
+        finally:
+            conn.close()
 
 SCAN_BYTES = 512 * 1024
 SQL_STEPS = 250_000
@@ -63,7 +86,11 @@ def message(item):
         return None
     if not isinstance(text, str) or not text.strip():
         return None
-    from bridge import _context_text
+    try:
+        from bridge import _context_text
+    except ImportError:  # pragma: no cover - exercised by the standalone bundle
+        def _context_text(value, limit):
+            return value[:limit]
     text = re.sub(r'(?i)\b(authorization\s*[:=]\s*bearer\s+|(?:api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*)[^\s,;]+', r'\1[REDACTED]', text)
     text = re.sub(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,})\b', '[REDACTED]', text)
     text = re.sub(r'-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----', '[REDACTED]', text, flags=re.S)

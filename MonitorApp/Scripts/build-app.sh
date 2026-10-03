@@ -23,6 +23,7 @@ cp ../execution_semantics.py "$discovery_dir/"
 # helper is launched by the App's LaunchAgent controller; it is not a root
 # daemon and is never sourced from the development checkout at runtime.
 cp ../node_protocol.py "$app_dir/Contents/Resources/"
+cp ../native_history.py "$app_dir/Contents/Resources/"
 cp Scripts/node_service_entrypoint.py "$app_dir/Contents/Resources/"
 cp Scripts/CLINXNodeService "$app_dir/Contents/Resources/CLINXNodeService"
 chmod 755 "$app_dir/Contents/Resources/CLINXNodeService"

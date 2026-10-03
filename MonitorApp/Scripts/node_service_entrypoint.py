@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "Discovery"))
 
 from local_discovery.identity import NodeIdentity, PrivateStore, TrustedPeerStore  # noqa: E402
+from native_history import NativeHistory, ThreadLookupError  # noqa: E402
 from node_protocol import NodeRecord, NodeRegistry, NodeRPCServer, NodeService, SharingScope  # noqa: E402
 
 
@@ -52,18 +53,62 @@ def main() -> int:
         display_name=identity.public["display_name"], state="ONLINE",
         last_seen=dt.datetime.now(dt.timezone.utc).isoformat(),
     )
+    native_history = NativeHistory(Path.home() / ".codex")
 
     def read_thread(thread_id: str, **kwargs):
-        # Native history is intentionally delegated to the node's configured
-        # CLINX context reader by the centre.  This helper never invents a
-        # task or performs a provider call when no reader is bundled.
-        return {
-            "queried_thread_id": thread_id,
-            "lookup_status": "THREAD_LOOKUP_UNAVAILABLE",
-            "provider_existence": "UNKNOWN",
-            "unavailable_reason": "NATIVE_READER_NOT_CONFIGURED",
-            "context_status": "CONTEXT_UNAVAILABLE",
-        }
+        """Read the current user's Codex index and bounded native history.
+
+        This is deliberately the read plane only: it does not initialize an
+        app-server client, resume a thread, create a CLINX task, or acquire a
+        writer lease.  The centre receives the same native-history projection
+        used by the existing MCP context reader.
+        """
+        try:
+            metadata = native_history.metadata(thread_id)
+            if metadata is None:
+                return {
+                    "queried_thread_id": thread_id,
+                    "lookup_status": "THREAD_NOT_FOUND",
+                    "provider_existence": "NOT_FOUND",
+                    "absence_scope": "CURRENT_USER_NATIVE_INDEX",
+                    "context_status": "CONTEXT_UNAVAILABLE",
+                }
+            context = native_history.context(
+                thread_id,
+                record.node_id,
+                metadata,
+                kwargs.get("recent_turns", 8),
+                kwargs.get("max_bytes", 32000),
+                cursor=kwargs.get("cursor"),
+            )
+            return {
+                "queried_thread_id": thread_id,
+                "lookup_status": "THREAD_UNBOUND",
+                "binding_status": "NOT_FOUND",
+                "provider_existence": "CONFIRMED",
+                "host": record.node_id,
+                "native_thread": {
+                    "thread_id": thread_id,
+                    "cwd": metadata.get("cwd"),
+                    "history_mode": metadata.get("history_mode"),
+                    "archived": metadata.get("archived"),
+                    "created_at": metadata.get("created_at"),
+                    "updated_at": metadata.get("updated_at"),
+                    "name": metadata.get("name") or metadata.get("title") or "",
+                },
+                "native_status": native_history.status(thread_id, metadata),
+                "provider_observation": {"state": "UNKNOWN", "reason": "Live provider observation is separate from read-only history"},
+                **context,
+            }
+        except ThreadLookupError as exc:
+            return {
+                "queried_thread_id": thread_id,
+                "lookup_status": exc.code,
+                "error_code": exc.code,
+                "unavailable_reason": exc.reason,
+                "provider_existence": "UNKNOWN",
+                "context_status": "CONTEXT_UNAVAILABLE",
+            }
 
     service = NodeService(
         record, registry,
