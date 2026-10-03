@@ -35,13 +35,27 @@ final class NodeServiceController: ObservableObject {
             .appendingPathComponent("\(label).plist")
     }
 
+    private var healthURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/CLINX Monitor/Node", isDirectory: true)
+            .appendingPathComponent("health.json")
+    }
+
     func refresh() {
         guard FileManager.default.fileExists(atPath: plistURL.path) else {
             state = .notInstalled
             return
         }
         let result = launchctl(["print", "gui/\(getuid())/\(label)"])
-        state = result.status == 0 ? .running : .disabled
+        guard result.status == 0 else {
+            state = .disabled
+            return
+        }
+        switch helperHealth() {
+        case "running": state = .running
+        case "blocked": state = .requiresApproval("Pair this Mac with a trusted CLINX centre, then retry.")
+        default: state = .disabled
+        }
     }
 
     func installAndEnable() {
@@ -72,7 +86,13 @@ final class NodeServiceController: ObservableObject {
         let result = launchctl(["bootstrap", "gui/\(getuid())", plistURL.path])
         if result.status == 0 {
             _ = launchctl(["kickstart", "-k", "gui/\(getuid())/\(label)"])
-            state = .running
+            usleep(300_000)
+            switch helperHealth() {
+            case "running": state = .running
+            case "blocked": state = .requiresApproval("Pair this Mac with a trusted CLINX centre, then retry.")
+            default:
+                state = .failed("The CLINX node helper did not report ready. Check pairing and retry.")
+            }
         } else {
             state = .requiresApproval("macOS did not approve the node helper. Open System Settings, allow CLINX, then retry.")
             lastError = result.output
@@ -85,6 +105,14 @@ final class NodeServiceController: ObservableObject {
     }
 
     func retry() { installAndEnable() }
+
+    private func helperHealth() -> String? {
+        guard let data = try? Data(contentsOf: healthURL),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let payload = object as? [String: Any],
+              let status = payload["status"] as? String else { return nil }
+        return status
+    }
 
     private func launchctl(_ arguments: [String]) -> (status: Int32, output: String) {
         let process = Process()

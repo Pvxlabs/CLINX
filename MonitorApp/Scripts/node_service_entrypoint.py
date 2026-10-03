@@ -12,8 +12,9 @@ import os
 import signal
 import ssl
 import sys
-import time
 import datetime as dt
+import json
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -27,6 +28,22 @@ from node_protocol import NodeRecord, NodeRegistry, NodeRPCServer, NodeService, 
 
 def main() -> int:
     state = Path.home() / "Library/Application Support/CLINX Monitor/Node"
+    health_path = state / "health.json"
+
+    def write_health(status: str, reason: str | None = None) -> None:
+        payload = {"status": status, "observed_at": dt.datetime.now(dt.timezone.utc).isoformat()}
+        if reason:
+            payload["reason"] = reason
+        try:
+            state.mkdir(parents=True, exist_ok=True)
+            temporary = health_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(payload), encoding="utf-8")
+            temporary.replace(health_path)
+        except OSError:
+            # Health readback is advisory; it must never turn a safe shutdown
+            # or a valid node operation into an unbounded retry loop.
+            pass
+
     private = PrivateStore(state)
     persisted = private.read("identity.json")
     configured_id = os.environ.get("CLINX_NODE_ID") or (persisted or {}).get("node_id") or "mac-node"
@@ -41,6 +58,7 @@ def main() -> int:
     ]
     if not certificates:
         # Do not run an unauthenticated listener when pairing has not happened.
+        write_health("blocked", "PAIRING_REQUIRED")
         return 2
     context.verify_mode = ssl.CERT_REQUIRED
     context.load_verify_locations(cadata="".join(certificates))
@@ -118,13 +136,16 @@ def main() -> int:
     address = os.environ.get("CLINX_NODE_BIND_ADDRESS", "127.0.0.1")
     port = int(os.environ.get("CLINX_NODE_PORT", "0"))
     server = NodeRPCServer(service, address=address, port=port, ssl_context=context)
-    signal.signal(signal.SIGTERM, lambda *_: server.close())
+    write_health("running")
+    stop_event = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop_event.set())
     try:
-        while True:
-            time.sleep(60)
+        while not stop_event.wait(60):
+            pass
     except KeyboardInterrupt:
         return 0
     finally:
+        write_health("stopped")
         server.close()
 
 
