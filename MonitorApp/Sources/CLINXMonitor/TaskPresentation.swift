@@ -115,6 +115,12 @@ extension ObservedTask {
 
     var executionText: String { executionRef ?? "—" }
 
+    /// Stable SwiftUI/read-plane identity. A task reference alone is not sufficient when
+    /// an historical execution overlaps a newer execution in the Observer pages.
+    var executionIdentity: String {
+        "\(taskRef)\u{1F}\(executionRef ?? "<unknown>")"
+    }
+
     var activityText: String { currentActivity.label.isEmpty ? currentActivity.kind : currentActivity.label }
 
     var modelText: String { model.resolved ?? model.logical ?? "—" }

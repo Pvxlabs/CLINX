@@ -153,6 +153,12 @@ final class MonitorStoreTests: XCTestCase {
         record["execution_state"] = state
         record["final_result"] = NSNull()
         var timestamps = try XCTUnwrap(record["timestamps"] as? [String: Any])
+        // Keep the synthetic snapshot inside the default one-day filter. The
+        // test changes observation time to exercise merge ordering; leaving the
+        // fixture's original September progress timestamp would hide the row
+        // before status/count assertions run.
+        timestamps["last_progress_at"] = observed
+        timestamps["updated_at"] = observed
         timestamps["observed_at"] = observed
         record["timestamps"] = timestamps
         let decoder = JSONDecoder()
@@ -202,6 +208,47 @@ final class MonitorStoreTests: XCTestCase {
         XCTAssertEqual(store.events.count, 2)
         XCTAssertEqual(store.eventCoverage, "PARTIAL")
     }
+
+    @MainActor
+    func testCompletedRecentSnapshotWinsOverOlderActiveSnapshotForSameExecution() async throws {
+        let running = try snapshot(state: "CODEX_RUNNING", observed: "2026-10-03T12:27:40Z")
+        let completed = try snapshot(state: "COMPLETED", observed: "2026-10-03T12:27:56Z")
+        let store = MonitorStore(service: OverlappingPagesService(active: running, recent: completed))
+
+        await store.refresh()
+
+        XCTAssertEqual(store.allTasks.count, 1)
+        XCTAssertEqual(store.allTasks.first?.monitorStatus, .completed)
+        XCTAssertEqual(store.counts[.completed], 1)
+        XCTAssertEqual(store.counts[.active], 0)
+    }
+
+    @MainActor
+    func testNewExecutionRemainsDistinctFromHistoricalExecutionForSameTask() async throws {
+        let old = try snapshot(state: "COMPLETED", execution: "exec_old", observed: "2026-10-03T12:20:00Z")
+        let current = try snapshot(state: "CODEX_RUNNING", execution: "exec_new", observed: "2026-10-03T12:27:56Z")
+        let store = MonitorStore(service: OverlappingPagesService(active: current, recent: old))
+
+        await store.refresh()
+
+        XCTAssertEqual(store.allTasks.map(\.executionRef), ["exec_new", "exec_old"] as [String?])
+        XCTAssertEqual(store.counts[.active], 1)
+        XCTAssertEqual(store.counts[.completed], 1)
+    }
+
+    @MainActor
+    func testHistoricalSelectionKeepsExactSnapshotWhenDetailEndpointReturnsCurrentExecution() async throws {
+        let old = try snapshot(state: "COMPLETED", execution: "exec_old", observed: "2026-10-03T12:20:00Z")
+        let current = try snapshot(state: "CODEX_RUNNING", execution: "exec_new", observed: "2026-10-03T12:27:56Z")
+        let store = MonitorStore(service: OverlappingPagesService(active: current, recent: old))
+
+        await store.refresh()
+        await store.select(old.taskRef, executionRef: old.executionRef)
+
+        XCTAssertEqual(store.selected?.executionRef, "exec_old")
+        XCTAssertTrue(store.selectedDetailIncomplete)
+        XCTAssertEqual(store.errorCategory, "Exact historical execution detail unavailable")
+    }
 }
 
 private actor SnapshotService: ObserverServing {
@@ -215,4 +262,24 @@ private actor SnapshotService: ObserverServing {
     }
     func task(_ ref: String) async throws -> ObservedTask { detail }
     func events(_ ref: String, after: String?) async throws -> EventPage { detail.recentEvents }
+}
+
+private actor OverlappingPagesService: ObserverServing {
+    let activeRow: ObservedTask
+    let recentRow: ObservedTask
+
+    init(active: ObservedTask, recent: ObservedTask) {
+        activeRow = active
+        recentRow = recent
+    }
+
+    func health() async throws -> ObserverHealth { try example("health", as: ObserverHealth.self) }
+
+    func tasks(active: Bool, offset: Int) async throws -> TaskPage {
+        TaskPage(schemaVersion: "1", observedAt: active ? activeRow.timestamps.observedAt : recentRow.timestamps.observedAt,
+                 items: [active ? activeRow : recentRow], nextOffset: nil, hasMore: false)
+    }
+
+    func task(_ ref: String) async throws -> ObservedTask { activeRow }
+    func events(_ ref: String, after: String?) async throws -> EventPage { activeRow.recentEvents }
 }

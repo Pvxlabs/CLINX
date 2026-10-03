@@ -27,15 +27,19 @@ from node_protocol import NodeRecord, NodeRegistry, NodeRPCServer, NodeService, 
 
 
 def main() -> int:
-    state = Path.home() / "Library/Application Support/CLINX Monitor/Node"
-    health_path = state / "health.json"
+    # Reuse the identity and trusted peer store created by the Monitor pairing
+    # flow.  A second identity directory would silently split trust and make a
+    # helper appear installed while the paired centre could never authenticate.
+    state = Path.home() / "Library/Application Support/CLINX Monitor/Devices"
+    health_state = Path.home() / "Library/Application Support/CLINX Monitor/Node"
+    health_path = health_state / "health.json"
 
     def write_health(status: str, reason: str | None = None) -> None:
         payload = {"status": status, "observed_at": dt.datetime.now(dt.timezone.utc).isoformat()}
         if reason:
             payload["reason"] = reason
         try:
-            state.mkdir(parents=True, exist_ok=True)
+            health_state.mkdir(parents=True, exist_ok=True)
             temporary = health_path.with_suffix(".tmp")
             temporary.write_text(json.dumps(payload), encoding="utf-8")
             temporary.replace(health_path)
@@ -46,7 +50,7 @@ def main() -> int:
 
     private = PrivateStore(state)
     persisted = private.read("identity.json")
-    configured_id = os.environ.get("CLINX_NODE_ID") or (persisted or {}).get("node_id") or "mac-node"
+    configured_id = os.environ.get("CLINX_NODE_ID") or (persisted or {}).get("node_id") or os.uname().nodename[:63].lower()
     identity = NodeIdentity(private, configured_id, os.uname().nodename[:100])
     peers = TrustedPeerStore(private)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -59,7 +63,10 @@ def main() -> int:
     if not certificates:
         # Do not run an unauthenticated listener when pairing has not happened.
         write_health("blocked", "PAIRING_REQUIRED")
-        return 2
+        # A paired identity can be installed before a centre has approved this
+        # node.  Exit successfully so launchd does not hot-loop; the next
+        # explicit Enable/Retry checks pairing again.
+        return 0
     context.verify_mode = ssl.CERT_REQUIRED
     context.load_verify_locations(cadata="".join(certificates))
 

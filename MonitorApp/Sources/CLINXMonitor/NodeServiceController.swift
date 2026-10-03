@@ -86,12 +86,22 @@ final class NodeServiceController: ObservableObject {
         let result = launchctl(["bootstrap", "gui/\(getuid())", plistURL.path])
         if result.status == 0 {
             _ = launchctl(["kickstart", "-k", "gui/\(getuid())/\(label)"])
-            usleep(300_000)
-            switch helperHealth() {
+            switch waitForHealth() {
             case "running": state = .running
             case "blocked": state = .requiresApproval("Pair this Mac with a trusted CLINX centre, then retry.")
             default:
                 state = .failed("The CLINX node helper did not report ready. Check pairing and retry.")
+            }
+        } else if launchctl(["print", "gui/\(getuid())/\(label)"]).status == 0 {
+            // bootstrap is intentionally idempotent at the UI boundary: a
+            // previously installed LaunchAgent may already be loaded while
+            // its helper is stopped after a clean exit.  Treat that as a
+            // restart, not as a macOS approval failure.
+            _ = launchctl(["kickstart", "-k", "gui/\(getuid())/\(label)"])
+            switch waitForHealth() {
+            case "running": state = .running
+            case "blocked": state = .requiresApproval("Pair this Mac with a trusted CLINX centre, then retry.")
+            default: state = .failed("The CLINX node helper did not report ready. Check pairing and retry.")
             }
         } else {
             state = .requiresApproval("macOS did not approve the node helper. Open System Settings, allow CLINX, then retry.")
@@ -105,6 +115,14 @@ final class NodeServiceController: ObservableObject {
     }
 
     func retry() { installAndEnable() }
+
+    private func waitForHealth() -> String? {
+        for _ in 0..<10 {
+            if let status = helperHealth() { return status }
+            usleep(200_000)
+        }
+        return nil
+    }
 
     private func helperHealth() -> String? {
         guard let data = try? Data(contentsOf: healthURL),

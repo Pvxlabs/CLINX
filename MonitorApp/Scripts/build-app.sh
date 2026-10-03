@@ -28,6 +28,46 @@ cp Scripts/node_service_entrypoint.py "$app_dir/Contents/Resources/"
 cp Scripts/CLINXNodeService "$app_dir/Contents/Resources/CLINXNodeService"
 chmod 755 "$app_dir/Contents/Resources/CLINXNodeService"
 
+# The node helper is launched from the installed bundle, so its interpreter
+# and native discovery wheel must travel with the app.  Build this runtime in
+# the bundle instead of depending on a checkout, PYTHONPATH, or user-global
+# Python installation at runtime.
+runtime_dir="$app_dir/Contents/Resources/DiscoveryRuntime"
+if ! command -v uv >/dev/null 2>&1; then
+    echo 'Missing uv; cannot build the bundled discovery runtime.' >&2
+    exit 1
+fi
+uv venv --clear --python 3.13 "$runtime_dir"
+# uv intentionally symlinks the interpreter into a venv.  Symlinks escaping an
+# app bundle are rejected by codesign, so materialize file links before the
+# bundle is signed; the interpreter still uses the system Python framework,
+# which is an OS dependency rather than a checkout dependency.
+"${runtime_dir}/bin/python" - "$runtime_dir" <<'PY'
+import os
+import shutil
+import stat
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+for path in sorted(root.rglob("*")):
+    if not path.is_symlink():
+        continue
+    target = path.resolve()
+    if not target.is_file():
+        raise SystemExit(f"unsupported symlink in app runtime: {path}")
+    temporary = path.with_name(path.name + ".materialized")
+    shutil.copy2(target, temporary)
+    os.chmod(temporary, stat.S_IMODE(target.stat().st_mode))
+    path.unlink()
+    temporary.replace(path)
+PY
+uv pip install --python "$runtime_dir/bin/python" -r ../requirements-discovery.txt maturin==1.9.6
+mkdir -p .build/discovery-wheels
+CARGO_PROFILE_RELEASE_DEBUG=1 CARGO_PROFILE_RELEASE_STRIP=none \
+    "$runtime_dir/bin/maturin" build --release --locked --manifest-path ../native/opaque_pairing/Cargo.toml --out .build/discovery-wheels
+uv pip install --python "$runtime_dir/bin/python" --reinstall .build/discovery-wheels/clinx_opaque-0.1.0-*-macosx_*.whl
+
 # App icon, drawn from the design's AppIcon spec. Generation is best-effort: a failure
 # leaves the bundle on the default icon rather than breaking the build.
 icon_path="$app_dir/Contents/Resources/AppIcon.icns"

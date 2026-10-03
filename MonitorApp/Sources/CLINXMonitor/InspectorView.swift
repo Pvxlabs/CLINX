@@ -26,6 +26,14 @@ struct InspectorView: View {
         let status = store.status(of: task)
         VStack(spacing: 0) {
             ExecutionHeaderView(store: store, task: task, status: status, stacked: stacked)
+            if store.selectedDetailIncomplete {
+                Text("当前 Observer 未提供该历史 execution 的 task 详情；保留精确列表快照，未用当前 execution 替代。")
+                    .font(DS.Font.meta)
+                    .foregroundStyle(DS.Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 10)
+            }
             tabBar(task)
             if tab == .activity {
                 ActivityView(task: task, service: store.activityService)

@@ -99,9 +99,13 @@ extension ObservedTask {
         // child command is evidence, not the final outcome of its parent execution.
         if state == "FAILED" || executionState == "FAILED" || exactResult?.status == "FAILED" { return .failed }
         if retryRequired { return .blocked }
-        if claimsRunning { return .running }
-        if ["CANCELLED", "STOPPED"].contains(state) || exactResult?.status == "CANCELLED" { return .cancelled }
+        // A canonical terminal state is authoritative even if a stale provider
+        // liveness bit still says the native process is running.  The native
+        // turn and managed execution are separate facts; never let the former
+        // roll a completed/cancelled execution back to Running.
         if ["COMPLETED", "IN_REVIEW"].contains(state) { return .completed }
+        if ["CANCELLED", "STOPPED"].contains(state) || exactResult?.status == "CANCELLED" { return .cancelled }
+        if claimsRunning { return .running }
         if hasHostFailure { return .failed }
         return .unknown
     }
