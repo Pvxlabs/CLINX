@@ -22,7 +22,7 @@ FINAL_STATUS=PASS
 WORKTREE=/home/pvxlabs/dev/clinx-terminal-state-fix-20261003
 BRANCH=codex/fix-native-terminal-state-20261003
 BASE_SHA=474c52faa670929c431d341292d655fa103b5c49
-COMMIT_SHA=待本地提交后填写
+COMMIT_SHA=350317b
 CHANGED_FILES=docs/THREAD_IDENTITY.md,mcp_server.py,native_history.py,test_thread_identity.py,thread_identity.py,.validation/native-terminal-state-fix/FINAL_REPORT.md
 
 REGRESSION_RESULTS=通过 `pytest -q test_thread_identity.py test_execution_liveness.py test_monitor_finalized_ui.py -k 'not mcp_schema_and_calls'`：66 passed，1 deselected，13 subtests passed；native 专项 `pytest -q test_thread_identity.py -k native_`：6 passed，23 deselected，3 subtests passed；`python3 -m compileall -q native_history.py thread_identity.py mcp_server.py test_thread_identity.py` 通过；`git diff --check` 通过。完整 `test_native_interop.py` 与 `test_thread_identity.py::test_mcp_schema_and_calls` 未运行，原因是当前环境缺少 `jsonschema` 依赖（已记录为环境限制，未放宽断言）。
