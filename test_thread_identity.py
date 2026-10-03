@@ -120,6 +120,111 @@ class ThreadIdentityTests(unittest.TestCase):
         self.assertEqual(self.reader.read(thread_id=C,context=True)['lookup_status'],'THREAD_UNBOUND')
         self.assertEqual(self.reader.read(thread_id=A,context=True)['context_status'],'CONTEXT_UNAVAILABLE')
 
+    def native_turn_status(self, status_rows, *, live_reader=None):
+        """Build a bounded native-only fixture with no CLINX task binding."""
+        root = self.root / 'native-terminal'
+        root.mkdir(exist_ok=True)
+        rollout = root / ('rollout-terminal-' + C + '.jsonl')
+        rollout.write_text(json.dumps({
+            'type': 'session_meta', 'payload': {'id': C, 'cwd': str(self.root / 'pilot')}
+        }) + '\n')
+        with sqlite3.connect(root / 'state_5.sqlite') as conn:
+            conn.execute('CREATE TABLE IF NOT EXISTS threads(id TEXT PRIMARY KEY,cwd TEXT,rollout_path TEXT,history_mode TEXT)')
+            conn.execute('DELETE FROM threads')
+            conn.execute('INSERT INTO threads VALUES(?,?,?,?)', (C, str(self.root / 'pilot'), str(rollout), 'paginated'))
+        with sqlite3.connect(root / 'thread_history_1.sqlite') as conn:
+            conn.execute('CREATE TABLE IF NOT EXISTS thread_turns(thread_id TEXT,turn_id TEXT,rollout_ordinal INT,status TEXT,started_at INT,completed_at INT,PRIMARY KEY(thread_id,turn_id))')
+            conn.execute('DELETE FROM thread_turns')
+            for row in status_rows:
+                conn.execute('INSERT INTO thread_turns VALUES(?,?,?,?,?,?)', row)
+        return ThreadIdentityReader(self.cfg, self.registry.path, self.context,
+                                    native_root=root, live_reader=live_reader)
+
+    def test_unbound_native_completed_turn_is_terminal_for_display(self):
+        reader = self.native_turn_status([
+            (C, 'turn-complete', 1, 'completed', 100, 101),
+        ], live_reader=lambda _cfg, _tid: {
+            'state': 'UNKNOWN', 'owner_endpoint': None, 'ownership_conflict': False,
+            'observations': [{'state': 'notLoaded', 'turn_status': 'completed'}],
+        })
+        result = reader.read(thread_id=C)
+        self.assertEqual(result['lookup_status'], 'THREAD_UNBOUND')
+        self.assertIsNone(result['task_ref'])
+        self.assertEqual(result['execution_state'], 'UNKNOWN')
+        self.assertEqual(result['native_status']['status'], 'completed')
+        self.assertEqual(result['native_status']['state'], 'COMPLETED')
+        self.assertTrue(result['native_status']['terminal'])
+        self.assertEqual(result['native_turn_state'], 'COMPLETED')
+        self.assertEqual(result['native_display_state'], 'COMPLETED')
+        self.assertEqual(result['native_status_source'], 'NATIVE_PERSISTED_HISTORY')
+        self.assertFalse(result['codex_running'])
+
+    def test_native_latest_turn_wins_and_old_completed_does_not_hide_active(self):
+        reader = self.native_turn_status([
+            (C, 'turn-old', 1, 'completed', 100, 101),
+            (C, 'turn-new', 2, 'inProgress', 200, None),
+        ])
+        result = reader.read(thread_id=C)
+        self.assertEqual(result['native_status']['turn_id'], 'turn-new')
+        self.assertEqual(result['native_display_state'], 'RUNNING')
+        self.assertEqual(result['native_status']['state'], 'RUNNING')
+
+    def test_native_live_active_turn_overrides_persisted_terminal_only_when_proved(self):
+        reader = self.native_turn_status([
+            (C, 'turn-complete', 1, 'completed', 100, 101),
+        ], live_reader=lambda _cfg, _tid: {
+            'state': 'active', 'owner_endpoint': 'fixture-owner', 'ownership_conflict': False,
+            'observations': [{'state': 'active', 'turn_id': 'turn-new', 'turn_status': 'inProgress'}],
+        })
+        result = reader.read(thread_id=C)
+        self.assertEqual(result['native_status']['state'], 'COMPLETED')
+        self.assertEqual(result['native_display_state'], 'RUNNING')
+
+    def test_native_owner_conflict_does_not_guess_over_terminal_history(self):
+        reader = self.native_turn_status([
+            (C, 'turn-complete', 1, 'completed', 100, 101),
+        ], live_reader=lambda _cfg, _tid: {
+            'state': 'UNKNOWN', 'owner_endpoint': None, 'ownership_conflict': True,
+            'observations': [
+                {'state': 'active', 'turn_status': 'inProgress'},
+                {'state': 'active', 'turn_status': 'inProgress'},
+            ],
+        })
+        result = reader.read(thread_id=C)
+        self.assertEqual(result['native_status']['state'], 'COMPLETED')
+        self.assertEqual(result['native_display_state'], 'UNKNOWN')
+
+    def test_native_status_missing_history_is_explicitly_unknown(self):
+        root = self.root / 'native-terminal-missing'
+        root.mkdir(exist_ok=True)
+        rollout = root / ('rollout-terminal-' + C + '.jsonl')
+        rollout.write_text(json.dumps({
+            'type': 'session_meta', 'payload': {'id': C, 'cwd': str(self.root / 'pilot')}
+        }) + '\n')
+        with sqlite3.connect(root / 'state_5.sqlite') as conn:
+            conn.execute('CREATE TABLE threads(id TEXT PRIMARY KEY,cwd TEXT,rollout_path TEXT,history_mode TEXT)')
+            conn.execute('INSERT INTO threads VALUES(?,?,?,?)', (C, str(self.root / 'pilot'), str(rollout), 'paginated'))
+        reader = ThreadIdentityReader(self.cfg, self.registry.path, self.context,
+                                      native_root=root, live_reader=lambda _cfg, _tid: {
+                                          'state': 'notLoaded', 'owner_endpoint': None,
+                                          'ownership_conflict': False, 'observations': [],
+                                      })
+        result = reader.read(thread_id=C)
+        self.assertEqual(result['native_status']['state'], 'UNKNOWN')
+        self.assertFalse(result['native_status']['terminal'])
+        self.assertEqual(result['native_display_state'], 'UNKNOWN')
+
+    def test_native_terminal_provider_states_keep_actual_mapping(self):
+        for status, expected in (('failed', 'FAILED'), ('interrupted', 'INTERRUPTED'),
+                                 ('cancelled', 'CANCELLED')):
+            with self.subTest(status=status):
+                reader = self.native_turn_status([
+                    (C, 'turn-terminal', 1, status, 100, 101),
+                ])
+                result = reader.read(thread_id=C)
+                self.assertEqual(result['native_status']['state'], expected)
+                self.assertEqual(result['native_display_state'], expected)
+
     def test_local_header_and_scope(self):
         self.native(header_id=B)
         self.assertEqual(self.reader.read(thread_id=A,context=True)['context_status'],'CONTEXT_UNAVAILABLE')

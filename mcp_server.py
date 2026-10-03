@@ -771,6 +771,7 @@ def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
             "status_source", "context_status", "context_source", "context_scope", "context_range",
             "context_unavailable_reason", "last_user_intent", "last_codex_result", "observed_at",
             "binding_status", "provider_existence", "absence_scope", "next_cursor", "failure_stage", "failure_code", "failure_evidence", "failure_source",
+            "native_turn_state", "native_display_state", "native_status_source",
         )}
         thread_properties.update({k: {"type": "boolean"} for k in ("is_current_thread", "context_truncated", "read_only")})
         thread_properties.update({k: {"type": "array", "items": {"type": "string"}} for k in ("binding_sources", "other_execution_refs")})
