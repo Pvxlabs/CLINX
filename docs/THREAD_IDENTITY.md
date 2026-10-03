@@ -64,6 +64,15 @@ Live reader 仅连接配置中的现存 Unix socket，不运行 proxy/daemon。O
 - THREAD_IDENTITY_CONFLICT、THREAD_HOST_CONFLICT 不猜选 owner。
 - CONTEXT_UNAVAILABLE 与身份、历史执行、live observation 分开。
 
+Native history status is a separate read-only projection. `native_status.status`
+keeps the provider value, while `native_status.state` and
+`native_display_state` expose the latest exact turn as `RUNNING`, `COMPLETED`,
+`FAILED`, `TIMED_OUT`, `CANCELLED`, `INTERRUPTED`, `DISCONNECTED`, or
+`UNKNOWN`. `THREAD_UNBOUND` therefore keeps `execution_state=UNKNOWN` and
+`task_ref=null`; a known native terminal turn can still render as terminal
+without inventing a managed execution. Unknown, `notLoaded`, offline, and owner
+conflict observations never turn that terminal projection back into running.
+
 ## 验收与激活
 
 常规全量命令为 `python3 -m pytest -q`。受管沙箱可为测试设置临时 HOME，避免 tunnel child 启动迁移写正式用户数据库。

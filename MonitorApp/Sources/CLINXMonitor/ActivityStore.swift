@@ -17,20 +17,51 @@ final class ActivityStore: ObservableObject {
     private let taskRef: String
     private let executionRef: String
     private let service: (any ActivityServing)?
+    private let sleep: @Sendable (UInt64) async throws -> Void
+    private var terminal: Bool
+    private var terminalPollsRemaining: Int
+    private var terminalTailIncomplete = false
+    private var lastRefreshSucceeded = false
     private var generation = 0
     private var requestInFlight = false
 
-    init(taskRef: String, executionRef: String, service: (any ActivityServing)?) {
+    init(taskRef: String, executionRef: String, service: (any ActivityServing)?, terminal: Bool = false,
+         sleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }) {
         self.taskRef = taskRef
         self.executionRef = executionRef
         self.service = service
+        self.sleep = sleep
+        self.terminal = terminal
+        terminalPollsRemaining = terminal ? 3 : 0
+    }
+
+    func updateTerminal(_ value: Bool) {
+        guard terminal != value else { return }
+        terminal = value
+        terminalPollsRemaining = value ? 3 : 0
+        terminalTailIncomplete = false
     }
 
     func run() async {
         generation += 1
-        while !Task.isCancelled {
+        let runGeneration = generation
+        while !Task.isCancelled && runGeneration == generation {
             await refresh()
-            do { try await Task.sleep(nanoseconds: notice == nil ? 2_000_000_000 : 10_000_000_000) }
+            guard runGeneration == generation else { return }
+            if terminal && hasTerminalMessage { return }
+            if terminal && lastRefreshSucceeded && terminalPollsRemaining > 0 {
+                terminalPollsRemaining -= 1
+                if terminalPollsRemaining == 0 {
+                    terminalTailIncomplete = true
+                    notice = "Final activity is still being indexed; retrying in the background."
+                }
+            }
+            do {
+                let delay: UInt64 = terminal ?
+                    (terminalTailIncomplete ? 10_000_000_000 : 1_000_000_000) :
+                    (notice == nil ? 2_000_000_000 : 10_000_000_000)
+                try await sleep(delay)
+            }
             catch { return }
         }
     }
@@ -38,12 +69,14 @@ final class ActivityStore: ObservableObject {
     func stop() { generation += 1 }
 
     func refresh(older: Bool = false) async {
-        guard !requestInFlight, !reachedLimit else { return }
+        guard !requestInFlight else { return }
+        guard !older || !reachedLimit else { return }
         guard !executionRef.isEmpty else { notice = "No exact execution is available for this task."; return }
         guard let service else { notice = "Execution feedback is unavailable for this source."; return }
         guard !older || olderCursor != nil else { return }
         let token = generation
         let wasInitial = cursor == nil
+        lastRefreshSucceeded = false
         requestInFlight = true
         // Background delta polls should not invalidate the transcript twice per request.
         let showLoading = wasInitial || older
@@ -57,6 +90,7 @@ final class ActivityStore: ObservableObject {
                 after: older ? nil : cursor, before: older ? olderCursor : nil)
             guard !Task.isCancelled, token == generation else { return }
             try accept(page, older: older, initial: wasInitial)
+            lastRefreshSucceeded = page.availability == "AVAILABLE"
         } catch {
             guard !Task.isCancelled, token == generation else { return }
             if case MonitorError.server(409) = error {
@@ -86,18 +120,39 @@ final class ActivityStore: ObservableObject {
             for item in page.items where item.revision >= (merged[item.id]?.revision ?? -1) {
                 merged[item.id] = item
             }
-            guard merged.count <= 1000 else {
+            let overMessageLimit = merged.count > 1000
+            let byteCount = merged.values.reduce(into: 0) { $0 += $1.text.utf8.count }
+            let overByteLimit = byteCount > 16 * 1024 * 1024
+            guard !overMessageLimit, !overByteLimit else {
                 reachedLimit = true
-                notice = "1,000 messages loaded. Reopen Activity to return to the latest messages."
+                notice = overMessageLimit
+                    ? "1,000 messages loaded. Earlier feedback is capped; live final results remain available."
+                    : "Activity reached its 16 MB display limit. Earlier feedback is capped; live final results remain available."
+                // Keep a bounded final-result tail visible even when historical content
+                // reaches the display budget. Live polling remains enabled for recovery.
+                let results = merged.values.filter { $0.kind.lowercased() == "result" }
+                    .sorted { ($0.ordinal, $0.id) < ($1.ordinal, $1.id) }
+                if !results.isEmpty { messages = results }
                 return
             }
             let ordered = merged.values.sorted { ($0.ordinal, $0.id) < ($1.ordinal, $1.id) }
-            if ordered != messages { messages = ordered }
+            if ordered != messages {
+                messages = ordered
+            }
         }
         if !older { cursor = page.nextCursor }
         if (older || initial) && olderCursor != page.olderCursor { olderCursor = page.olderCursor }
-        if notice != nil { notice = nil }
+        if hasTerminalMessage {
+            terminalTailIncomplete = false
+            notice = nil
+        } else if !terminalTailIncomplete, notice != nil {
+            notice = nil
+        }
         syncStatus.lastFetch = TimestampParser.date(from: page.observedAt) ?? Date()
+    }
+
+    private var hasTerminalMessage: Bool {
+        messages.contains { $0.kind.lowercased() == "result" }
     }
 
     private static func unavailableText(_ reason: String?) -> String {

@@ -126,6 +126,36 @@ def stamp():
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
+def native_display_state(native_status, provider_observation=None):
+    """Project one native turn for presentation without changing CLINX state.
+
+    A live exact active owner outranks persisted history.  Unknown, offline and
+    ``notLoaded`` observations never turn a proved terminal turn back into
+    running; owner conflicts remain UNKNOWN.  The returned value is deliberately
+    separate from ``execution_state`` because an unbound native thread has no
+    managed execution to complete.
+    """
+    from native_history import normalize_native_status
+
+    native_state = normalize_native_status((native_status or {}).get('status')
+                                           if isinstance(native_status, dict) else None)
+    observation = provider_observation if isinstance(provider_observation, dict) else {}
+    if observation.get('ownership_conflict'):
+        return 'UNKNOWN'
+    rows = observation.get('observations') or []
+    active_owner = any(
+        normalize_native_status(row.get('state')) == 'RUNNING'
+        and normalize_native_status(row.get('turn_status')) == 'RUNNING'
+        for row in rows if isinstance(row, dict)
+    )
+    if active_owner:
+        return 'RUNNING'
+    if native_state in {'RUNNING', 'COMPLETED', 'FAILED', 'TIMED_OUT',
+                        'CANCELLED', 'INTERRUPTED', 'DISCONNECTED'}:
+        return native_state
+    return 'UNKNOWN'
+
+
 class ThreadIdentityReader:
     def __init__(self, cfg, registry_path, context_reader, *, native_root=None, live_reader=None):
         self.cfg, self.path, self.reader = cfg, Path(registry_path), context_reader
@@ -411,6 +441,12 @@ class ThreadIdentityReader:
                                       unavailable_reason='Native index and live provider disagree; no association inferred')
             else:
                 output.setdefault('provider_observation', {'state': 'UNKNOWN', 'reason': 'Live observation not configured'})
+            if metadata:
+                native_status = output.get('native_status') or {}
+                output['native_turn_state'] = native_status.get('state', 'UNKNOWN')
+                output['native_status_source'] = native_status.get('source', 'NATIVE_PERSISTED_HISTORY')
+                output['native_display_state'] = native_display_state(
+                    native_status, output.get('provider_observation'))
             output['host'] = host
             if context:
                 output.setdefault('context_status', 'CONTEXT_UNAVAILABLE')
