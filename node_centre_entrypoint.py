@@ -81,7 +81,7 @@ def main(argv=None) -> int:
     if args.command == "pair-connect":
         address = endpoint_address(args.endpoint)
         candidate = Candidate(args.peer, args.peer, args.fingerprint, (address,))
-        session = LanTransport(identity, peers).pair(candidate, getpass.getpass("Pairing code: "))
+        session = LanTransport(identity, peers, allow_direct=True).pair(candidate, getpass.getpass("Pairing code: "))
         print(json.dumps({"paired": True, "node_id": session.node_id, "authority_granted": False}))
         return 0
     if args.command == "pair-listen":
