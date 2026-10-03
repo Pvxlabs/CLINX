@@ -19,6 +19,14 @@ mkdir -p "$discovery_dir/local_discovery"
 cp ../local_discovery/*.py "$discovery_dir/local_discovery/"
 cp ../execution_semantics.py "$discovery_dir/"
 
+# Bundle the user-session node helper and the provider-neutral protocol. The
+# helper is launched by the App's LaunchAgent controller; it is not a root
+# daemon and is never sourced from the development checkout at runtime.
+cp ../node_protocol.py "$app_dir/Contents/Resources/"
+cp Scripts/node_service_entrypoint.py "$app_dir/Contents/Resources/"
+cp Scripts/CLINXNodeService "$app_dir/Contents/Resources/CLINXNodeService"
+chmod 755 "$app_dir/Contents/Resources/CLINXNodeService"
+
 # App icon, drawn from the design's AppIcon spec. Generation is best-effort: a failure
 # leaves the bundle on the default icon rather than breaking the build.
 icon_path="$app_dir/Contents/Resources/AppIcon.icns"

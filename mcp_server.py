@@ -10,6 +10,8 @@ this repository; this module never opens a public listener.
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import datetime as dt
 import json
 import os
 from pathlib import Path
@@ -449,15 +451,16 @@ MCP_INSTRUCTIONS = (
 )
 
 
-def _read_only_tool_definitions() -> list[dict[str, Any]]:
+def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str, Any]]:
     """Return the public read-only context catalog."""
     task_selector = {
         "task_ref": {"type": "string", "description": "Opaque CLINX task reference."},
+        "node_id": {"type": "string", "description": "Explicit trusted node identity for an exact native thread."},
         "host": {"type": "string"},
         "project": {"type": "string"},
         "query": {"type": "string"},
     }
-    return [
+    tools = [
         {
             "name": "clinx_find_task",
             "description": "Find active or historical CLINX tasks by human query.",
@@ -678,6 +681,40 @@ def _read_only_tool_definitions() -> list[dict[str, Any]]:
             "annotations": {"readOnlyHint": False, "destructiveHint": True},
         },
     ]
+    if include_nodes:
+        # Node tools are opt-in with a configured centre router so the legacy
+        # connector catalog remains byte-for-byte compatible on P620 installs
+        # that have not enabled multi-device routing.
+        insert_at = next((i for i, item in enumerate(tools) if item["name"] == "clinx_get_status"), len(tools))
+        tools[insert_at:insert_at] = [
+            {
+                "name": "clinx_list_nodes",
+                "description": "List trusted CLINX nodes, protocol versions, capabilities and freshness.",
+                "inputSchema": _json_schema({}, []),
+                "outputSchema": _json_schema({
+                    "nodes": {"type": "array", "items": {"type": "object"}},
+                    "coverage": {"type": "string"},
+                    "read_only": {"type": "boolean", "const": True},
+                }),
+                "annotations": {"readOnlyHint": True, "destructiveHint": False},
+            },
+            {
+                "name": "clinx_get_node_status",
+                "description": "Read one trusted node's reachability, provider, history and sharing scope state.",
+                "inputSchema": _json_schema({"node_id": {"type": "string"}}, ["node_id"]),
+                "outputSchema": _json_schema({
+                    "node": {"type": ["object", "null"]},
+                    "scope": {"type": ["object", "null"]},
+                    "node_reachable": {"type": "boolean"},
+                    "provider_reachable": {"type": "boolean"},
+                    "history_readable": {"type": "boolean"},
+                    "execution_active": {"type": "boolean"},
+                    "read_only": {"type": "boolean", "const": True},
+                }),
+                "annotations": {"readOnlyHint": True, "destructiveHint": False},
+            },
+        ]
+    return tools
 
 
 def _execute_tool_definition() -> dict[str, Any]:
@@ -710,9 +747,9 @@ def _execute_tool_definition() -> dict[str, Any]:
     }
 
 
-def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
+def tool_definitions(*, include_execute: bool = False, include_nodes: bool = False) -> list[dict[str, Any]]:
     """Return the public catalog, with execution opt-in for internal use only."""
-    tools = _read_only_tool_definitions() + _authority_tools()
+    tools = _read_only_tool_definitions(include_nodes=include_nodes) + _authority_tools()
     authority_outputs = {
         'task_ref': {'type': 'string'}, 'policy_version': {'type': 'integer'},
         'policy_hash': {'type': 'string'}, 'expected_policy_hash': {'type': 'string'},
@@ -758,13 +795,13 @@ def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
             schema["properties"]["cursor"] = {"type": "string", "maxLength": 1024}
             legacy = [{"allOf": [{"anyOf": legacy}, {"not": {"required": ["execution_ref"]}}]}]
         schema["anyOf"] = [
-            {"anyOf": legacy, "not": {"anyOf": [{"required": ["thread_id"]}, {"required": ["codex_uri"]}]}},
+            {"anyOf": legacy, "not": {"anyOf": [{"required": ["thread_id"]}, {"required": ["codex_uri"]}, {"required": ["node_id"]}]}},
             {"required": ["thread_id"], "not": {"anyOf": [{"required": [k]} for k in ("codex_uri", "task_ref", "query")]}},
             {"required": ["codex_uri"], "not": {"anyOf": [{"required": [k]} for k in ("thread_id", "task_ref", "query")]}},
         ]
         nullable = {"type": ["string", "null"]}
         thread_properties = {k: nullable for k in (
-            "queried_thread_id", "codex_uri", "lookup_status", "error_code", "unavailable_reason",
+            "queried_thread_id", "codex_uri", "node_id", "source_node_id", "lookup_status", "error_code", "unavailable_reason",
             "task_ref", "task_key", "host", "project", "workspace", "provider", "current_thread_id",
             "relationship", "predecessor_thread_id", "successor_thread_id", "adoption_source",
             "execution_ref", "execution_state", "selection_reason", "selection_scope", "execution_turn_ref",
@@ -812,7 +849,9 @@ def tool_definitions(*, include_execute: bool = False) -> list[dict[str, Any]]:
 def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any]:
     """Return the confirmed connector-discovery schema from the canonical registry."""
     names = tuple(tool["name"] for tool in public_tools)
-    if names not in {DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}:
+    node_names = ("clinx_list_nodes", "clinx_get_node_status")
+    canonical_names = tuple(name for name in names if name not in node_names)
+    if canonical_names not in {DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}:
         raise MCPServerError("server/discover requires the canonical tool registry")
     return {
         "resultType": "complete",
@@ -862,7 +901,10 @@ class ClinxMCPServer:
         self.integration = integration
         self.allow_execute = allow_execute
         self.executor = executor or integration.execute
-        self.public_tools = tool_definitions(include_execute=allow_execute)
+        self.public_tools = tool_definitions(
+            include_execute=allow_execute,
+            include_nodes=getattr(getattr(integration, "cfg", None), "node_router", None) is not None,
+        )
         self.public_tool_names = {
             tool["name"] for tool in self.public_tools
         }
@@ -878,6 +920,10 @@ class ClinxMCPServer:
             result = self.integration.get_topic_status(**arguments)
         elif name == "clinx_list_projects":
             result = self.integration.list_projects(**arguments)
+        elif name == "clinx_list_nodes":
+            result = self.integration.list_nodes()
+        elif name == "clinx_get_node_status":
+            result = self.integration.get_node_status(**arguments)
         elif name == "clinx_get_status":
             result = self.integration.get_status(**arguments)
         elif name == "clinx_adopt_conversation":
@@ -1057,6 +1103,35 @@ def build_server(
     dispatcher = bridge.TaskDispatcher(cfg, task_registry=registry, linear=linear)
     reader = bridge.TaskContextReader(cfg, registry)
     topic_reader = bridge.TopicStatusReader(cfg, registry)
+    if os.environ.get("CLINX_ENABLE_NODE_ROUTER") == "1":
+        # Build the local node route in the same process as the MCP boundary.
+        # The node index is separate from the task DB and stores identity/status
+        # only; native history stays on its owner.
+        from node_protocol import NodeRecord, NodeRegistry, NodeRouter, NodeService, SharingScope
+        node_db = Path(str(registry.path) + ".nodes.sqlite3")
+        node_registry = NodeRegistry(node_db)
+        user_scope = os.environ.get("CLINX_USER_SCOPE", os.environ.get("USER", "default"))
+        node_id = os.environ.get("CLINX_NODE_ID") or cfg.runtime_host or "local"
+        node_record = NodeRecord(
+            node_id=node_id,
+            user_scope=user_scope,
+            public_key_fingerprint=os.environ.get("CLINX_NODE_PUBLIC_KEY_FINGERPRINT", ""),
+            route_ids=(cfg.runtime_host,),
+            state="ONLINE",
+            last_seen=dt.datetime.now(dt.timezone.utc).isoformat(),
+        )
+        local_cfg = dataclasses.replace(cfg, node_router=None)
+        from thread_identity import ThreadIdentityReader
+        native_reader = ThreadIdentityReader(local_cfg, registry.path, reader)
+        local_service = NodeService(
+            node_record,
+            node_registry,
+            scope=SharingScope(user_scope=user_scope, read_sessions=True, execute_tasks=False),
+            read_thread=lambda thread_id, **kwargs: native_reader.read(context=True, thread_id=thread_id, **kwargs),
+        )
+        router = NodeRouter(node_registry, user_scope=user_scope, local_node_id=node_id)
+        router.attach(node_record, reader=lambda request: local_service.handle(request), scope=local_service.scope)
+        cfg = dataclasses.replace(cfg, node_router=router)
     integration = ClinxIntegration(
         cfg, registry, dispatcher, reader, linear=linear, topic_reader=topic_reader
     )

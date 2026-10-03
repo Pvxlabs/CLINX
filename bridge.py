@@ -583,6 +583,9 @@ class BridgeConfig:
     task_db_path: Path | None = None
     runtime_host: str = ""
     host_executor: HostExecutorConfig = dataclasses.field(default_factory=HostExecutorConfig)
+    # Optional centre-side node router.  It is injected by the managed
+    # service/bootstrap path; config parsing alone never opens a socket.
+    node_router: Any = None
 
     @staticmethod
     def load(path: Path) -> "BridgeConfig":
