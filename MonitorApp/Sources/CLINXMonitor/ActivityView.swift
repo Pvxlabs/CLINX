@@ -9,7 +9,13 @@ struct ActivityView: View, Equatable {
         lhs.task.taskRef == rhs.task.taskRef && lhs.task.executionRef == rhs.task.executionRef &&
         lhs.task.hostOperations == rhs.task.hostOperations &&
         lhs.task.hostOperationsHasMore == rhs.task.hostOperationsHasMore &&
-        lhs.task.exactResult == rhs.task.exactResult
+        lhs.task.exactResult == rhs.task.exactResult &&
+        lhs.task.monitorStatus.rawValue == rhs.task.monitorStatus.rawValue &&
+        lhs.task.state == rhs.task.state &&
+        lhs.task.executionState == rhs.task.executionState &&
+        lhs.task.codexRunning == rhs.task.codexRunning &&
+        lhs.task.timestamps.completedAt == rhs.task.timestamps.completedAt &&
+        lhs.task.timestamps.observedAt == rhs.task.timestamps.observedAt
     }
 
     var body: some View {
@@ -47,10 +53,15 @@ private struct ActivityContentView: View {
     }
 
     private static func isTerminal(_ task: ObservedTask) -> Bool {
-        switch task.monitorStatus {
-        case .completed, .failed, .cancelled, .blocked: return true
-        case .running, .stale, .unknown: return false
+        let terminalStates = ["COMPLETED", "FAILED", "CANCELLED", "STOPPED"]
+        if task.timestamps.completedAt != nil || terminalStates.contains(task.state) ||
+            terminalStates.contains(task.executionState) {
+            return true
         }
+        // A result is terminal only when it carries a terminal outcome. A blocked or
+        // retry-required presentation state alone can still represent active work.
+        guard let resultStatus = task.exactResult?.status else { return false }
+        return ["PASS", "FAILED", "CANCELLED"].contains(resultStatus)
     }
 
     private var operations: [HostOperation] {
@@ -168,7 +179,9 @@ private struct ActivityContentView: View {
             }
         }
         .task { await feed.run() }
-        .onChange(of: task.monitorStatus) { feed.updateTerminal(Self.isTerminal(task)) }
+        .onChange(of: task.monitorStatus) { _ in
+            feed.updateTerminal(Self.isTerminal(task))
+        }
         .onDisappear { feed.stop() }
     }
 
