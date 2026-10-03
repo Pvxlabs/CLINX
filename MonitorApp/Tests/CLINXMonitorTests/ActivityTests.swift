@@ -2,9 +2,10 @@ import XCTest
 import Combine
 @testable import CLINXMonitor
 
-private func message(_ id: String, _ order: Int64, _ revision: Int64, _ text: String) -> ActivityMessage {
+private func message(_ id: String, _ order: Int64, _ revision: Int64, _ text: String,
+                     kind: String = "feedback") -> ActivityMessage {
     ActivityMessage(id: id, ordinal: order, revision: revision, timestampMs: order * 1000,
-                    kind: "feedback", text: text, truncated: false)
+                    kind: kind, text: text, truncated: false)
 }
 
 private func page(_ messages: [ActivityMessage], execution: String = "exec_test",
@@ -104,8 +105,36 @@ final class ActivityTests: XCTestCase {
 
         await store.run()
 
-        XCTAssertEqual(await service.requestCount, 1)
+        let requestCount = await service.requestCount
+        XCTAssertEqual(requestCount, 1)
         XCTAssertEqual(store.messages.map(\.kind), ["result"])
+    }
+
+    func testTerminalTailRecoversAfterErrorAndLateResult() async {
+        let service = ScriptedActivityService(steps: [
+            .success(page([message("feedback-1", 1, 1, "开始")])),
+            .failure(.temporary),
+            .success(page([message("feedback-2", 2, 1, "继续")])),
+            .success(page([message("result", 3, 1, "最终报告", kind: "result")]))
+        ])
+        let store = ActivityStore(taskRef: "task_test", executionRef: "exec_test",
+                                  service: service, terminal: true, sleep: { _ in })
+
+        await store.run()
+
+        XCTAssertEqual(store.messages.map(\.kind), ["feedback", "feedback", "result"])
+        XCTAssertNil(store.notice)
+    }
+
+    func testDisplayBudgetKeepsResultTailReadable() throws {
+        let store = ActivityStore(taskRef: "task_test", executionRef: "exec_test", service: nil)
+        let initial = (0..<1000).map { message("m\($0)", Int64($0), 1, "x") }
+        try store.accept(page(initial), initial: true)
+        try store.accept(page([message("result", 1001, 1, "最终报告", kind: "result")]))
+
+        XCTAssertTrue(store.reachedLimit)
+        XCTAssertEqual(store.messages.map(\.kind), ["result"])
+        XCTAssertNotNil(store.notice)
     }
 }
 
@@ -132,6 +161,27 @@ private actor TerminalActivityService: ActivityServing {
 
     func activity(_ ref: String, execution: String, after: String?, before: String?) async throws -> ActivityPage {
         requestCount += 1
-        return page([message("result", 1, 1, "最终报告" )])
+        return page([message("result", 1, 1, "最终报告", kind: "result")])
+    }
+}
+
+enum ScriptedActivityError: Error { case temporary }
+
+private actor ScriptedActivityService: ActivityServing {
+    enum Step {
+        case success(ActivityPage)
+        case failure(ScriptedActivityError)
+    }
+
+    private var steps: [Step]
+
+    init(steps: [Step]) { self.steps = steps }
+
+    func activity(_ ref: String, execution: String, after: String?, before: String?) async throws -> ActivityPage {
+        guard !steps.isEmpty else { return page([]) }
+        switch steps.removeFirst() {
+        case .success(let value): return value
+        case .failure(let error): throw error
+        }
     }
 }

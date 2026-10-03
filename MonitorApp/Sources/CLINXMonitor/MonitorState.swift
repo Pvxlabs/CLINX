@@ -118,6 +118,7 @@ final class MonitorStore: ObservableObject {
     @Published var settingsPresented = false
     @Published private(set) var selectedRef: String?
     @Published private(set) var selectedExecutionRef: String?
+    @Published private(set) var selectedDetailIncomplete = false
     @Published private(set) var localArchives: [LocalArchiveEntry]
     @Published private(set) var navigationHistory: [NavigationEntry] = []
     @Published private(set) var navigationIndex: Int?
@@ -133,6 +134,7 @@ final class MonitorStore: ObservableObject {
     private var eventCursor: String?
     private var selectionToken = 0
     private var sourceToken = 0
+    private var listRequestGeneration = 0
     private var authFailed = false
     private var failureCount = 0
     private var failed = false
@@ -449,6 +451,7 @@ final class MonitorStore: ObservableObject {
         if recordHistory { recordVisit(ref, executionRef: exactExecution) }
         selectedRef = ref
         selectedExecutionRef = exactExecution
+        if let task { seedSelection(task) }
         selectionToken += 1
         let token = selectionToken
         Task { await loadSelection(ref: ref, expectedExecutionRef: exactExecution, token: token) }
@@ -458,6 +461,7 @@ final class MonitorStore: ObservableObject {
         selectedRef = nil
         selectedExecutionRef = nil
         selected = nil
+        selectedDetailIncomplete = false
         events = []
         eventCursor = nil
         eventHasMore = false
@@ -473,23 +477,53 @@ final class MonitorStore: ObservableObject {
         recordVisit(ref, executionRef: exactExecution)
         selectedRef = ref
         selectedExecutionRef = exactExecution
+        if let task { seedSelection(task) }
         selectionToken += 1
         await loadSelection(ref: ref, expectedExecutionRef: exactExecution, token: selectionToken)
+    }
+
+    private func seedSelection(_ task: ObservedTask) {
+        selected = task
+        selectedDetailIncomplete = false
+        events = task.recentEvents.items
+        eventCursor = task.recentEvents.nextCursor
+        eventHasMore = task.recentEvents.hasMore
+        eventCoverage = task.recentEvents.coverage
     }
 
     private func loadSelection(ref: String, expectedExecutionRef: String?, token: Int) async {
         guard let service, token == selectionToken else { return }
         if selected?.taskRef != ref || selected?.executionRef != expectedExecutionRef {
-            selected = nil; events = []; eventCursor = nil; eventHasMore = false
+            if let snapshot = allTasks.first(where: {
+                $0.taskRef == ref && (expectedExecutionRef == nil || $0.executionRef == expectedExecutionRef)
+            }) {
+                seedSelection(snapshot)
+            } else {
+                selected = nil; events = []; eventCursor = nil; eventHasMore = false
+            }
         }
         do {
             let detail = try await service.task(ref)
             guard detail.taskRef == ref, detail.schemaVersion == "1",
-                  expectedExecutionRef == nil || detail.executionRef == expectedExecutionRef,
                   detail.mutationBoundary.observerReadOnly,
                   detail.mutationBoundary.allowedActions.isEmpty else { throw MonitorError.incompatibleSchema }
+            if let expectedExecutionRef, detail.executionRef != expectedExecutionRef {
+                // Observer v1 has no historical execution-detail endpoint. Keep the
+                // exact list snapshot selected and make the missing detail explicit;
+                // never replace it with the current execution's events or result.
+                guard token == selectionToken else { return }
+                if let snapshot = allTasks.first(where: {
+                    $0.taskRef == ref && $0.executionRef == expectedExecutionRef
+                }) {
+                    seedSelection(snapshot)
+                    selectedDetailIncomplete = true
+                }
+                errorCategory = "Exact historical execution detail unavailable"
+                return
+            }
             guard token == selectionToken else { return }
             selected = detail
+            selectedDetailIncomplete = false
             // Detail can be newer than the list snapshot. Keep the same execution's
             // row and inspector aligned without replacing a newer list observation.
             func refreshed(_ row: ObservedTask) -> ObservedTask {
@@ -592,6 +626,7 @@ final class MonitorStore: ObservableObject {
 
     private func resetForNewSource() {
         sourceToken += 1
+        listRequestGeneration += 1
         selectionToken += 1
         isRefreshing = false
         navigationHistory = []
@@ -599,6 +634,7 @@ final class MonitorStore: ObservableObject {
         active = []
         recent = []
         selected = nil
+        selectedDetailIncomplete = false
         selectedRef = nil
         selectedExecutionRef = nil
         events = []
@@ -643,15 +679,17 @@ final class MonitorStore: ObservableObject {
     func refresh() async {
         guard let service, !isRefreshing else { return }
         let token = sourceToken
+        listRequestGeneration += 1
+        let requestGeneration = listRequestGeneration
         isRefreshing = true
         defer { if token == sourceToken { isRefreshing = false } }
         do {
             let newHealth = try await service.health()
-            guard token == sourceToken else { return }
+            guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
             guard newHealth.schemaVersion == "1", newHealth.readOnly else { throw MonitorError.incompatibleSchema }
             let activePage = try await service.tasks(active: true, offset: 0)
             let recentPage = try await service.tasks(active: false, offset: 0)
-            guard token == sourceToken else { return }
+            guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
             try validate(activePage)
             try validate(recentPage)
             health = newHealth
@@ -664,7 +702,7 @@ final class MonitorStore: ObservableObject {
             failed = false; authFailed = false; failureCount = 0; errorCategory = nil
             if selectedRef != nil { await reloadSelected(using: service) }
         } catch {
-            guard token == sourceToken else { return }
+            guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
             failed = true
             failureCount += 1
             if case MonitorError.server(401) = error { authFailed = true }
@@ -696,7 +734,10 @@ final class MonitorStore: ObservableObject {
     private func acceptEvents(_ page: EventPage, ref: String, reset: Bool) throws {
         guard page.schemaVersion == "1", page.taskRef == ref else { throw MonitorError.incompatibleSchema }
         eventCoverage = page.coverage
-        events = Self.uniqueEvents((reset ? [] : events) + page.items)
+        let scopedItems = page.items.filter { event in
+            event.executionRef == nil || event.executionRef == selectedExecutionRef
+        }
+        events = Self.uniqueEvents((reset ? [] : events) + scopedItems)
         eventCursor = page.nextCursor
         eventHasMore = page.hasMore
         if var task = selected, task.taskRef == ref {
@@ -706,13 +747,15 @@ final class MonitorStore: ObservableObject {
     }
 
     func loadMore() async {
-        guard let service else { return }
+        guard let service, !isRefreshing else { return }
         let token = sourceToken
+        listRequestGeneration += 1
+        let requestGeneration = listRequestGeneration
         let isActive = view == .active || view == .blocked
         guard let offset = isActive ? activeNextOffset : recentNextOffset else { return }
         do {
             let page = try await service.tasks(active: isActive, offset: offset)
-            guard token == sourceToken else { return }
+            guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
             try validate(page)
             if isActive {
                 active = Self.merge(active + page.items)
@@ -721,16 +764,18 @@ final class MonitorStore: ObservableObject {
                 recent = Self.merge(recent + page.items)
                 recentNextOffset = page.nextOffset
             }
-        } catch { if token == sourceToken { errorCategory = Self.category(error) } }
+        } catch { if token == sourceToken, requestGeneration == listRequestGeneration { errorCategory = Self.category(error) } }
     }
 
     /// Explicit overload retained for callers that page a specific list.
     func loadMore(active isActive: Bool) async {
-        guard let service, let offset = isActive ? activeNextOffset : recentNextOffset else { return }
+        guard let service, !isRefreshing, let offset = isActive ? activeNextOffset : recentNextOffset else { return }
         let token = sourceToken
+        listRequestGeneration += 1
+        let requestGeneration = listRequestGeneration
         do {
             let page = try await service.tasks(active: isActive, offset: offset)
-            guard token == sourceToken else { return }
+            guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
             try validate(page)
             if isActive {
                 active = Self.merge(active + page.items)
@@ -739,7 +784,7 @@ final class MonitorStore: ObservableObject {
                 recent = Self.merge(recent + page.items)
                 recentNextOffset = page.nextOffset
             }
-        } catch { if token == sourceToken { errorCategory = Self.category(error) } }
+        } catch { if token == sourceToken, requestGeneration == listRequestGeneration { errorCategory = Self.category(error) } }
     }
 
     private func validate(_ page: TaskPage) throws {

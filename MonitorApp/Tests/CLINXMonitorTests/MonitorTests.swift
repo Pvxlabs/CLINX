@@ -229,6 +229,20 @@ final class MonitorStoreTests: XCTestCase {
         XCTAssertEqual(store.counts[.active], 1)
         XCTAssertEqual(store.counts[.completed], 1)
     }
+
+    @MainActor
+    func testHistoricalSelectionKeepsExactSnapshotWhenDetailEndpointReturnsCurrentExecution() async throws {
+        let old = try snapshot(state: "COMPLETED", execution: "exec_old", observed: "2026-10-03T12:20:00Z")
+        let current = try snapshot(state: "CODEX_RUNNING", execution: "exec_new", observed: "2026-10-03T12:27:56Z")
+        let store = MonitorStore(service: OverlappingPagesService(active: current, recent: old))
+
+        await store.refresh()
+        await store.select(old.taskRef, executionRef: old.executionRef)
+
+        XCTAssertEqual(store.selected?.executionRef, "exec_old")
+        XCTAssertTrue(store.selectedDetailIncomplete)
+        XCTAssertEqual(store.errorCategory, "Exact historical execution detail unavailable")
+    }
 }
 
 private actor SnapshotService: ObserverServing {
