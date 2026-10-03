@@ -10,7 +10,7 @@ repo_root=$(CDPATH= cd -- "$launcher_dir/.." && pwd)
 home_dir=${HOME:-/home/pvxlabs}
 node_centre_state=${CLINX_NODE_CENTRE_STATE:-$home_dir/.local/state/clinx/node-centre}
 node_id=${CLINX_NODE_ID:-$(hostname | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_.-]/-/g' | cut -c1-63)}
-user_scope=${CLINX_USER_SCOPE:-${USER:-default}}
+user_scope=${CLINX_USER_SCOPE:-${CLINX_NODE_USER_SCOPE:-${USER:-default}}}
 # The MCP child must be credential-isolated, but CLINX still needs the
 # installed Codex binary to create its app-server transport on demand.
 codex_path=$(command -v codex 2>/dev/null || true)
