@@ -277,9 +277,29 @@ class ThreadIdentityReader:
         return NativeHistory(self.native_root).context(tid, host or self.cfg.runtime_host,
             metadata, recent_turns, max_bytes, anchor=anchor, cursor=cursor)
 
-    def read(self, *, context=False, thread_id=None, codex_uri=None, task_ref=None, query=None, host=None, project=None, execution_ref=None, recent_turns=8, max_bytes=32000, cursor=None):
+    def read(self, *, context=False, thread_id=None, codex_uri=None, task_ref=None, query=None, host=None, node_id=None, project=None, execution_ref=None, recent_turns=8, max_bytes=32000, cursor=None):
         tid = None
         try:
+            # A configured centre router is the only cross-device read path.
+            # It is consulted for exact native selectors before the legacy
+            # single-host resolver.  Task/query selectors remain local CLINX
+            # registry reads and never trigger an unbounded node scan.
+            node_router = getattr(self.cfg, "node_router", None)
+            if node_router is not None and (thread_id is not None or codex_uri is not None) and task_ref is None and query is None:
+                tid = parse_selector(thread_id=thread_id, codex_uri=codex_uri)
+                uri_host = _parse_uri(codex_uri)[1] if codex_uri is not None else None
+                nodes = getattr(getattr(node_router, "registry", None), "list_nodes", lambda **_: [])(user_scope=getattr(node_router, "user_scope", None))
+                if node_id is not None or host is not None or uri_host is not None or len(nodes) > 1:
+                    if type(recent_turns) is not int or not 1 <= recent_turns <= 20 or type(max_bytes) is not int or not 1024 <= max_bytes <= 128000:
+                        raise ThreadLookupError('INVALID_CONTEXT_LIMIT', 'recent_turns must be 1..20 and max_bytes 1024..128000')
+                    routed = node_router.read(thread_id=tid, node_id=node_id, host=host or uri_host, provider='codex_app_server',
+                        cursor=cursor, recent_turns=recent_turns, max_bytes=max_bytes)
+                    routed = dict(routed)
+                    routed.setdefault('queried_thread_id', tid)
+                    routed.setdefault('codex_uri', codex_uri or 'codex://threads/' + tid)
+                    routed.setdefault('read_only', True)
+                    routed.setdefault('observed_at', stamp())
+                    return routed
             tid, host, host_id = resolve_selector(self.cfg, host=host, thread_id=thread_id, codex_uri=codex_uri, task_ref=task_ref, query=query)
             if type(recent_turns) is not int or not 1 <= recent_turns <= 20 or type(max_bytes) is not int or not 1024 <= max_bytes <= 128000:
                 raise ThreadLookupError('INVALID_CONTEXT_LIMIT', 'recent_turns must be 1..20 and max_bytes 1024..128000')

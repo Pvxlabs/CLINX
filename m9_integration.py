@@ -1006,6 +1006,7 @@ class ClinxIntegration:
         query: str | None = None,
         project: str | None = None,
         host: str | None = None,
+        node_id: str | None = None,
         recent_turns: int | None = None,
         max_bytes: int | None = None,
         thread_id: str | None = None,
@@ -1017,7 +1018,7 @@ class ClinxIntegration:
             from thread_identity import ThreadIdentityReader
             return ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader).read(
                 context=True, thread_id=thread_id, codex_uri=codex_uri,
-                task_ref=task_ref, query=query, host=host, project=project, execution_ref=execution_ref,
+                task_ref=task_ref, query=query, host=host, node_id=node_id, project=project, execution_ref=execution_ref,
                 recent_turns=recent_turns if recent_turns is not None else 8, max_bytes=max_bytes if max_bytes is not None else 32000,
                 cursor=cursor,
             )
@@ -1124,6 +1125,28 @@ class ClinxIntegration:
             "read_only": True,
         }
 
+    def list_nodes(self) -> dict[str, Any]:
+        """Return the bounded centre node index without probing native history."""
+        router = getattr(self.cfg, "node_router", None)
+        if router is None:
+            return {"nodes": [], "coverage": "NOT_CONFIGURED", "read_only": True}
+        return {"nodes": router.nodes(), "coverage": "REGISTERED_NODE_INDEX", "read_only": True}
+
+    def get_node_status(self, *, node_id: str) -> dict[str, Any]:
+        router = getattr(self.cfg, "node_router", None)
+        if router is None:
+            return {"error_code": "NODE_ROUTER_UNAVAILABLE", "read_only": True}
+        record = router.registry.get(node_id)
+        if record is None:
+            return {"error_code": "UNKNOWN_NODE", "read_only": True}
+        scope = router.registry.scope(node_id, router.user_scope)
+        return {"node": record.as_dict(), "scope": scope.as_dict() if scope else None,
+                "node_reachable": bool(record.state == "ONLINE" and not record.stale),
+                "provider_reachable": bool(record.state == "ONLINE" and not record.stale),
+                "history_readable": bool(scope and scope.read_sessions and record.authorized),
+                "execution_active": False, "observed_at": record.last_seen,
+                "read_only": True}
+
     def get_status(
         self,
         *,
@@ -1132,6 +1155,7 @@ class ClinxIntegration:
         query: str | None = None,
         project: str | None = None,
         host: str | None = None,
+        node_id: str | None = None,
         thread_id: str | None = None,
         codex_uri: str | None = None,
     ) -> dict[str, Any]:
@@ -1139,7 +1163,7 @@ class ClinxIntegration:
             from thread_identity import ThreadIdentityReader
             return ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader).read(
                 context=False, thread_id=thread_id, codex_uri=codex_uri,
-                task_ref=task_ref, query=query, host=host, project=project, execution_ref=execution_ref,
+                task_ref=task_ref, query=query, host=host, node_id=node_id, project=project, execution_ref=execution_ref,
             )
         retained_recovery: dict[str, Any] | None = None
         if execution_ref:

@@ -3,6 +3,7 @@ import SwiftUI
 struct DevicesSettingsView: View {
     @ObservedObject var monitor: MonitorStore
     @StateObject private var devices = DeviceConnectionStore()
+    @StateObject private var nodeService = NodeServiceController()
     @State private var pairing: NearbyDevice?
     @State private var forgetting: NearbyDevice?
 
@@ -21,6 +22,7 @@ struct DevicesSettingsView: View {
                 .accessibilityLabel("Refresh nearby devices")
                 .disabled(devices.scanning || devices.busyDeviceID != nil)
             }
+            localNodeService
             currentConnection
             if devices.backendChecked && !devices.backendReady {
                 Text("Secure pairing is unavailable. Reinstall the discovery runtime to pair a new device.")
@@ -53,6 +55,7 @@ struct DevicesSettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(DS.Palette.textPrimary)
         .task {
+            nodeService.refresh()
             while !Task.isCancelled {
                 await devices.scan()
                 try? await Task.sleep(nanoseconds: 8_000_000_000)
@@ -72,6 +75,40 @@ struct DevicesSettingsView: View {
         } message: {
             Text("This removes trust and the saved Monitor credential from this Mac. You will need to pair again. Access saved on other devices is unchanged.")
         }
+    }
+
+    private var localNodeService: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "bolt.horizontal.circle")
+                .font(.system(size: 20)).foregroundStyle(DS.Palette.textSecondary)
+                .frame(width: 34)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("This Mac · CLINX node").font(DS.Font.bodyEmphasis)
+                Text(nodeService.state.label).font(DS.Font.meta)
+                    .foregroundStyle({
+                        switch nodeService.state {
+                        case .running: return DS.Palette.success
+                        case .failed(_), .requiresApproval(_): return DS.Palette.error
+                        default: return DS.Palette.textSecondary
+                        }
+                    }())
+            }
+            Spacer()
+            switch nodeService.state {
+            case .running:
+                Button("Disable") { nodeService.disable() }.controlSize(.small)
+            case .requiresApproval(_), .failed(_), .disabled, .notInstalled:
+                Button(nodeService.state == .notInstalled ? "Enable" : "Retry") {
+                    nodeService.installAndEnable()
+                }.controlSize(.small)
+            case .starting:
+                ProgressView().controlSize(.small)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 10).fill(DS.Palette.surfaceSecondary))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("This Mac CLINX node: \(nodeService.state.label)")
     }
 
     private var currentConnection: some View {
