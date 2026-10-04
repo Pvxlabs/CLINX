@@ -850,7 +850,7 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
 def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any]:
     """Return the confirmed connector-discovery schema from the canonical registry."""
     names = tuple(tool["name"] for tool in public_tools)
-    node_names = ("clinx_list_nodes", "clinx_get_node_status", "clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context")
+    node_names = ("clinx_list_nodes", "clinx_get_node_status", "clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context", "clinx_get_observation_activity")
     canonical_names = tuple(name for name in names if name not in node_names)
     if canonical_names not in {(), DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}:
         raise MCPServerError("server/discover requires the canonical tool registry")
@@ -918,7 +918,7 @@ class ClinxMCPServer:
     def _call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(arguments, dict):
             raise MCPRequestError(-32602, "tool arguments must be an object")
-        if name in {"clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context"}:
+        if name in {"clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context", "clinx_get_observation_activity"}:
             from observation_mcp import call_observation
             return call_observation(self.observations, name, arguments)
         if name == "clinx_find_task":

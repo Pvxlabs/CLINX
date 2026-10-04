@@ -215,4 +215,14 @@ public actor ObserverClient: ObserverServing, ActivityServing, NetworkObservatio
         return page
     }
 
+    func observationActivity(_ id: String, cursor: String?) async throws -> ObservationActivityPage {
+        guard id.range(of: "^obs_[a-f0-9]{40}$", options: .regularExpression) != nil
+        else { throw MonitorError.invalidResponse }
+        let page: ObservationActivityPage = try await get("v2/observations/" + id + "/activity",
+            query: cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
+        guard page.schemaVersion == "clinx-observation-v1", page.observationId == id
+        else { throw MonitorError.incompatibleSchema }
+        return page
+    }
+
 }

@@ -109,6 +109,7 @@ protocol NetworkObservationServing: Sendable {
     func observations(filters: ObservationFilters, cursor: String?) async throws -> ObservationPage
     func observation(_ id: String, cursor: String?) async throws -> ObservationDetail
     func observationContext(_ id: String, cursor: String?) async throws -> ObservationContext
+    func observationActivity(_ id: String, cursor: String?) async throws -> ObservationActivityPage
 }
 struct ObservationFilters: Equatable, Sendable {
     var node = ""
@@ -118,5 +119,34 @@ struct ObservationFilters: Equatable, Sendable {
     var query: [URLQueryItem] {
         [("node", node), ("project", project), ("state", state), ("kind", kind)]
             .filter { !$0.1.isEmpty }.map { URLQueryItem(name: $0.0, value: $0.1) }
+    }
+}
+
+struct ObservationActivityEntry: Codable, Identifiable, Sendable, Equatable {
+    var id: String { eventId }
+    let eventId: String
+    let turnId: String?
+    let executionRef: String?
+    let sourceSeq: Int64
+    let recordedAt: Double
+    let nativeState: String
+    let businessResult: String?
+    let kind: String
+    let text: String?
+    let artifacts: [String]
+}
+struct ObservationActivityPage: Codable, Sendable {
+    let schemaVersion: String
+    let observationId: String
+    let items: [ObservationActivityEntry]
+    let coverage: String
+    let nextCursor: String?
+    let hasMore: Bool
+}
+
+extension NetworkObservationServing {
+    func observationActivity(_ id: String, cursor: String?) async throws -> ObservationActivityPage {
+        ObservationActivityPage(schemaVersion: "clinx-observation-v1", observationId: id,
+            items: [], coverage: "UNAVAILABLE", nextCursor: nil, hasMore: false)
     }
 }

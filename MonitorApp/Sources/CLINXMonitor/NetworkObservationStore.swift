@@ -6,6 +6,10 @@ final class NetworkObservationStore: ObservableObject {
     @Published private(set) var items: [NetworkObservation] = []
     @Published private(set) var detail: ObservationDetail?
     @Published private(set) var turns: [ObservationTurn] = []
+    @Published private(set) var activity: [ObservationActivityEntry] = []
+    @Published private(set) var activityCursor: String?
+    @Published private(set) var activityCoverage = "UNKNOWN"
+    private var loadingActivity = false
     @Published private(set) var context: ObservationContext?
     @Published private(set) var nextCursor: String?
     @Published private(set) var historyCursor: String?
@@ -32,6 +36,7 @@ final class NetworkObservationStore: ObservableObject {
         detailGeneration += 1
         items = []; sources = []; detail = nil; turns = []; context = nil
         selectedID = nil; nextCursor = nil; historyCursor = nil
+        activity = []; activityCursor = nil; activityCoverage = "UNKNOWN"
         client = nil
         guard let url = URL(string: endpoint) else { error = "请配置中心 Observer"; return }
         do { client = try ObserverClient(baseURL: url, credentialAccount: account); error = nil }
@@ -77,6 +82,7 @@ final class NetworkObservationStore: ObservableObject {
             self.error = "全网目录暂不可用：\(error)"
             // Fail closed on auth errors; an offline server is shown as disconnected.
             items = []; sources = []; detail = nil; turns = []; context = nil
+            activity = []; activityCursor = nil
         }
     }
 
@@ -99,6 +105,7 @@ final class NetworkObservationStore: ObservableObject {
         detailGeneration += 1
         selectedID = id; detail = nil; turns = []; context = nil; historyCursor = nil
         pausedHistoryRefresh = false
+        activity = []; activityCursor = nil; activityCoverage = "UNKNOWN"
         await refreshDetail(id, client: client)
     }
 
@@ -111,10 +118,16 @@ final class NetworkObservationStore: ObservableObject {
             if !pausedHistoryRefresh {
                 if turns != page.turns { turns = page.turns }
                 historyCursor = page.nextCursor
+                let timeline = try await client.observationActivity(id, cursor: nil)
+                guard generation == detailGeneration, selectedID == id else { return }
+                if activity != timeline.items { activity = timeline.items }
+                activityCursor = timeline.nextCursor
+                activityCoverage = timeline.coverage
             }
         } catch {
             guard generation == detailGeneration, selectedID == id else { return }
             detail = nil; turns = []; context = nil; historyCursor = nil
+            activity = []; activityCursor = nil
             self.error = "详情不可用或授权已撤销"
         }
     }
@@ -132,6 +145,23 @@ final class NetworkObservationStore: ObservableObject {
             turns.append(contentsOf: page.turns.filter { !existing.contains($0.id) }.prefix(512 - turns.count))
             historyCursor = page.nextCursor
         } catch { self.error = "历史分页不可用，请重新选择任务" }
+    }
+
+
+    func loadActivity() async {
+        guard let client, let id = selectedID, let cursor = activityCursor,
+              !loadingActivity, activity.count < 512 else { return }
+        loadingActivity = true; pausedHistoryRefresh = true
+        defer { loadingActivity = false }
+        let generation = detailGeneration
+        do {
+            let page = try await client.observationActivity(id, cursor: cursor)
+            guard generation == detailGeneration, selectedID == id else { return }
+            let seen = Set(activity.map(\.id))
+            activity.append(contentsOf: page.items.filter { !seen.contains($0.id) }.prefix(512 - activity.count))
+            activityCursor = page.nextCursor
+            activityCoverage = page.coverage
+        } catch { self.error = "Activity 分页不可用，请重新选择任务" }
     }
 
     func loadContext(older: Bool = false) async {
