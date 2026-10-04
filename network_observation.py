@@ -233,8 +233,14 @@ class ObservationWriter:
                 previous = c.execute("SELECT * FROM items WHERE id=?", (oid,)).fetchone()
                 if previous:
                     prior = json.loads(previous["payload"])
-                    if prior["project"] != payload["project"] or (prior["task_ref"] and payload["task_ref"] and prior["task_ref"] != payload["task_ref"]):
-                        raise NodeProtocolError("OBSERVATION_IDENTITY_CONFLICT", "Thread association changed")
+                    if prior["task_ref"] and payload["task_ref"] and prior["task_ref"] != payload["task_ref"]:
+                        raise NodeProtocolError("OBSERVATION_IDENTITY_CONFLICT", "Thread canonical owner changed")
+                    # Native Codex indexes may report the same immutable thread from a
+                    # later checkout/worktree. Project is display metadata, not thread
+                    # identity: preserve the first admitted project so a cwd drift can
+                    # never head-of-line block the ordered observation stream.
+                    if prior["project"] != payload["project"]:
+                        payload["project"] = prior["project"]
                     if prior["source_generation"] != payload["source_generation"]:
                         gap = "SOURCE_REBUILT"
                     # A native-only update cannot erase a proven canonical binding.
