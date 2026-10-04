@@ -72,6 +72,7 @@ private func projectedObservation(node: String, host: String, thread: String, st
     raw["binding_evidence"] = taskRef == nil ? "THREAD_UNBOUND" : "CANONICAL_ROUTE"
     raw["received_at"] = Date().timeIntervalSince1970
     raw["source_updated_at"] = ISO8601DateFormatter().string(from: Date())
+    raw["liveness"] = liveness
     var turn = try XCTUnwrap(raw["turn"] as? [String: Any])
     turn["native_state"] = state
     raw["turn"] = turn
