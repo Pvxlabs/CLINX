@@ -308,11 +308,11 @@ class ObservationDirectory:
         # Approval fingerprints bind pagination to current grants, not only filter strings.
         approval = hashlib.sha256(compact({n.node_id: self._scope(n.node_id).as_dict() if self._scope(n.node_id) else None
                            for n in self.registry.list_nodes(user_scope=self.user_scope)}).encode()).hexdigest()
-        # A list cursor is a stable read position, not a lease on the current upload
-        # generation. New observations may arrive between pages and must not invalidate
-        # the cursor. Authorization and retention changes still invalidate it.
-        retention=c.execute("SELECT value FROM settings WHERE key='retention_evicted'").fetchone()[0]
-        scope = [VERSION,self.user_scope,approval,retention,hashlib.sha256(compact(context).encode()).hexdigest()]
+        # A list cursor is a stable lexical read position, not a lease on mutable
+        # upload/retention counters. New observations and routine retention may happen
+        # between pages without invalidating that boundary. Authorization and filters
+        # remain bound so a cursor can never widen access.
+        scope = [VERSION,self.user_scope,approval,hashlib.sha256(compact(context).encode()).hexdigest()]
         if cursor is not None:
             try:
                 if not isinstance(cursor,str) or len(cursor)>2048: raise ValueError()

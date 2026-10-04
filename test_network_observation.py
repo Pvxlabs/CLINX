@@ -137,6 +137,16 @@ def test_list_cursor_survives_new_uploads_between_pages(directory):
     assert second["items"][0]["observation_id"] != first["items"][0]["observation_id"]
 
 
+def test_list_cursor_survives_retention_counter_change(directory):
+    writer,reader,_,_,scope=directory
+    writer.accept("air",scope,dict(stream_id="stream",events=[event(i,tid=f"r-{i}") for i in range(1,5)]))
+    first=reader.list(limit=1); cursor=first["next_cursor"]
+    with sqlite3.connect(writer.path) as c:
+        c.execute("UPDATE settings SET value=CAST(value AS INTEGER)+1 WHERE key='retention_evicted'")
+    second=reader.list(limit=1,cursor=cursor)
+    assert second["items"] and second["items"][0]["observation_id"] != first["items"][0]["observation_id"]
+
+
 def test_auth_scope_allowlist_and_scrub(directory):
     writer,reader,_,_,scope=directory
     for change in ({"project":"/private"},{"provider":"other-agent"},{"task_ref":"task_fake"}):
