@@ -3456,13 +3456,19 @@ class TaskDispatcher:
                 )
                 raise
             except AppServerError as exc:
-                self._execution_state(
-                    leased.task_id, "RECOVERY_REQUIRED", current_stage="dispatch",
-                    current_blocker="recoverable app-server failure", codex_running=False,
-                    retry_required=True, failure_stage=getattr(exc, 'method', 'dispatch'),
-                    failure_code=getattr(exc, 'code', type(exc).__name__),
-                    failure_evidence=_context_text(str(exc), 4000),
-                )
+                if getattr(exc, 'side_effect', None) == 'NONE':
+                    self._finalize_pre_turn_failure(
+                        task_id=leased.task_id, execution_ref=execution_ref,
+                        evidence=_context_text(str(exc), 4000), failure_code=exc.code,
+                    )
+                else:
+                    self._execution_state(
+                        leased.task_id, "RECOVERY_REQUIRED", current_stage="dispatch",
+                        current_blocker="recoverable app-server failure", codex_running=False,
+                        retry_required=True, failure_stage=getattr(exc, 'method', 'dispatch'),
+                        failure_code=getattr(exc, 'code', type(exc).__name__),
+                        failure_evidence=_context_text(str(exc), 4000),
+                    )
                 raise
             except Exception as exc:
                 if turn is not None:

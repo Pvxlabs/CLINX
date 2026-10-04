@@ -197,3 +197,45 @@ def test_unstarted_reconciliation_rejects_busy_or_new_turn(native):
     assert result['reconciled'] and not result['replay_performed']
     assert native.registry.get_execution_record(ref)['stage']=='BLOCKED'
     assert not native.registry.has_execution_lease(ref)
+
+
+@pytest.mark.parametrize('rejected_thread', [TID, 'another-thread'])
+def test_resume_writer_rejection_requires_exact_native_identity(rejected_thread):
+    from app_server import CodexAppServerClient, AppServerRemoteError, AppServerWriterConflict
+    error=AppServerRemoteError('thread/resume', {'code':-32600,
+        'message':f'thread {rejected_thread} already has an active writer'})
+    client=Mock();client._request.side_effect=error
+    expected=AppServerWriterConflict if rejected_thread==TID else AppServerRemoteError
+    with pytest.raises(expected) as caught:
+        CodexAppServerClient.thread_resume(client,TID)
+    assert (getattr(caught.value,'side_effect',None)=='NONE') == (rejected_thread==TID)
+
+
+def test_native_resume_conflict_finalizes_only_unstarted_attempt(native):
+    from app_server import CodexAppServerClient, AppServerRemoteError
+    native.integration.linear=None
+    with patch('thread_identity.ThreadIdentityReader',return_value=native.reader):
+        adopted=native.integration.adopt_conversation(thread_id=TID)
+    prep=native.integration.prepare_execution(approved=True,task_ref=adopted['task_ref'],prompt='read identity')
+    fake=FakeClient(thread_id=TID,session_id=TID,existing={'id':TID,'sessionId':TID,'cwd':str(native.repo),
+        'ephemeral':False,'gitInfo':{'originUrl':'https://example.invalid/pilot.git','branch':'main'},
+        'status':{'type':'notLoaded'},'canAcceptDirectInput':True})
+    fake._request=Mock(side_effect=AppServerRemoteError('thread/resume',
+        {'code':-32600,'message':f'thread {TID} already has an active writer'}))
+    fake.thread_resume=lambda tid,**kw: CodexAppServerClient.thread_resume(fake,tid,**kw)
+    native.dispatcher.client_factory=lambda target:fake
+    service=NodeService(NodeRecord('p620'),NodeRegistry(':memory:'),scope=SharingScope('test',True,True),
+        read_thread=Mock(),start_execution=CanonicalNodeExecutionAdapter(native.integration,'p620').start)
+    ref='exec_'+prep['prepared_execution_ref'].removeprefix('prepared_')
+    request=dict(operation='execution.start',execution_ref=ref,prepared_execution_ref=prep['prepared_execution_ref'],
+        approved=True,request_id='writer-conflict',user_scope='test')
+    denied=service.handle(request)
+    assert denied['error_code']=='NATIVE_ACTIVE_WRITER' and denied['side_effect']=='NONE'
+    assert denied['operation_state']=='BLOCKED' and denied['execution_ref']==ref
+    assert service.handle(request)['idempotent']
+    assert fake._request.call_count==1
+    assert not [c for c in fake.calls if c[0] in {'turn/start','thread/start','turn/interrupt'}]
+    record=native.registry.get_execution_record(ref)
+    assert record['stage']=='BLOCKED' and record['failure_code']=='NATIVE_ACTIVE_WRITER'
+    assert not native.registry.has_execution_lease(ref)
+    assert native.registry.get_binding(adopted['task_ref']).thread_id==TID

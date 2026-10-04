@@ -739,7 +739,12 @@ class NodeService:
         try:
             result = dict(callback(**dict(request)))
         except Exception as exc:
-            result = {"request_id": request_id, "operation_state": "FAILED", "error_code": getattr(exc, "code", type(exc).__name__), "unavailable_reason": str(exc)[:500], "side_effect": "UNKNOWN" if mutating else "NONE"}
+            side_effect = getattr(exc, 'side_effect', "UNKNOWN" if mutating else "NONE")
+            result = {"request_id": request_id, "operation_state": "BLOCKED" if mutating and side_effect == "NONE" else "FAILED", "error_code": getattr(exc, "code", type(exc).__name__), "unavailable_reason": str(exc)[:500], "side_effect": side_effect}
+            if operation == 'execution.start':
+                result.update(execution_ref=request.get('execution_ref'),
+                              prepared_execution_ref=request.get('prepared_execution_ref'),
+                              execution_started=False)
             self.registry.finish_request(node_id=self.record.node_id, request_id=request_id, state="FAILED", response=result)
             return result
         self.registry.finish_request(node_id=self.record.node_id, request_id=request_id, state="COMPLETED", response=result)

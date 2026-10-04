@@ -10,6 +10,7 @@ from app_server import AppServerError, AppServerProtocolError, CodexAppServerCli
 
 
 class NativeWriterError(AppServerProtocolError):
+    side_effect = 'NONE'
     def __init__(self, code, reason):
         self.code, self.method = code, 'writer_route'
         super().__init__(code + ': ' + reason)
