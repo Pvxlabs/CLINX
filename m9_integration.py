@@ -2346,6 +2346,11 @@ class ClinxIntegration:
         remote = self._remote_dispatch('execution.cancel', locals(), reference=execution_ref)
         if remote is not None:
             return remote
+        owner = getattr(self, 'execution_owner_client', None)
+        if owner is not None:
+            from execution_owner import owner_record
+            if owner_record(self.registry, execution_ref) is not None:
+                return owner.cancel(execution_ref=execution_ref)
         terminal_record = self.registry.get_execution_record(execution_ref)
         if terminal_record is not None and terminal_record.get("stage") == "CANCELLED":
             return {

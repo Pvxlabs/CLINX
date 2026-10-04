@@ -68,6 +68,15 @@ class ExecutionOwnerClient:
         # Verify the seal locally as well as at the persistent owner. No claim
         # or Provider side effect occurs on this requesting process.
         self.registry.verify_prepared_execution(prepared_execution_ref)
+        return self._request(dict(prepared_execution_ref=prepared_execution_ref, approved=True))
+
+    def cancel(self, *, execution_ref):
+        if not isinstance(execution_ref, str) or not re.fullmatch(r'exec_[0-9a-f]{32}', execution_ref):
+            raise ExecutionOwnerError('EXECUTION_OWNER_INVALID_REQUEST')
+        return self._request(dict(execution_ref=execution_ref, action='cancel'))
+
+    def _request(self, payload):
+        payload = {**payload, 'database': str(Path(self.registry.path).resolve())}
         path = socket_path(self.registry)
         sent = False
         try:
@@ -81,8 +90,6 @@ class ExecutionOwnerClient:
                     _, uid, _ = struct.unpack('3i', sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
                     if uid != os.getuid():
                         raise ExecutionOwnerError('EXECUTION_OWNER_PEER_UNTRUSTED')
-                payload = dict(prepared_execution_ref=prepared_execution_ref, approved=True,
-                               database=str(Path(self.registry.path).resolve()))
                 # A partial write is uncertain too; never silently fall back.
                 sent = True
                 sock.sendall(json.dumps(payload).encode() + b'\n')
@@ -116,6 +123,21 @@ class ExecutionOwner:
                 owner_instance TEXT NOT NULL, owner_pid INTEGER NOT NULL, source_path TEXT NOT NULL,
                 state TEXT NOT NULL, registered_at REAL NOT NULL, updated_at REAL NOT NULL,
                 response_json TEXT)''')
+
+    def dispatch(self, request):
+        if not isinstance(request, dict) or request.get('action') != 'cancel':
+            return self.start(request)
+        if (set(request) != {'action', 'execution_ref', 'database'}
+                or request['database'] != str(Path(self.registry.path).resolve())
+                or not isinstance(request['execution_ref'], str)
+                or not re.fullmatch(r'exec_[0-9a-f]{32}', request['execution_ref'])):
+            raise ExecutionOwnerError('EXECUTION_OWNER_INVALID_REQUEST')
+        record = owner_record(self.registry, request['execution_ref'])
+        if not record or record['owner_instance'] != self.instance:
+            raise ExecutionOwnerError('EXECUTION_OWNER_RECOVERY_REQUIRED: execution belongs to another owner')
+        # Cancellation must reach the same HostExecutor process registry; a
+        # requester-local executor cannot terminate this owner's Host process.
+        return {'result': self.integration.cancel_execution(execution_ref=request['execution_ref'])}
 
     def start(self, request):
         if (not isinstance(request, dict)
@@ -214,9 +236,7 @@ def serve(integration, *, ready=None, stop=None):
             if not data.endswith(b'\n') or len(data) > MAX_MESSAGE:
                 return
             try:
-                if stopping.is_set():
-                    raise ExecutionOwnerError('EXECUTION_OWNER_DRAINING')
-                response = owner.start(json.loads(data))
+                response = owner.dispatch(json.loads(data))
             except Exception as exc:
                 response = {'error': str(exc)[:2000]}
             try:

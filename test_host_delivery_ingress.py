@@ -1,4 +1,5 @@
 """Provider ingress must be durable even before the Host callback is reached."""
+import dataclasses
 import json
 
 import pytest
@@ -115,3 +116,34 @@ def test_request_id_conflict_persists_new_call_rejection(delivery):
     assert rejected['call_state'] == 'REJECTED'
     assert rejected['failure_code'] == 'TOOL_REQUEST_ID_CONFLICT'
     assert d.calls == ['call-1']
+
+
+@pytest.mark.parametrize('failure', ['AUTHORITY_DENIED', 'TARGET_NOT_REGISTERED'])
+def test_real_policy_and_target_rejections_round_trip_without_host_process(delivery, failure):
+    d = delivery
+    from execution_policy import READ_ONLY_HOST
+
+    def reject(params):
+        request = d.host.request(d.task, d.ref, d.route, d.policy, 'LOCAL_HOST_PROCESS',
+                                 'working_directory', {}, operation_class=READ_ONLY_HOST)
+        if failure == 'AUTHORITY_DENIED':
+            request = dataclasses.replace(request, capability='SYSTEMD_USER',
+                operation='service_is_active', arguments={'target': 'unregistered-fixture'})
+        else:
+            request = dataclasses.replace(request, project_root=d.host.root/'unregistered-fixture')
+        return d.host.executor.execute(dataclasses.replace(request, tool_call_id=params['callId']))
+
+    d.client._dynamic_tool_handler = reject
+    d.client._send_server_response(d.request)
+    response = d.wire.sent[-1]['result']
+    body = json.loads(response['contentItems'][0]['text'])
+    assert body['result_state'] == failure
+    assert body['host_dispatched'] is False
+    assert not d.host.registry.list_host_executions(execution_ref=d.ref)
+    assert rows(d)[0]['call_state'] == 'REJECTED'
+    d.client._record_event({'method': 'item/completed', 'params': {
+        'threadId': 'thread', 'turnId': 'turn', 'item': {
+            'id': 'call-1', 'type': 'dynamicToolCall', 'namespace': 'fixture_tools',
+            'tool': 'perform', **response}}})
+    assert rows(d)[0]['delivery_state'] == 'DELIVERED'
+    assert rows(d)[0]['reconciliation_required'] is False

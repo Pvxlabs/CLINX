@@ -165,3 +165,38 @@ def test_owner_completion_scope_never_adopts_old_handoffs(integration):
     runtime.process = calls.append
     assert runtime.run_once() == 1
     assert calls == ['owned']
+
+
+def test_cancel_reaches_persistent_owner_while_draining(integration):
+    ready, stop, active = threading.Event(), threading.Event(), threading.Event()
+    active.set()
+    integration.release.set()
+    integration.registry.get_execution_record = lambda _: {'stage': 'RUNNING' if active.is_set() else 'CANCELLED'}
+    cancellations = []
+    def cancel(**request):
+        cancellations.append(request)
+        active.clear()
+        return {'execution_cancelled': True}
+    integration.cancel_execution = cancel
+    thread = threading.Thread(target=serve, args=(integration,), kwargs={'ready': ready, 'stop': stop})
+    thread.start()
+    try:
+        assert ready.wait(5)
+        client = ExecutionOwnerClient(integration.registry)
+        client.start(prepared_execution_ref='prepared_'+'a'*32, approved=True)
+        stop.set()
+        result = client.cancel(execution_ref='exec_'+'a'*32)
+        assert result['execution_cancelled'] is True
+        assert cancellations == [{'execution_ref': 'exec_'+'a'*32}]
+    finally:
+        active.clear()
+        stop.set()
+        thread.join(5)
+    assert not thread.is_alive()
+
+
+def test_cancel_cannot_target_another_owners_execution(integration):
+    owner = ExecutionOwner(integration)
+    with pytest.raises(ExecutionOwnerError, match='RECOVERY_REQUIRED'):
+        owner.dispatch({'action': 'cancel', 'execution_ref': 'exec_'+'b'*32,
+                        'database': str(integration.registry.path.resolve())})
