@@ -82,14 +82,18 @@ def main() -> int:
         native_history = NativeHistory(Path(os.environ.get("CLINX_NATIVE_HOME", str(Path.home() / ".codex"))))
 
         def read_thread(thread_id: str, **kwargs: object) -> dict[str, object]:
-            if execution is not None:
-                return execution.context(thread_id=thread_id, host=record.node_id, **kwargs)
             try:
                 metadata = native_history.metadata(thread_id)
                 if metadata is None:
                     return {"queried_thread_id": thread_id, "lookup_status": "THREAD_NOT_FOUND",
                             "provider_existence": "NOT_FOUND", "absence_scope": "CURRENT_USER_NATIVE_INDEX",
                             "context_status": "CONTEXT_UNAVAILABLE"}
+                from node_runtime import intersect_scope
+                current_scope = intersect_scope(approvals.get(centre_id), active_scope[0])
+                if current_scope is None or not current_scope.allows_project(metadata.get("cwd", "")):
+                    return {"error_code": "PROJECT_SCOPE_DENIED", "read_only": True}
+                if execution is not None:
+                    return execution.context(thread_id=thread_id, host=record.node_id, **kwargs)
                 context = native_history.context(
                     thread_id, record.node_id, metadata, int(kwargs.get("recent_turns", 8)),
                     int(kwargs.get("max_bytes", 32000)), cursor=kwargs.get("cursor"),
@@ -110,7 +114,7 @@ def main() -> int:
 
         execution = None
         execution_config = config.get("execution_config")
-        if isinstance(execution_config, str) and execution_config:
+        if local_scope.execute_tasks and isinstance(execution_config, str) and execution_config:
             try:
                 execution = CanonicalNodeExecutionAdapter.from_config(Path(execution_config), identity.public["node_id"],
                     allowed_threads=config.get('execution_threads'),
@@ -141,6 +145,14 @@ def main() -> int:
         )
         actual_port = server.address[1]
         registration = NodeRegistrationClient(tls, centre_id, centre_endpoint)
+        from observation_source import CodexObservationSource, ObservationCollector
+        canonical_db = config.get("observation_canonical_db")
+        collector = ObservationCollector(state / "observation-outbox.sqlite3",
+            CodexObservationSource(native_history.root, record.node_id, canonical_db,
+                                   config.get("observation_owner_host")),
+            identity, registration, lambda: approvals.get(centre_id), actual_port, capabilities,
+            previous_stream_id=config.get("observation_previous_stream"))
+        next_collection = 0.0
         stop_event = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: stop_event.set())
         signal.signal(signal.SIGINT, lambda *_: stop_event.set())
@@ -154,6 +166,8 @@ def main() -> int:
                         current = approvals.get(centre_id)
                         if current is None or current.revoked or not (current.read_sessions or current.execute_tasks):
                             active_scope[0] = None
+                            if current is not None:
+                                registration.heartbeat(identity, current, port=actual_port, capabilities=tuple(capabilities))
                             write_health("blocked", "SHARING_AUTHORIZATION_REVOKED")
                         else:
                             reply = (registration.register(identity, current, port=actual_port, capabilities=tuple(capabilities))
@@ -177,10 +191,20 @@ def main() -> int:
                         service.set_state("OFFLINE")
                         write_health("offline", type(exc).__name__)
                     next_attempt = time.monotonic() + min(60, heartbeat_seconds)
-                stop_event.wait(0.5)
+                if now >= next_collection:
+                    try:
+                        delay = collector.tick()
+                        write_health("running" if collector.status in {"INDEXED", "HISTORY_BACKFILL"} else "degraded",
+                                     collector.status, node_id=record.node_id, sampled=collector.sampled)
+                    except Exception as exc:
+                        delay = 2
+                        write_health("degraded", "OBSERVATION_READ_FAILED", error_type=type(exc).__name__)
+                    next_collection = time.monotonic() + delay
+                stop_event.wait(0.25)
         finally:
             active_scope[0] = None
             write_health("stopped")
+            collector.close()
             server.close()
             registry.close()
             if execution is not None:

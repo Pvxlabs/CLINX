@@ -86,20 +86,29 @@ class SharingScope:
     providers: tuple[str, ...] = (SUPPORTED_PROVIDER,)
     revoked: bool = False
     updated_at: str = dataclasses.field(default_factory=_now)
+    projects: tuple[str, ...] = ("*",)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "user_scope", _text("user_scope", self.user_scope, max_len=256))
+        if not isinstance(self.read_sessions, bool) or not isinstance(self.execute_tasks, bool) or not isinstance(self.revoked, bool):
+            raise ValueError("permissions must be boolean")
+        if any(not isinstance(v,(tuple,list)) or len(v)>64 for v in (self.projects,self.providers)):
+            raise ValueError("providers and projects must be bounded lists")
+        object.__setattr__(self, "projects", tuple(dict.fromkeys(_text("project", p, max_len=1024) for p in self.projects)))
         values = tuple(_text("provider", item, max_len=128) for item in self.providers)
         object.__setattr__(self, "providers", tuple(dict.fromkeys(values)))
 
     def allows(self, operation: str, provider: str = SUPPORTED_PROVIDER) -> bool:
         if self.revoked or provider not in self.providers:
             return False
-        if operation in {"session.read", "session.status", "node.status"}:
+        if operation in {"session.read", "session.status", "session.inventory", "observation.upload", "node.status"}:
             return self.read_sessions
         if operation.startswith("execution."):
             return self.execute_tasks
         return False
+
+    def allows_project(self, project: str) -> bool:
+        return "*" in self.projects or project in self.projects
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -139,10 +148,11 @@ class NodeAuthorizationStore:
             raise NodeProtocolError("INVALID_SHARING_STORE", "Sharing approval is invalid")
         return SharingScope(
             user_scope=value["user_scope"],
-            read_sessions=bool(value.get("read_sessions", False)),
-            execute_tasks=bool(value.get("execute_tasks", False)),
+            read_sessions=value.get("read_sessions", False),
+            execute_tasks=value.get("execute_tasks", False),
             providers=tuple(value.get("providers", (SUPPORTED_PROVIDER,))),
-            revoked=bool(value.get("revoked", False)),
+            projects=tuple(value.get("projects", ("*",))),
+            revoked=value.get("revoked", False),
             updated_at=value.get("updated_at", _now()),
         )
 
@@ -154,12 +164,14 @@ class NodeAuthorizationStore:
         read_sessions: bool = False,
         execute_tasks: bool = False,
         providers: tuple[str, ...] = (SUPPORTED_PROVIDER,),
+        projects: tuple[str, ...] = ("*",),
     ) -> SharingScope:
         scope = SharingScope(
             user_scope=user_scope,
             read_sessions=read_sessions,
             execute_tasks=execute_tasks,
             providers=providers,
+            projects=projects,
             revoked=False,
             updated_at=_now(),
         )
@@ -400,6 +412,10 @@ class NodeRegistry:
                 providers_json TEXT NOT NULL, revoked INTEGER NOT NULL,
                 updated_at TEXT NOT NULL, PRIMARY KEY(node_id, user_scope)
             );
+            CREATE TABLE IF NOT EXISTS observation_projects (
+                node_id TEXT NOT NULL, user_scope TEXT NOT NULL, projects_json TEXT NOT NULL,
+                PRIMARY KEY(node_id,user_scope)
+            );
             CREATE TABLE IF NOT EXISTS thread_index (
                 node_id TEXT NOT NULL, user_scope TEXT NOT NULL, provider TEXT NOT NULL,
                 native_thread_id TEXT NOT NULL, source TEXT NOT NULL, source_version TEXT NOT NULL,
@@ -457,6 +473,8 @@ class NodeRegistry:
                 ),
             )
             if scope is not None:
+                self._conn.execute("INSERT OR REPLACE INTO observation_projects VALUES (?,?,?)",
+                    (record.node_id, scope.user_scope, json.dumps(scope.projects)))
                 self._conn.execute(
                     """INSERT INTO sharing_scopes VALUES (?,?,?,?,?,?,?)
                        ON CONFLICT(node_id,user_scope) DO UPDATE SET
@@ -545,6 +563,8 @@ class NodeRegistry:
                 (node_id, scope.user_scope, int(scope.read_sessions), int(scope.execute_tasks),
                  json.dumps(scope.providers), int(scope.revoked), scope.updated_at),
             )
+            self._conn.execute("INSERT OR REPLACE INTO observation_projects VALUES (?,?,?)",
+                (node_id, scope.user_scope, json.dumps(scope.projects)))
             state = "REVOKED" if scope.revoked else "ONLINE"
             self._conn.execute(
                 "UPDATE nodes SET user_scope=?,authorized=?,state=? WHERE node_id=?",
@@ -568,9 +588,10 @@ class NodeRegistry:
     def scope(self, node_id: str, user_scope: str) -> SharingScope | None:
         with self._lock:
             row = self._conn.execute("SELECT * FROM sharing_scopes WHERE node_id=? AND user_scope=?", (node_id, user_scope)).fetchone()
+            projects = self._conn.execute("SELECT projects_json FROM observation_projects WHERE node_id=? AND user_scope=?", (node_id,user_scope)).fetchone()
         if not row:
             return None
-        return SharingScope(user_scope=row["user_scope"], read_sessions=bool(row["read_sessions"]), execute_tasks=bool(row["execute_tasks"]), providers=tuple(json.loads(row["providers_json"])), revoked=bool(row["revoked"]), updated_at=row["updated_at"])
+        return SharingScope(projects=tuple(json.loads(projects[0])) if projects else ("*",), user_scope=row["user_scope"], read_sessions=bool(row["read_sessions"]), execute_tasks=bool(row["execute_tasks"]), providers=tuple(json.loads(row["providers_json"])), revoked=bool(row["revoked"]), updated_at=row["updated_at"])
 
     def update_thread(self, identity: SessionIdentity, *, source: str, status: Mapping[str, Any] | None = None, observed_at: str | None = None) -> None:
         source = _text("source", source, max_len=256)

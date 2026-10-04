@@ -9,6 +9,7 @@ import SwiftUI
 /// tool buttons all sit on that one level; there is no separate macOS toolbar or search row.
 struct MonitorRootView: View {
     @ObservedObject var store: MonitorStore
+    @State private var showNetwork = true
     @State private var windowWidth: CGFloat = 1440
     @State private var sidebarExpanded: Bool?
     @State private var navigationOpen = false
@@ -37,6 +38,9 @@ struct MonitorRootView: View {
             ZStack(alignment: .top) {
                 VStack(spacing: 0) {
                     header
+                    if showNetwork && store.syntheticScenario == nil {
+                        NetworkObservationView(monitor: store)
+                    } else {
                     HStack(spacing: 0) {
                         Group {
                             if sidebarDocked {
@@ -80,6 +84,7 @@ struct MonitorRootView: View {
                         .background(DS.Palette.canvas)
                     }
                     .frame(maxHeight: .infinity)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(DS.Palette.canvas)
@@ -271,6 +276,9 @@ struct MonitorRootView: View {
                     .keyboardShortcut("]", modifiers: .command)
             }
             .padding(.trailing, 8)
+            Button(showNetwork ? "全部设备" : "本地受管") { showNetwork.toggle() }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
             WindowDragRegion()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack(spacing: 10) {

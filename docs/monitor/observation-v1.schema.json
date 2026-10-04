@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CLINX observation v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "observation_id",
+    "node_id",
+    "user_scope",
+    "provider",
+    "native_thread_id",
+    "task_ref",
+    "turn",
+    "freshness"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "clinx-observation-v1"
+    },
+    "observation_id": {
+      "type": "string",
+      "pattern": "^obs_[a-f0-9]{40}$"
+    },
+    "task_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "node_id": {
+      "type": "string"
+    },
+    "user_scope": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "native_thread_id": {
+      "type": "string"
+    },
+    "freshness": {
+      "enum": [
+        "RECENT",
+        "STALE",
+        "OFFLINE"
+      ]
+    },
+    "turn": {
+      "type": "object",
+      "required": [
+        "turn_id",
+        "execution_ref",
+        "native_state",
+        "execution_state",
+        "business_result",
+        "ordinal"
+      ],
+      "properties": {
+        "turn_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "execution_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "native_state": {
+          "type": "string"
+        },
+        "execution_state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "business_result": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            null
+          ]
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

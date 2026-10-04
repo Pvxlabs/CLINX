@@ -459,8 +459,9 @@ class ObserverStore:
 
 
 class ObserverAPI:
-    def __init__(self, store, credential):
+    def __init__(self, store, credential, observations=None):
         self.store, self.credential = store, credential
+        self.observations = observations
 
     def request(self, method, target, authorization):
         token = self.credential()
@@ -479,11 +480,30 @@ class ObserverAPI:
             raise APIError(400, "INVALID_REQUEST")
         try:
             query = parse_qs(url.query, keep_blank_values=True, strict_parsing=True,
-                             max_num_fields=4)
+                             max_num_fields=8)
         except ValueError:
             raise APIError(400, "INVALID_QUERY") from None
         if any(len(v) != 1 for v in query.values()):
             raise APIError(400, "INVALID_QUERY")
+        if url.path.startswith("/v2/observations"):
+            from node_protocol import NodeProtocolError
+            if self.observations is None:
+                raise APIError(503, "OBSERVATION_NOT_CONFIGURED")
+            arguments = {k: v[0] for k, v in query.items()}
+            try:
+                if "limit" in arguments:
+                    arguments["limit"] = int(arguments["limit"])
+                if url.path == "/v2/observations" and not set(arguments) - {"node", "project", "state", "kind", "cursor", "limit"}:
+                    return self.observations.list(**arguments)
+                match = re.fullmatch(r"/v2/observations/(obs_[a-f0-9]{40})(/context)?", url.path)
+                if match and not set(arguments) - ({"cursor"} if match[2] else {"cursor", "limit"}):
+                    operation = self.observations.context if match[2] else self.observations.detail
+                    return operation(match[1], **arguments)
+                raise APIError(400, "INVALID_QUERY")
+            except NodeProtocolError as exc:
+                raise APIError(404 if exc.code == "OBSERVATION_NOT_FOUND" else 400, exc.code) from None
+            except (TypeError, ValueError):
+                raise APIError(400, "INVALID_QUERY") from None
         if url.path == "/v1/health" and not query:
             return self.store.health()
         if url.path == "/v1/tasks":
@@ -609,10 +629,12 @@ def main():
     path = os.environ.get("CLINX_OBSERVER_DB")
     if not path:
         raise SystemExit("CLINX_OBSERVER_DB must identify the existing canonical registry")
+    from network_observation import directory_from_env
+    observations = directory_from_env()
     store = ObserverStore(path)
     store.health()  # Fail closed; never initialize a missing registry.
     server = ObserverHTTPServer(int(os.environ.get("CLINX_OBSERVER_PORT", "8766")),
-                                ObserverAPI(store, lambda: os.environ.get("CLINX_OBSERVER_TOKEN")),
+                                ObserverAPI(store, lambda: os.environ.get("CLINX_OBSERVER_TOKEN"), observations),
                                 audit_methods=os.environ.get("CLINX_OBSERVER_AUDIT_METHODS") == "1")
     server.serve_forever(poll_interval=0.5)
 

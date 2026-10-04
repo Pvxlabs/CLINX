@@ -1,0 +1,142 @@
+{
+  "detail": {
+    "schema_version": "clinx-observation-v1",
+    "item": {
+      "binding_evidence": "THREAD_UNBOUND",
+      "coverage": "PARTIAL",
+      "native_thread_id": "unmanaged",
+      "node_id": "air",
+      "observation_id": "obs_c857cfa41632833423d210d99ead28ca8a0b9c22",
+      "project": "/approved",
+      "provider": "codex_app_server",
+      "source": "CODEX_NATIVE",
+      "source_client": "UNKNOWN",
+      "source_generation": "generation-1",
+      "source_updated_at": "",
+      "task_ref": null,
+      "title": "简短标题",
+      "turn": {
+        "artifacts": [],
+        "business_result": null,
+        "completed_at": "",
+        "execution_ref": null,
+        "execution_state": null,
+        "native_state": "COMPLETED",
+        "ordinal": 1,
+        "progress": null,
+        "result_processing": "UNKNOWN",
+        "started_at": "",
+        "summary": "公开结果",
+        "turn_id": "turn-1"
+      },
+      "user_scope": "alice",
+      "schema_version": "clinx-observation-v1",
+      "received_at": 1791100629.6072705,
+      "device_name": "Air",
+      "freshness": "RECENT",
+      "liveness": "NOT_PROVEN",
+      "progress_percent": null,
+      "control": {
+        "node_id": "air",
+        "native_thread_id": "unmanaged",
+        "task_ref": null,
+        "execution_ref": null,
+        "entrypoint": "clinx_adopt_conversation",
+        "enabled": false,
+        "reason": "READ_SESSIONS_ONLY",
+        "allowed_actions": []
+      }
+    },
+    "turns": [
+      {
+        "artifacts": [],
+        "business_result": null,
+        "completed_at": "",
+        "execution_ref": null,
+        "execution_state": null,
+        "native_state": "COMPLETED",
+        "ordinal": 1,
+        "progress": null,
+        "result_processing": "UNKNOWN",
+        "started_at": "",
+        "summary": "公开结果",
+        "turn_id": "turn-1"
+      }
+    ],
+    "has_more": false,
+    "next_cursor": null,
+    "gap": null,
+    "content_status": "CACHED_PUBLIC_SUMMARIES",
+    "read_only": true
+  },
+  "missing_result": {
+    "schema_version": "clinx-observation-v1",
+    "item": {
+      "binding_evidence": "CANONICAL_ROUTE",
+      "coverage": "PARTIAL",
+      "native_thread_id": "unmanaged",
+      "node_id": "air",
+      "observation_id": "obs_c857cfa41632833423d210d99ead28ca8a0b9c22",
+      "project": "/approved",
+      "provider": "codex_app_server",
+      "source": "CLINX_MANAGED",
+      "source_client": "UNKNOWN",
+      "source_generation": "generation-1",
+      "source_updated_at": "",
+      "task_ref": "task_fixture",
+      "title": "简短标题",
+      "turn": {
+        "artifacts": [],
+        "business_result": null,
+        "completed_at": "",
+        "execution_ref": "exec_fixture",
+        "execution_state": "RECOVERY_REQUIRED",
+        "native_state": "COMPLETED",
+        "ordinal": 1,
+        "progress": null,
+        "result_processing": "RESULT_MARKER_MISSING",
+        "started_at": "",
+        "summary": "公开结果",
+        "turn_id": "turn-1"
+      },
+      "user_scope": "alice",
+      "schema_version": "clinx-observation-v1",
+      "received_at": 1791100629.6402833,
+      "device_name": "Air",
+      "freshness": "RECENT",
+      "liveness": "NOT_PROVEN",
+      "progress_percent": null,
+      "control": {
+        "node_id": "air",
+        "native_thread_id": "unmanaged",
+        "task_ref": "task_fixture",
+        "execution_ref": "exec_fixture",
+        "entrypoint": "clinx_prepare_execution",
+        "enabled": false,
+        "reason": "READ_SESSIONS_ONLY",
+        "allowed_actions": []
+      }
+    },
+    "turns": [
+      {
+        "artifacts": [],
+        "business_result": null,
+        "completed_at": "",
+        "execution_ref": "exec_fixture",
+        "execution_state": "RECOVERY_REQUIRED",
+        "native_state": "COMPLETED",
+        "ordinal": 1,
+        "progress": null,
+        "result_processing": "RESULT_MARKER_MISSING",
+        "started_at": "",
+        "summary": "公开结果",
+        "turn_id": "turn-1"
+      }
+    ],
+    "has_more": false,
+    "next_cursor": null,
+    "gap": null,
+    "content_status": "CACHED_PUBLIC_SUMMARIES",
+    "read_only": true
+  }
+}
