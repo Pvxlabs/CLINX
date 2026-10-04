@@ -143,6 +143,12 @@ private actor FixtureService: ObserverServing {
 }
 
 final class MonitorStoreTests: XCTestCase {
+    private let fixtureNow = Date()
+
+    private func recentTimestamp(secondsAgo: TimeInterval) -> String {
+        ISO8601DateFormatter().string(from: fixtureNow.addingTimeInterval(-secondsAgo))
+    }
+
     private func snapshot(state: String, execution: String = "exec_snapshot",
                           observed: String = "2026-10-01T05:40:00Z") throws -> ObservedTask {
         let original = try example("pass_detail", as: ObservedTask.self)
@@ -211,8 +217,8 @@ final class MonitorStoreTests: XCTestCase {
 
     @MainActor
     func testCompletedRecentSnapshotWinsOverOlderActiveSnapshotForSameExecution() async throws {
-        let running = try snapshot(state: "CODEX_RUNNING", observed: "2026-10-03T12:27:40Z")
-        let completed = try snapshot(state: "COMPLETED", observed: "2026-10-03T12:27:56Z")
+        let running = try snapshot(state: "CODEX_RUNNING", observed: recentTimestamp(secondsAgo: 136))
+        let completed = try snapshot(state: "COMPLETED", observed: recentTimestamp(secondsAgo: 120))
         let store = MonitorStore(service: OverlappingPagesService(active: running, recent: completed))
 
         await store.refresh()
@@ -225,8 +231,8 @@ final class MonitorStoreTests: XCTestCase {
 
     @MainActor
     func testNewExecutionRemainsDistinctFromHistoricalExecutionForSameTask() async throws {
-        let old = try snapshot(state: "COMPLETED", execution: "exec_old", observed: "2026-10-03T12:20:00Z")
-        let current = try snapshot(state: "CODEX_RUNNING", execution: "exec_new", observed: "2026-10-03T12:27:56Z")
+        let old = try snapshot(state: "COMPLETED", execution: "exec_old", observed: recentTimestamp(secondsAgo: 596))
+        let current = try snapshot(state: "CODEX_RUNNING", execution: "exec_new", observed: recentTimestamp(secondsAgo: 120))
         let store = MonitorStore(service: OverlappingPagesService(active: current, recent: old))
 
         await store.refresh()
@@ -238,8 +244,8 @@ final class MonitorStoreTests: XCTestCase {
 
     @MainActor
     func testHistoricalSelectionKeepsExactSnapshotWhenDetailEndpointReturnsCurrentExecution() async throws {
-        let old = try snapshot(state: "COMPLETED", execution: "exec_old", observed: "2026-10-03T12:20:00Z")
-        let current = try snapshot(state: "CODEX_RUNNING", execution: "exec_new", observed: "2026-10-03T12:27:56Z")
+        let old = try snapshot(state: "COMPLETED", execution: "exec_old", observed: recentTimestamp(secondsAgo: 596))
+        let current = try snapshot(state: "CODEX_RUNNING", execution: "exec_new", observed: recentTimestamp(secondsAgo: 120))
         let store = MonitorStore(service: OverlappingPagesService(active: current, recent: old))
 
         await store.refresh()
