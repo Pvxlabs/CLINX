@@ -130,6 +130,9 @@ final class MonitorStore: ObservableObject {
     var activitySource: String { archiveSource }
 
     private var service: (any ObserverServing)?
+    private var networkService: (any NetworkObservationServing)?
+    private var networkObservations: [NetworkObservation] = []
+    private var observationRows: [ObservedTask] = []
     private var pollTask: Task<Void, Never>?
     private var eventCursor: String?
     private var selectionToken = 0
@@ -139,16 +142,19 @@ final class MonitorStore: ObservableObject {
     private var failureCount = 0
     private var failed = false
 
-    init(service: (any ObserverServing)? = nil, defaults: UserDefaults = .standard) {
+    init(service: (any ObserverServing)? = nil, defaults: UserDefaults = .standard,
+         networkService: (any NetworkObservationServing)? = nil) {
         self.defaults = defaults
         localArchives = defaults.data(forKey: Self.archiveKey)
             .flatMap { try? JSONDecoder().decode([LocalArchiveEntry].self, from: $0) } ?? []
         self.service = service
+        self.networkService = networkService ?? (service as? any NetworkObservationServing)
         endpointText = defaults.string(forKey: "monitor.endpoint") ?? ""
         linkedDeviceID = defaults.string(forKey: "monitor.deviceID")
         linkedDeviceName = defaults.string(forKey: "monitor.deviceName")
         if service == nil, !endpointText.isEmpty, let url = URL(string: endpointText) {
             self.service = try? ObserverClient(baseURL: url, credentialAccount: credentialAccount)
+            self.networkService = self.service as? any NetworkObservationServing
         }
     }
 
@@ -447,6 +453,10 @@ final class MonitorStore: ObservableObject {
         let task = allTasks.first(where: {
             $0.taskRef == ref && (executionRef == nil || $0.executionRef == executionRef)
         })
+        if task == nil && NetworkObservationAdapter.isPresentationRef(ref) {
+            clearSelection()
+            return
+        }
         let exactExecution = executionRef ?? task?.executionRef
         if recordHistory { recordVisit(ref, executionRef: exactExecution) }
         selectedRef = ref
@@ -473,6 +483,10 @@ final class MonitorStore: ObservableObject {
         let task = allTasks.first(where: {
             $0.taskRef == ref && (executionRef == nil || $0.executionRef == executionRef)
         })
+        if task == nil && NetworkObservationAdapter.isPresentationRef(ref) {
+            clearSelection()
+            return
+        }
         let exactExecution = executionRef ?? task?.executionRef
         recordVisit(ref, executionRef: exactExecution)
         selectedRef = ref
@@ -492,6 +506,8 @@ final class MonitorStore: ObservableObject {
     }
 
     private func loadSelection(ref: String, expectedExecutionRef: String?, token: Int) async {
+        // Synthetic presentation references must never reach the canonical v1 API.
+        if NetworkObservationAdapter.isPresentationRef(ref) { return }
         guard let service, token == selectionToken else { return }
         if selected?.taskRef != ref || selected?.executionRef != expectedExecutionRef {
             if let snapshot = allTasks.first(where: {
@@ -556,6 +572,7 @@ final class MonitorStore: ObservableObject {
         defaults.set(endpoint, forKey: "monitor.manualEndpoint")
         pollTask?.cancel()
         service = newService
+        networkService = newService
         syntheticScenario = nil
         endpointText = endpoint
         defaults.set(endpoint, forKey: "monitor.endpoint") // Public endpoint only.
@@ -570,6 +587,7 @@ final class MonitorStore: ObservableObject {
         if linkedDeviceID == nil { defaults.set(endpointText, forKey: "monitor.manualEndpoint") }
         pollTask?.cancel()
         service = client
+        networkService = client
         syntheticScenario = nil
         linkedDeviceID = nodeID
         linkedDeviceName = name
@@ -584,6 +602,7 @@ final class MonitorStore: ObservableObject {
     func disconnectPairedDevice() {
         pollTask?.cancel()
         service = nil
+        networkService = nil
         linkedDeviceID = nil
         linkedDeviceName = nil
         syntheticScenario = nil
@@ -608,6 +627,7 @@ final class MonitorStore: ObservableObject {
         pollTask?.cancel()
         syntheticScenario = scenario
         service = SyntheticObserverService(scenario: scenario)
+        networkService = nil
         resetForNewSource()
         start()
     }
@@ -617,8 +637,10 @@ final class MonitorStore: ObservableObject {
         syntheticScenario = nil
         if !endpointText.isEmpty, let url = URL(string: endpointText) {
             service = try? ObserverClient(baseURL: url, credentialAccount: credentialAccount)
+            networkService = service as? any NetworkObservationServing
         } else {
             service = nil
+            networkService = nil
         }
         resetForNewSource()
         start()
@@ -633,6 +655,8 @@ final class MonitorStore: ObservableObject {
         navigationIndex = nil
         active = []
         recent = []
+        networkObservations = []
+        observationRows = []
         selected = nil
         selectedDetailIncomplete = false
         selectedRef = nil
@@ -692,11 +716,28 @@ final class MonitorStore: ObservableObject {
             guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
             try validate(activePage)
             try validate(recentPage)
+            let canonicalActive = Self.merge(activePage.items +
+                (activePage.hasMore ? Array(active.filter { !NetworkObservationAdapter.isPresentationRef($0.taskRef) }.dropFirst(50)) : []))
+            let canonicalRecent = Self.merge(recentPage.items +
+                (recentPage.hasMore ? Array(recent.filter { !NetworkObservationAdapter.isPresentationRef($0.taskRef) }.dropFirst(50)) : []))
+            if let networkService {
+                do {
+                    let observations = try await Self.fetchObservations(using: networkService)
+                    guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
+                    networkObservations = observations
+                    observationRows = NetworkObservationAdapter.project(networkObservations,
+                        canonical: Self.merge(canonicalActive + canonicalRecent))
+                } catch {
+                    guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
+                    networkObservations = []
+                    observationRows = []
+                }
+            } else { networkObservations = []; observationRows = [] }
             health = newHealth
-            active = Self.merge(activePage.items + (activePage.hasMore ? Array(active.dropFirst(50)) : []))
-            recent = Self.merge(recentPage.items + (recentPage.hasMore ? Array(recent.dropFirst(50)) : []))
-            activeNextOffset = active.count > 50 ? activeNextOffset : activePage.nextOffset
-            recentNextOffset = recent.count > 50 ? recentNextOffset : recentPage.nextOffset
+            active = Self.merge(canonicalActive + observationRows.filter { $0.monitorStatus == .running })
+            recent = Self.merge(canonicalRecent + observationRows.filter { $0.monitorStatus != .running })
+            activeNextOffset = canonicalActive.count > 50 ? activeNextOffset : activePage.nextOffset
+            recentNextOffset = canonicalRecent.count > 50 ? recentNextOffset : recentPage.nextOffset
             lastObservedAt = activePage.observedAt
             lastSuccessfulFetch = Date()
             failed = false; authFailed = false; failureCount = 0; errorCategory = nil
@@ -712,12 +753,18 @@ final class MonitorStore: ObservableObject {
 
     private func reloadSelected(using service: any ObserverServing) async {
         guard let ref = selectedRef else { return }
+        if NetworkObservationAdapter.isPresentationRef(ref) {
+            if let row = observationRows.first(where: { $0.taskRef == ref }) { seedSelection(row) }
+            else { clearSelection() }
+            return
+        }
         selectionToken += 1
         await loadSelection(ref: ref, expectedExecutionRef: selectedExecutionRef, token: selectionToken)
     }
 
     func loadMoreEvents() async {
         guard let service, let ref = selectedRef, eventHasMore || eventCursor != nil else { return }
+        guard !NetworkObservationAdapter.isPresentationRef(ref) else { return }
         let token = sourceToken
         do {
             let page = try await service.events(ref, after: eventCursor)
@@ -764,6 +811,7 @@ final class MonitorStore: ObservableObject {
                 recent = Self.merge(recent + page.items)
                 recentNextOffset = page.nextOffset
             }
+            reprojectObservations()
         } catch { if token == sourceToken, requestGeneration == listRequestGeneration { errorCategory = Self.category(error) } }
     }
 
@@ -784,6 +832,7 @@ final class MonitorStore: ObservableObject {
                 recent = Self.merge(recent + page.items)
                 recentNextOffset = page.nextOffset
             }
+            reprojectObservations()
         } catch { if token == sourceToken, requestGeneration == listRequestGeneration { errorCategory = Self.category(error) } }
     }
 
@@ -792,6 +841,29 @@ final class MonitorStore: ObservableObject {
             $0.schemaVersion == "1" && $0.mutationBoundary.observerReadOnly &&
             $0.mutationBoundary.allowedActions.isEmpty
         }) else { throw MonitorError.incompatibleSchema }
+    }
+
+    private func reprojectObservations() {
+        let canonicalActive = active.filter { !NetworkObservationAdapter.isPresentationRef($0.taskRef) }
+        let canonicalRecent = recent.filter { !NetworkObservationAdapter.isPresentationRef($0.taskRef) }
+        observationRows = NetworkObservationAdapter.project(networkObservations,
+            canonical: Self.merge(canonicalActive + canonicalRecent))
+        active = Self.merge(canonicalActive + observationRows.filter { $0.monitorStatus == .running })
+        recent = Self.merge(canonicalRecent + observationRows.filter { $0.monitorStatus != .running })
+    }
+
+    private static func fetchObservations(using service: any NetworkObservationServing) async throws -> [NetworkObservation] {
+        var items: [NetworkObservation] = []
+        var cursor: String?
+        for _ in 0..<10 {
+            let page = try await service.observations(filters: ObservationFilters(), cursor: cursor)
+            guard page.schemaVersion == "clinx-observation-v1" else { throw MonitorError.incompatibleSchema }
+            items.append(contentsOf: page.items.prefix(max(0, 500 - items.count)))
+            guard items.count < 500, page.hasMore, let next = page.nextCursor,
+                  next != cursor else { break }
+            cursor = next
+        }
+        return items
     }
 
     private static func merge(_ tasks: [ObservedTask]) -> [ObservedTask] {
