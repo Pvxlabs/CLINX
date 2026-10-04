@@ -731,6 +731,9 @@ class HostExecutor:
             # Missing Host evidence after an arbitrary handler crash is NOT this proof.
             exc.command_not_dispatched = True
             raise
+        if request.tool_call_id:
+            from tool_delivery import ToolDeliveryLedger
+            ToolDeliveryLedger.validated(self.registry, request.execution_ref, request.tool_call_id)
         host_execution_ref = "hostexec_" + uuid.uuid4().hex
         started_at = _now()
         argv_json = json.dumps(
@@ -768,6 +771,8 @@ class HostExecutor:
                 with self._lock:
                     cancelled_before_start = request.execution_ref in self._cancelled
                     if not cancelled_before_start:
+                        if request.tool_call_id:
+                            ToolDeliveryLedger.running(self.registry, request.execution_ref, request.tool_call_id)
                         process = subprocess.Popen(
                             list(command.argv),
                             cwd=str(command.cwd or request.project_root),
