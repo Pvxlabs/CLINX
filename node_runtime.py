@@ -103,6 +103,11 @@ class NodeRegistrationClient:
             "sharing_scope": scope.as_dict(),
         })
 
+    def upload(self, identity, scope, **batch):
+        return self.tls.client(self.centre_id, self.endpoint, timeout=self.timeout).call({
+            "operation": "observation.upload", "protocol_version": NODE_PROTOCOL_VERSION,
+            "node_id": identity.public["node_id"], "sharing_scope": scope.as_dict(), **batch})
+
 
 def intersect_scope(local: SharingScope | None, centre: SharingScope | None) -> SharingScope:
     if local is None or centre is None or local.revoked or centre.revoked:
@@ -114,6 +119,8 @@ def intersect_scope(local: SharingScope | None, centre: SharingScope | None) -> 
         read_sessions=local.read_sessions and centre.read_sessions,
         execute_tasks=local.execute_tasks and centre.execute_tasks,
         providers=tuple(p for p in local.providers if p in centre.providers),
+        projects=(centre.projects if "*" in local.projects else local.projects if "*" in centre.projects
+                  else tuple(p for p in local.projects if p in centre.projects)),
         updated_at=max(local.updated_at, centre.updated_at),
     )
 
@@ -121,9 +128,10 @@ def intersect_scope(local: SharingScope | None, centre: SharingScope | None) -> 
 class CentreService:
     """Authenticated registration uses observed peer address, never claimed host."""
 
-    def __init__(self, tls: PairedTLS, registry: NodeRegistry, approvals: NodeAuthorizationStore, *, stale_after: int = 45):
+    def __init__(self, tls: PairedTLS, registry: NodeRegistry, approvals: NodeAuthorizationStore, *, stale_after: int = 45, observations=None):
         self.tls, self.registry, self.approvals = tls, registry, approvals
         self.stale_after = stale_after
+        self.observations = observations
 
     def handle(self, request: Mapping[str, Any], sock: Any, address: Any) -> dict[str, Any]:
         try:
@@ -133,7 +141,7 @@ class CentreService:
                 raise NodeProtocolError("NODE_IDENTITY_MISMATCH", "Claimed node does not match authenticated paired identity")
             if request.get("protocol_version") != NODE_PROTOCOL_VERSION:
                 raise NodeProtocolError("NODE_VERSION_INCOMPATIBLE", "Unsupported node protocol")
-            if request.get("operation") not in {"node.register", "node.heartbeat"}:
+            if request.get("operation") not in {"node.register", "node.heartbeat", "observation.upload"}:
                 raise NodeProtocolError("UNKNOWN_NODE_OPERATION", "Centre accepts registration and heartbeat only")
             local_raw = request.get("sharing_scope")
             if not isinstance(local_raw, dict):
@@ -148,6 +156,15 @@ class CentreService:
                 if existing:
                     self.registry.revoke(node_id, existing.user_scope)
                 raise NodeProtocolError("SHARING_SCOPE_DENIED", "Both owner and centre approvals are required")
+            if request.get("operation") == "observation.upload":
+                record = self.registry.get(node_id)
+                if not self.observations:
+                    raise NodeProtocolError("OBSERVATION_NOT_CONFIGURED", "Observation writer is unavailable")
+                if not record or record.user_scope != effective.user_scope or not record.authorized:
+                    raise NodeProtocolError("REGISTRATION_REQUIRED", "Current approved registration is required")
+                if not effective.allows("observation.upload"):
+                    raise NodeProtocolError("SHARING_SCOPE_DENIED", "read_sessions is required")
+                return self.observations.accept(node_id, effective, request)
             port = request.get("port")
             if type(port) is not int or not 1 <= port <= 65535:
                 raise NodeProtocolError("INVALID_NODE_ENDPOINT", "Node listener port is invalid")

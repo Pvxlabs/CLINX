@@ -25,6 +25,7 @@ def parser():
     commands.add_parser("bootstrap")
     serve = commands.add_parser("serve")
     serve.add_argument("--registry", type=Path, required=True)
+    serve.add_argument("--observations", type=Path, help="Separate durable observation projection")
     serve.add_argument("--bind", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8771)
     serve.add_argument("--stale-after", type=int, default=45)
@@ -33,6 +34,7 @@ def parser():
     share.add_argument("--user-scope", required=True)
     share.add_argument("--read-sessions", action="store_true")
     share.add_argument("--execute-tasks", action="store_true")
+    share.add_argument("--project", action="append", help="Approved exact cwd; omitted preserves whole-user read scope")
     share.add_argument("--revoke", action="store_true")
     share.add_argument("--approved", action="store_true", required=True)
     pair = commands.add_parser("pair-listen")
@@ -49,6 +51,9 @@ def parser():
     configure.add_argument("--bind", default="0.0.0.0")
     configure.add_argument("--port", type=int, default=8772)
     configure.add_argument("--execution-config", type=Path)
+    configure.add_argument("--observation-canonical-db", type=Path)
+    configure.add_argument("--observation-owner-host")
+    configure.add_argument("--observation-previous-stream", help="Explicit CAS identity when rebuilding a lost observation spool")
     configure.add_argument("--execution-thread", action="append")
     configure.add_argument("--execution-project", action="append")
     configure.add_argument("--execution-new-project", action="append")
@@ -70,7 +75,7 @@ def main(argv=None) -> int:
         PairedTLS(identity, peers).peer(args.peer)
         approvals = NodeAuthorizationStore(args.state)
         scope = approvals.revoke(args.peer, user_scope=args.user_scope) if args.revoke else approvals.grant(
-            args.peer, user_scope=args.user_scope, read_sessions=args.read_sessions, execute_tasks=args.execute_tasks)
+            args.peer, user_scope=args.user_scope, read_sessions=args.read_sessions, execute_tasks=args.execute_tasks, projects=tuple(args.project or ("*",)))
         print(json.dumps({"peer_id": args.peer, "scope": scope.as_dict()}))
         return 0
     if args.command == "configure-node":
@@ -80,6 +85,9 @@ def main(argv=None) -> int:
             private.write("node-config.json", dict(schema_version=1, centre_id=args.centre,
                 centre_endpoint=args.endpoint, bind_address=args.bind, port=args.port,
                 execution_config=str(args.execution_config.resolve()) if args.execution_config else None,
+                observation_canonical_db=str(args.observation_canonical_db.resolve()) if args.observation_canonical_db else None,
+                observation_owner_host=args.observation_owner_host,
+                observation_previous_stream=args.observation_previous_stream,
                 execution_threads=args.execution_thread, execution_projects=args.execution_project,
                 execution_new_projects=args.execution_new_project, execution_cancel_projects=args.execution_cancel_project))
         print(json.dumps({"configured": True, "centre_id": args.centre}))
@@ -97,7 +105,9 @@ def main(argv=None) -> int:
             threading.Event().wait(min(120, max(1, args.seconds)))
         return 0
     registry = NodeRegistry(args.registry)
-    service = CentreService(PairedTLS(identity, peers), registry, NodeAuthorizationStore(args.state), stale_after=args.stale_after)
+    from network_observation import ObservationWriter
+    observations = ObservationWriter(args.observations) if args.observations else None
+    service = CentreService(PairedTLS(identity, peers), registry, NodeAuthorizationStore(args.state), stale_after=args.stale_after, observations=observations)
     server = service.server(address=args.bind, port=args.port)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())

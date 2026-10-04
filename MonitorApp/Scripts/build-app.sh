@@ -26,6 +26,7 @@ cp ../node_protocol.py "$app_dir/Contents/Resources/"
 cp ../node_runtime.py "$app_dir/Contents/Resources/"
 cp ../node_execution_adapter.py "$app_dir/Contents/Resources/"
 cp ../native_history.py "$app_dir/Contents/Resources/"
+cp ../network_observation.py ../observation_source.py "$app_dir/Contents/Resources/"
 # Keep the canonical CLINX execution adapter self-contained in the installed
 # helper. These modules are imported only when an explicit execution_config is
 # approved; read-only nodes do not start them.

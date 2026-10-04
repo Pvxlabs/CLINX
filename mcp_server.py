@@ -850,9 +850,9 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
 def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any]:
     """Return the confirmed connector-discovery schema from the canonical registry."""
     names = tuple(tool["name"] for tool in public_tools)
-    node_names = ("clinx_list_nodes", "clinx_get_node_status")
+    node_names = ("clinx_list_nodes", "clinx_get_node_status", "clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context")
     canonical_names = tuple(name for name in names if name not in node_names)
-    if canonical_names not in {DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}:
+    if canonical_names not in {(), DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}:
         raise MCPServerError("server/discover requires the canonical tool registry")
     return {
         "resultType": "complete",
@@ -898,14 +898,19 @@ class ClinxMCPServer:
         *,
         allow_execute: bool = False,
         executor: Callable[..., dict[str, Any]] | None = None,
+        observations=None,
     ):
         self.integration = integration
+        self.observations = observations
         self.allow_execute = allow_execute
         self.executor = executor or integration.execute
         self.public_tools = tool_definitions(
             include_execute=allow_execute,
             include_nodes=getattr(getattr(integration, "cfg", None), "node_router", None) is not None,
         )
+        if observations is not None:
+            from observation_mcp import observation_tools
+            self.public_tools.extend(observation_tools())
         self.public_tool_names = {
             tool["name"] for tool in self.public_tools
         }
@@ -913,6 +918,9 @@ class ClinxMCPServer:
     def _call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(arguments, dict):
             raise MCPRequestError(-32602, "tool arguments must be an object")
+        if name in {"clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context"}:
+            from observation_mcp import call_observation
+            return call_observation(self.observations, name, arguments)
         if name == "clinx_find_task":
             result = self.integration.find_task(**arguments)
         elif name == "clinx_get_context":
@@ -1144,7 +1152,8 @@ def build_server(
     integration = ClinxIntegration(
         cfg, registry, dispatcher, reader, linear=linear, topic_reader=topic_reader
     )
-    return ClinxMCPServer(integration, allow_execute=allow_execute)
+    from network_observation import directory_from_env
+    return ClinxMCPServer(integration, allow_execute=allow_execute, observations=directory_from_env())
 
 
 def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None, *, recover_existing: bool = True) -> None:
@@ -1183,6 +1192,7 @@ def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None, *, recover_exis
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CLINX M12 MCP stdio server")
     parser.add_argument("--config", default="bridge.toml")
+    parser.add_argument("--observations-only", action="store_true", help="Read-only network directory; no canonical runtime construction")
     parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
     parser.add_argument("--no-recover-existing", action="store_true", help="parallel maintenance: existing executions remain with their running completion owner")
     parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")
@@ -1191,7 +1201,15 @@ def main(argv: list[str] | None = None) -> int:
         print("MCP_TRANSPORT=BLOCKED: only authenticated external transport may expose CLINX", file=sys.stderr)
         return 2
     try:
-        serve_stdio(build_server(args.config, allow_execute=args.allow_execute), recover_existing=not args.no_recover_existing)
+        if args.observations_only:
+            from observation_mcp import standalone_server
+            from network_observation import directory_from_env
+            directory = directory_from_env()
+            if directory is None:
+                raise ValueError("OBSERVATION_NOT_CONFIGURED")
+            serve_stdio(standalone_server(directory), recover_existing=False)
+        else:
+            serve_stdio(build_server(args.config, allow_execute=args.allow_execute), recover_existing=not args.no_recover_existing)
     except Exception as exc:
         print(f"MCP_SERVER=BLOCKED: {exc}", file=sys.stderr)
         return 1

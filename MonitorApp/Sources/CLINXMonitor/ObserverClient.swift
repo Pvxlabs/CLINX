@@ -72,7 +72,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate, @unchecked Se
     }
 }
 
-public actor ObserverClient: ObserverServing, ActivityServing {
+public actor ObserverClient: ObserverServing, ActivityServing, NetworkObservationServing {
     private let baseURL: URL
     private let session: URLSession
     private let credential: @Sendable () throws -> String
@@ -187,6 +187,31 @@ public actor ObserverClient: ObserverServing, ActivityServing {
               page.items.count <= 40, page.items.allSatisfy({
                   ["feedback", "result"].contains($0.kind) && $0.text.utf8.count <= 16384
               }) else { throw MonitorError.incompatibleSchema }
+        return page
+    }
+
+    func observations(filters: ObservationFilters, cursor: String?) async throws -> ObservationPage {
+        var query = filters.query
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        let page: ObservationPage = try await get("v2/observations", query: query)
+        guard page.schemaVersion == "clinx-observation-v1" else { throw MonitorError.incompatibleSchema }
+        return page
+    }
+    func observation(_ id: String, cursor: String?) async throws -> ObservationDetail {
+        guard id.range(of: "^obs_[a-f0-9]{40}$", options: .regularExpression) != nil
+        else { throw MonitorError.invalidResponse }
+        let page: ObservationDetail = try await get("v2/observations/" + id,
+            query: cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
+        guard page.schemaVersion == "clinx-observation-v1", page.item.id == id
+        else { throw MonitorError.incompatibleSchema }
+        return page
+    }
+    func observationContext(_ id: String, cursor: String?) async throws -> ObservationContext {
+        guard id.range(of: "^obs_[a-f0-9]{40}$", options: .regularExpression) != nil
+        else { throw MonitorError.invalidResponse }
+        let page: ObservationContext = try await get("v2/observations/" + id + "/context",
+            query: cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
+        guard page.schemaVersion == "clinx-observation-v1" else { throw MonitorError.incompatibleSchema }
         return page
     }
 
