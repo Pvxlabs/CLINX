@@ -2,7 +2,9 @@
 
 ## 冻结边界
 
-唯一集成分支：`codex/network-observation-convergence-20261004`。本地精确提交见本工作区 `.validation/network-observation-convergence/FROZEN_CANDIDATE.json` 的 `integration_head`；远端推送与读回尚未完成，因此该提交是唯一**待冻结**候选，不能进入 Air 构建。后续 Air 必须 fetch `origin` 的该分支并核对精确提交；禁止从 `codex/air-result-contract-fix-20261004`、`codex/air-resume-fix-20261004` 或 `codex/p620-network-observation-v1-20261004` 构建最终 App。本轮仅冻结源码候选；部署、运行服务切换、App 安装、真实 Air/P620 观察和 iMac 均为 `NOT_RUN`。
+唯一冻结分支：`codex/network-observation-convergence-20261004`。产品集成 HEAD `f1f096bb970651f5b60a067f7d8eaaecb9fa7229` 已经由首次正式 non-force push 创建到 canonical `origin` 的同名分支；本轮开始时本地与 origin 回读均为该 SHA，工作树干净。Host delivery 已恢复，受管 Host 读写操作返回已知结果。本次仅提交本报告与 `.validation/network-observation-convergence/FROZEN_CANDIDATE.json`，形成最终 metadata-only 冻结提交。
+
+最终冻结 SHA 是本次 metadata-only 提交完成后的本地 HEAD，必须由正常 non-force push 到 canonical origin 同名分支，fetch 回读相同 SHA，ahead/behind 为 0/0，工作树干净。提交不能在自身内容中记录自己的 SHA；执行结果中的 `FINAL_FROZEN_SHA` 与 `REMOTE_SHA` 是精确值。Air 后续只能 fetch 该分支并核对这个最终 SHA；禁止从 `codex/air-result-contract-fix-20261004`、`codex/air-resume-fix-20261004` 或 `codex/p620-network-observation-v1-20261004` 构建最终 App。本轮部署与 Air build 均为 `NOT_RUN`。
 
 ## 来源与提交图
 
@@ -32,13 +34,15 @@
 
 - 最小交集：用户指定 9 个文件，`201 passed, 13 subtests passed in 49.43s`；日志 `minimal-intersection.log` SHA256 `7963c4ee69caa7b594a1fe516166de06edba407187c5ed00c463ebfbce8d9895`。
 - 完整相关资格：原 Network Observation 报告列出的 16 个测试文件，**本轮重跑** `289 passed, 28 subtests passed in 61.94s`；日志 `full-qualification.log` SHA256 `2f86fed7ae38c733c4fe8fd6d7a191d96e3009090d028dc6187594026ddc03d5`。旧交付的 289 passed 不计作本轮验证。
-- 15 个相关 Python 源文件 AST 解析、`MonitorApp/Scripts/build-app.sh` 与两个 launcher 的 `bash -n`、`git diff --check 6a6ddd1..HEAD` 均通过。最终提交后的 diff、工作区状态与 origin 分支存在性见本地 manifest；远端精确读回 `NOT_RUN`。
+- 15 个相关 Python 源文件 AST 解析、`MonitorApp/Scripts/build-app.sh` 与两个 launcher 的 `bash -n`、`git diff --check 6a6ddd1..HEAD` 均通过。最终 metadata-only 提交后的 diff、工作区状态和 origin 精确读回以本轮执行结果为准。
 - `swift`、`xcodebuild` 在 P620 均不可用；Swift build/test、Air App 安装、部署与真实会话 `01a105a5-8667-79e3-afdb-6e6db6a97f65` 自动发现均 `NOT_RUN`。
 
-## 推送权限阻塞
+## 推送与最终冻结
 
-受管 Host 对新 worktree 的 `git push -u origin codex/network-observation-convergence-20261004` 返回 `AUTHORITY_DENIED` / `COMMAND_NOT_DISPATCHED`，原因是 `development_command git network operations require explicit external authority`。`host_dispatched=false`、`side_effect_certainty=NOT_EXECUTED`，因此没有远端写入或不确定的推送结果。当前 `push_current_branch` 只针对注册的原产品 worktree/分支，不能代表集成分支执行推送。`PUSH=BLOCKED`、`FROZEN_CANDIDATE=BLOCKED`、本轮 convergence `FINAL_STATUS=BLOCKED`；这不改变上述源码和隔离回归的 PASS。需要外层以该**同一个本地提交**授予正确的远端推送操作，再做精确远端读回；不得重跑本次被拒绝的原操作，也不得从旧分支构建 App。
+早前受管 Host 的开发命令推送曾在 dispatch 前被拒绝，原失败证据保持为历史记录。随后首次正式注册操作以正常 non-force push 成功创建 `origin/codex/network-observation-convergence-20261004`；本轮 fetch 读回该分支与本地产品集成 HEAD 同为 `f1f096bb970651f5b60a067f7d8eaaecb9fa7229`。Host delivery 已恢复，本轮注册操作结果可继续执行。既有隔离集成回归仍为 `201 passed, 13 subtests` 与 `289 passed, 28 subtests`，本轮不重跑。
+
+本次 metadata-only 提交正常推送后，以最终本地 HEAD 和 canonical origin 同名分支 fetch 回读完全相等、ahead/behind `0/0`、工作树干净作为 `FROZEN_CANDIDATE=PASS` 的必要条件。若任何条件不满足，最终结果为 `BLOCKED`。最终 SHA 由本轮执行结果提供；产品集成 HEAD 仅是其祖先证据。禁止 force push、main merge、自定义 refspec、产品源码修改、部署和 Air build。
 
 ## 下一阶段顺序
 
-冻结候选 → Air fetch 并校验精确 ref/HEAD → Swift build/test → 安装候选 App → P620/Air 受控激活 → 用真实 `01a105a5-8667-79e3-afdb-6e6db6a97f65` 验证自动发现 → Air/P620 双机同屏 → UI 验收 → 最后处理 iMac。本轮在源码收敛及权限阻塞核实后停止；远端推送和读回完成前不进入下一阶段。
+冻结候选 → Air fetch 并校验精确 ref/HEAD → Swift build/test → 安装候选 App → P620/Air 受控激活 → 用真实 `01a105a5-8667-79e3-afdb-6e6db6a97f65` 验证自动发现 → Air/P620 双机同屏 → UI 验收 → 最后处理 iMac。本轮在 metadata-only 冻结提交、正常推送及精确远端读回后收口；Air build 与部署留待后续独立执行。
