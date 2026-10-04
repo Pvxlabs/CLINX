@@ -220,7 +220,7 @@ struct ExecutionRowView: View {
                         .font(DS.Font.meta)
                         .monospacedDigit()
                         .foregroundStyle(DS.Palette.textTertiary)
-                        .frame(minWidth: status.canArchiveLocally ? 58 : nil, alignment: .trailing)
+                        .frame(width: 58, alignment: .trailing)
                         .opacity(hovering && status.canArchiveLocally ? 0 : 1)
                 }
                 HStack(spacing: 8) {

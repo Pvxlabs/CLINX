@@ -52,7 +52,7 @@ enum NetworkObservationAdapter {
             : item.sourceUpdatedAt
         let started = item.turn.startedAt?.isEmpty == false ? item.turn.startedAt : nil
         let completed = item.turn.completedAt?.isEmpty == false ? item.turn.completedAt : nil
-        let host = item.deviceName.isEmpty ? item.nodeId : item.deviceName
+        let host = item.nodeId
         let activity = item.turn.progress ?? item.turn.summary ?? item.turn.nativeState
         return ObservedTask(
             schemaVersion: "presentation-native-v2", taskRef: ref, executionRef: nil,
