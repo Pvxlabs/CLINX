@@ -2739,6 +2739,23 @@ class TaskRegistry:
             return conn.execute("SELECT 1 FROM worktree_leases WHERE execution_ref=? LIMIT 1",
                                 (execution_ref,)).fetchone() is not None
 
+    def confirm_pre_turn_absence(self, execution_ref, proof):
+        """Canonical maintenance barrier after fresh owning-Provider absence proof."""
+        execution = self.get_active_execution(execution_ref)
+        route = self.get_execution_routing_identity(execution_ref)
+        if (not execution or execution.get('execution_owned_turn') is not None
+                or proof.get('execution_ref') != execution_ref
+                or proof.get('task_id') != execution['task_id'] or route is None
+                or route.conversation.binding != proof.get('thread_id')):
+            raise TaskRegistryError('UNSTARTED_RECONCILIATION_IDENTITY_CONFLICT')
+        import time
+        with self._connect() as conn:
+            conn.execute("""UPDATE execution_liveness SET provider_liveness='TERMINAL',
+                transport_health='HEALTHY',liveness_reason='TURN_NOT_DISPATCHED',
+                ownership_conflict=0,release_safe=1,observed_at=?,observations_json=?
+                WHERE execution_ref=? AND turn_id=''""",
+                (time.time(), json.dumps(proof['observations']), execution_ref))
+
     def reconcile_terminal(
         self,
         execution_ref: str,

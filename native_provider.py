@@ -163,3 +163,39 @@ def observe_execution(cfg, tid, turn_id):
             observations.append(dict(endpoint=endpoint, state=state, transport_error=True,
                 reason="PROVIDER_READ_UNAVAILABLE", error_type=type(exc).__name__))
     return classify(observations, tid, turn_id)
+
+
+def confirm_unstarted_execution(cfg, registry, execution_ref):
+    """Negative reconciliation of a failed pre-turn attempt; never resume."""
+    import datetime as dt
+    from native_history import NativeHistory
+    from task_registry import TaskRegistryError
+    execution = registry.get_active_execution(execution_ref)
+    if (not execution or execution.get('execution_owned_turn') is not None
+            or execution.get('stage') not in {'RECOVERY_REQUIRED', 'TRANSPORT_UNCERTAIN'}):
+        raise TaskRegistryError('UNSTARTED_RECONCILIATION_DENIED')
+    task = registry.get_task(execution['task_id'])
+    binding = registry.get_binding(task.task_id)
+    prepared = registry.verify_prepared_execution('prepared_' + execution_ref.removeprefix('exec_'))
+    if (not binding or task.turn_id is not None or prepared.status != 'PREPARED'
+            or prepared.task_ref != task.task_id or prepared.resulting_turn_id is not None):
+        raise TaskRegistryError('UNSTARTED_IDENTITY_UNPROVEN')
+    native = NativeHistory(cfg.app_server.native_home or Path.home()/'.codex')
+    metadata = native.metadata(binding.thread_id)
+    status = native.status(binding.thread_id, metadata) if metadata else {}
+    acquired = dt.datetime.fromisoformat(execution['acquired_at']).timestamp()
+    if (status.get('state') != 'COMPLETED' or not status.get('completed_at')
+            or status['completed_at'] >= acquired):
+        raise TaskRegistryError('UNSTARTED_NATIVE_ABSENCE_UNPROVEN')
+    observation = observe_thread(cfg, binding.thread_id)
+    rows = observation['observations']
+    if observation.get('ownership_conflict') or not rows or any(
+            row.get('state') not in {'idle','notLoaded','unloaded','OFFLINE'} for row in rows):
+        raise TaskRegistryError('UNSTARTED_PROVIDER_ABSENCE_UNPROVEN')
+    available = [r for r in rows if r.get('state') != 'OFFLINE']
+    if not available or any(r.get('turn_id') != status['turn_id'] or
+                            r.get('turn_status') != 'completed' for r in available):
+        raise TaskRegistryError('UNSTARTED_PROVIDER_TURN_CONFLICT')
+    return {'execution_ref': execution_ref, 'task_id': task.task_id, 'thread_id': binding.thread_id,
+            'baseline_turn_id': status['turn_id'], 'observations': rows,
+            'observed_at': dt.datetime.now(dt.timezone.utc).isoformat()}

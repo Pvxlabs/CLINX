@@ -2844,8 +2844,21 @@ class TaskDispatcher:
 
     @serialized_execution
     def recover_execution_completion(self, execution_ref: str, *, restore_cancelled: bool = False,
+                                     reconcile_unstarted: bool = False,
                                      result_reconciliation: dict[str, str] | None = None,
                                      delivery_reconciliation: dict[str, Any] | None = None) -> dict[str, Any]:
+        if reconcile_unstarted:
+            if restore_cancelled or result_reconciliation or delivery_reconciliation:
+                raise TaskRegistryError('unstarted reconciliation cannot combine recovery modes')
+            from native_provider import confirm_unstarted_execution
+            proof = confirm_unstarted_execution(self.cfg, self.tasks, execution_ref)
+            self.tasks.confirm_pre_turn_absence(execution_ref, proof)
+            ExecutionFinalizer(self.tasks, getattr(self, 'linear', None)).finalize_pre_turn(
+                task_id=proof['task_id'], execution_ref=execution_ref, state='BLOCKED',
+                evidence='Fresh owning Provider and native index confirm no new turn after acquisition.',
+                failure_stage='dispatch', failure_code='TURN_NOT_DISPATCHED')
+            return {'execution_ref': execution_ref, 'state': 'BLOCKED', 'execution_started': False,
+                    'reconciled': True, 'replay_performed': False, 'proof': proof}
         if delivery_reconciliation is not None:
             if restore_cancelled or result_reconciliation is not None:
                 raise TaskRegistryError("delivery reconciliation cannot be combined with another recovery path")
@@ -7004,6 +7017,7 @@ def build_parser() -> argparse.ArgumentParser:
     tasks_topic.add_argument("--max-bytes", type=int, default=TopicStatusReader.MAX_TOPIC_BYTES)
     recover = sub.add_parser("recover-execution", help="Recover one exact completion; never start a turn")
     recover.add_argument("execution_ref")
+    recover.add_argument("--reconcile-unstarted", action="store_true")
     recover.add_argument("--restore-cancelled", action="store_true",
                          help="Restore a released cancellation only with a fresh exact active owner")
     recover.add_argument("--reconcile-result", action="store_true",
@@ -7048,12 +7062,13 @@ def main() -> int:
                 delivery_reconciliation = {"tool_call_id": args.tool_call_id, "proof": proof}
             result = TaskDispatcher(cfg, initialize_host_executor=False).recover_execution_completion(
                 args.execution_ref, restore_cancelled=args.restore_cancelled,
+                reconcile_unstarted=args.reconcile_unstarted,
                 delivery_reconciliation=delivery_reconciliation,
                 result_reconciliation=({key: getattr(args, "expected_" + key)
                     for key in ("task_id", "thread_id", "turn_id", "result_sha256", "source_sha256", "message_id")}
                     if args.reconcile_result else None))
             print(json.dumps(result, sort_keys=True))
-            return 0 if result.get("completion_delivery") == "DONE" else 1
+            return 0 if result.get("completion_delivery") == "DONE" or result.get("reconciled") else 1
         except Exception as exc:
             print(f"RECOVERY_BLOCKED: {exc}" if isinstance(exc, TaskRegistryError) else f"RECOVERY_BLOCKED: {type(exc).__name__}", file=sys.stderr)
             return 1

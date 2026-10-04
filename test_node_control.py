@@ -146,3 +146,54 @@ def test_inflight_start_and_late_receipt_are_one_execution():
         assert unknown['operation_state']=='UNKNOWN'
         release.set();assert pending.result()['execution_ref']=='exec_late'
     assert service.handle(request)['idempotent'] and calls==['exec_late']
+
+
+def test_native_unix_socket_reads_split_large_websocket_frame():
+    import socket, struct, threading, time
+    from app_server import UnixSocketTransport, AppServerTransportError
+    client, server = socket.socketpair()
+    transport=UnixSocketTransport('/unused')
+    transport._byte_transport.sock=client
+    body=json.dumps({'id':1,'result':{'models':['model']*5000}}).encode()
+    frame=b'\x81\x7e'+struct.pack('!H',len(body))+body
+    def send():
+        for offset in range(0,len(frame),37):
+            server.sendall(frame[offset:offset+37])
+            if offset<200:time.sleep(0.005)
+        server.close()
+    writer=threading.Thread(target=send);writer.start()
+    try:
+        assert transport.receive(5)==json.loads(body)
+        with pytest.raises(AppServerTransportError,match='disconnected'):
+            transport._byte_transport.receive_bytes(2,1)
+    finally:
+        transport.close();writer.join(5)
+
+
+def test_unstarted_reconciliation_rejects_busy_or_new_turn(native):
+    from native_provider import confirm_unstarted_execution
+    native.integration.linear=None
+    native.cfg=dataclasses.replace(native.cfg,app_server=dataclasses.replace(native.cfg.app_server,native_home=str(native.root)))
+    native.integration.cfg=native.dispatcher.cfg=native.reader.cfg=native.cfg
+    with patch('thread_identity.ThreadIdentityReader',return_value=native.reader):
+        adopted=native.integration.adopt_conversation(thread_id=TID)
+    prepared=native.integration.prepare_execution(approved=True,task_ref=adopted['task_ref'],prompt='read identity')
+    ref='exec_'+prepared['prepared_execution_ref'].removeprefix('prepared_')
+    with native.registry.execution(adopted['task_ref'],None,execution_ref=ref,retain=True,preserve_uncertain=True):
+        native.registry.set_execution_state(adopted['task_ref'],'RECOVERY_REQUIRED')
+    native.registry.reconcile_terminal(ref,'RECOVERY_REQUIRED')
+    import sqlite3
+    with sqlite3.connect(native.root/'thread_history_1.sqlite') as c:
+        c.execute("UPDATE thread_turns SET status='completed',completed_at=3 WHERE thread_id=?",(TID,))
+    observation={'ownership_conflict':False,'observations':[{'state':'active','turn_id':'turn-2','turn_status':'inProgress'}]}
+    with patch('native_provider.observe_thread',return_value=observation):
+        with pytest.raises(Exception,match='PROVIDER_ABSENCE'):confirm_unstarted_execution(native.cfg,native.registry,ref)
+    observation['observations']=[{'state':'idle','turn_id':'new-turn','turn_status':'completed'}]
+    with patch('native_provider.observe_thread',return_value=observation):
+        with pytest.raises(Exception,match='TURN_CONFLICT'):confirm_unstarted_execution(native.cfg,native.registry,ref)
+    observation['observations']=[{'state':'idle','turn_id':'turn-2','turn_status':'completed'}]
+    with patch('native_provider.observe_thread',return_value=observation):
+        result=native.dispatcher.recover_execution_completion(ref,reconcile_unstarted=True)
+    assert result['reconciled'] and not result['replay_performed']
+    assert native.registry.get_execution_record(ref)['stage']=='BLOCKED'
+    assert not native.registry.has_execution_lease(ref)
