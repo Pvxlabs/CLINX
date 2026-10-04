@@ -200,3 +200,15 @@ def test_cancel_cannot_target_another_owners_execution(integration):
     with pytest.raises(ExecutionOwnerError, match='RECOVERY_REQUIRED'):
         owner.dispatch({'action': 'cancel', 'execution_ref': 'exec_'+'b'*32,
                         'database': str(integration.registry.path.resolve())})
+
+
+def test_terminal_cancel_remains_idempotent_after_owner_restart(integration):
+    from m9_integration import ClinxIntegration
+    owner = ExecutionOwner(integration)
+    with integration.registry._connect() as conn:
+        conn.execute('INSERT INTO clinx_execution_owners VALUES (?,?,?,?,?,?,?,?,NULL)',
+                     ('exec_'+'a'*32, 'prepared_'+'a'*32, owner.instance, 1, '/prior', 'DISPATCHED', 0, 0))
+    integration.registry.get_execution_record = lambda _: {'stage': 'CANCELLED', 'task_id': 'fixture-task'}
+    reader = ClinxIntegration(None, integration.registry, integration.dispatcher, None, None)
+    reader.execution_owner_client = ExecutionOwnerClient(integration.registry)
+    assert reader.cancel_execution(execution_ref='exec_'+'a'*32)['idempotent'] is True

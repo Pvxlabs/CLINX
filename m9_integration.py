@@ -2349,7 +2349,8 @@ class ClinxIntegration:
         owner = getattr(self, 'execution_owner_client', None)
         if owner is not None:
             from execution_owner import owner_record
-            if owner_record(self.registry, execution_ref) is not None:
+            if (owner_record(self.registry, execution_ref) is not None
+                    and self.registry.get_active_execution(execution_ref) is not None):
                 return owner.cancel(execution_ref=execution_ref)
         terminal_record = self.registry.get_execution_record(execution_ref)
         if terminal_record is not None and terminal_record.get("stage") == "CANCELLED":
