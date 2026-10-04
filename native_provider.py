@@ -172,7 +172,7 @@ def confirm_unstarted_execution(cfg, registry, execution_ref):
     from task_registry import TaskRegistryError
     execution = registry.get_active_execution(execution_ref)
     if (not execution or execution.get('execution_owned_turn') is not None
-            or execution.get('stage') not in {'RECOVERY_REQUIRED', 'TRANSPORT_UNCERTAIN'}):
+            or execution.get('execution_owned_state') not in {'RECOVERY_REQUIRED', 'TRANSPORT_UNCERTAIN'}):
         raise TaskRegistryError('UNSTARTED_RECONCILIATION_DENIED')
     task = registry.get_task(execution['task_id'])
     binding = registry.get_binding(task.task_id)
