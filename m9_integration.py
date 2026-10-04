@@ -818,6 +818,34 @@ class ClinxIntegration:
             return None
         return route.public_dict() if route is not None else None
 
+    def _remote_dispatch(self, operation, arguments, *, reference=None, host=None):
+        """Resolve only authenticated node routes; never fall back after routing."""
+        router = getattr(self.cfg, 'node_router', None)
+        if router is None:
+            return None
+        from node_protocol import NodeProtocolError
+        node_id = router.registry.reference_node(reference, router.user_scope) if reference else None
+        if host is not None:
+            target = router._node_for(host=host).node_id
+            if node_id and target != node_id:
+                raise NodeProtocolError('NODE_TARGET_MISMATCH', 'Host conflicts with canonical reference route')
+            node_id = node_id or target
+        if node_id is None or node_id == router.local_node_id:
+            return None
+        request = {key: value for key, value in arguments.items() if key != 'self' and value is not None}
+        request['host'] = node_id
+        if operation in {'execution.prepare', 'execution.start', 'execution.cancel'}:
+            import uuid
+            request['request_id'] = reference if operation != 'execution.prepare' else 'prepare-' + uuid.uuid4().hex
+        if operation == 'execution.start':
+            execution_ref = 'exec_' + reference.removeprefix('prepared_')
+            router.registry.bind_reference(execution_ref, node_id, router.user_scope)
+            request['execution_ref'] = execution_ref
+        result = router.execute(node_id=node_id, operation=operation, request=request)
+        if operation == 'execution.start' and result.get('operation_state') == 'UNKNOWN':
+            result.update(prepared_execution_ref=reference, execution_ref=execution_ref, execution_started=False)
+        return result
+
     def find_task(
         self,
         query: str,
@@ -864,6 +892,10 @@ class ClinxIntegration:
                     raise ThreadLookupError('IDENTITY_SELECTOR_CONFLICT', 'Use exactly one native selector')
                 tid, route_host, _ = resolve_selector(self.cfg, thread_id=thread_id, codex_uri=codex_uri,
                                                       host=host, query=query)
+                remote = self._remote_dispatch('execution.adopt', dict(project=project, host=route_host,
+                    thread_id=tid, title=title, summary=summary), host=route_host)
+                if remote is not None:
+                    return remote
                 reader = ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader)
                 observed = reader.read(thread_id=tid, host=route_host, project=project)
                 if observed.get('lookup_status') not in ('THREAD_UNBOUND', 'RESOLVED'):
@@ -1014,6 +1046,9 @@ class ClinxIntegration:
         execution_ref: str | None = None,
         cursor: str | None = None,
     ) -> dict[str, Any]:
+        remote = self._remote_dispatch('execution.context', locals(), reference=task_ref or execution_ref, host=host) if task_ref else None
+        if remote is not None:
+            return remote
         if thread_id is not None or codex_uri is not None:
             from thread_identity import ThreadIdentityReader
             return ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader).read(
@@ -1159,6 +1194,10 @@ class ClinxIntegration:
         thread_id: str | None = None,
         codex_uri: str | None = None,
     ) -> dict[str, Any]:
+        if thread_id is None and codex_uri is None:
+            remote = self._remote_dispatch('execution.status', locals(), reference=execution_ref or task_ref, host=host)
+            if remote is not None:
+                return remote
         if thread_id is not None or codex_uri is not None:
             from thread_identity import ThreadIdentityReader
             return ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader).read(
@@ -1581,6 +1620,9 @@ class ClinxIntegration:
         """Prepare an integrity-checked CLINX execution command without dispatching."""
         if approved is not True:
             raise M9IntegrationError("explicit approved=true is required for preparation")
+        remote = self._remote_dispatch('execution.prepare', locals(), reference=task_ref, host=host)
+        if remote is not None:
+            return remote
         prompt = self._validated_text("prompt", prompt)
         if task_action is not None:
             if task_action not in {"create", "continue", "reopen"}:
@@ -1996,6 +2038,9 @@ class ClinxIntegration:
             raise M9IntegrationError("explicit approved=true is required for execution")
         if not isinstance(prepared_execution_ref, str) or not prepared_execution_ref.strip():
             raise M9IntegrationError("prepared_execution_ref is required")
+        remote = self._remote_dispatch('execution.start', locals(), reference=prepared_execution_ref)
+        if remote is not None:
+            return remote
         prepared = self.registry.verify_prepared_execution(prepared_execution_ref)
         if prepared.status != 'DISPATCHED' and prepared.task_ref:
             current = self.registry.get_task(prepared.task_ref)
@@ -2223,6 +2268,9 @@ class ClinxIntegration:
         """Cancel one active opaque CLINX execution; never accepts raw IDs."""
         if not isinstance(execution_ref, str) or not execution_ref.startswith("exec_"):
             raise M9IntegrationError("execution_ref must be an opaque CLINX execution reference")
+        remote = self._remote_dispatch('execution.cancel', locals(), reference=execution_ref)
+        if remote is not None:
+            return remote
         terminal_record = self.registry.get_execution_record(execution_ref)
         if terminal_record is not None and terminal_record.get("stage") == "CANCELLED":
             return {
