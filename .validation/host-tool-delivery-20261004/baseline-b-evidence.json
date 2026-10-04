@@ -1,0 +1,47 @@
+{
+  "execution_ref": "exec_0fc6596fa2f740429c728060a2f73f2b",
+  "mcp_exit": -15,
+  "native_calls": [
+    {
+      "timestamp": "2026-10-04T10:36:14.155Z",
+      "ordinal": 12,
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "id": "ctc_0876bf58c50b282b016ac22c1d519087d08cc065bbb4a576a5",
+        "status": "completed",
+        "call_id": "call_wRj9QXp1fXVZxlFbWfcAoP8K",
+        "name": "exec",
+        "input": "const r = await tools.clinx__clinx_host_operation({capability:\"GIT\", operation:\"status\", operation_class:\"READ_ONLY_HOST\", arguments:{}});\ntext(JSON.stringify(r));\n",
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "bd86757b-88bc-4a0a-bbef-9772b1e500fa",
+          "create_time": 1791110172.156591
+        }
+      }
+    }
+  ],
+  "worker_pending": [
+    {
+      "timestamp": "2026-10-04T10:36:45.207Z",
+      "ordinal": 14,
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call_output",
+        "id": "ctco_01a1067c-cf17-7673-bd1c-5a1c4d5437d4",
+        "call_id": "call_wRj9QXp1fXVZxlFbWfcAoP8K",
+        "output": "Script running with cell ID 1\nWall time 31.0 seconds\nOutput:\n",
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "01a1067c-3e6f-7070-b6aa-4ea8d5d5d23c",
+          "create_time": 1791110205.2070835
+        }
+      },
+      "metadata": {
+        "client_authored": false,
+        "fallback_token_limit_override": 12000
+      }
+    }
+  ],
+  "ledger_count": 0,
+  "native_rollout_sha256": "8c761c40bc1763f5d8c496feae740650db2ebb94191a11122be69e5835dd5141",
+  "OLD_FAILURE_REPRODUCED": true
+}

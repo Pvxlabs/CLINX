@@ -1,0 +1,57 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+__________ test_provider_started_read_is_durable_before_rpc_delivery ___________
+
+delivery = namespace(lease=<contextlib._GeneratorContextManager object at 0x7b24223616d0>, wire=<test_tool_delivery.Wire object a...NLY_HOST","DEVELOPMENT_MUTATION"],"production_mutation_intent":false,"required_capabilities":["LOCAL_HOST_PROCESS"]}'))
+
+    def test_provider_started_read_is_durable_before_rpc_delivery(delivery):
+        d = delivery
+        d.request['params']['arguments']['readonly'] = True
+        # Same provider lifecycle shape as the historical exec-8ac274f6 call.
+        # A missing request frame is not evidence that no Host call was requested.
+        d.client._record_event(started(d.request))
+>       assert len(rows(d)) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+E        +    where [] = rows(namespace(lease=<contextlib._GeneratorContextManager object at 0x7b24223616d0>, wire=<test_tool_delivery.Wire object a...NLY_HOST","DEVELOPMENT_MUTATION"],"production_mutation_intent":false,"required_capabilities":["LOCAL_HOST_PROCESS"]}')))
+
+test_host_delivery_ingress.py:24: AssertionError
+____________ test_owned_prevalidation_rejection_is_durable[change0] ____________
+
+delivery = namespace(lease=<contextlib._GeneratorContextManager object at 0x7b24223626f0>, wire=<test_tool_delivery.Wire object a...NLY_HOST","DEVELOPMENT_MUTATION"],"production_mutation_intent":false,"required_capabilities":["LOCAL_HOST_PROCESS"]}'))
+change = {'namespace': 'unregistered'}
+
+    @pytest.mark.parametrize('change', [{'namespace': 'unregistered'}, {'connectionGeneration': 2}])
+    def test_owned_prevalidation_rejection_is_durable(delivery, change):
+        d = delivery
+        d.client._send_server_response({**d.request, 'params': {**d.request['params'], **change}})
+        result = json.loads(d.wire.sent[-1]['result']['contentItems'][0]['text'])
+        assert result['host_dispatched'] is False
+>       assert len(rows(d)) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+E        +    where [] = rows(namespace(lease=<contextlib._GeneratorContextManager object at 0x7b24223626f0>, wire=<test_tool_delivery.Wire object a...NLY_HOST","DEVELOPMENT_MUTATION"],"production_mutation_intent":false,"required_capabilities":["LOCAL_HOST_PROCESS"]}')))
+
+test_host_delivery_ingress.py:40: AssertionError
+____________ test_owned_prevalidation_rejection_is_durable[change1] ____________
+
+delivery = namespace(lease=<contextlib._GeneratorContextManager object at 0x7b2422363ce0>, wire=<test_tool_delivery.Wire object a...NLY_HOST","DEVELOPMENT_MUTATION"],"production_mutation_intent":false,"required_capabilities":["LOCAL_HOST_PROCESS"]}'))
+change = {'connectionGeneration': 2}
+
+    @pytest.mark.parametrize('change', [{'namespace': 'unregistered'}, {'connectionGeneration': 2}])
+    def test_owned_prevalidation_rejection_is_durable(delivery, change):
+        d = delivery
+        d.client._send_server_response({**d.request, 'params': {**d.request['params'], **change}})
+        result = json.loads(d.wire.sent[-1]['result']['contentItems'][0]['text'])
+        assert result['host_dispatched'] is False
+>       assert len(rows(d)) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+E        +    where [] = rows(namespace(lease=<contextlib._GeneratorContextManager object at 0x7b2422363ce0>, wire=<test_tool_delivery.Wire object a...NLY_HOST","DEVELOPMENT_MUTATION"],"production_mutation_intent":false,"required_capabilities":["LOCAL_HOST_PROCESS"]}')))
+
+test_host_delivery_ingress.py:40: AssertionError
+=========================== short test summary info ============================
+FAILED test_host_delivery_ingress.py::test_provider_started_read_is_durable_before_rpc_delivery
+FAILED test_host_delivery_ingress.py::test_owned_prevalidation_rejection_is_durable[change0]
+FAILED test_host_delivery_ingress.py::test_owned_prevalidation_rejection_is_durable[change1]
+3 failed in 0.20s
