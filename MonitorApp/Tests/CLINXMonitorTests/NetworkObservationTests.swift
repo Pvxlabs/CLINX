@@ -150,9 +150,9 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         XCTAssertEqual(store.counts[.failed], 1)
         XCTAssertEqual(store.counts[.completed], 1)
         XCTAssertEqual(store.hostOptions.map { ($0.name, $0.count) }.count, 3)
-        XCTAssertEqual(store.hostOptions.first { $0.name == "Air" }?.count, 2)
-        XCTAssertEqual(store.hostOptions.first { $0.name == "P620" }?.count, 1)
-        XCTAssertEqual(store.hostOptions.first { $0.name == "iMac" }?.count, 1)
+        XCTAssertEqual(store.hostOptions.first { $0.name == "air" }?.count, 2)
+        XCTAssertEqual(store.hostOptions.first { $0.name == "p620" }?.count, 1)
+        XCTAssertEqual(store.hostOptions.first { $0.name == "imac" }?.count, 1)
         let unknown = try XCTUnwrap(store.recent.first { $0.stage == "UNKNOWN" })
         XCTAssertEqual(unknown.monitorStatus, .unknown)
         XCTAssertFalse(store.active.contains { $0.taskRef == unknown.taskRef })
@@ -160,7 +160,7 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         XCTAssertFalse(store.visibleTasks.contains { $0.taskRef == unknown.taskRef })
 
         await store.select(try XCTUnwrap(store.active.first).taskRef)
-        XCTAssertEqual(store.selected?.hostText, "P620")
+        XCTAssertEqual(store.selected?.hostText, "p620")
         let nativeTaskCalls = await service.taskCalls
         let nativeEventCalls = await service.eventCalls
         XCTAssertEqual(nativeTaskCalls, 0)
