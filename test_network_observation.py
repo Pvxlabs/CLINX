@@ -125,6 +125,18 @@ def test_revoke_filters_and_cursor_isolation(directory):
     with pytest.raises(NodeProtocolError): reader.list(cursor=cursor)
 
 
+def test_list_cursor_survives_new_uploads_between_pages(directory):
+    writer,reader,_,_,scope=directory
+    writer.accept("air",scope,dict(stream_id="stream",events=[event(i,tid=f"t-{i}") for i in range(1,5)]))
+    first=reader.list(limit=1)
+    cursor=first["next_cursor"]
+    assert cursor
+    writer.accept("air",scope,dict(stream_id="stream",events=[event(5,tid="t-5")]))
+    second=reader.list(limit=1,cursor=cursor)
+    assert second["items"]
+    assert second["items"][0]["observation_id"] != first["items"][0]["observation_id"]
+
+
 def test_auth_scope_allowlist_and_scrub(directory):
     writer,reader,_,_,scope=directory
     for change in ({"project":"/private"},{"provider":"other-agent"},{"task_ref":"task_fake"}):
