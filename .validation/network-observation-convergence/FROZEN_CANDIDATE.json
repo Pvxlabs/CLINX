@@ -22,17 +22,20 @@
     "test_original_287_lines_preserved": true
   },
   "build_allowed": false,
-  "candidate_state": "FROZEN",
+  "candidate_state": "SOURCE_FROZEN_PENDING_IMAC_SWIFT_REQUALIFICATION",
   "created_at_utc": "2026-10-04T09:18:13.527520+00:00",
   "final_freeze_rule": "Only the final metadata-only commit on refs/heads/codex/network-observation-convergence-20261004 qualifies; use its full SHA from final local HEAD and exact origin readback. The earlier product integration HEAD is evidence, not the final frozen SHA. Air must fetch this canonical branch and verify that full SHA before any later build.",
+  "final_frozen_sha": "FINAL_FROZEN_SHA from final local HEAD and canonical origin readback",
   "integration_branch": "codex/network-observation-convergence-20261004",
   "integration_head": "f1f096bb970651f5b60a067f7d8eaaecb9fa7229",
   "integration_ref": "refs/heads/codex/network-observation-convergence-20261004",
   "merge_base_air_network": "6a6ddd18ed5f2e1cb35c399e214c282affabcf69",
-  "note": "The product integration HEAD predates this metadata-only closure commit. A Git commit cannot contain its own SHA; FINAL_FROZEN_SHA is the final local HEAD and exact canonical origin readback in the execution result.",
+  "note": "The remediation changes only MonitorApp/Tests/CLINXMonitorTests/MonitorTests.swift. A commit cannot contain its own SHA; FINAL_FROZEN_SHA is the final local HEAD and exact canonical origin readback in the execution result. iMac Swift requalification remains required.",
+  "old_frozen_sha": "5a3d8731a60208cd802fb7ba22789a832aaace21",
   "product_file_manifest_sha256": "3d753bf5162f8b9f3abc027df1834d022098cca123870051fed372767f726c1e",
   "product_file_mismatches": [],
   "product_files_checked": 30,
+  "product_fix_sha": "1805b45b55548ffad186ac5715d97464700ea15b",
   "product_source_sha": "1113952c8397ee97f1501f88b291cb6f0f921960",
   "push": {
     "final_push_method": "registered push_current_branch; non-force; canonical origin; same-name branch",
@@ -40,7 +43,9 @@
     "first_push_head": "f1f096bb970651f5b60a067f7d8eaaecb9fa7229",
     "first_push_remote_readback": "f1f096bb970651f5b60a067f7d8eaaecb9fa7229",
     "host_delivery": "RESTORED; current registered Host operations execute and return known results",
-    "status": "PASS"
+    "product_fix_push_head": "1805b45b55548ffad186ac5715d97464700ea15b",
+    "product_fix_push_status": "PASS: registered non-force push to canonical origin",
+    "status": "PRODUCT_FIX_PUSH_PASS; FINAL_METADATA_READBACK_IN_EXECUTION_RESULT"
   },
   "schema": "CLINX_NETWORK_OBSERVATION_CONVERGENCE_V1",
   "source_commits": {
@@ -54,18 +59,30 @@
   "statuses": {
     "AIR_BUILD": "NOT_RUN",
     "AIR_RESULT_CONTRACT_INTEGRATED": "PASS",
-    "CONVERGENCE_REGRESSION": "PASS",
+    "CONVERGENCE_REGRESSION": "FAIL",
     "DEPLOYMENT": "NOT_RUN",
-    "FINAL_STATUS": "PASS",
+    "FINAL_STATUS": "IN_REVIEW",
     "FROZEN_CANDIDATE": "PASS",
+    "IMAC_SWIFT_REQUALIFICATION_REQUIRED": "YES",
     "NETWORK_OBSERVATION_INTEGRATED": "PASS",
-    "PUSH": "PASS",
+    "PUSH": "FINAL_READBACK_IN_EXECUTION_RESULT",
+    "SWIFT_TESTS_ON_P620": "NOT_RUN",
     "TERMINAL_MONITOR_FIX_INTEGRATED": "PASS"
   },
   "tracked_in_git": true,
   "validation": {
     "air_build": "NOT_RUN",
     "complete_related_qualification": "PASS: 289 passed, 28 subtests passed in 61.94s",
+    "current_remediation": {
+      "changed_code_scope": "PASS: only MonitorApp/Tests/CLINXMonitorTests/MonitorTests.swift changed in PRODUCT_FIX_SHA",
+      "cross_platform_swift_contract": "PASS: 1 passed",
+      "deployment": "NOT_RUN",
+      "git_diff_check": "PASS",
+      "imac_swift_requalification_required": "YES: rerun exact 77 Swift tests on iMac using FINAL_FROZEN_SHA",
+      "network_observation_python": "FAIL: 36 passed, 1 failed; independent process test child PYTHONPATH drops isolated zeroconf dependency",
+      "swift_test_timestamp_source_static": "PASS: fixture timestamps relative to one test clock; original assertions and 24h source rule retained",
+      "swift_tests_on_p620": "NOT_RUN: swift and xcodebuild unavailable"
+    },
     "deployment": "NOT_RUN",
     "git_diff_check": "PASS",
     "logs": {
@@ -84,6 +101,6 @@
     "python_ast": "PASS: 15 files",
     "shell_syntax": "PASS: 3 scripts",
     "swift_build_test": "NOT_RUN: P620 has no swift or xcodebuild",
-    "worktree": "CLEAN after final push and readback (execution result)"
+    "worktree": "CLEAN after final metadata push and readback (execution result)"
   }
 }
