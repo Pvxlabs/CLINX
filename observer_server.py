@@ -623,6 +623,9 @@ class ObserverHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    # -I excludes cwd and script directory: add only the installed package.
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     token = os.environ.get("CLINX_OBSERVER_TOKEN", "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", token):
         raise SystemExit("CLINX_OBSERVER_TOKEN must be a 32..256 character URL-safe credential")

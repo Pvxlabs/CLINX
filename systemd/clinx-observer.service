@@ -9,7 +9,7 @@ EnvironmentFile=%h/.config/clinx-observer/observer.env
 Environment=CLINX_OBSERVER_DB=%h/.local/state/clinx/tasks.sqlite3
 Environment=CLINX_OBSERVER_PORT=8766
 Environment=CLINX_OBSERVER_AUDIT_METHODS=1
-ExecStart=/usr/bin/python3 -I -B %h/.local/lib/clinx-observer/current/observer_server.py
+ExecStart=%h/.local/lib/clinx-observer/current/bin/clinx-observer
 Restart=on-failure
 RestartSec=5
 UMask=0077

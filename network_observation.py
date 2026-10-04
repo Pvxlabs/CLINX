@@ -394,18 +394,42 @@ class ObservationDirectory:
 
 
 def directory_from_env():
-    """Explicit shared configuration for both formal server entrypoints."""
-    from node_protocol import NodeRegistry,NodeAuthorizationStore
-    from local_discovery.identity import PrivateStore,TrustedPeerStore
-    from node_runtime import remote_client_factory
+    """Explicit shared configuration; no identity creation or writable locks."""
+    from node_protocol import NodeAuthorizationStore
+    from local_discovery.identity import PrivateStore,TrustedPeerStore,NodeIdentity,DeviceError
+    from node_runtime import AuthorizedRemoteClient,PairedTLS
+    import threading
+
     path=os.environ.get("CLINX_OBSERVATION_DB")
     if not path: return None
+
+    class ReadOnlyPrivateStore(PrivateStore):
+        def __init__(self,root):
+            self.root=Path(root).expanduser().absolute()
+            self._check(self.root,directory=True)
+        @contextlib.contextmanager
+        def lock(self,*args,**kwargs):
+            # Owner atomically replaces complete JSON files. Reads validate each
+            # new snapshot without creating a lock, identity or registry.
+            yield
+        def write(self,*args,**kwargs):
+            raise DeviceError("READ_ONLY_OBSERVATION_IDENTITY")
+
     state=Path(os.environ["CLINX_OBSERVATION_STATE"])
+    private=ReadOnlyPrivateStore(state)
     registry=NodeRegistryReadOnly(os.environ["CLINX_OBSERVATION_REGISTRY"])
-    peers=TrustedPeerStore(PrivateStore(state))
-    return ObservationDirectory(path,registry,NodeAuthorizationStore(state),peers,
-        os.environ["CLINX_OBSERVATION_USER_SCOPE"],
-        remote_client_factory(state,os.environ["CLINX_OBSERVATION_NODE_ID"],registry))
+    peers=TrustedPeerStore(private)
+    approvals=NodeAuthorizationStore.__new__(NodeAuthorizationStore)
+    approvals._store=private
+    approvals._lock=threading.RLock()
+    approvals.filename="sharing.json"
+    def remote(record):
+        if private.read("identity.json") is None:
+            raise NodeProtocolError("PAIRING_REQUIRED","Existing centre identity is required")
+        identity=NodeIdentity(private,os.environ["CLINX_OBSERVATION_NODE_ID"])
+        return AuthorizedRemoteClient(PairedTLS(identity,peers),registry,approvals,record.node_id)
+    return ObservationDirectory(path,registry,approvals,peers,
+        os.environ["CLINX_OBSERVATION_USER_SCOPE"],remote)
 
 
 class NodeRegistryReadOnly:
