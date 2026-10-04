@@ -1,5 +1,24 @@
 # CLINX Air 修复与 Network Observation v1 源码收敛（2026-10-04）
 
+## Swift 时间测试 remediation 与重新冻结（2026-10-04）
+
+本节取代下文截至旧冻结提交的状态叙述；下文的来源、集成与历史回归证据保留为历史记录。此次仅修改 Swift 测试 fixture，未修改生产 24h 窗口、产品筛选语义、Network Observation 协议或 UI。
+
+- OLD_FROZEN_SHA=5a3d8731a60208cd802fb7ba22789a832aaace21
+- PRODUCT_FIX_SHA=1805b45b55548ffad186ac5715d97464700ea15b
+- FINAL_FROZEN_SHA=以本次最终执行结果中的本地 HEAD 与 canonical origin 精确回读 SHA 为准；metadata commit 无法在自身内容中记录自身 SHA。
+- SWIFT_TESTS_ON_P620=NOT_RUN（P620 无 swift/xcodebuild）
+- IMAC_SWIFT_REQUALIFICATION_REQUIRED=YES（在 iMac 对 FINAL_FROZEN_SHA 重新运行精确 77 项 Swift tests）
+- DEPLOYMENT=NOT_RUN
+- FINAL_STATUS=IN_REVIEW（源码重新冻结完成后仍待 iMac Swift 重新资格验证）
+
+iMac 已发现的失败发生在 `MonitorStoreTests.testNewExecutionRemainsDistinctFromHistoricalExecutionForSameTask` 的 Completed 历史快照：固定 `2026-10-03T12:20:00Z` 超出默认 24h 过滤窗口，故 `counts[.completed]` 为 0；独立的 execution identity 断言仍通过。相同固定时间模式还存在于相邻的重叠分页和历史选择测试。remediation 在 `MonitorTests.swift` 内用单个 `fixtureNow` 生成相对时间，保留 16 秒和约 8 分钟的原始排序间隔，并保留所有原有计数、identity 与历史选择断言。产品 `TimeWindow.day=1440` 分钟及 `minutes <= timeWindow.minutes` 未改变。相对 OLD_FROZEN_SHA 的产品修复 commit 仅改动该测试文件；正常 non-force push 已成功。
+
+P620 验证：跨平台 `test_network_observation_swift_contract.py` 为 **1 passed**；Swift fixture/24h 源码静态检查及 `git diff --check` 为 **PASS**。扩展的 Network Observation Python 相关回归在隔离依赖环境中得到 **36 passed, 1 failed**：`test_network_observation_process.py::test_real_process_collection_tls_centre_observer_mcp_two_clients_and_recovery` 的子进程把 `PYTHONPATH` 重置为仓库根目录，未继承隔离安装的 `zeroconf`，启动前报 `ModuleNotFoundError`。该独立进程资格项保留为 **FAIL**，不能记为 PASS；测试依赖尝试产生的临时文件已移除。P620 Swift build/test 仍为 NOT_RUN，iMac 精确 Swift 重新资格验证仍为必需。
+
+最终冻结提交仅更新本报告和 `.validation/network-observation-convergence/FROZEN_CANDIDATE.json`；正常 non-force push、fetch、远端 SHA 等于本地 HEAD、ahead/behind=0/0 和干净工作树以最终执行结果为准。不激活 P620 runtime，不执行 Air/iMac install。
+
+
 ## 冻结边界
 
 唯一冻结分支：`codex/network-observation-convergence-20261004`。产品集成 HEAD `f1f096bb970651f5b60a067f7d8eaaecb9fa7229` 已经由首次正式 non-force push 创建到 canonical `origin` 的同名分支；本轮开始时本地与 origin 回读均为该 SHA，工作树干净。Host delivery 已恢复，受管 Host 读写操作返回已知结果。本次仅提交本报告与 `.validation/network-observation-convergence/FROZEN_CANDIDATE.json`，形成最终 metadata-only 冻结提交。
