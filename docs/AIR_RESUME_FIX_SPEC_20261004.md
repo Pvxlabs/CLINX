@@ -21,3 +21,5 @@ M3：专用目录的新建完成、重复 start、取消、撤权拒绝测试。
 运行切换约束：P620已有真实活动execution，不重启共享MCP/Provider或接管它。保留旧MCP及completion owner进程；临时暂停旧tunnel poller，由同一profile/tunnel的候选poller提供正式入口。候选MCP使用`--no-recover-existing`，不扫描旧execution。独立SSH负责切换/恢复；旧poller可SIGCONT回退。Air旧bundle保留，helper只通过重建后签名制品加载。
 
 临时配置：Air scope分别限制已有thread、新建项目、可取消项目；禁用任务控制之外的项目。结束后双边正式share恢复read_sessions=true / execute_tasks=false，保留canonical绑定与只读回读。
+
+最终收口：受影响Python175 passed / 16 subtests，Swift72 passed；代码56bcac3已推送、重建签名安装并候选激活。双边正式share已恢复只读；正式CLINX get_status/get_context PASS，原历史AVAILABLE且无本轮标记；撤权后的正式start明确SHARING_SCOPE_DENIED。M2仍BLOCKED，不把上述阶段通过当成SAME_THREAD_CONTINUATION成功；M3未验证。详细引用和运行身份见AIR_RESUME_ACCEPTANCE_20261004.md。

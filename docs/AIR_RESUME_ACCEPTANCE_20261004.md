@@ -35,4 +35,10 @@
 
 P620原MCP与Provider持续保留，候选tunnel使用同一正式profile，旧poller暂停且可SIGCONT回退；候选MCP不扫描旧执行。并行维护尚非永久service切换，须明确记录。旧release、环境/launcher备份及Air原bundle保留。临时授权通过双边正式share恢复只读后，执行仍需再次显式授权。
 
+最终运行代码SHA：`56bcac32125ef79e190419241a0033b1ab7b798d`。Air安装路径`/Applications/CLINX Monitor.app`，helper实际PID 75746；关键Python资源与该源码哈希逐一相同，`codesign --verify --deep --strict`通过。P620实际release `/home/pvxlabs/.local/lib/clinx-control/releases/air-resume-56bcac3`；centre PID 2248985、正式候选MCP PID 2249019。旧MCP PID 1607560和Provider PID 1829828继续运行，旧tunnel poller PID 1607539为暂停状态；canary service active。永久切换不能重启这些既有执行owner。
+
+临时授权恢复：PASS。双边正式share均返回`read_sessions=true / execute_tasks=false`，未修改数据库共享字段。恢复后正式get_status读回第二execution为BLOCKED；get_context以canonical task_ref读回`context_status=AVAILABLE`、`context_source=CODEX_NATIVE_HISTORY`、原thread不变、旧turn仍COMPLETED、本轮标记不存在。重复start返回`SHARING_SCOPE_DENIED / execution_started=false / node_id=air.local`。以execution_ref读context时因没有新turn而CONTEXT_UNAVAILABLE；不能把原历史AVAILABLE作为新execution回复。
+
+代码正常提交并推送；主线合并：未进行。安装：PASS；候选运行激活：PASS；原会话实际续接：BLOCKED；完整专用执行验收：未验证。本记录的后续提交仅补齐验收文档，不改变56bcac3运行代码。
+
 `ORION_MUTATION=NONE`。不暴露凭据、配对秘密或完整原历史。
