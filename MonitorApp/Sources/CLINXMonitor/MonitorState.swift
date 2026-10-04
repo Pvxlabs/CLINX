@@ -853,17 +853,30 @@ final class MonitorStore: ObservableObject {
     }
 
     private static func fetchObservations(using service: any NetworkObservationServing) async throws -> [NetworkObservation] {
+        // Discover the authorized sources first, then page each node independently.
+        // A global observation-id order can otherwise let two busy nodes consume the
+        // entire bounded window and starve another online node from the frozen UI.
+        let discovery = try await service.observations(filters: ObservationFilters(), cursor: nil)
+        guard discovery.schemaVersion == "clinx-observation-v1" else { throw MonitorError.incompatibleSchema }
+        let nodes = (discovery.sources ?? []).filter { $0.coverage == "RECEIVED" }.map(\.nodeId)
+        guard !nodes.isEmpty else { return discovery.items }
+        let perNodeLimit = max(50, 500 / nodes.count)
         var items: [NetworkObservation] = []
-        var cursor: String?
-        for _ in 0..<10 {
-            let page = try await service.observations(filters: ObservationFilters(), cursor: cursor)
-            guard page.schemaVersion == "clinx-observation-v1" else { throw MonitorError.incompatibleSchema }
-            items.append(contentsOf: page.items.prefix(max(0, 500 - items.count)))
-            guard items.count < 500, page.hasMore, let next = page.nextCursor,
-                  next != cursor else { break }
-            cursor = next
+        for node in nodes {
+            var cursor: String?
+            var nodeItems: [NetworkObservation] = []
+            for _ in 0..<20 {
+                var filters = ObservationFilters(); filters.node = node
+                let page = try await service.observations(filters: filters, cursor: cursor)
+                guard page.schemaVersion == "clinx-observation-v1" else { throw MonitorError.incompatibleSchema }
+                nodeItems.append(contentsOf: page.items.prefix(max(0, perNodeLimit - nodeItems.count)))
+                guard nodeItems.count < perNodeLimit, page.hasMore, let next = page.nextCursor,
+                      next != cursor else { break }
+                cursor = next
+            }
+            items.append(contentsOf: nodeItems)
         }
-        return items
+        return Array(items.prefix(500))
     }
 
     private static func merge(_ tasks: [ObservedTask]) -> [ObservedTask] {
