@@ -1446,7 +1446,7 @@ class ClinxIntegration:
             "read_only": True,
         }
 
-    def _check_operation_requirements(self, policy, requirements=None):
+    def _check_operation_requirements(self, policy, requirements=None, *, task_ref=None):
         from host_contract import operation_catalog
         import os
         if policy is None or policy.execution_surface != HOST_EXECUTOR:
@@ -1464,6 +1464,16 @@ class ClinxIntegration:
                 raise M9IntegrationError('OPERATION_NOT_IMPLEMENTED: ' + cap + '/' + op)
             if cls not in spec['operation_classes']:
                 raise M9IntegrationError('OPERATION_CLASS_NOT_SUPPORTED: ' + op)
+            if cap == 'GIT' and op == 'push_current_branch' and target:
+                if not task_ref:
+                    raise M9IntegrationError('INVALID_TARGET_SCOPE: derived Git target requires a task')
+                try:
+                    self.registry.resolve_derived_git_target(
+                        task_id=task_ref, target_id=target,
+                        trusted_roots=config.trusted_workspace_roots)
+                except Exception as exc:
+                    raise M9IntegrationError('INVALID_TARGET_SCOPE: ' + str(exc)) from exc
+                continue
             targets = spec.get('registered_targets')
             if targets is not None and not any(t['identity'] == target and cls in t['operation_classes'] for t in targets):
                 raise M9IntegrationError('TARGET_NOT_AUTHORIZED: ' + target)
@@ -1483,11 +1493,48 @@ class ClinxIntegration:
             policy = legacy_policy_for_route(route)
         identity = self.registry.get_task_policy_identity(task_ref)
         contract = executable_contract(self.cfg.host_executor, policy=policy)
+        derived = []
+        for item in self.registry.list_derived_git_targets(task_ref):
+            try:
+                self.registry.resolve_derived_git_target(task_id=task_ref, target_id=item['target_id'],
+                    trusted_roots=self.cfg.host_executor.trusted_workspace_roots)
+                valid = True
+            except Exception:
+                valid = False
+            derived.append({'identity': item['target_id'], 'path': item['path'],
+                'worktree_key': item['worktree_key'], 'repository_identity': item['common_dir'],
+                'branch': item['branch'], 'origin': item['origin'], 'valid': valid,
+                'task_target_authorized': valid and bool(policy and policy.operation_scopes is not None and policy.permits_operation(
+                    'GIT', 'push_current_branch', 'DEVELOPMENT_MUTATION', item['target_id']))})
+        git_ops = contract['capabilities'].get('GIT', {}).get('operations', {})
+        if 'push_current_branch' in git_ops:
+            git_ops['push_current_branch']['registered_targets'] = derived
+            git_ops['push_current_branch']['task_authorized'] = bool(
+                git_ops['push_current_branch']['task_authorized'] or
+                any(item['task_target_authorized'] for item in derived))
         return {'task_ref': task_ref, **identity, 'future_execution_policy': policy.as_dict() if policy else None,
                 'effective_authority': contract['effective_authority'], 'operations': contract['capabilities'],
+                'derived_git_targets': derived,
                 'network_access': bool(route and route.network_policy.network_access),
                 'backend_implemented': True, 'mcp_exposed': True, 'client_exposure': 'NOT_OBSERVED',
                 'runtime_health': 'NOT_PROBED', 'read_only': True}
+
+    def register_derived_git_target(self, *, approved=False, task_ref, path,
+                                    ownership_evidence, creation_host_execution_ref=None):
+        if approved is not True:
+            raise M9IntegrationError('explicit approved=true is required for derived Git target adoption')
+        if not isinstance(path, str) or not path.strip():
+            raise M9IntegrationError('derived Git target path is required')
+        return self.registry.register_derived_git_target(task_id=task_ref, path=path,
+            trusted_roots=self.cfg.host_executor.trusted_workspace_roots,
+            provenance=ownership_evidence,
+            creation_host_execution_ref=creation_host_execution_ref)
+
+    def revoke_derived_git_target(self, *, approved=False, task_ref, target):
+        if approved is not True:
+            raise M9IntegrationError('explicit approved=true is required for derived Git target revocation')
+        self.registry.revoke_derived_git_target(task_id=task_ref, target_id=target)
+        return {'task_ref': task_ref, 'target': target, 'revoked': True}
 
     def prepare_policy_reauthorization(self, *, approved=False, task_ref, expected_policy_hash,
                                        target_policy, reason, network_access=None):
@@ -1506,12 +1553,20 @@ class ClinxIntegration:
         policy = build_execution_policy(**target_policy, network_access=network)
         if policy.execution_surface == HOST_EXECUTOR and not policy.operation_scopes:
             raise M9IntegrationError('reauthorization requires exact operation_scopes')
-        self._check_operation_requirements(policy)
+        self._check_operation_requirements(policy, task_ref=task_ref)
+        derived_audit = []
+        for cap, op, cls, target in policy.operation_scopes or ():
+            if cap == 'GIT' and op == 'push_current_branch' and target:
+                item = self.registry.resolve_derived_git_target(task_id=task_ref, target_id=target,
+                    trusted_roots=self.cfg.host_executor.trusted_workspace_roots)
+                derived_audit.append({key: item[key] for key in (
+                    'target_id', 'worktree_key', 'common_dir', 'git_dir', 'branch', 'origin')})
         updated = dataclasses.replace(route, surface=normalize_surface(policy.route_surface),
             authority=normalize_authority(scopes=policy.authority_scopes),
             network_policy=normalize_network_policy(network))
         return self.registry.prepare_policy_reauthorization(task_id=task_ref, expected_policy_hash=expected_policy_hash,
-            new_policy=policy, new_route=updated, requested_scope={'policy': policy.as_dict(), 'network_access': network}, reason=reason)
+            new_policy=policy, new_route=updated, requested_scope={'policy': policy.as_dict(),
+                'network_access': network, 'derived_git_targets': derived_audit}, reason=reason)
 
     def apply_policy_reauthorization(self, *, prepared_reauthorization_ref, approved=False):
         if approved is not True:
@@ -1525,7 +1580,7 @@ class ClinxIntegration:
             raise M9IntegrationError('unknown prepared reauthorization')
         if not applied:
             policy = parse_execution_policy(req['new_policy_json'])
-            self._check_operation_requirements(policy)
+            self._check_operation_requirements(policy, task_ref=req['task_id'])
             binding = self.registry.get_binding(req['task_id'])
             if binding and getattr(self.dispatcher, '_uses_default_client_factory', False):
                 # Observes all configured owners; never resumes, interrupts or starts.
@@ -1765,7 +1820,7 @@ class ClinxIntegration:
             for cap, op, cls, target in requirements:
                 if not prepared_policy.permits_operation(cap, op, cls, target):
                     raise M9IntegrationError('AUTHORITY_REAUTHORIZATION_REQUIRED: requested operation exceeds current task policy; use clinx_prepare_policy_reauthorization')
-        self._check_operation_requirements(prepared_policy, requirements)
+        self._check_operation_requirements(prepared_policy, requirements, task_ref=selected_ref if task_mode == 'continue' else None)
         if prepared_policy.execution_surface == HOST_EXECUTOR:
             executor = getattr(self.dispatcher, "host_executor", None)
             if executor is None:
@@ -2005,7 +2060,8 @@ class ClinxIntegration:
             prepared_route = parse_routing_identity(prepared.routing_identity_json)
             if current_route != prepared_route:
                 raise M9IntegrationError('POLICY_IDENTITY_CONFLICT: prepared route is stale')
-        self._check_operation_requirements(parse_execution_policy(prepared.execution_policy_json))
+        self._check_operation_requirements(parse_execution_policy(prepared.execution_policy_json),
+            task_ref=prepared.task_ref)
         if prepared.status == "DISPATCHED":
             if not prepared.resulting_execution_ref or not prepared.resulting_task_id:
                 raise M9IntegrationError("dispatched preparation has incomplete result")

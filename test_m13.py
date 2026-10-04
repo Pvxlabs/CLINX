@@ -1464,7 +1464,7 @@ class M13ProjectionTests(unittest.TestCase):
         self.assertEqual(item.current_state, "UNKNOWN")
 
     def test_mcp_catalog_includes_adoption_and_execute_is_absent(self):
-        self.assertEqual(len(DEFAULT_TOOL_NAMES), 13)
+        self.assertEqual(len(DEFAULT_TOOL_NAMES), 15)
         self.assertNotIn("clinx_execute", DEFAULT_TOOL_NAMES)
         self.assertNotIn("clinx_execute", {item["name"] for item in tool_definitions()})
 

@@ -46,8 +46,9 @@ def operation_catalog(config):
         classes=(DEVELOPMENT_MUTATION, PRODUCTION_MUTATION), mutating=True, effects='SERVICE_RESTART')
     add('GIT', ('head', 'status', 'remote_main_head', 'ahead_behind'))
     add('GIT', ('fetch_origin',), mutating=True, effects='LOCAL_OBJECTS_AND_REMOTE_TRACKING_REFS_ONLY')
-    add('GIT', ('push_current_branch',), classes=(DEVELOPMENT_MUTATION,), optional=('remote',),
+    add('GIT', ('push_current_branch',), classes=(DEVELOPMENT_MUTATION,), optional=('remote', 'target'),
         mutating=True, effects='REGISTERED_ORIGIN_NON_FORCE_CURRENT_BRANCH')
+    catalog['GIT']['push_current_branch']['target_kind'] = 'TASK_OWNED_GIT_WORKTREE'
     add('HOST_FILESYSTEM', ('git_head', 'git_status'))
     add('HOST_FILESYSTEM', ('path_read',), required=('path',), optional=('lines',))
     add('HOST_FILESYSTEM', ('marker_create', 'marker_remove'), required=('name',),
@@ -134,11 +135,12 @@ def executable_contract(config, probes=None, policy=None):
             'unconfigured_roots': 'REGISTERED_PROJECT_ONLY',
             'production_authority_granted': False,
             'production_authority_granted_meaning': 'PATH_ACCESS_ALONE_GRANTS_NO_PRODUCTION_AUTHORITY',
-            'git_write_authority': 'REGISTERED_TASK_ORIGIN_AND_BRANCH',
+            'git_write_authority': 'REGISTERED_TASK_OR_TASK_OWNED_WORKTREE_ORIGIN_AND_BRANCH',
         },
         'constraints': 'Probe availability does not grant authority or prove execution health. '
                        'Use exact operations and safe target identities below. Policy and target classes intersect. '
-                       'Git canonical branch/origin come from the registered task, never caller refspecs. '
+                       'Git push uses the registered task or exact task-owned worktree branch and canonical origin, never caller refspecs. '
+                       'A derived Git target must be registered by the operator and granted in exact future policy scope. '
                        'Trusted workspace path access does not grant production or network authority. '
                        'fetch_origin writes local objects/remote-tracking refs and requires the existing lease; '
                        'it never changes index/worktree or merges/rebases. '

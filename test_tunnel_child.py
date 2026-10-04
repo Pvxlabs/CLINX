@@ -137,6 +137,8 @@ class TunnelChildCompatibilityTests(unittest.TestCase):
                     "clinx_get_effective_authority",
                     "clinx_prepare_policy_reauthorization",
                     "clinx_apply_policy_reauthorization",
+                    "clinx_register_derived_git_target",
+                    "clinx_revoke_derived_git_target",
                     "clinx_adopt_conversation",
                 ],
             )

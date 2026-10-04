@@ -147,7 +147,7 @@ def test_runtime_config_discovery_and_dynamic_contract_have_one_root_source():
     assert contract['trusted_workspace_roots'] == expected
     assert contract['path_authority']['production_authority_granted'] is False
     assert contract['capabilities']['HOST_FILESYSTEM']['operations']['path_read']['target_kind'] == 'TRUSTED_WORKSPACE'
-    assert contract['capabilities']['GIT']['operations']['push_current_branch']['target_kind'] == 'REGISTERED_PROJECT'
+    assert contract['capabilities']['GIT']['operations']['push_current_branch']['target_kind'] == 'TASK_OWNED_GIT_WORKTREE'
     spec = support.HostExecutor.dynamic_tool_spec(cfg.host_executor)
     assert json.dumps(expected) in spec['tools'][0]['description']
 

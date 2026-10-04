@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import tempfile
 import threading
 import time
@@ -918,20 +919,23 @@ class HostExecutorFixture(unittest.TestCase):
             context.__exit__(None, None, None)
 
     def test_git_push_current_branch_is_fixed_to_origin_and_current_branch(self):
+        subprocess.run(['git', '-C', str(self.root), 'init', '-b', 'codex/fixture'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(self.root), 'remote', 'add', 'origin',
+                        'git@example.invalid:fixture.git'], check=True, capture_output=True)
         task, ref, route, policy, context = self.bound(
             capabilities=("GIT",), classes=(DEVELOPMENT_MUTATION,)
         )
         try:
             with mock.patch.object(self.registry, 'get_task', return_value=SimpleNamespace(
-                    branch='main', repository_origin='git@example.invalid:fixture.git')):
+                    branch='codex/fixture', repository_origin='git@example.invalid:fixture.git')):
                 with mock.patch.object(self.executor, '_git_identity', side_effect=[
-                        'git@example.invalid:fixture.git', 'git@example.invalid:fixture.git', 'main']):
+                        'git@example.invalid:fixture.git', 'git@example.invalid:fixture.git']):
                     request = self.request(
                         task, ref, route, policy, "GIT", "push_current_branch",
                         {"remote": "origin"}, operation_class=DEVELOPMENT_MUTATION,
                     )
                     command = self.executor._command(request)
-            self.assertEqual(command.argv[-5:], ('push', '--no-verify', '--no-force', 'origin', 'refs/heads/main:refs/heads/main'))
+            self.assertEqual(command.argv[-5:], ('push', '--no-verify', '--no-force', 'origin', 'refs/heads/codex/fixture:refs/heads/codex/fixture'))
             self.assertTrue(command.mutating)
             with self.assertRaisesRegex(TargetNotRegistered, "registered origin"):
                 self.executor._command(self.request(
@@ -1241,7 +1245,7 @@ class DynamicToolProtocolTests(unittest.TestCase):
     def test_public_catalog_includes_adoption_without_shell_tools(self):
         names = tuple(item["name"] for item in tool_definitions())
         self.assertEqual(names, DEFAULT_TOOL_NAMES)
-        self.assertEqual(len(names), 13)
+        self.assertEqual(len(names), 15)
         self.assertFalse(any("shell" in name or "host_exec" in name or "ssh" in name for name in names))
 
     def test_dynamic_tool_schema_has_no_raw_identity_or_shell_fields(self):
