@@ -103,12 +103,13 @@ class CompletionIdentity:
 class CompletionRuntime:
     """One bounded observer loop, recovering only durable enrolled executions."""
     def __init__(self, registry: Any, reconcile: Callable[..., dict[str, Any]], *,
-                 interval_seconds: float = 5.0):
+                 interval_seconds: float = 5.0, owner_instance: str | None = None):
         if interval_seconds <= 0:
             raise ValueError('completion interval must be positive')
         self.registry = registry
         self.reconcile = reconcile
         self.interval_seconds = interval_seconds
+        self.owner_instance = owner_instance
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -262,8 +263,11 @@ class CompletionRuntime:
         if not 1 <= limit <= 100:
             raise ValueError('completion batch must be between 1 and 100')
         with self._connect() as conn:
-            rows = conn.execute("SELECT execution_ref FROM clinx_completion_handoffs WHERE state='PENDING' AND next_attempt<=? ORDER BY next_attempt,execution_ref LIMIT ?",
-                                (time.time(), limit)).fetchall()
+            scope = (" AND execution_ref IN (SELECT execution_ref FROM clinx_execution_owners WHERE owner_instance=?)"
+                     if self.owner_instance else '')
+            arguments = (time.time(), self.owner_instance, limit) if self.owner_instance else (time.time(), limit)
+            rows = conn.execute("SELECT execution_ref FROM clinx_completion_handoffs WHERE state='PENDING' AND next_attempt<=?"
+                                + scope + " ORDER BY next_attempt,execution_ref LIMIT ?", arguments).fetchall()
         for row in rows:
             self.process(row['execution_ref'])
         return len(rows)

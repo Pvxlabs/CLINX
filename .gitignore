@@ -6,6 +6,7 @@ kernel/target/
 MonitorApp/.build/
 
 .venv/
+.venv-node
 .discovery-deps/
 .cache/
 .validation/

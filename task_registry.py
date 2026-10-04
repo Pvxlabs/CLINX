@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import sqlite3
 import subprocess
+import time
 import unicodedata
 import uuid
 from typing import Any, Iterator
@@ -3718,6 +3719,11 @@ class TaskRegistry:
                 f"INSERT INTO host_executions({','.join(columns)}) VALUES ({placeholders})",
                 tuple(values[column] for column in columns),
             )
+            if values.get('tool_call_id') and 'call_state' in {
+                    r[1] for r in conn.execute('PRAGMA table_info(host_tool_deliveries)')}:
+                conn.execute("""UPDATE host_tool_deliveries SET call_state='DISPATCHED',
+                    dispatched_at=? WHERE execution_ref=? AND tool_call_id=?""",
+                    (time.time(), values['execution_ref'], values['tool_call_id']))
             self._append_shadow_observation(
                 conn,
                 task_id=values["task_id"],

@@ -319,6 +319,7 @@ def _status_output_schema() -> dict[str, Any]:
         "host_executions": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "dynamic_tool_deliveries": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "provider_delivery": {"type": "object", "additionalProperties": True},
+        "execution_owner": {"type": ["object", "null"], "additionalProperties": True},
         "task_current_projection": {"type": "object", "additionalProperties": True},
         "selection_reason": {"type": "string"},
         "status_source": {"type": "string"},
@@ -648,6 +649,7 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
             ),
             "outputSchema": _json_schema({
                 "execution_started": {"type": "boolean"},
+                "execution_owner": {"type": "object", "additionalProperties": True},
                 "prepared_execution_ref": {"type": "string"},
                 "execution_ref": {"type": "string"},
                 "task_ref": {"type": "string"},
@@ -851,7 +853,7 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
             **{key: {"type": ["string", "null"]} for key in (
                 "last_provider_activity_at", "last_host_delivery_at", "last_live_owner_at", "liveness_observed_at")},
         })
-        thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "native_thread", "native_status", "task_current_projection", "execution_result", "provenance", "provider_delivery")})
+        thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "native_thread", "native_status", "task_current_projection", "execution_result", "provenance", "provider_delivery", "execution_owner")})
         # Keep one strict root object for connector discovery and legacy clients.
         tool["outputSchema"]["properties"].update(thread_properties)
 
@@ -1113,6 +1115,7 @@ def build_server(
     *,
     task_db_path: Path | str | None = None,
     allow_execute: bool = False,
+    own_executions: bool = False,
 ) -> ClinxMCPServer:
     cfg = bridge.BridgeConfig.load(Path(config_path).expanduser().resolve())
     registry = TaskRegistry(
@@ -1176,6 +1179,9 @@ def build_server(
     integration = ClinxIntegration(
         cfg, registry, dispatcher, reader, linear=linear, topic_reader=topic_reader
     )
+    if not own_executions:
+        from execution_owner import ExecutionOwnerClient
+        integration.execution_owner_client = ExecutionOwnerClient(registry)
     return ClinxMCPServer(integration, allow_execute=allow_execute)
 
 
@@ -1185,7 +1191,8 @@ def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None, *, recover_exis
     dispatcher = getattr(getattr(server, "integration", None), "dispatcher", None)
     start_completion = getattr(dispatcher, "start_completion_runtime", None)
     stop_completion = getattr(dispatcher, "stop_completion_runtime", None)
-    if recover_existing and callable(start_completion):
+    if (recover_existing and callable(start_completion)
+            and not getattr(getattr(server, 'integration', None), 'execution_owner_client', None)):
         start_completion()
     try:
         for line in stdin:
@@ -1216,9 +1223,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CLINX M12 MCP stdio server")
     parser.add_argument("--config", default="bridge.toml")
     parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
+    parser.add_argument("--execution-owner", action="store_true", help="serve persistent canonical execution ownership on a private local socket")
     parser.add_argument("--no-recover-existing", action="store_true", help="parallel maintenance: existing executions remain with their running completion owner")
     parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")
     args = parser.parse_args(argv)
+    if args.execution_owner:
+        if args.stdio:
+            parser.error('--execution-owner cannot combine with --stdio')
+        from execution_owner import serve
+        server = build_server(args.config, own_executions=True)
+        # Never recover unrelated existing executions at service startup.
+        serve(server.integration)
+        return 0
     if not args.stdio:
         print("MCP_TRANSPORT=BLOCKED: only authenticated external transport may expose CLINX", file=sys.stderr)
         return 2

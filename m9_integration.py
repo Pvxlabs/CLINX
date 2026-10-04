@@ -1337,6 +1337,9 @@ class ClinxIntegration:
         deliveries = ToolDeliveryLedger.records(self.registry, execution_ref) if execution_ref else []
         status["dynamic_tool_deliveries"] = deliveries
         status["provider_delivery"] = delivery_summary(deliveries, result.raw_result if result else '')
+        if execution_ref:
+            from execution_owner import owner_record
+            status['execution_owner'] = owner_record(self.registry, execution_ref)
         status["selection_reason"] = selection_reason
         status["task_current_projection"] = {
             "execution_state": task.execution_state, "codex_running": bool(task.codex_running),
@@ -2081,8 +2084,23 @@ class ClinxIntegration:
             "read_only": False,
         }
 
-    @serialized_prepared_start
     def start_execution(
+        self, *, prepared_execution_ref: str, approved: bool = False,
+    ) -> dict[str, Any]:
+        if approved is not True:
+            raise M9IntegrationError('explicit approved=true is required for execution')
+        remote = self._remote_dispatch('execution.start', locals(), reference=prepared_execution_ref)
+        if remote is not None:
+            return remote
+        owner = getattr(self, 'execution_owner_client', None)
+        if owner is not None:
+            # Forward before taking the canonical execution lock: the owner
+            # takes that same lock while it performs the existing dispatch.
+            return owner.start(prepared_execution_ref=prepared_execution_ref, approved=approved)
+        return self._start_execution_local(prepared_execution_ref=prepared_execution_ref, approved=approved)
+
+    @serialized_prepared_start
+    def _start_execution_local(
         self,
         *,
         prepared_execution_ref: str,
