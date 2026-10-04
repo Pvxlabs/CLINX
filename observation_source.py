@@ -34,7 +34,8 @@ class CodexObservationSource:
         self.history=NativeHistory(root)
         self.node_id=node_id
         self.canonical_db=Path(canonical_db) if canonical_db else None
-        self.owner_host=owner_host or node_id
+        from execution_semantics import normalize_host
+        self.owner_host=normalize_host(owner_host or node_id).stable_identifier
 
     @property
     def generation(self):
@@ -83,6 +84,7 @@ class CodexObservationSource:
     def canonical_turns(self,tid,project,state):
         if not self.canonical_db or not self.canonical_db.exists(): return []
         turns=[]
+        foreign_owner=False
         with readonly(self.canonical_db) as c:
             _budget_sql(c)
             for table in ("executions","execution_history"):
@@ -98,7 +100,10 @@ class CodexObservationSource:
                 rows={r["execution_ref"]:r for r in recent+older}.values()
                 for row in rows:
                     route=json.loads(row["routing_identity_json"])
-                    if row["cwd"]!=project or route.get("host",{}).get("stable_identifier")!=self.owner_host:
+                    if route.get("host",{}).get("stable_identifier") not in (None,self.owner_host):
+                        foreign_owner=True
+                        continue
+                    if row["cwd"]!=project:
                         continue
                     result=c.execute("SELECT status,summary,changed_files FROM execution_results WHERE execution_ref=? AND task_id=? AND turn_id=?",
                         (row["execution_ref"],row["task_id"],row["turn_id"])).fetchone()
@@ -109,6 +114,8 @@ class CodexObservationSource:
                         "summary":result["summary"] if result else None,
                         "artifacts":[v.strip() for v in result["changed_files"].split(",") if v.strip() and v.strip() != "NONE"][:16] if result and result["changed_files"] else [],
                         "started_at":row["acquired_at"],"completed_at":dict(row).get("released_at")})
+        if foreign_owner:
+            raise NodeProtocolError("OBSERVATION_FOREIGN_EXECUTION_OWNER","Frontend index cannot claim another execution owner")
         return turns
 
     def sample(self,metadata,state):

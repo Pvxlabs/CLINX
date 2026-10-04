@@ -340,3 +340,44 @@ def test_local_centre_source_never_grants_itself_permission(tmp_path):
     assert not local.heartbeat(identity,approved,port=1,capabilities=())["registered"]
     assert registry.get("p620").state=="REVOKED"
     registry.close()
+
+def test_offline_activity_keeps_received_progress_and_scopes_cursor(directory):
+    writer,reader,registry,approvals,scope=directory
+    events=[]
+    for seq in range(1,4):
+        value=event(seq);value["turn"]["summary"]="公开进度 "+str(seq)
+        events.append(value)
+    writer.accept("air",scope,dict(stream_id="stream",events=events))
+    oid=reader.list()["items"][0]["observation_id"]
+    registry.touch("air",state="OFFLINE")
+    page=reader.activity(oid,limit=1)
+    assert page["items"][0]["text"]=="公开进度 3"
+    older=reader.activity(oid,cursor=page["next_cursor"],limit=2)
+    assert [e["text"] for e in older["items"]]==["公开进度 2","公开进度 1"]
+    with pytest.raises(NodeProtocolError):reader.detail(oid,cursor=page["next_cursor"])
+    from observation_mcp import standalone_server
+    assert standalone_server(reader)._call_tool("clinx_get_observation_activity",{"observation_id":oid})["items"]
+    approvals.revoke("air")
+    with pytest.raises(NodeProtocolError):reader.activity(oid,cursor=page["next_cursor"])
+
+def test_copied_thread_across_nodes_is_explicit_conflict(directory):
+    writer,reader,registry,approvals,scope=directory
+    scope2=approvals.grant("p620",user_scope="alice",read_sessions=True,projects=("/approved",))
+    registry.register(NodeRecord("p620",user_scope="alice",display_name="P620",state="ONLINE",last_seen=_now()),scope2)
+    reader.peers=SimpleNamespace(all=lambda:{n:{"trust_state":"TRUSTED","security_status":"OPAQUE_V1"} for n in ("air","p620")})
+    for node,grant in (("air",scope),("p620",scope2)):
+        writer.accept(node,grant,dict(stream_id="stream",events=[event()]))
+    items=reader.list()["items"]
+    assert len({i["observation_id"] for i in items})==2
+    assert all(i["coverage"]=="MULTI_SOURCE_THREAD_IDENTITY" and not i["control"]["enabled"] for i in items)
+
+
+def test_frontend_cannot_claim_p620_canonical_execution(native):
+    with patch("thread_identity.ThreadIdentityReader",return_value=native.reader):
+        task=native.integration.adopt_conversation(thread_id=TID)["task_ref"]
+    with native.registry.execution(task,execution_ref="exec_owner_fixture",retain=True):
+        native.registry.set_execution_state(task,"CODEX_RUNNING",turn_id="turn-2",codex_running=True)
+    source=CodexObservationSource(native.root,"air",native.registry.path)
+    with pytest.raises(NodeProtocolError) as error:
+        source.sample(source.history.metadata(TID),{})
+    assert error.value.code=="OBSERVATION_FOREIGN_EXECUTION_OWNER"

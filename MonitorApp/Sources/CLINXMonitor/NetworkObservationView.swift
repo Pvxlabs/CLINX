@@ -121,7 +121,19 @@ private struct ObservationInspector: View {
                      : "当前仅观察；控制未授权或目标不可用（\(detail.item.control.reason)）")
                     .font(.caption).foregroundStyle(.secondary)
                 Divider()
-                Text("Activity · 轮次历史").font(.headline)
+                Text("Activity · 已接收记录").font(.headline)
+                Text(network.activityCoverage).font(.caption).foregroundStyle(.secondary)
+                ForEach(network.activity) { event in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(event.turnId ?? "会话") · #\(event.sourceSeq) · \(event.nativeState)").font(.caption)
+                        Text(event.text ?? "状态更新").textSelection(.enabled)
+                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(DS.Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+                }
+                if network.activityCursor != nil {
+                    Button("加载更早 Activity") { Task { await network.loadActivity() } }.disabled(network.activity.count >= 512)
+                }
+                Text("轮次历史").font(.headline)
                 ForEach(network.turns) { turn in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(turn.turnId ?? turn.executionRef ?? "会话元数据").font(.caption.monospaced())

@@ -1,7 +1,7 @@
 """Exact schemas shared by the formal MCP read-only observation entrypoint."""
 from node_protocol import NodeProtocolError
 
-NAMES = ("clinx_list_observations","clinx_get_observation","clinx_get_observation_context")
+NAMES = ("clinx_list_observations","clinx_get_observation","clinx_get_observation_context","clinx_get_observation_activity")
 
 
 def observation_tools():
@@ -14,6 +14,7 @@ def observation_tools():
         (NAMES[1],"按稳定 observation_id 读取缓存详情和有界轮次历史。",dict(common,**identity),["observation_id"]),
         (NAMES[2],"只读分页源端用户可见上下文；离线内容未缓存时明确不可用。",
          dict(identity,cursor=common["cursor"]),["observation_id"]),
+        (NAMES[3],"分页读取已批准并持久化的 Activity 历史；节点离线仍可查看。",dict(common,**identity),["observation_id"]),
     ]
     return [{"name":name,"description":description,
         "inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":False},
@@ -24,7 +25,7 @@ def observation_tools():
 
 def call_observation(directory,name,arguments):
     if directory is None: raise NodeProtocolError("OBSERVATION_NOT_CONFIGURED","Observation directory is unavailable")
-    return {NAMES[0]:directory.list,NAMES[1]:directory.detail,NAMES[2]:directory.context}[name](**arguments)
+    return {NAMES[0]:directory.list,NAMES[1]:directory.detail,NAMES[2]:directory.context,NAMES[3]:directory.activity}[name](**arguments)
 
 
 def standalone_server(directory):

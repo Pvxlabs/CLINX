@@ -170,6 +170,11 @@ print(urllib.request.urlopen(req,timeout=2).read().decode())
         offline=http_client()
         assert {i["observation_id"] for i in offline["items"]}==identities
         assert all(i["freshness"]=="OFFLINE" for i in offline["items"])
+        mcp.stdin.write(json.dumps(dict(jsonrpc="2.0",id=4,method="tools/call",
+            params=dict(name="clinx_get_observation_activity",arguments={"observation_id":air_id,"limit":100})))+"\n")
+        mcp.stdin.flush()
+        activity=line(mcp)["result"]["structuredContent"]
+        assert all("公开进度样本-"+str(sample) in [e["text"] for e in activity["items"]] for sample in range(5))
         centre_process=centre_start()
         recovered=wait_items(lambda rows:len(rows)==2 and all(i["turn"]["native_state"]=="COMPLETED" for i in rows)
             and any(i["node_id"]=="air" and i["turn"]["summary"]=="离线期间公开结果" for i in rows),timeout=18)

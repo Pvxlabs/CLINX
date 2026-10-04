@@ -33,6 +33,23 @@ final class NetworkObservationModelTests: XCTestCase {
         XCTAssertLessThanOrEqual(item.shortTitle.count, 100)
         XCTAssertEqual(item.bindingEvidence, "THREAD_UNBOUND")
     }
+    func testActivityPreservesEventAndRoundIdentities() throws {
+        let data = Data(#"""
+        {"schema_version":"clinx-observation-v1","observation_id":"obs_fixture",
+         "items":[{"event_id":"stream:2","turn_id":"turn-a","execution_ref":null,
+                   "source_seq":2,"recorded_at":100.5,"native_state":"RUNNING",
+                   "business_result":null,"kind":"progress","text":"公开进度","artifacts":[]}],
+         "coverage":"RECEIVED_EVENTS_ONLY","next_cursor":"older","has_more":true}
+        """#.utf8)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let page = try decoder.decode(ObservationActivityPage.self, from: data)
+        XCTAssertEqual(page.items.first?.id, "stream:2")
+        XCTAssertEqual(page.items.first?.turnId, "turn-a")
+        XCTAssertNil(page.items.first?.executionRef)
+        XCTAssertEqual(page.nextCursor, "older")
+    }
+
     func testMissingResultMarkerStopsSpinnerAndKeepsBusinessUncertainty() throws {
         let item = try networkFixture("missing_result").item
         XCTAssertFalse(item.isRunning)

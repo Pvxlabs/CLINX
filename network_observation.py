@@ -155,6 +155,7 @@ class ObservationWriter:
                   provider TEXT NOT NULL,thread TEXT NOT NULL,task TEXT,received REAL NOT NULL,
                   ordinal INTEGER NOT NULL,payload TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS observation_list ON items(user,id);
+                CREATE INDEX IF NOT EXISTS observation_identity ON items(user,provider,thread);
                 CREATE TABLE IF NOT EXISTS turns(
                   observation TEXT NOT NULL,turn_key TEXT NOT NULL,ordinal INTEGER NOT NULL,
                   received REAL NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(observation,turn_key));
@@ -163,6 +164,11 @@ class ObservationWriter:
                   node TEXT NOT NULL,user TEXT NOT NULL,stream TEXT NOT NULL,seq INTEGER NOT NULL,
                   digest TEXT NOT NULL,received REAL NOT NULL,PRIMARY KEY(node,user,stream,seq));
             """)
+            columns={r[1] for r in c.execute("PRAGMA table_info(events)")}
+            for column in ("observation","payload"):
+                if column not in columns:
+                    c.execute("ALTER TABLE events ADD COLUMN "+column+" TEXT")
+            c.execute("CREATE INDEX IF NOT EXISTS observation_activity ON events(observation,received DESC,stream,seq)")
             c.execute("INSERT OR IGNORE INTO settings VALUES ('cursor_secret',?)", (secrets.token_hex(32),))
             c.execute("INSERT OR IGNORE INTO settings VALUES ('retention_evicted','0')")
         os.chmod(self.path, 0o600)
@@ -218,11 +224,12 @@ class ObservationWriter:
                     return {"accepted": False, "error_code": "OBSERVATION_GAP", "expected_seq": seq + 1,
                             "ack_seq": seq, "stream_id": stream}
                 if payload is None:
-                    c.execute("INSERT INTO events VALUES (?,?,?,?,?,?)", (node,scope.user_scope,stream,incoming,digest,received))
+                    c.execute("INSERT INTO events(node,user,stream,seq,digest,received) VALUES (?,?,?,?,?,?)", (node,scope.user_scope,stream,incoming,digest,received))
                     seq=incoming
                     gap="SCOPE_WITHHELD"
                     continue
                 oid, turn = payload["observation_id"], payload["turn"]
+                event_payload=compact(payload)
                 previous = c.execute("SELECT * FROM items WHERE id=?", (oid,)).fetchone()
                 if previous:
                     prior = json.loads(previous["payload"])
@@ -252,7 +259,8 @@ class ObservationWriter:
                 c.execute("INSERT OR REPLACE INTO items VALUES (?,?,?,?,?,?,?,?,?,?)",
                           (oid,node,scope.user_scope,payload["project"],payload["provider"],payload["native_thread_id"],
                            payload["task_ref"],received,payload["turn"]["ordinal"],compact(payload)))
-                c.execute("INSERT INTO events VALUES (?,?,?,?,?,?)", (node,scope.user_scope,stream,incoming,digest,received))
+                c.execute("INSERT INTO events(node,user,stream,seq,digest,received,observation,payload) VALUES (?,?,?,?,?,?,?,?)",
+                          (node,scope.user_scope,stream,incoming,digest,received,oid,event_payload))
                 seq = incoming
             c.execute("INSERT OR REPLACE INTO streams VALUES (?,?,?,?,?,?,?)",
                       (node,scope.user_scope,stream,seq,next((p["source_generation"] for _,p,_ in reversed(validated) if p), state["source_generation"] if state else "redacted"),gap,received))
@@ -319,9 +327,15 @@ class ObservationDirectory:
         scope=self._scope(payload["node_id"])
         available=bool(record and not record.stale and record.state=="ONLINE")
         turn=payload["turn"]
+        with database(self.path) as identity_snapshot:
+            duplicates=identity_snapshot.execute("SELECT payload FROM items WHERE user=? AND provider=? AND thread=? AND node<>? LIMIT 65",
+                (self.user_scope,payload["provider"],payload["native_thread_id"],payload["node_id"])).fetchall()
+            identity_conflict=any(self._allowed(json.loads(row[0])) for row in duplicates)
+        if identity_conflict:
+            payload=dict(payload,coverage="MULTI_SOURCE_THREAD_IDENTITY")
         enabled=bool(available and scope and scope.execute_tasks and payload["task_ref"]
-                     and "execution.prepare" in record.capabilities)
-        reason=("NODE_OFFLINE" if not available else "READ_SESSIONS_ONLY" if not scope or not scope.execute_tasks
+                     and "execution.prepare" in record.capabilities and not identity_conflict)
+        reason=("THREAD_IDENTITY_CONFLICT" if identity_conflict else "NODE_OFFLINE" if not available else "READ_SESSIONS_ONLY" if not scope or not scope.execute_tasks
                 else "PROVIDER_CONTROL_UNAVAILABLE" if "execution.prepare" not in record.capabilities
                 else "EXPLICIT_ADOPTION_REQUIRED" if not payload["task_ref"] else "CANONICAL_AUTHORIZATION_REQUIRED")
         return dict(payload,schema_version=VERSION,received_at=received,device_name=record.display_name if record else payload["node_id"],
@@ -392,6 +406,34 @@ class ObservationDirectory:
                 "next_cursor":self._cursor(c,context,[page[-1]["ordinal"],page[-1]["turn_key"]]) if more else None,
                 "gap":stream["gap"] if stream else "UNKNOWN","content_status":"CACHED_PUBLIC_SUMMARIES",
                 "read_only":True}
+
+    def activity(self, observation_id, *, cursor=None, limit=50):
+        self.detail(observation_id,limit=1)  # Same current trust/user/project checks.
+        if type(limit) is not int or not 1<=limit<=100:
+            raise NodeProtocolError("INVALID_OBSERVATION_QUERY","Invalid activity page size")
+        with database(self.path) as c:
+            scope=["activity",observation_id]
+            before=self._cursor(c,scope,cursor=cursor) if cursor else [1e20,"~",9223372036854775807]
+            if not isinstance(before,list) or len(before)!=3:
+                raise NodeProtocolError("INVALID_OBSERVATION_CURSOR","Invalid activity position")
+            rows=c.execute("SELECT * FROM events WHERE observation=? AND user=? AND payload IS NOT NULL "
+                "AND (received,stream,seq)<(?,?,?) ORDER BY received DESC,stream DESC,seq DESC LIMIT ?",
+                (observation_id,self.user_scope,*before,limit+1)).fetchall()
+            page=rows[:limit];items=[]
+            for row in page:
+                payload=json.loads(row["payload"]);turn=payload["turn"]
+                items.append({"event_id":row["stream"]+":"+str(row["seq"]),
+                    "turn_id":turn["turn_id"],"execution_ref":turn["execution_ref"],
+                    "source_seq":row["seq"],"recorded_at":row["received"],
+                    "source_updated_at":payload["source_updated_at"],
+                    "native_state":turn["native_state"],"business_result":turn["business_result"],
+                    "kind":"result" if turn["native_state"] in TERMINAL or turn["business_result"] else "progress",
+                    "text":turn["summary"] or turn["progress"],"artifacts":turn["artifacts"]})
+            evicted=int(c.execute("SELECT value FROM settings WHERE key='retention_evicted'").fetchone()[0])
+            return {"schema_version":VERSION,"observation_id":observation_id,"items":items,"read_only":True,
+                "coverage":"RETENTION_GAP" if evicted else "RECEIVED_EVENTS_ONLY",
+                "next_cursor":self._cursor(c,scope,[page[-1]["received"],page[-1]["stream"],page[-1]["seq"]]) if len(rows)>limit else None,
+                "has_more":len(rows)>limit}
 
     def context(self, observation_id, *, cursor=None):
         item=self.detail(observation_id,limit=1)["item"]

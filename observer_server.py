@@ -495,9 +495,9 @@ class ObserverAPI:
                     arguments["limit"] = int(arguments["limit"])
                 if url.path == "/v2/observations" and not set(arguments) - {"node", "project", "state", "kind", "cursor", "limit"}:
                     return self.observations.list(**arguments)
-                match = re.fullmatch(r"/v2/observations/(obs_[a-f0-9]{40})(/context)?", url.path)
-                if match and not set(arguments) - ({"cursor"} if match[2] else {"cursor", "limit"}):
-                    operation = self.observations.context if match[2] else self.observations.detail
+                match = re.fullmatch(r"/v2/observations/(obs_[a-f0-9]{40})(/context|/activity)?", url.path)
+                if match and not set(arguments) - ({"cursor"} if match[2] == "/context" else {"cursor", "limit"}):
+                    operation = self.observations.context if match[2] == "/context" else self.observations.activity if match[2] == "/activity" else self.observations.detail
                     return operation(match[1], **arguments)
                 raise APIError(400, "INVALID_QUERY")
             except NodeProtocolError as exc:
