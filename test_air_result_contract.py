@@ -285,3 +285,34 @@ def test_terminal_concurrent_opaque_status_and_exact_context(native, tmp_path):
     router.attach(record('other'), reader=Mock(), executor=Mock(), scope=scope())
     with pytest.raises(node.NodeProtocolError, match='conflicts'):
         centre.get_status(execution_ref=ref, host='other')
+
+
+def test_archive_transition_has_no_visible_duplicate_identity(native, monkeypatch):
+    """在归档 INSERT 后、DELETE 前强制读取，不能暴露双份身份。"""
+    from unittest.mock import patch
+    from m9_integration import ExecutionFinalizer
+    from test_pvx1812_completion import RESULT
+    from thread_identity import readonly
+    with patch('thread_identity.ThreadIdentityReader', return_value=native.reader):
+        task = native.integration.adopt_conversation(thread_id=TID)['task_ref']
+    ref = 'exec_atomic_archive'
+    with native.registry.execution(task, execution_ref=ref, retain=True):
+        native.registry.set_execution_state(task, 'CODEX_RUNNING', turn_id='turn-2', codex_running=True)
+    original = native.registry._connect
+    observed = []
+    def connect():
+        conn = original()
+        def trace(sql):
+            if sql.startswith('DELETE FROM executions WHERE task_id='):
+                with readonly(native.registry.path) as reader:
+                    counts = tuple(reader.execute('SELECT count(*) FROM ' + table + ' WHERE execution_ref=?', (ref,)).fetchone()[0]
+                                   for table in ('executions', 'execution_history'))
+                observed.append((conn.in_transaction, counts))
+        conn.set_trace_callback(trace)
+        return conn
+    monkeypatch.setattr(native.registry, '_connect', connect)
+    ExecutionFinalizer(native.registry, None).finalize(execution_ref=ref, task_id=task, turn_id='turn-2', raw_result=RESULT)
+    assert observed == [(True, (1, 0))]
+    with readonly(native.registry.path) as reader:
+        assert reader.execute('SELECT count(*) FROM executions WHERE execution_ref=?', (ref,)).fetchone()[0] == 0
+        assert reader.execute('SELECT count(*) FROM execution_history WHERE execution_ref=?', (ref,)).fetchone()[0] == 1

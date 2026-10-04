@@ -508,10 +508,10 @@ class TaskRegistry:
         return self._shadow_store
 
     @contextlib.contextmanager
-    def _shadow_write_connection(self) -> Iterator[sqlite3.Connection]:
-        """Keep the default V1 path unchanged; group dual writes only when on."""
+    def _shadow_write_connection(self, *, atomic: bool = False) -> Iterator[sqlite3.Connection]:
+        """Group shadow writes or an explicitly atomic canonical transition."""
         with self._connect() as conn:
-            if self._shadow_store is None:
+            if self._shadow_store is None and not atomic:
                 yield conn
                 return
             try:
@@ -3794,7 +3794,10 @@ class TaskRegistry:
         the active row is deleted. Legacy/null-ref cleanup still deletes its
         row because there is no stable execution identity to retain.
         """
-        with self._shadow_write_connection() as conn:
+        # Archive and lease deletion are one ownership transition even when
+        # the optional shadow ledger is disabled. Autocommit exposed duplicate
+        # active/history identities to otherwise consistent read snapshots.
+        with self._shadow_write_connection(atomic=True) as conn:
             if execution_ref:
                 row = conn.execute(
                     "SELECT worktree_key,execution_ref,execution_state,stage,turn_id FROM executions "
