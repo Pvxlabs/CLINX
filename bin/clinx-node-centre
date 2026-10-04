@@ -11,4 +11,7 @@ exec "${CLINX_PYTHON:-python3}" "$repo_root/node_centre_entrypoint.py" \
   --observations "${CLINX_OBSERVATION_DB:-$state_dir/observations.sqlite3}" \
   --bind "${CLINX_NODE_CENTRE_BIND:-0.0.0.0}" \
   --port "${CLINX_NODE_CENTRE_PORT:-8771}" \
+  --local-native-home "${CLINX_NATIVE_HOME:-$HOME/.codex}" \
+  --local-canonical-db "${CLINX_OBSERVATION_CANONICAL_DB:-$HOME/.local/state/clinx/tasks.sqlite3}" \
+  --local-owner-host "${CLINX_OBSERVATION_OWNER_HOST:-$node_id}" \
   --stale-after "${CLINX_NODE_CENTRE_STALE_AFTER:-45}"

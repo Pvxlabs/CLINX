@@ -268,15 +268,19 @@ class ObservationWriter:
 
 class ObservationDirectory:
     """Shared Observer/MCP service; no canonical status or migration calls."""
-    def __init__(self, path, registry, approvals, peers, user_scope, remote_factory=None):
+    def __init__(self, path, registry, approvals, peers, user_scope, remote_factory=None, local_identity=None, native_home=None):
         self.path, self.registry, self.approvals, self.peers = Path(path), registry, approvals, peers
         self.user_scope, self.remote_factory = user_scope, remote_factory
+        self.local_identity,self.native_home=local_identity,native_home
 
     def _scope(self, node):
         from node_runtime import intersect_scope
         peer = self.peers.all().get(node)
         record = self.registry.get(node)
-        if not peer or peer.get("trust_state") != "TRUSTED" or peer.get("security_status") != "OPAQUE_V1" or not record or not record.authorized or not record.trusted or not record.version_compatible:
+        local_owner=bool(self.local_identity and node==self.local_identity["node_id"] and record
+                         and record.public_key_fingerprint==self.local_identity["fingerprint"])
+        paired=bool(peer and peer.get("trust_state")=="TRUSTED" and peer.get("security_status")=="OPAQUE_V1")
+        if not (local_owner or paired) or not record or not record.authorized or not record.trusted or not record.version_compatible:
             return None
         scope = intersect_scope(self.registry.scope(node,self.user_scope), self.approvals.get(node))
         return scope if scope.user_scope == self.user_scope and scope.allows("session.read") else None
@@ -352,10 +356,17 @@ class ObservationDirectory:
                 result.append(self._project(payload,row["received"]))
             more=len(rows)>scanned
             evicted=int(c.execute("SELECT value FROM settings WHERE key='retention_evicted'").fetchone()[0])
-            sources=[{"node_id":r["node"],"stream_id":r["stream"],"ack_seq":r["seq"],
-                      "source_generation":r["source_generation"],"gap":r["gap"],"last_upload_at":r["received"]}
-                     for r in c.execute("SELECT * FROM streams WHERE user=? ORDER BY node",(self.user_scope,))
-                     if self._scope(r["node"])]
+            streams={r["node"]:dict(r) for r in c.execute("SELECT * FROM streams WHERE user=?",(self.user_scope,))}
+            sources=[]
+            for record in self.registry.list_nodes(user_scope=self.user_scope):
+                if not self._scope(record.node_id): continue
+                stream=streams.get(record.node_id,{})
+                sources.append({"node_id":record.node_id,"display_name":record.display_name,
+                    "state":"OFFLINE" if record.stale else record.state,
+                    "coverage":"RECEIVED" if stream else "AWAITING_BOOTSTRAP",
+                    "stream_id":stream.get("stream"),"ack_seq":stream.get("seq"),
+                    "source_generation":stream.get("source_generation"),"gap":stream.get("gap"),
+                    "last_upload_at":stream.get("received")})
             return {"schema_version":VERSION,"read_only":True,"items":result,"sources":sources,
                 "next_cursor":self._cursor(c,filters,last) if more else None,"has_more":more,
                 "coverage":COVERAGE,"retention_evicted":evicted,"observed_at":time.time()}
@@ -384,6 +395,13 @@ class ObservationDirectory:
 
     def context(self, observation_id, *, cursor=None):
         item=self.detail(observation_id,limit=1)["item"]
+        if self.local_identity and item["node_id"]==self.local_identity["node_id"] and self.native_home:
+            from native_history import NativeHistory
+            native=NativeHistory(self.native_home)
+            metadata=native.metadata(item["native_thread_id"])
+            if metadata and metadata["cwd"]==item["project"]:
+                return dict(native.context(item["native_thread_id"],item["node_id"],metadata,4,16000,cursor=cursor),
+                            schema_version=VERSION,read_only=True)
         if not self.remote_factory or item["freshness"]=="OFFLINE":
             return {"schema_version":VERSION,"context_status":"UNCACHED_CONTENT_UNAVAILABLE","read_only":True}
         record=self.registry.get(item["node_id"])
@@ -428,8 +446,12 @@ def directory_from_env():
             raise NodeProtocolError("PAIRING_REQUIRED","Existing centre identity is required")
         identity=NodeIdentity(private,os.environ["CLINX_OBSERVATION_NODE_ID"])
         return AuthorizedRemoteClient(PairedTLS(identity,peers),registry,approvals,record.node_id)
+    from local_discovery.identity import public_record
+    identity_raw=private.read("identity.json")
+    local_identity=public_record(identity_raw) if identity_raw else None
     return ObservationDirectory(path,registry,approvals,peers,
-        os.environ["CLINX_OBSERVATION_USER_SCOPE"],remote)
+        os.environ["CLINX_OBSERVATION_USER_SCOPE"],remote,local_identity,
+        os.environ.get("CLINX_OBSERVATION_NATIVE_HOME") or Path.home()/".codex")
 
 
 class NodeRegistryReadOnly:

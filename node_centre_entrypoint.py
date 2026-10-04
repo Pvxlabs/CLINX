@@ -8,6 +8,7 @@ import getpass
 import json
 import signal
 import threading
+import time
 from pathlib import Path
 
 from local_discovery.discovery import Candidate
@@ -29,8 +30,12 @@ def parser():
     serve.add_argument("--bind", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8771)
     serve.add_argument("--stale-after", type=int, default=45)
+    serve.add_argument("--local-native-home", type=Path)
+    serve.add_argument("--local-canonical-db", type=Path)
+    serve.add_argument("--local-owner-host")
     share = commands.add_parser("share")
     share.add_argument("--peer", required=True)
+    share.add_argument("--local-source", action="store_true", help="Explicit local read_sessions grant; peer must equal this node")
     share.add_argument("--user-scope", required=True)
     share.add_argument("--read-sessions", action="store_true")
     share.add_argument("--execute-tasks", action="store_true")
@@ -72,7 +77,11 @@ def main(argv=None) -> int:
         print(json.dumps(identity.public))
         return 0
     if args.command == "share":
-        PairedTLS(identity, peers).peer(args.peer)
+        if args.local_source:
+            if args.peer != identity.public["node_id"] or args.execute_tasks:
+                raise ValueError("LOCAL_OBSERVATION_GRANT_INVALID")
+        else:
+            PairedTLS(identity, peers).peer(args.peer)
         approvals = NodeAuthorizationStore(args.state)
         scope = approvals.revoke(args.peer, user_scope=args.user_scope) if args.revoke else approvals.grant(
             args.peer, user_scope=args.user_scope, read_sessions=args.read_sessions, execute_tasks=args.execute_tasks, projects=tuple(args.project or ("*",)))
@@ -109,14 +118,34 @@ def main(argv=None) -> int:
     observations = ObservationWriter(args.observations) if args.observations else None
     service = CentreService(PairedTLS(identity, peers), registry, NodeAuthorizationStore(args.state), stale_after=args.stale_after, observations=observations)
     server = service.server(address=args.bind, port=args.port)
+    collector = None
+    if args.local_native_home:
+        if observations is None:
+            raise ValueError("LOCAL_OBSERVATION_REQUIRES_PROJECTION")
+        from observation_source import CodexObservationSource,ObservationCollector,LocalObservationRegistration
+        approvals=NodeAuthorizationStore(args.state)
+        collector=ObservationCollector(args.state / "local-observation-outbox.sqlite3",
+            CodexObservationSource(args.local_native_home,identity.public["node_id"],args.local_canonical_db,args.local_owner_host),
+            identity,LocalObservationRegistration(identity,registry,approvals,observations,args.stale_after),
+            lambda: approvals.get(identity.public["node_id"]),server.address[1],("session.read",))
+    next_collection=0.0
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     print(json.dumps({"ready": True, "address": server.address, "registry": str(args.registry)}), flush=True)
     try:
-        while not stop.wait(1):
+        while not stop.wait(0.25):
             registry.refresh_states()
+            if collector and time.monotonic()>=next_collection:
+                try:
+                    delay=collector.tick()
+                except Exception as exc:
+                    # Bounded diagnostic only; do not expose source text or credentials.
+                    print(json.dumps({"observation_error":type(exc).__name__}),flush=True)
+                    delay=2
+                next_collection=time.monotonic()+delay
     finally:
+        if collector: collector.close()
         server.close()
         registry.close()
     return 0

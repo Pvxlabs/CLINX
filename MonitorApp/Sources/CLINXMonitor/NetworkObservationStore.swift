@@ -12,6 +12,7 @@ final class NetworkObservationStore: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var coverage: [String: String] = [:]
     @Published private(set) var retentionEvicted = 0
+    @Published private(set) var sources: [ObservationSource] = []
     @Published private(set) var selectedID: String?
     @Published var filters = ObservationFilters()
     private var client: (any NetworkObservationServing)?
@@ -29,7 +30,7 @@ final class NetworkObservationStore: ObservableObject {
     func configure(endpoint: String, account: String) {
         listGeneration += 1
         detailGeneration += 1
-        items = []; detail = nil; turns = []; context = nil
+        items = []; sources = []; detail = nil; turns = []; context = nil
         selectedID = nil; nextCursor = nil; historyCursor = nil
         client = nil
         guard let url = URL(string: endpoint) else { error = "请配置中心 Observer"; return }
@@ -68,13 +69,14 @@ final class NetworkObservationStore: ObservableObject {
             nextCursor = cursor
             coverage = page.coverage
             retentionEvicted = page.retentionEvicted
+            sources = page.sources ?? []
             error = nil
             if let id = selectedID { await refreshDetail(id, client: client) }
         } catch {
             guard generation == listGeneration else { return }
             self.error = "全网目录暂不可用：\(error)"
             // Fail closed on auth errors; an offline server is shown as disconnected.
-            items = []; detail = nil; turns = []; context = nil
+            items = []; sources = []; detail = nil; turns = []; context = nil
         }
     }
 
