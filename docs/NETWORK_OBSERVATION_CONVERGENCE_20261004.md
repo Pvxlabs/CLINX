@@ -2,7 +2,7 @@
 
 ## 冻结边界
 
-唯一集成分支：`codex/network-observation-convergence-20261004`。精确提交以本工作区 `.validation/network-observation-convergence/FROZEN_CANDIDATE.json` 的 `integration_head` 及远端读回为准。后续 Air 必须 fetch `origin` 的该分支并核对精确提交；禁止从 `codex/air-result-contract-fix-20261004`、`codex/air-resume-fix-20261004` 或 `codex/p620-network-observation-v1-20261004` 构建最终 App。本轮仅冻结源码候选；部署、运行服务切换、App 安装、真实 Air/P620 观察和 iMac 均为 `NOT_RUN`。
+唯一集成分支：`codex/network-observation-convergence-20261004`。本地精确提交见本工作区 `.validation/network-observation-convergence/FROZEN_CANDIDATE.json` 的 `integration_head`；远端推送与读回尚未完成，因此该提交是唯一**待冻结**候选，不能进入 Air 构建。后续 Air 必须 fetch `origin` 的该分支并核对精确提交；禁止从 `codex/air-result-contract-fix-20261004`、`codex/air-resume-fix-20261004` 或 `codex/p620-network-observation-v1-20261004` 构建最终 App。本轮仅冻结源码候选；部署、运行服务切换、App 安装、真实 Air/P620 观察和 iMac 均为 `NOT_RUN`。
 
 ## 来源与提交图
 
@@ -24,7 +24,7 @@
 | `observer_server.py` / `observation_mcp.py` / `mcp_server.py` | `/v2/observations` 与四个 `clinx_*observation*` MCP 入口共用目录；保留 v1 Observer 和只读边界。 |
 | `MonitorApp` | `ActivityStore` 以精确 `kind=result` 停止终态 tail polling，保留 execution_ref 隔离；Network Observation 的 Models、Store、View、ObserverClient、正式 Root 导航同时存在。P620 无 Swift/Xcode 工具链，Swift build/test 为 `NOT_RUN`。 |
 
-没有发生源码合并冲突，也没有使用整文件 `ours/theirs` 覆盖。集成分支从 Network Observation 交付 HEAD 原样分出；本轮仅增加本报告及冻结证据。
+没有发生源码合并冲突，也没有使用整文件 `ours/theirs` 覆盖。集成分支从 Network Observation 交付 HEAD 原样分出；本轮仅增加本报告和本地验证证据。
 
 ## 新候选隔离验证
 
@@ -32,9 +32,13 @@
 
 - 最小交集：用户指定 9 个文件，`201 passed, 13 subtests passed in 49.43s`；日志 `minimal-intersection.log` SHA256 `7963c4ee69caa7b594a1fe516166de06edba407187c5ed00c463ebfbce8d9895`。
 - 完整相关资格：原 Network Observation 报告列出的 16 个测试文件，**本轮重跑** `289 passed, 28 subtests passed in 61.94s`；日志 `full-qualification.log` SHA256 `2f86fed7ae38c733c4fe8fd6d7a191d96e3009090d028dc6187594026ddc03d5`。旧交付的 289 passed 不计作本轮验证。
-- 15 个相关 Python 源文件 AST 解析、`MonitorApp/Scripts/build-app.sh` 与两个 launcher 的 `bash -n`、`git diff --check 6a6ddd1..HEAD` 均通过。最终提交后的 diff、工作区与 origin 精确读回见冻结 manifest。
+- 15 个相关 Python 源文件 AST 解析、`MonitorApp/Scripts/build-app.sh` 与两个 launcher 的 `bash -n`、`git diff --check 6a6ddd1..HEAD` 均通过。最终提交后的 diff、工作区状态与 origin 分支存在性见本地 manifest；远端精确读回 `NOT_RUN`。
 - `swift`、`xcodebuild` 在 P620 均不可用；Swift build/test、Air App 安装、部署与真实会话 `01a105a5-8667-79e3-afdb-6e6db6a97f65` 自动发现均 `NOT_RUN`。
+
+## 推送权限阻塞
+
+受管 Host 对新 worktree 的 `git push -u origin codex/network-observation-convergence-20261004` 返回 `AUTHORITY_DENIED` / `COMMAND_NOT_DISPATCHED`，原因是 `development_command git network operations require explicit external authority`。`host_dispatched=false`、`side_effect_certainty=NOT_EXECUTED`，因此没有远端写入或不确定的推送结果。当前 `push_current_branch` 只针对注册的原产品 worktree/分支，不能代表集成分支执行推送。`PUSH=BLOCKED`、`FROZEN_CANDIDATE=BLOCKED`、本轮 convergence `FINAL_STATUS=BLOCKED`；这不改变上述源码和隔离回归的 PASS。需要外层以该**同一个本地提交**授予正确的远端推送操作，再做精确远端读回；不得重跑本次被拒绝的原操作，也不得从旧分支构建 App。
 
 ## 下一阶段顺序
 
-冻结候选 → Air fetch 并校验精确 ref/HEAD → Swift build/test → 安装候选 App → P620/Air 受控激活 → 用真实 `01a105a5-8667-79e3-afdb-6e6db6a97f65` 验证自动发现 → Air/P620 双机同屏 → UI 验收 → 最后处理 iMac。本轮在源码收敛和远端读回后停止。
+冻结候选 → Air fetch 并校验精确 ref/HEAD → Swift build/test → 安装候选 App → P620/Air 受控激活 → 用真实 `01a105a5-8667-79e3-afdb-6e6db6a97f65` 验证自动发现 → Air/P620 双机同屏 → UI 验收 → 最后处理 iMac。本轮在源码收敛及权限阻塞核实后停止；远端推送和读回完成前不进入下一阶段。
