@@ -33,12 +33,13 @@ class ExecutionOwnerError(TaskRegistryError):
 
 def socket_path(registry):
     database = str(Path(registry.path).resolve())
-    path = Path(database + '.owner.sock')
-    if len(os.fsencode(path)) < 104:
-        return path
-    # AF_UNIX paths are bounded even when the task DB is in a deep worktree.
+    # Never require changing permissions on an existing shared task-DB
+    # directory. Keep the socket/lock in a separate same-user private directory.
+    # Hash the full canonical DB identity to also bound AF_UNIX path length.
     key = hashlib.sha256(database.encode()).hexdigest()[:32]
-    return Path(tempfile.gettempdir()) / ('clinx-owner-' + str(os.getuid())) / (key + '.sock')
+    runtime = Path('/run/user') / str(os.getuid())
+    parent = runtime if runtime.is_dir() else Path(tempfile.gettempdir())
+    return parent / ('clinx-owner-' + str(os.getuid())) / (key + '.sock')
 
 
 def owner_record(registry, execution_ref):

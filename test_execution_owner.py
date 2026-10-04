@@ -77,6 +77,25 @@ def test_missing_owner_fails_before_any_local_dispatch(integration):
     assert integration.calls == []
 
 
+def test_socket_is_private_and_independent_of_shared_db_directory(integration):
+    integration.registry.path.parent.chmod(0o775)
+    before = integration.registry.path.parent.stat().st_mode
+    ready, stop = threading.Event(), threading.Event()
+    thread = threading.Thread(target=serve, args=(integration,), kwargs={'ready': ready, 'stop': stop})
+    thread.start()
+    try:
+        assert ready.wait(5)
+        endpoint = socket_path(integration.registry)
+        assert endpoint.parent != integration.registry.path.parent
+        assert endpoint.parent.stat().st_mode & 0o077 == 0
+        assert endpoint.stat().st_mode & 0o077 == 0
+        assert integration.registry.path.parent.stat().st_mode == before
+        assert len(str(endpoint).encode()) < 104
+    finally:
+        stop.set()
+        thread.join(5)
+
+
 @pytest.mark.parametrize('change', [{'approved': False}, {'database': '/foreign.sqlite3'},
                                     {'prepared_execution_ref': '../arbitrary'}, {'prepared_execution_ref': []},
                                     {'prompt': 'extra authority'}])
