@@ -94,6 +94,21 @@ def test_duplicate_out_of_order_gap_and_terminal_monotonic(directory):
     assert len(reader.detail(item["observation_id"])["turns"])==2
 
 
+def test_native_cwd_drift_preserves_first_project_without_blocking_stream(directory):
+    writer,reader,_,_,scope=directory
+    writer.accept("air",scope,dict(stream_id="stream",events=[event()]))
+    drift=event(2,project="/approved/../approved")
+    # The fixture scope must explicitly permit the drifted source metadata; the
+    # directory identity remains the first admitted project.
+    drift_scope=dataclasses.replace(scope,projects=("/approved","/approved/../approved"))
+    result=writer.accept("air",drift_scope,dict(stream_id="stream",events=[drift,event(3,tid="after-drift")]))
+    assert result["accepted"] and result["ack_seq"]==3
+    items=reader.list()["items"]
+    original=next(i for i in items if i["native_thread_id"]=="unmanaged")
+    assert original["project"]=="/approved"
+    assert any(i["native_thread_id"]=="after-drift" for i in items)
+
+
 def test_revoke_filters_and_cursor_isolation(directory):
     writer,reader,registry,approvals,scope=directory
     writer.accept("air",scope,dict(stream_id="stream",events=[event(i,tid=f"t-{i}") for i in range(1,5)]))
