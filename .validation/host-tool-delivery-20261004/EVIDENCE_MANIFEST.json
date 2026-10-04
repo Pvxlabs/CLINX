@@ -1,0 +1,99 @@
+{
+  "runtime_source": "809fb6b19d3ae7bb9f9bdcd83450ad0ff67f045a",
+  "records": {
+    "failure-boundary-summary.json": {
+      "sha256": "6760c71d0fad791b60c1ee7b922c0ad52bcfb5536bd7a01170fe41597c8e4475",
+      "bytes": 1230
+    },
+    "baseline-a-status.json": {
+      "sha256": "695a43ff38880e1fbb1268e4532c8df8038fcb20a0a428dacd33cea12b0de6d2",
+      "bytes": 4215
+    },
+    "baseline-b-evidence.json": {
+      "sha256": "eea0a6c9b5def62b88fd89ca32069462d634f791babbcbc3cdda77ef95c0b7c2",
+      "bytes": 1658
+    },
+    "old-ingress-regression.log": {
+      "sha256": "49bf096358e42f25241af57565be898190000a83fe3cb3cac1334ae8d8167c7f",
+      "bytes": 4066
+    },
+    "activation-preflight.json": {
+      "sha256": "477fb2b990fce3208bccfa614e1836584dfd4561ffb2aca29e85236b28b89195",
+      "bytes": 1912
+    },
+    "activation-attempt-1.log": {
+      "sha256": "f036b5953e5b5d30110e05f1104c4b4f40896d3e5e7e7c122adf3f5377e2c5b9",
+      "bytes": 2883
+    },
+    "connector-restart-unstarted.json": {
+      "sha256": "9252685ca774cea559d493306689137bbbf41a2ad5fe9bf6742529fdcf3b7c53",
+      "bytes": 341
+    },
+    "runtime-build.json": {
+      "sha256": "9003486f8a7ba246d2e4edaa5dfb09291f3385c155b7e40d6859fa6cbf60f1c5",
+      "bytes": 1841
+    },
+    "qualified-read-start.json": {
+      "sha256": "6fe0afd213b671c43f0a0598d3708bcf3dc7f50de22fcc3880b0dc883d6e90e4",
+      "bytes": 3015
+    },
+    "qualified-read-status.json": {
+      "sha256": "c6edc1a3f3d0db0f106dd373eff309d0a8471c84d7dc83215668955773727694",
+      "bytes": 11211
+    },
+    "qualified-mutation-start.json": {
+      "sha256": "51b3a4a1a219ebd015ea5f8a49a78d22e9cfedc26168e37fa4ce725c9de0d6cc",
+      "bytes": 15760
+    },
+    "qualified-mutation-status.json": {
+      "sha256": "9c0877900ba3b159bfd541e0da58044b1e0671cc192cf7b9cc298c3f764d9c84",
+      "bytes": 11480
+    },
+    "qualified-duplicate-start.json": {
+      "sha256": "92f11eab119db5cd844c3ffd5e136ef64d6d74557c86d658459dd95c6a927775",
+      "bytes": 3076
+    },
+    "qualified-final-readback.json": {
+      "sha256": "6750aafb57f3fae016abfc780e1711c5cf1cbc1245e85db320cb0d7cfed740c5",
+      "bytes": 3406
+    },
+    "authority-after.json": {
+      "sha256": "aa4ae542352303e2dd9b46605af55155e23b6fd1b54ddb951842c6a8dee4821f",
+      "bytes": 9292
+    },
+    "regression-qualified.log": {
+      "sha256": "877cfed28e6fbd6a135c907074168497d0de1973ab0701fd01980128e68c21e4",
+      "bytes": 550
+    },
+    "full-regression-1.log": {
+      "sha256": "ab070d67bf78dd3c06f2d61b73c505b2d7821570e7a67e0e8ca9029812e64b56",
+      "bytes": 7595,
+      "distribution": "LOCAL_RAW_PRESERVED"
+    },
+    "baseline-unrelated-regression.log": {
+      "sha256": "bf9e71ac7a8d3df233ebd8e962765bf593fa5eb2f96a20634a23b0a1ef2475f3",
+      "bytes": 4813,
+      "distribution": "LOCAL_RAW_PRESERVED"
+    },
+    "persistent-owner-final.json": {
+      "sha256": "9bd6b9631694fb4c5d5b590346afc527ee05fae7e2b54594a501a62751672355",
+      "bytes": 53087
+    },
+    "full-regression-1.log.json": {
+      "sha256": "b783054aea7248164786e83f84158f62a1939ce500d9f0968599078c118f6689",
+      "bytes": 7930,
+      "encoding": "exact raw text in JSON string; original byte hash retained"
+    },
+    "baseline-unrelated-regression.log.json": {
+      "sha256": "6a9d27a1a78f5de19ca7c46acb84052115c91ea12389287ac9a17ba59a52bdf8",
+      "bytes": 5081,
+      "encoding": "exact raw text in JSON string; original byte hash retained"
+    }
+  },
+  "notes": [
+    "Private configuration and credential files are outside this evidence directory.",
+    "Historical raw rollout is retained at its native path and is represented by hash and bounded summary.",
+    "Failed harnesses and intermediate qualification logs are retained locally; they are not marked PASS.",
+    "git-delivery.json is written locally after final commit and remote verification."
+  ]
+}

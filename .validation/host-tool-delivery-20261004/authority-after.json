@@ -1,0 +1,284 @@
+{
+  "task_ref": "task_dd43ad750800462a94e245d0ba201889",
+  "policy_version": 1,
+  "policy_hash": "5125e5d0110464a1cba471efdded55d8c0af41302e0e1ef76934c310f54b0078",
+  "future_execution_policy": {
+    "contract": "CLINX_EXECUTION_POLICY_V1",
+    "execution_surface": "HOST_EXECUTOR",
+    "required_capabilities": [
+      "GIT"
+    ],
+    "operation_classes": [
+      "DEVELOPMENT_MUTATION"
+    ],
+    "production_mutation_intent": false,
+    "host_executor_default": false,
+    "business_action_authority": false,
+    "operation_scopes": [
+      {
+        "capability": "GIT",
+        "operation": "push_current_branch",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": "gitwt_21b60628c2544672903c7394a57348f0"
+      }
+    ]
+  },
+  "effective_authority": {
+    "source": "SEALED_EXECUTION_POLICY",
+    "task_authorized": true,
+    "production_mutation_authorized": false,
+    "operation_scopes": [
+      {
+        "capability": "GIT",
+        "operation": "push_current_branch",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": "gitwt_21b60628c2544672903c7394a57348f0"
+      }
+    ],
+    "target_authorization": "CHECK_EXACT_OPERATION_SCOPE_AND_REGISTERED_TARGET",
+    "runtime_health": "NOT_PROBED",
+    "client_exposure": "NOT_OBSERVED"
+  },
+  "operations": {
+    "GIT": {
+      "request_capability": "GIT",
+      "probe_key": "git",
+      "probe": "NOT_PROBED",
+      "operations": {
+        "head": {
+          "capability": "GIT",
+          "operation": "head",
+          "description": "head; NONE",
+          "target_kind": "REGISTERED_PROJECT",
+          "argument_schema": {
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": false
+          },
+          "operation_class": "READ_ONLY_HOST",
+          "operation_classes": [
+            "READ_ONLY_HOST",
+            "DEVELOPMENT_MUTATION",
+            "PRODUCTION_READ_ONLY",
+            "PRODUCTION_MUTATION"
+          ],
+          "required_arguments": [],
+          "optional_arguments": [],
+          "mutating": false,
+          "side_effects": "NONE",
+          "implemented": true,
+          "client_exposed": "NOT_OBSERVED",
+          "runtime_health": "NOT_PROBED",
+          "task_authorized": false
+        },
+        "status": {
+          "capability": "GIT",
+          "operation": "status",
+          "description": "status; NONE",
+          "target_kind": "REGISTERED_PROJECT",
+          "argument_schema": {
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": false
+          },
+          "operation_class": "READ_ONLY_HOST",
+          "operation_classes": [
+            "READ_ONLY_HOST",
+            "DEVELOPMENT_MUTATION",
+            "PRODUCTION_READ_ONLY",
+            "PRODUCTION_MUTATION"
+          ],
+          "required_arguments": [],
+          "optional_arguments": [],
+          "mutating": false,
+          "side_effects": "NONE",
+          "implemented": true,
+          "client_exposed": "NOT_OBSERVED",
+          "runtime_health": "NOT_PROBED",
+          "task_authorized": false
+        },
+        "remote_main_head": {
+          "capability": "GIT",
+          "operation": "remote_main_head",
+          "description": "remote main head; NONE",
+          "target_kind": "REGISTERED_PROJECT",
+          "argument_schema": {
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": false
+          },
+          "operation_class": "READ_ONLY_HOST",
+          "operation_classes": [
+            "READ_ONLY_HOST",
+            "DEVELOPMENT_MUTATION",
+            "PRODUCTION_READ_ONLY",
+            "PRODUCTION_MUTATION"
+          ],
+          "required_arguments": [],
+          "optional_arguments": [],
+          "mutating": false,
+          "side_effects": "NONE",
+          "implemented": true,
+          "client_exposed": "NOT_OBSERVED",
+          "runtime_health": "NOT_PROBED",
+          "task_authorized": false
+        },
+        "ahead_behind": {
+          "capability": "GIT",
+          "operation": "ahead_behind",
+          "description": "ahead behind; NONE",
+          "target_kind": "REGISTERED_PROJECT",
+          "argument_schema": {
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": false
+          },
+          "operation_class": "READ_ONLY_HOST",
+          "operation_classes": [
+            "READ_ONLY_HOST",
+            "DEVELOPMENT_MUTATION",
+            "PRODUCTION_READ_ONLY",
+            "PRODUCTION_MUTATION"
+          ],
+          "required_arguments": [],
+          "optional_arguments": [],
+          "mutating": false,
+          "side_effects": "NONE",
+          "implemented": true,
+          "client_exposed": "NOT_OBSERVED",
+          "runtime_health": "NOT_PROBED",
+          "task_authorized": false
+        },
+        "fetch_origin": {
+          "capability": "GIT",
+          "operation": "fetch_origin",
+          "description": "fetch origin; LOCAL_OBJECTS_AND_REMOTE_TRACKING_REFS_ONLY",
+          "target_kind": "REGISTERED_PROJECT",
+          "argument_schema": {
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": false
+          },
+          "operation_class": "READ_ONLY_HOST",
+          "operation_classes": [
+            "READ_ONLY_HOST",
+            "DEVELOPMENT_MUTATION",
+            "PRODUCTION_READ_ONLY",
+            "PRODUCTION_MUTATION"
+          ],
+          "required_arguments": [],
+          "optional_arguments": [],
+          "mutating": true,
+          "side_effects": "LOCAL_OBJECTS_AND_REMOTE_TRACKING_REFS_ONLY",
+          "implemented": true,
+          "client_exposed": "NOT_OBSERVED",
+          "runtime_health": "NOT_PROBED",
+          "task_authorized": false
+        },
+        "push_current_branch": {
+          "capability": "GIT",
+          "operation": "push_current_branch",
+          "description": "push current branch; REGISTERED_ORIGIN_NON_FORCE_CURRENT_BRANCH",
+          "target_kind": "TASK_OWNED_GIT_WORKTREE",
+          "argument_schema": {
+            "type": "object",
+            "required": [],
+            "properties": {
+              "remote": {
+                "type": "string",
+                "minLength": 1
+              },
+              "target": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "operation_class": "DEVELOPMENT_MUTATION",
+          "operation_classes": [
+            "DEVELOPMENT_MUTATION"
+          ],
+          "required_arguments": [],
+          "optional_arguments": [
+            "remote",
+            "target"
+          ],
+          "mutating": true,
+          "side_effects": "REGISTERED_ORIGIN_NON_FORCE_CURRENT_BRANCH",
+          "implemented": true,
+          "client_exposed": "NOT_OBSERVED",
+          "runtime_health": "NOT_PROBED",
+          "task_authorized": true,
+          "registered_targets": [
+            {
+              "identity": "gitwt_21b60628c2544672903c7394a57348f0",
+              "path": "/home/pvxlabs/dev/clinx-network-observation-convergence-20261004",
+              "worktree_key": "684114000ae17b0980b2f7caa2f12445801551a32553101b47f3e6404e9ba929",
+              "repository_identity": "/home/pvxlabs/dev/clinx/.git",
+              "valid": true,
+              "task_target_authorized": true
+            }
+          ]
+        },
+        "development_command": {
+          "capability": "GIT",
+          "operation": "development_command",
+          "description": "development command; TRUSTED_WORKSPACE_DEVELOPMENT",
+          "target_kind": "TRUSTED_WORKSPACE",
+          "argument_schema": {
+            "type": "object",
+            "required": [
+              "argv"
+            ],
+            "properties": {
+              "argv": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "operation_class": "DEVELOPMENT_MUTATION",
+          "operation_classes": [
+            "DEVELOPMENT_MUTATION"
+          ],
+          "required_arguments": [
+            "argv"
+          ],
+          "optional_arguments": [],
+          "mutating": true,
+          "side_effects": "TRUSTED_WORKSPACE_DEVELOPMENT",
+          "implemented": true,
+          "client_exposed": "NOT_OBSERVED",
+          "runtime_health": "NOT_PROBED",
+          "task_authorized": false
+        }
+      }
+    }
+  },
+  "derived_git_targets": [
+    {
+      "identity": "gitwt_21b60628c2544672903c7394a57348f0",
+      "path": "/home/pvxlabs/dev/clinx-network-observation-convergence-20261004",
+      "worktree_key": "684114000ae17b0980b2f7caa2f12445801551a32553101b47f3e6404e9ba929",
+      "repository_identity": "/home/pvxlabs/dev/clinx/.git",
+      "valid": true,
+      "task_target_authorized": true
+    }
+  ],
+  "network_access": true,
+  "backend_implemented": true,
+  "mcp_exposed": true,
+  "client_exposure": "NOT_OBSERVED",
+  "runtime_health": "NOT_PROBED",
+  "read_only": true
+}

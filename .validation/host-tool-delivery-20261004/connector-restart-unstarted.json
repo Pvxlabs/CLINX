@@ -1,0 +1,10 @@
+{
+  "prepared_execution_ref": "prepared_0d47a1a063ff49589ab8a6c9a97aea77",
+  "start_response": "Transport closed",
+  "prepared_status_readback": "PREPARED",
+  "execution_readback": null,
+  "owner_claim_readback": null,
+  "read_only_connector_afterwards": "RECOVERED",
+  "replayed": false,
+  "classification": "UNSTARTED_TRANSPORT_FAILURE"
+}

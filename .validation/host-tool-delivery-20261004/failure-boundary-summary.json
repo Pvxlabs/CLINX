@@ -1,0 +1,26 @@
+{
+  "execution_ref": "exec_054234f6798d4027afa2ccdbcecfe263",
+  "operator_confirmed_entrypoint": "ChatGPT -> Desktop Commander -> one-shot Python subprocess -> launch-mcp -> prepare/start -> DISPATCHED -> terminate/wait",
+  "failure_boundary": "completion and dynamic-tool owner died with requesting MCP child before ledger admission",
+  "native_rollout_path": "/home/pvxlabs/.codex/sessions/2026/10/04/rollout-2026-10-04T10-04-55-01a1065f-aab3-7f30-8f17-f631cf1f43f8.jsonl",
+  "native_rollout_sha256": "96df383ba0dd4c5f10224813cd9b4001c6ebbe0a63d3d9868f65376226efb5fc",
+  "native_cli_version": "0.156.1",
+  "host_executions": [],
+  "host_tool_deliveries": [],
+  "completion_handoff": [
+    {
+      "execution_ref": "exec_054234f6798d4027afa2ccdbcecfe263",
+      "task_id": "task_dd43ad750800462a94e245d0ba201889",
+      "thread_id": "01a1065f-aab3-7f30-8f17-f631cf1f43f8",
+      "turn_id": "01a1065f-b127-7e70-8d89-59627ed41592",
+      "state": "DONE",
+      "terminal_observed": 0,
+      "attempts": 12,
+      "next_attempt": 1791108800.6766016,
+      "last_error": null,
+      "updated_at": 1791108795.6766016
+    }
+  ],
+  "provider_call_id": "exec-8ac274f6-85f2-48b7-bd5b-4c9b751a0f80",
+  "original_execution_mutated": false
+}
