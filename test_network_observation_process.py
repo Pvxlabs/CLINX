@@ -56,11 +56,9 @@ def fixture_source(root,tid,project):
 
 def test_real_process_collection_tls_centre_observer_mcp_two_clients_and_recovery(tmp_path):
     node,node_peers,centre,centre_peers=paired(tmp_path)
-    # A second independently paired source represents a P620 node in this fixture.
-    second=NodeIdentity(PrivateStore(tmp_path/"p620-fixture"),"p620-fixture")
-    with DeviceServer(centre,centre_peers,address="127.0.0.1") as pairing:
-        candidate=Candidate(centre.public["node_id"],centre.public["display_name"],centre.public["fingerprint"],(("127.0.0.1",pairing.port),))
-        LanTransport(second,TrustedPeerStore(second.store)).pair(candidate,pairing.window.open())
+    # The centre observes its own approved source under its existing identity;
+    # only Air is a remote mTLS source. No self-pair or alternate P620 identity.
+    second=centre
     for source in (node,second):
         NodeAuthorizationStore(source.store.root).grant("p620",user_scope="fixture-user",read_sessions=True,projects=("/fixture",))
         NodeAuthorizationStore(centre.store.root).grant(source.public["node_id"],user_scope="fixture-user",read_sessions=True,projects=("/fixture",))
@@ -73,6 +71,7 @@ def test_real_process_collection_tls_centre_observer_mcp_two_clients_and_recover
     env=dict(os.environ,PYTHONPATH=str(ROOT),CLINX_OBSERVATION_DB=str(observation),
         CLINX_OBSERVATION_STATE=str(centre.store.root),CLINX_OBSERVATION_REGISTRY=str(registry),
         CLINX_OBSERVATION_USER_SCOPE="fixture-user",CLINX_OBSERVATION_NODE_ID="p620",
+        CLINX_OBSERVATION_NATIVE_HOME=str(tmp_path/"p620-native"),
         CLINX_OBSERVER_DB=str(canonical),CLINX_OBSERVER_TOKEN="fixture-observer-"+"x"*32,
         CLINX_OBSERVER_PORT=str(observer_port))
     processes=[]
@@ -83,7 +82,8 @@ def test_real_process_collection_tls_centre_observer_mcp_two_clients_and_recover
     def centre_start():
         p=spawn(["node_centre_entrypoint.py","--state",str(centre.store.root),"--node-id","p620","serve",
             "--registry",str(registry),"--observations",str(observation),"--bind","127.0.0.1",
-            "--port",str(centre_port),"--stale-after","2"])
+            "--port",str(centre_port),"--stale-after","2",
+            "--local-native-home",str(tmp_path/"p620-native"),"--local-canonical-db",str(canonical),"--local-owner-host","p620"])
         assert line(p)["ready"];return p
     client_code="""import json,os,urllib.request
 req=urllib.request.Request('http://127.0.0.1:'+os.environ['CLINX_OBSERVER_PORT']+'/v2/observations',
@@ -103,12 +103,15 @@ print(urllib.request.urlopen(req,timeout=2).read().decode())
             time.sleep(.15)
         raise AssertionError("自动目录未满足条件；"+str(page))
     try:
+        fixture_source(tmp_path/"p620-native","fixture-p620","/fixture")
         centre_process=centre_start()
         roots=[]
         for source in (node,second):
             root=tmp_path/(source.public["node_id"]+"-native")
             tid="fixture-"+source.public["node_id"]
-            fixture_source(root,tid,"/fixture");roots.append(root)
+            if not root.exists(): fixture_source(root,tid,"/fixture")
+            roots.append(root)
+            if source is centre: continue
             source.store.write("node-config.json",dict(schema_version=1,centre_id="p620",
                 centre_endpoint=f"tls://127.0.0.1:{centre_port}",bind_address="127.0.0.1",port=free_port()))
             spawn(["MonitorApp/Scripts/node_service_entrypoint.py"],dict(CLINX_NODE_STATE=str(source.store.root),
@@ -118,7 +121,7 @@ print(urllib.request.urlopen(req,timeout=2).read().decode())
             stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         processes.append(observer)
         page=wait_items(lambda items:len(items)==2)
-        assert {i["node_id"] for i in page["items"]}=={"air","p620-fixture"}
+        assert {i["node_id"] for i in page["items"]}=={"air","p620"}
         assert all(i["task_ref"] is None and i["turn"]["execution_ref"] is None for i in page["items"])
         identities={i["observation_id"] for i in page["items"]}
         mcp=spawn(["mcp_server.py","--stdio","--observations-only"])
@@ -127,6 +130,18 @@ print(urllib.request.urlopen(req,timeout=2).read().decode())
         response=line(mcp)
         structured=response["result"]["structuredContent"]
         assert {i["observation_id"] for i in structured["items"]}==identities
+        air_id=next(i["observation_id"] for i in page["items"] if i["node_id"]=="air")
+        for request_id,name in ((2,"clinx_get_observation"),(3,"clinx_get_observation_context")):
+            mcp.stdin.write(json.dumps(dict(jsonrpc="2.0",id=request_id,method="tools/call",
+                params=dict(name=name,arguments={"observation_id":air_id})))+"\n")
+            mcp.stdin.flush()
+            result=line(mcp)["result"]["structuredContent"]
+            if request_id==2:
+                assert result["item"]["observation_id"]==air_id
+                assert result["turns"][0]["turn_id"]=="turn-fixture"
+            else:
+                assert result["context_status"]=="AVAILABLE", result
+                assert result["last_codex_result"]=="公开进度"
         a=http_client();b=http_client()
         assert a["items"]==b["items"]
         delays=[]
@@ -149,18 +164,21 @@ print(urllib.request.urlopen(req,timeout=2).read().decode())
         centre_process.terminate();centre_process.wait(timeout=5)
         with sqlite3.connect(roots[1]/"thread_history_1.sqlite") as c:
             c.execute("UPDATE thread_turns SET status='completed',completed_at=?",(int(time.time()),))
+        with sqlite3.connect(roots[0]/"thread_history_1.sqlite") as c:
+            c.execute("UPDATE thread_items SET item_json=?",(json.dumps({"type":"agentMessage","text":"离线期间公开结果","phase":"final_answer"}),))
         time.sleep(2.5)
         offline=http_client()
         assert {i["observation_id"] for i in offline["items"]}==identities
         assert all(i["freshness"]=="OFFLINE" for i in offline["items"])
         centre_process=centre_start()
-        recovered=wait_items(lambda rows:len(rows)==2 and all(i["turn"]["native_state"]=="COMPLETED" for i in rows),timeout=18)
+        recovered=wait_items(lambda rows:len(rows)==2 and all(i["turn"]["native_state"]=="COMPLETED" for i in rows)
+            and any(i["node_id"]=="air" and i["turn"]["summary"]=="离线期间公开结果" for i in rows),timeout=18)
         assert {i["observation_id"] for i in recovered["items"]}==identities
         assert canonical.read_bytes()==authority_before
         # Revocation hides the already cached item on the next read.
         NodeAuthorizationStore(centre.store.root).revoke("air",user_scope="fixture-user")
         revoked=wait_items(lambda rows:len(rows)==1)
-        assert revoked["items"][0]["node_id"]=="p620-fixture"
+        assert revoked["items"][0]["node_id"]=="p620"
         # Logical evidence retained by pytest capture; no test credential output.
         usage=[]
         for process in processes:
@@ -169,8 +187,13 @@ print(urllib.request.urlopen(req,timeout=2).read().decode())
                 fields=stat.read_text().split()
                 usage.append({"pid":process.pid,"cpu_seconds":(int(fields[13])+int(fields[14]))/os.sysconf("SC_CLK_TCK"),
                               "rss_bytes":int(fields[23])*os.sysconf("SC_PAGE_SIZE")})
+        collection=[]
+        for source in (node,):
+            health=json.loads((tmp_path/(source.public["node_id"]+"-health")/"health.json").read_text())
+            collection.append({"node_id":source.public["node_id"],"sampled_metadata_rows":health.get("sampled"),
+                               "collector_state":health["status"]})
         print(json.dumps({"evidence":"ISOLATED_FIXTURE_REAL_PROCESSES","latency_samples_seconds":delays,"p95_seconds":sorted(delays)[-1],
-            "measurement":"SOURCE_SQL_COMMIT_TO_INDEPENDENT_HTTP_CLIENT_NOT_MAC_UI","process_usage":usage,
+            "measurement":"SOURCE_SQL_COMMIT_TO_INDEPENDENT_HTTP_CLIENT_NOT_MAC_UI","process_usage":usage,"collection":collection,
             "processes":len(processes),"identities":sorted(identities),
             "canonical_db_unchanged":True,"provider_calls":0,"lease_mutations":0}))
     finally:

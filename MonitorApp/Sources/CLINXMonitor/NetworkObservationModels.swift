@@ -77,6 +77,16 @@ struct ObservationPage: Codable, Sendable {
     let hasMore: Bool
     let coverage: [String: String]
     let retentionEvicted: Int
+    var sources: [ObservationSource]? = nil
+}
+struct ObservationSource: Codable, Identifiable, Sendable {
+    var id: String { nodeId }
+    let nodeId: String
+    let displayName: String
+    let state: String
+    let coverage: String
+    let ackSeq: Int64?
+    let gap: String?
 }
 struct ObservationDetail: Codable, Sendable {
     let schemaVersion: String

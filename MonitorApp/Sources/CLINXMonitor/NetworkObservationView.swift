@@ -10,7 +10,12 @@ struct NetworkObservationView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("全部设备").font(DS.Font.bodyEmphasis)
                 HStack {
-                    TextField("设备 ID", text: $network.filters.node)
+                    Picker("设备", selection: $network.filters.node) {
+                        Text("全部设备").tag("")
+                        ForEach(network.sources) { source in
+                            Text(source.displayName.isEmpty ? source.nodeId : source.displayName).tag(source.nodeId)
+                        }
+                    }
                     TextField("项目路径", text: $network.filters.project)
                 }
                 HStack {
@@ -45,6 +50,9 @@ struct NetworkObservationView: View {
                 if network.nextCursor != nil {
                     Button("加载更多任务") { Task { await network.loadMore() } }
                         .disabled(network.items.count >= 500)
+                }
+                ForEach(network.sources.filter { $0.coverage == "AWAITING_BOOTSTRAP" || $0.gap != nil }) { source in
+                    Text("\(source.displayName)：\(source.gap ?? "等待目录采集")").font(.caption)
                 }
                 Text("仅已批准共享范围 · 其他 Agent 未接入").font(.caption).foregroundStyle(.secondary)
                 if network.retentionEvicted > 0 {

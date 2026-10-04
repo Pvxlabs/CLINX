@@ -358,3 +358,32 @@ class ObservationCollector:
 
     def close(self):
         self.conn.close();self.lock.close()
+
+class LocalObservationRegistration:
+    """Authenticated in-process source on the centre's own stable NodeIdentity.
+
+    The local read_sessions grant is explicit and persisted. No self-pair,
+    alternate identity, canonical task, execution or Provider is created.
+    """
+    def __init__(self,identity,registry,approvals,writer,stale_after=45):
+        self.identity,self.registry,self.approvals,self.writer=identity,registry,approvals,writer
+        self.stale_after=stale_after
+
+    def heartbeat(self,identity,scope,*,port,capabilities):
+        from node_protocol import NodeRecord,_now
+        approved=self.approvals.get(self.identity.public["node_id"])
+        if identity is not self.identity or approved is None or not approved.allows("observation.upload"):
+            old=self.registry.get(self.identity.public["node_id"])
+            if old: self.registry.revoke(old.node_id,old.user_scope)
+            return {"registered":False,"error_code":"LOCAL_OBSERVATION_SCOPE_DENIED"}
+        record=NodeRecord(node_id=identity.public["node_id"],user_scope=approved.user_scope,
+            public_key_fingerprint=identity.public["fingerprint"],display_name=identity.public["display_name"],
+            capabilities=("session.read","session.status"),state="ONLINE",last_seen=_now(),stale_after_seconds=self.stale_after)
+        self.registry.register(record,approved)
+        return {"registered":True,"scope":approved.as_dict()}
+
+    def upload(self,identity,scope,**batch):
+        approved=self.approvals.get(self.identity.public["node_id"])
+        if identity is not self.identity or approved is None or not approved.allows("observation.upload"):
+            raise NodeProtocolError("LOCAL_OBSERVATION_SCOPE_DENIED","Local read_sessions approval is required")
+        return self.writer.accept(identity.public["node_id"],approved,batch)

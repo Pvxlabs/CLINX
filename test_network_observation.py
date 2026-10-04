@@ -313,3 +313,30 @@ def test_formal_directory_has_no_identity_creation_or_writable_lock(tmp_path,mon
     assert not lock.exists()
     assert {p.name:p.read_bytes() for p in centre.store.root.iterdir() if p.is_file()}==snapshot
     registry.close()
+
+def test_authorized_node_bootstrap_is_visible_before_any_session(directory):
+    _,reader,_,_,_=directory
+    page=reader.list()
+    assert page["items"]==[]
+    assert page["sources"][0]["coverage"]=="AWAITING_BOOTSTRAP"
+    assert page["sources"][0]["ack_seq"] is None
+
+
+def test_local_centre_source_never_grants_itself_permission(tmp_path):
+    from local_discovery.identity import NodeIdentity,PrivateStore
+    from observation_source import LocalObservationRegistration
+    identity=NodeIdentity(PrivateStore(tmp_path/"identity"),"p620")
+    approvals=NodeAuthorizationStore(identity.store.root)
+    registry=NodeRegistry(tmp_path/"nodes.db")
+    writer=ObservationWriter(tmp_path/"observations.db")
+    local=LocalObservationRegistration(identity,registry,approvals,writer)
+    claimed=SharingScope("alice",read_sessions=True)
+    assert local.heartbeat(identity,claimed,port=1,capabilities=())["registered"] is False
+    assert registry.get("p620") is None
+    approved=approvals.grant("p620",user_scope="alice",read_sessions=True,projects=("/approved",))
+    assert local.heartbeat(identity,approved,port=1,capabilities=())["registered"]
+    local.upload(identity,approved,stream_id="local",events=[event()])
+    approvals.revoke("p620")
+    assert not local.heartbeat(identity,approved,port=1,capabilities=())["registered"]
+    assert registry.get("p620").state=="REVOKED"
+    registry.close()
