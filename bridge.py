@@ -2209,6 +2209,40 @@ def _project_target_host(cfg: BridgeConfig, project: ProjectMapping) -> str:
     return canonical_host(workspace.host or workspace.alias)
 
 
+def _local_socket_command(command: tuple[str, ...], configured: str | None) -> tuple[tuple[str, ...], str | None]:
+    """Resolve one explicit endpoint before creating a transport; never choose between conflicts."""
+    endpoints = []
+    argv = []
+    args = iter(command)
+    for arg in args:
+        if arg == "--sock":
+            value = next(args, "")
+        elif arg.startswith("--sock="):
+            value = arg.partition("=")[2]
+        else:
+            argv.append(arg)
+            continue
+        if not value.strip() or value.startswith("-"):
+            raise BridgeError("--sock requires a non-empty socket path")
+        endpoints.append(value)
+    if configured is not None:
+        if not configured.strip():
+            raise BridgeError("local_socket requires a non-empty socket path")
+        endpoints.append(configured)
+    normalized = set()
+    for value in endpoints:
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / path
+        normalized.add(str(path.resolve()))
+    if len(normalized) > 1:
+        raise BridgeError("Conflicting app-server socket endpoints in command/local_socket")
+    endpoint = next(iter(normalized), None)
+    if endpoint is not None:
+        argv.extend(("--sock", endpoint))
+    return tuple(argv), endpoint
+
+
 def _default_app_server_client(
     cfg: BridgeConfig,
     target: TargetConfig,
@@ -2226,13 +2260,7 @@ def _default_app_server_client(
         selected_transport = "ssh"
     endpoint = None
     if selected_transport == "local":
-        command = cfg.app_server.command
-        if cfg.app_server.local_socket:
-            endpoint = Path(cfg.app_server.local_socket)
-            if not endpoint.is_absolute():
-                endpoint = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / endpoint
-            # An explicit owned endpoint never falls back to the shared daemon.
-            command = (*command, "--sock", str(endpoint))
+        command, endpoint = _local_socket_command(cfg.app_server.command, cfg.app_server.local_socket)
         transport = LocalStdioTransport(
             command,
             timeout_seconds=cfg.app_server.request_timeout_seconds,
@@ -2580,8 +2608,9 @@ class TaskDispatcher:
         properties["capability"]["enum"] = list(policy.required_capabilities)
         return spec
 
-    def _managed_host_instructions(self, policy: ExecutionPolicy) -> str:
-        result_contract = (
+    @staticmethod
+    def _managed_result_instructions() -> str:
+        return (
             "At the end return exactly one multiline result with every field: "
             "CLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<one concise paragraph>\n"
             "CHANGED_FILES=<comma-separated paths or NONE>\nVALIDATION=<tests/checks and outcomes>\n"
@@ -2595,6 +2624,9 @@ class TaskDispatcher:
             "unperformed deployment, readback or observation BLOCKED: report NOT_RUN. "
             "Do not overwrite independent qualification FAIL, or infer PASS after authority changes.\n"
         )
+
+    def _managed_host_instructions(self, policy: ExecutionPolicy) -> str:
+        result_contract = self._managed_result_instructions()
         if policy.execution_surface != HOST_EXECUTOR:
             return (
                 "CLINX MANAGED EXECUTION CONTRACT\n"
@@ -3287,6 +3319,11 @@ class TaskDispatcher:
             )
         developer_instructions = self._managed_host_instructions(policy)
         managed_prompt = task.title + "\n\n" + managed_prompt
+        if policy.execution_surface != HOST_EXECUTOR:
+            # A resume can rejoin a loaded native thread and ignore developer
+            # overrides. Deliver the result requirements in this turn as well,
+            # without replacing the original thread or weakening the Finalizer.
+            managed_prompt += "\n\nCLINX TURN RESULT REQUIREMENTS\n" + self._managed_result_instructions()
         with self.tasks.execution(
             task.task_id, issue_id, execution_ref=execution_ref,
             retain=bool(execution_ref and execution_ref.startswith("exec_")),
