@@ -5,7 +5,7 @@ Date: 2026-09-30. Related: ADR-001/002/003, docs/CLINX_MONITOR.md.
 
 ## Context
 
-P620 is the only CLINX authority. A native Mac MenuBarExtra needs small, stable,
+Phase 0/1 originally treated P620 as the only CLINX authority. The 2026-10-04 addendum below supersedes that single-host assumption. A native Mac MenuBarExtra needs small, stable,
 read-only snapshots over Tailscale. Existing TaskRegistry construction can migrate
 the DB; ClinxIntegration.get_status can reclaim leases/reconcile an exact provider
 turn. Host evidence and structured results contain fields unsafe for a UI transport.
@@ -69,3 +69,16 @@ not authority/liveness evidence. No provider calls, registry initialization, his
 writes, internal reasoning or raw tool output are added. The standalone Observer
 reads the native state/history databases through read-only OS mounts and bounded
 SQLite transactions. Existing lifecycle/result serialization remains unchanged.
+
+
+## 2026-10-04 增补：全网观察与持久记录 v1
+
+执行事实归各自 canonical owner；中心是可重建观察读模型，不是第二执行权威。旧决策中“无新增 state store / writer”仅适用于原 canonical GET 适配器，不禁止本版本正常观察投影、增量事件和采集 checkpoint 的必要记录。
+
+节点复用 NodeIdentity、TrustedPeerStore、OPAQUE/mTLS 与双方持久化 read_sessions 范围自动枚举。中心本机需显式本地观察批准，复用自身身份，不自配对、不创建替代身份。配对不等于授权；观察不要求 execute_tasks 或 adoption。
+
+observation_id 绑定节点、用户、Provider、native thread；canonical 引用可空。可信 route 合并轮次，外机 owner 不归前端，同 thread 多来源冲突明确展示。目录、轮次与允许字段 Activity 有界持久化；断线 outbox/ACK/source generation/gap/保留状态可观察。内部推理、凭据和原始工具输出不入中心。
+
+Observer v2 与 MCP 共享 ObservationDirectory 和当前授权检查；只读存储视图不初始化身份、数据库或锁文件，不调用 get_status/reconciliation。v1 API 保持兼容；Mac 默认全部设备，使用独立 Observation 模型；控制仍走既有授权与单写者。
+
+本决策只交付源码与隔离资格证据，不授予运行时激活或控制权限。详见 docs/NETWORK_OBSERVATION_V1_REPORT_20261004.md 与 docs/NETWORK_OBSERVATION_V1_ACCEPTANCE_20261004.md。
