@@ -53,6 +53,12 @@ class AppServerRemoteError(AppServerError):
         self.error = error
 
 
+class AppServerWriterConflict(AppServerRemoteError):
+    """An explicit resume rejection, before any turn/start request."""
+    code = "NATIVE_ACTIVE_WRITER"
+    side_effect = "NONE"
+
+
 @dataclasses.dataclass
 class _ServerRequestRecord:
     """Admission and response state for one typed server-request id."""
@@ -1649,7 +1655,13 @@ class CodexAppServerClient:
             # schema has no dynamicTools field; never pretend to replace it.
         if developer_instructions is not None:
             params["developerInstructions"] = developer_instructions
-        result = self._request("thread/resume", params)
+        try:
+            result = self._request("thread/resume", params)
+        except AppServerRemoteError as exc:
+            if (exc.error.get("code") == -32600
+                    and exc.error.get("message") == f"thread {thread_id} already has an active writer"):
+                raise AppServerWriterConflict(exc.method, exc.error) from exc
+            raise
         thread = _thread_result(result, "thread/resume")
         if thread.get('id') != thread_id:
             raise AppServerProtocolError('thread/resume returned a different thread')

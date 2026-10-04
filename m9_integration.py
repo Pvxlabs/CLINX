@@ -2231,10 +2231,11 @@ class ClinxIntegration:
                     "read_only": False,
                 }
             raise exc
-        except AppServerError:
+        except AppServerError as exc:
             if task_id:
                 self._linear_failure_writeback(
-                    task_id, state="RECOVERY_REQUIRED", detail="recoverable app-server failure"
+                    task_id, state=("BLOCKED" if getattr(exc, 'side_effect', None) == 'NONE'
+                                    else "RECOVERY_REQUIRED"), detail=str(exc)
                 )
             self.registry.restore_prepared_execution(prepared_execution_ref)
             raise

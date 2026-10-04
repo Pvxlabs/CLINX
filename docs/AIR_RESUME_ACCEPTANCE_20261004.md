@@ -1,0 +1,38 @@
+# Air 原会话续接实际验收
+
+本次尚未实现实机原会话续接成功。正式CLINX入口到Air的adoption和prepare通过，start到达Air本机Provider，但原生thread/resume因另一Provider持有writer而拒绝；没有新的turn，未收到本轮nonce回复。SAME_THREAD_CONTINUATION=BLOCKED；FULL_EXECUTION_ACCEPTANCE=未验证。
+
+## 正式调用证据
+
+- 原thread：`01a1020d-adca-7711-80a5-21219bf1cb12`，host `air.local`，cwd `/Users/tinzleung/github/CLINX`。
+- adoption：`ADOPTED`，canonical `task_2ea1758adace4ec0affb23dd8ceb21c1`，未创建对话、未启动execution。Air本机项目核验；P620仅保存引用路由。
+- 第一次prepare：`prepared_faad5101f5914972ab1326b515c18d5e`；execution `exec_faad5101f5914972ab1326b515c18d5e`。大WebSocket frame短读导致model/list JSON不完整，尚未派发turn。修正精确长度接收后，真实model/list正常。
+- 第二次prepare：`prepared_25b9d2dd0df745ffb8d74ccc66022417`；execution `exec_25b9d2dd0df745ffb8d74ccc66022417`。正式start返回`thread/resume failed (code -32600): thread 01a1020d-adca-7711-80a5-21219bf1cb12 already has an active writer`。
+- 固定nonce：`4a9e2822982b`；预期标记`CLINX_AIR_RESUME_OK_4a9e2822982b`，未出现。
+- 新turn：无。最近原生turn仍为`01a1026d-0f85-7f13-a154-228188ed6f80`、completed；它是旧turn，不能当成本次回复。
+- 两次未派发attempt经正式产品maintenance CLI负向对账：native completion早于acquisition，实时Provider仍是同一旧completed turn。canonical Finalizer归为BLOCKED、释放仅该失败attempt的lease，未resume、未cancel、未重放。
+- 正式CLINX get_status再次读回第二execution为BLOCKED、`execution_turn_ref=null`、`active_execution=null`、node `air.local`。不以SSH/直接Provider成功替代CLINX入口。
+
+## Provider阻塞证据与边界
+
+`lsof`读取目标thread writer lock：唯一持有者PID 63094、用户tinzleung、桌面内置Codex app-server。该进程也是本修复对话的父Provider。CLINX配置的现有daemon为PID 97196、0.160.0，实时观察目标为notLoaded。原对话未显示不等于writer已释放。
+
+内置Provider仅观察到stdio/匿名socket，未发现正式可连接控制socket。没有删除或改写lock，没有重启或结束任一Provider，没有发起替代对话，没有修改rollout。解除该跨Provider writer冲突需要桌面正式释放目标writer，或提供可连接其持有者的正式Provider入口；当前约束下不能强行执行。
+
+新处理对准确thread/resume writer拒绝返回`NATIVE_ACTIVE_WRITER`、`side_effect=NONE`、BLOCKED，不发送turn/start；仅该失败attempt经单一Finalizer收束。其他超时保持UNKNOWN并先对账。重复拒绝请求不重试Provider。
+
+## 变更与验证范围
+
+可信selector和中心引用路由在thread_identity、m9_integration、node_protocol；Air canonical适配器在node_execution_adapter、node_runtime、node_service_entrypoint。node_centre_entrypoint使用既有正式share/configure机制，明确限定节点、原thread、新建项目及可取消项目。mcp_server并行维护不恢复现有执行。app_server修正精确长度frame读取；bridge/native_provider/task_registry实现严格未派发对账与明确writer拒绝。Monitor build-app.sh重建签名helper依赖，未原地修改已签名bundle。
+
+隔离回归覆盖真实产品MCP→配对mTLS→canonical适配器，错误host/hostId、scope撤销、writer拒绝、重复请求、迟到receipt、UNKNOWN对账、same-thread及本地任务路径。实机adoption/prepare PASS；实机原会话执行BLOCKED。新任务完成/结果/取消验收未运行，未提前越过M2。
+
+本次最终受影响Python检查：175 passed、16 subtests passed（11个相关测试文件）。Swift检查：72 passed；build-app.sh及codesign严格验证通过。macOS临时目录使用`TMPDIR=/private/tmp`避免既有测试的`/var`与`/private/var`字符串断言差异；未修改或跳过该断言。不是全仓Python审计。
+
+## 交付边界
+
+独立worktree `/Users/tinzleung/.codex/worktrees/air-resume-fix/CLINX`，修复分支`codex/air-resume-fix-20261004`，基线b8a4294。原工作目录及前序分支保持不变；正常推送，没有强推、主线合并或接管其他执行。Linear创建在实施前因UNAUTHORIZED失败，未伪称登记；本SPEC和记录保持实际进度。
+
+P620原MCP与Provider持续保留，候选tunnel使用同一正式profile，旧poller暂停且可SIGCONT回退；候选MCP不扫描旧执行。并行维护尚非永久service切换，须明确记录。旧release、环境/launcher备份及Air原bundle保留。临时授权通过双边正式share恢复只读后，执行仍需再次显式授权。
+
+`ORION_MUTATION=NONE`。不暴露凭据、配对秘密或完整原历史。
