@@ -1,0 +1,89 @@
+{
+  "air_next_fetch": {
+    "build_ref": "refs/remotes/origin/codex/network-observation-convergence-20261004",
+    "command": "git fetch origin",
+    "expected_head": "FINAL_FROZEN_SHA from the final execution result",
+    "prerequisite": "Final non-force push PASS; canonical origin branch SHA equals final local HEAD; ahead/behind 0/0; worktree clean; Air independently verifies FINAL_FROZEN_SHA before build",
+    "prohibit_old_branches_for_final_app": [
+      "codex/air-result-contract-fix-20261004",
+      "codex/air-resume-fix-20261004",
+      "codex/p620-network-observation-v1-20261004"
+    ],
+    "verify_command": "git rev-parse refs/remotes/origin/codex/network-observation-convergence-20261004"
+  },
+  "air_patch_evidence": {
+    "ancestor": true,
+    "bridge_blob_unchanged": true,
+    "cherry_pick": "NOT_RUN",
+    "git_show_binary_sha256": "2418fe9a95774a65b038ed85ecd9b8cc697ab477309b862ef95c69f3d7362501",
+    "given_sha256": "2418fe9a95774a65b038ed85ecd9b8cc697ab477309b862ef95c69f3d7362501",
+    "node_read_error_hunks_unchanged": true,
+    "stable_patch_id": "ba43359f73c0fb227e0239ad55b20fba6c9802c9",
+    "test_original_287_lines_preserved": true
+  },
+  "build_allowed": false,
+  "candidate_state": "FROZEN",
+  "created_at_utc": "2026-10-04T09:18:13.527520+00:00",
+  "final_freeze_rule": "Only the final metadata-only commit on refs/heads/codex/network-observation-convergence-20261004 qualifies; use its full SHA from final local HEAD and exact origin readback. The earlier product integration HEAD is evidence, not the final frozen SHA. Air must fetch this canonical branch and verify that full SHA before any later build.",
+  "integration_branch": "codex/network-observation-convergence-20261004",
+  "integration_head": "f1f096bb970651f5b60a067f7d8eaaecb9fa7229",
+  "integration_ref": "refs/heads/codex/network-observation-convergence-20261004",
+  "merge_base_air_network": "6a6ddd18ed5f2e1cb35c399e214c282affabcf69",
+  "note": "The product integration HEAD predates this metadata-only closure commit. A Git commit cannot contain its own SHA; FINAL_FROZEN_SHA is the final local HEAD and exact canonical origin readback in the execution result.",
+  "product_file_manifest_sha256": "3d753bf5162f8b9f3abc027df1834d022098cca123870051fed372767f726c1e",
+  "product_file_mismatches": [],
+  "product_files_checked": 30,
+  "product_source_sha": "1113952c8397ee97f1501f88b291cb6f0f921960",
+  "push": {
+    "final_push_method": "registered push_current_branch; non-force; canonical origin; same-name branch",
+    "final_remote_head": "FINAL_FROZEN_SHA from final execution result",
+    "first_push_head": "f1f096bb970651f5b60a067f7d8eaaecb9fa7229",
+    "first_push_remote_readback": "f1f096bb970651f5b60a067f7d8eaaecb9fa7229",
+    "host_delivery": "RESTORED; current registered Host operations execute and return known results",
+    "status": "PASS"
+  },
+  "schema": "CLINX_NETWORK_OBSERVATION_CONVERGENCE_V1",
+  "source_commits": {
+    "air_baseline": "6a6ddd18ed5f2e1cb35c399e214c282affabcf69",
+    "air_patch": "9c0bbf1",
+    "network_delivery": "3c5d73a5b45b0e60db533a78e07692612bc1882d",
+    "network_product": "1113952c8397ee97f1501f88b291cb6f0f921960",
+    "terminal_monitor": "3d99f2bc4752df3d08df1c8b6fd8f1373eb80ba8"
+  },
+  "source_manifest_sha256": "59a6f7be9f96d3616ad6c5ef10b01761a12369fb76fdb2040d5ba5bfaf37aa29",
+  "statuses": {
+    "AIR_BUILD": "NOT_RUN",
+    "AIR_RESULT_CONTRACT_INTEGRATED": "PASS",
+    "CONVERGENCE_REGRESSION": "PASS",
+    "DEPLOYMENT": "NOT_RUN",
+    "FINAL_STATUS": "PASS",
+    "FROZEN_CANDIDATE": "PASS",
+    "NETWORK_OBSERVATION_INTEGRATED": "PASS",
+    "PUSH": "PASS",
+    "TERMINAL_MONITOR_FIX_INTEGRATED": "PASS"
+  },
+  "tracked_in_git": true,
+  "validation": {
+    "air_build": "NOT_RUN",
+    "complete_related_qualification": "PASS: 289 passed, 28 subtests passed in 61.94s",
+    "deployment": "NOT_RUN",
+    "git_diff_check": "PASS",
+    "logs": {
+      "full-qualification.log": {
+        "bytes": 1438,
+        "sha256": "2f86fed7ae38c733c4fe8fd6d7a191d96e3009090d028dc6187594026ddc03d5"
+      },
+      "minimal-intersection.log": {
+        "bytes": 1120,
+        "sha256": "7963c4ee69caa7b594a1fe516166de06edba407187c5ed00c463ebfbce8d9895"
+      }
+    },
+    "metadata_diff_check": "PASS after editing (execution validation)",
+    "metadata_json_parse": "PASS after editing (execution validation)",
+    "minimal_intersection": "PASS: 201 passed, 13 subtests passed in 49.43s",
+    "python_ast": "PASS: 15 files",
+    "shell_syntax": "PASS: 3 scripts",
+    "swift_build_test": "NOT_RUN: P620 has no swift or xcodebuild",
+    "worktree": "CLEAN after final push and readback (execution result)"
+  }
+}
