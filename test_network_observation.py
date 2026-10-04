@@ -289,3 +289,27 @@ def test_scope_narrowing_acknowledges_withheld_sequence_without_content(director
 def test_approval_schema_fails_closed(field,value):
     with pytest.raises(ValueError):
         SharingScope("user",**{field:value})
+
+def test_formal_directory_has_no_identity_creation_or_writable_lock(tmp_path,monkeypatch):
+    from test_node_runtime import paired
+    from network_observation import directory_from_env
+    node,_,centre,_=paired(tmp_path)
+    approvals=NodeAuthorizationStore(centre.store.root)
+    scope=approvals.grant("air",user_scope="alice",read_sessions=True,projects=("/approved",))
+    registry=NodeRegistry(tmp_path/"nodes.db")
+    registry.register(NodeRecord("air",user_scope="alice",public_key_fingerprint=node.public["fingerprint"],
+        state="ONLINE",last_seen=_now()),scope)
+    writer=ObservationWriter(tmp_path/"observations.db")
+    writer.accept("air",scope,dict(stream_id="stream",events=[event()]))
+    for key,value in {
+        "CLINX_OBSERVATION_DB":writer.path,"CLINX_OBSERVATION_STATE":centre.store.root,
+        "CLINX_OBSERVATION_REGISTRY":tmp_path/"nodes.db","CLINX_OBSERVATION_USER_SCOPE":"alice",
+        "CLINX_OBSERVATION_NODE_ID":"p620"}.items():monkeypatch.setenv(key,str(value))
+    lock=centre.store.root/"store.lock"
+    lock.unlink()
+    snapshot={p.name:p.read_bytes() for p in centre.store.root.iterdir() if p.is_file()}
+    directory=directory_from_env()
+    assert directory.list()["items"][0]["native_thread_id"]=="unmanaged"
+    assert not lock.exists()
+    assert {p.name:p.read_bytes() for p in centre.store.root.iterdir() if p.is_file()}==snapshot
+    registry.close()

@@ -113,7 +113,10 @@ print(urllib.request.urlopen(req,timeout=2).read().decode())
                 centre_endpoint=f"tls://127.0.0.1:{centre_port}",bind_address="127.0.0.1",port=free_port()))
             spawn(["MonitorApp/Scripts/node_service_entrypoint.py"],dict(CLINX_NODE_STATE=str(source.store.root),
                 CLINX_NODE_HEALTH_STATE=str(tmp_path/(source.public["node_id"]+"-health")),CLINX_NATIVE_HOME=str(root)))
-        observer=spawn(["observer_server.py"])
+        observer=subprocess.Popen(["sh","bin/clinx-observer"],cwd=ROOT,
+            env=dict(env,CLINX_OBSERVER_PYTHON=sys.executable),
+            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        processes.append(observer)
         page=wait_items(lambda items:len(items)==2)
         assert {i["node_id"] for i in page["items"]}=={"air","p620-fixture"}
         assert all(i["task_ref"] is None and i["turn"]["execution_ref"] is None for i in page["items"])

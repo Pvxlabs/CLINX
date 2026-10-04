@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+launcher_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$launcher_dir/.." && pwd)
+exec "${CLINX_OBSERVER_PYTHON:-python3}" -I -B "$repo_root/observer_server.py"
