@@ -42,3 +42,15 @@ P620原MCP与Provider持续保留，候选tunnel使用同一正式profile，旧p
 代码正常提交并推送；主线合并：未进行。安装：PASS；候选运行激活：PASS；原会话实际续接：BLOCKED；完整专用执行验收：未验证。本记录的后续提交仅补齐验收文档，不改变56bcac3运行代码。
 
 `ORION_MUTATION=NONE`。不暴露凭据、配对秘密或完整原历史。
+
+## 剩余实机验收的固定交接
+
+不再要求关闭原对话窗口。需由用户在桌面内其他任务全部空闲后完全退出桌面App，或由产品正式释放仅该thread writer；不能由本修复Agent结束自己的Provider。外层执行者先只读确认目标writer不再被原桌面Provider持有、原turn未活动，再使用同一正式CLINX服务端验收。
+
+已有临时任务scope仍限定原thread及专用项目，只需通过双边既有share机制再次显式授予execute_tasks；完成后恢复只读。adoption应返回同一task_ref；新prepare使用这个canonical task_ref和host air.local。不要重复启动已收束的两条prepared ref，其请求ledger应继续返回原拒绝/对账结果。新prepare并不创建替代thread。
+
+固定任务原文：
+
+> 本 turn 只执行一次 CLINX 续接验收，不继续此前开发计划。只读获取当前 hostname、当前用户与工作目录，并返回标记 CLINX_AIR_RESUME_OK_4a9e2822982b。不要修改文件、运行项目测试、提交、安装、重启服务，也不要调用 CLINX 的控制接口。使用中文报告实际结果。
+
+start只能传该新prepare的正式引用和approved=true；随后get_status/get_context核验execution、原thread、新turn、实际命令输出和nonce终态。此交接仍是待验收步骤，不是PASS证据。
