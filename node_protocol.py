@@ -35,6 +35,7 @@ from typing import Any, Callable, Mapping
 NODE_PROTOCOL_VERSION = "clinx-node-v1"
 SUPPORTED_PROVIDER = "codex_app_server"
 MAX_FRAME_BYTES = 256 * 1024
+READ_OPERATIONS = frozenset({"node.status", "session.read", "session.status", "execution.context", "execution.status"})
 NODE_ID_RE = re.compile(r"[a-z0-9][a-z0-9_.-]{0,62}\Z")
 
 
@@ -992,7 +993,13 @@ class NodeRouter:
                     if result.get(key):
                         self.registry.bind_reference(result[key], node_id, self.user_scope)
             return result
-        except (OSError, TimeoutError, socket.timeout):
+        except (OSError, TimeoutError, socket.timeout) as exc:
+            if operation in READ_OPERATIONS:
+                return {"error_code": "NODE_READ_UNAVAILABLE", "read_only": True,
+                        "operation_state": "READ_FAILED", "side_effect": "NONE",
+                        "retry": "READ_ONLY_RETRY", "failure_stage": "rpc_transport",
+                        "error_type": type(exc).__name__,
+                        "node_id": record.node_id}
             return {"error_code": "EXECUTION_OUTCOME_UNKNOWN", "operation_state": "UNKNOWN", "side_effect": "UNKNOWN", "retry": "RECONCILIATION_REQUIRED", "node_id": record.node_id}
 
 
@@ -1002,14 +1009,33 @@ class _RPCHandler(socketserver.StreamRequestHandler):
         line = self.rfile.readline(MAX_FRAME_BYTES + 1)
         if len(line) > MAX_FRAME_BYTES:
             return
+        payload = None
         try:
             request = json.loads(line)
-            if not isinstance(request, dict):
+            if not isinstance(request, dict) or not isinstance(request.get("operation"), str):
                 raise ValueError()
-            result = server.handle_request(request, self.request, self.client_address)
-        except Exception:
+        except (ValueError, UnicodeError):
             result = {"error_code": "INVALID_NODE_REQUEST", "read_only": True}
-        payload = json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode() + b"\n"
+        else:
+            stage = "rpc_dispatch"
+            try:
+                result = server.handle_request(request, self.request, self.client_address)
+                stage = "rpc_serialize"
+                # Serialization belongs to the RPC boundary too. Otherwise a
+                # valid read can close the connection without any diagnostic.
+                payload = json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode() + b"\n"
+            except Exception as exc:
+                read_only = request.get("operation") in READ_OPERATIONS
+                result = {
+                    "error_code": "NODE_READ_FAILED" if read_only else "NODE_REQUEST_FAILED",
+                    "read_only": read_only,
+                    "operation_state": "READ_FAILED" if read_only else "UNKNOWN",
+                    "side_effect": "NONE" if read_only else "UNKNOWN",
+                    "retry": "READ_ONLY_RETRY" if read_only else "RECONCILIATION_REQUIRED",
+                    "failure_stage": stage, "error_type": type(exc).__name__,
+                }
+        if payload is None:
+            payload = json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode() + b"\n"
         if len(payload) <= MAX_FRAME_BYTES:
             self.wfile.write(payload)
             self.wfile.flush()
