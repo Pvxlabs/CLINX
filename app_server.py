@@ -555,14 +555,21 @@ class UnixSocketTransport(WebSocketStdioTransport):
             self.sock.sendall(data)
 
         def receive_bytes(self, size, timeout_seconds):
-            self.sock.settimeout(timeout_seconds)
-            try:
-                data = self.sock.recv(size)
-            except TimeoutError as exc:
-                raise AppServerTransportError("existing provider receive timed out") from exc
-            if not data:
-                raise AppServerTransportError("existing provider disconnected")
-            return data
+            data = bytearray()
+            deadline = time.monotonic() + timeout_seconds
+            while len(data) < size:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise AppServerTransportError("existing provider receive timed out")
+                self.sock.settimeout(remaining)
+                try:
+                    chunk = self.sock.recv(size - len(data))
+                except TimeoutError as exc:
+                    raise AppServerTransportError("existing provider receive timed out") from exc
+                if not chunk:
+                    raise AppServerTransportError("existing provider disconnected")
+                data.extend(chunk)
+            return bytes(data)
 
         def close(self):
             if self.sock is not None:

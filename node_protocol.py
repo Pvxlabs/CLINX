@@ -809,7 +809,12 @@ class NodeService:
                 self._authorize(operation, request)
                 if self.adopt_conversation is None:
                     raise NodeProtocolError("OPERATION_NOT_IMPLEMENTED", "Native adoption is unavailable")
-                return dict(self.adopt_conversation(**dict(request)), node_id=self.record.node_id)
+                try:
+                    return dict(self.adopt_conversation(**dict(request)), node_id=self.record.node_id)
+                except Exception as exc:
+                    return {'adoption_status': 'BLOCKED', 'error_code': getattr(exc, 'code', type(exc).__name__),
+                            'unavailable_reason': str(exc)[:500], 'execution_started': False,
+                            'control_transferred': False, 'node_id': self.record.node_id}
             if operation == "execution.context":
                 self._authorize("session.read", request)
                 if self.context_execution is None:
