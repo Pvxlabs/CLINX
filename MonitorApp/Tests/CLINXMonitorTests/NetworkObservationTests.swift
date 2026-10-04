@@ -59,7 +59,7 @@ final class NetworkObservationModelTests: XCTestCase {
 }
 
 private func projectedObservation(node: String, host: String, thread: String, state: String,
-                                  taskRef: String? = nil) throws -> NetworkObservation {
+                                  taskRef: String? = nil, liveness: String = "NOT_PROVEN") throws -> NetworkObservation {
     let fixture = try networkFixture().item
     let encoder = JSONEncoder()
     encoder.keyEncodingStrategy = .convertToSnakeCase
@@ -134,7 +134,7 @@ private actor UnifiedProjectionService: ObserverServing, NetworkObservationServi
 final class UnifiedMonitorProjectionTests: XCTestCase {
     func testNativeProjectionAndOriginalHostCounts() async throws {
         let items = try [
-            projectedObservation(node: "p620", host: "P620", thread: "a", state: "RUNNING"),
+            projectedObservation(node: "p620", host: "P620", thread: "a", state: "RUNNING", liveness: "PROVEN"),
             projectedObservation(node: "air", host: "Air", thread: "b", state: "FAILED"),
             projectedObservation(node: "imac", host: "iMac", thread: "c", state: "COMPLETED"),
             projectedObservation(node: "air", host: "Air", thread: "d", state: "UNKNOWN")
@@ -182,6 +182,22 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         await store.select(canonical.taskRef)
         let canonicalTaskCalls = await service.taskCalls
         XCTAssertEqual(canonicalTaskCalls, 1)
+    }
+
+    func testPersistedRunningWithoutLivenessProofDoesNotEnterActive() throws {
+        let stale = try projectedObservation(node: "p620", host: "P620", thread: "stale-running",
+                                             state: "RUNNING", liveness: "NOT_PROVEN")
+        let row = try XCTUnwrap(NetworkObservationAdapter.project([stale], canonical: []).first)
+        XCTAssertEqual(row.monitorStatus, .unknown)
+        XCTAssertFalse(row.codexRunning)
+    }
+
+    func testRunningWithExplicitLivenessProofCanEnterActive() throws {
+        let live = try projectedObservation(node: "p620", host: "P620", thread: "live-running",
+                                            state: "RUNNING", liveness: "PROVEN")
+        let row = try XCTUnwrap(NetworkObservationAdapter.project([live], canonical: []).first)
+        XCTAssertEqual(row.monitorStatus, .running)
+        XCTAssertTrue(row.codexRunning)
     }
 
     func testTerminalNativeStatesDoNotEnterActive() throws {

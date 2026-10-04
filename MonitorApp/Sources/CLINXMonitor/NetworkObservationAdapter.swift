@@ -41,7 +41,11 @@ enum NetworkObservationAdapter {
         let ref = "native_observation_" + digest
         let state: String
         switch item.turn.nativeState {
-        case "RUNNING": state = "CODEX_RUNNING"
+        case "RUNNING":
+            // Persisted native indexes are historical evidence, not proof that a
+            // runtime is still executing. Only an explicit liveness proof may
+            // enter the Monitor Active projection.
+            state = item.liveness == "PROVEN" ? "CODEX_RUNNING" : "UNKNOWN"
         case "FAILED": state = "FAILED"
         case "COMPLETED": state = "COMPLETED"
         case "CANCELLED", "INTERRUPTED", "TIMED_OUT", "DISCONNECTED": state = "CANCELLED"
