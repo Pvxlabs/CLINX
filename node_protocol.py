@@ -411,6 +411,9 @@ class NodeRegistry:
                 payload_hash TEXT NOT NULL, state TEXT NOT NULL, response_json TEXT,
                 updated_at TEXT NOT NULL, PRIMARY KEY(node_id, request_id)
             );
+            CREATE TABLE IF NOT EXISTS reference_routes (
+                reference TEXT PRIMARY KEY, node_id TEXT NOT NULL, user_scope TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS route_fences (
                 node_id TEXT NOT NULL, user_scope TEXT NOT NULL, provider TEXT NOT NULL,
                 native_thread_id TEXT NOT NULL, fence INTEGER NOT NULL,
@@ -463,6 +466,21 @@ class NodeRegistry:
                      json.dumps(scope.providers), int(scope.revoked), scope.updated_at),
                 )
         return record
+
+    def bind_reference(self, reference: str, node_id: str, user_scope: str) -> None:
+        """Routing only: canonical task/execution state remains on its owner."""
+        with self._lock, self._conn:
+            row = self._conn.execute("SELECT node_id,user_scope FROM reference_routes WHERE reference=?", (reference,)).fetchone()
+            if row and tuple(row) != (node_id, user_scope):
+                raise NodeProtocolError("REFERENCE_ROUTE_CONFLICT", "Reference already belongs to another node")
+            self._conn.execute("INSERT OR IGNORE INTO reference_routes VALUES (?,?,?)", (reference, node_id, user_scope))
+
+    def reference_node(self, reference: str, user_scope: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute("SELECT node_id,user_scope FROM reference_routes WHERE reference=?", (reference,)).fetchone()
+        if row and row['user_scope'] != user_scope:
+            raise NodeProtocolError("USER_SCOPE_DENIED", "Reference belongs to another user scope")
+        return row['node_id'] if row else None
 
     def revoke(self, node_id: str, user_scope: str) -> None:
         with self._lock, self._conn:
@@ -613,6 +631,8 @@ class NodeService:
         scope: SharingScope,
         read_thread: Callable[..., Mapping[str, Any]],
         status_thread: Callable[..., Mapping[str, Any]] | None = None,
+        adopt_conversation: Callable[..., Mapping[str, Any]] | None = None,
+        context_execution: Callable[..., Mapping[str, Any]] | None = None,
         prepare_execution: Callable[..., Mapping[str, Any]] | None = None,
         start_execution: Callable[..., Mapping[str, Any]] | None = None,
         status_execution: Callable[..., Mapping[str, Any]] | None = None,
@@ -621,6 +641,8 @@ class NodeService:
         self.record, self.registry, self.scope = record, registry, scope
         self.read_thread = read_thread
         self.status_thread = status_thread or read_thread
+        self.adopt_conversation = adopt_conversation
+        self.context_execution = context_execution
         self.prepare_execution = prepare_execution
         self.start_execution = start_execution
         self.status_execution = status_execution
@@ -717,7 +739,7 @@ class NodeService:
         try:
             result = dict(callback(**dict(request)))
         except Exception as exc:
-            result = {"request_id": request_id, "operation_state": "FAILED", "error_code": type(exc).__name__, "side_effect": "UNKNOWN" if mutating else "NONE"}
+            result = {"request_id": request_id, "operation_state": "FAILED", "error_code": getattr(exc, "code", type(exc).__name__), "unavailable_reason": str(exc)[:500], "side_effect": "UNKNOWN" if mutating else "NONE"}
             self.registry.finish_request(node_id=self.record.node_id, request_id=request_id, state="FAILED", response=result)
             return result
         self.registry.finish_request(node_id=self.record.node_id, request_id=request_id, state="COMPLETED", response=result)
@@ -729,16 +751,30 @@ class NodeService:
 
     def start(self, request: Mapping[str, Any]) -> dict[str, Any]:
         self._authorize("execution.start", request)
-        identity = self._identity(request)
+        # Canonical adapters own the single-writer lease. Legacy callbacks
+        # carrying a raw thread still use their existing transport fence.
+        identity = self._identity(request) if request.get("thread_id") else None
         execution_ref = _text("execution_ref", request.get("execution_ref"), max_len=256)
         request_id = _text("request_id", request.get("request_id"), max_len=256)
         state, prior = self.registry.claim_request(node_id=self.record.node_id, request_id=request_id, operation="execution.start", payload=request)
         if state != "NEW":
-            if prior is not None:
+            if prior is not None and prior.get('side_effect') != 'UNKNOWN':
                 return dict(prior, idempotent=True)
+            # Reconcile the deterministic canonical execution before returning
+            # an unknown outcome. Never call start again for this request.
+            if self.status_execution is not None:
+                try:
+                    reconciled = dict(self.status_execution(**dict(request)))
+                    if reconciled.get('execution_ref') == execution_ref:
+                        result = dict(reconciled, execution_started=False, idempotent=True,
+                                      operation_state='RECONCILED', request_id=request_id)
+                        self.registry.finish_request(node_id=self.record.node_id, request_id=request_id, state='COMPLETED', response=result)
+                        return result
+                except Exception:
+                    pass
             return {"request_id": request_id, "operation_state": "UNKNOWN", "side_effect": "UNKNOWN", "retry": "RECONCILIATION_REQUIRED", "idempotent": True}
         try:
-            fence = self.registry.acquire_fence(identity, execution_ref)
+            fence = self.registry.acquire_fence(identity, execution_ref) if identity else None
         except NodeProtocolError as exc:
             result = exc.as_dict() | {"request_id": request_id, "operation_state": "BLOCKED", "side_effect": "NONE"}
             self.registry.finish_request(node_id=self.record.node_id, request_id=request_id, state="FAILED", response=result)
@@ -747,7 +783,7 @@ class NodeService:
         return self._idempotent("execution.start", request, self.start_execution, claimed=True)
 
     def execution_status(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        self._authorize("execution.status", request)
+        self._authorize("session.status", request)
         if self.status_execution is None:
             raise NodeProtocolError("OPERATION_NOT_IMPLEMENTED", "execution.status is not available on this node")
         return dict(self.status_execution(**dict(request)), node_id=self.record.node_id, read_only=True)
@@ -769,6 +805,16 @@ class NodeService:
                 return {"node": self.record.as_dict(), "scope": self.scope.as_dict(), "node_reachable": True, "provider_reachable": True, "history_readable": self.scope.read_sessions, "execution_active": False, "observed_at": _now(), "read_only": True}
             if operation == "session.read": return self.read(request)
             if operation == "session.status": return self.status(request)
+            if operation == "execution.adopt":
+                self._authorize(operation, request)
+                if self.adopt_conversation is None:
+                    raise NodeProtocolError("OPERATION_NOT_IMPLEMENTED", "Native adoption is unavailable")
+                return dict(self.adopt_conversation(**dict(request)), node_id=self.record.node_id)
+            if operation == "execution.context":
+                self._authorize("session.read", request)
+                if self.context_execution is None:
+                    raise NodeProtocolError("OPERATION_NOT_IMPLEMENTED", "Canonical context is unavailable")
+                return dict(self.context_execution(**dict(request)), node_id=self.record.node_id)
             if operation == "execution.prepare": return self.prepare(request)
             if operation == "execution.start": return self.start(request)
             if operation == "execution.status": return self.execution_status(request)
@@ -916,7 +962,11 @@ class NodeRouter:
         record = self._node_for(node_id=node_id)
         if record.user_scope != self.user_scope or not record.authorized or not record.trusted:
             return {"error_code": "SHARING_SCOPE_DENIED", "execution_started": False, "node_id": node_id}
-        if record.stale or record.state == "OFFLINE":
+        scope = self.registry.scope(node_id, self.user_scope)
+        permission = "session.read" if operation in {"execution.context", "execution.status"} else operation
+        if scope is None or not scope.allows(permission):
+            return {"error_code": "SHARING_SCOPE_DENIED", "execution_started": False, "node_id": node_id}
+        if record.stale or record.state != "ONLINE":
             return {"error_code": "NODE_OFFLINE", "execution_started": False, "node_id": node_id}
         if record.node_id not in self._executors:
             self._reader_for(record)
@@ -926,7 +976,12 @@ class NodeRouter:
         # There is deliberately no failover path.  An acknowledged request is
         # owned by this node; an unacknowledged request stays UNKNOWN.
         try:
-            return dict(executor(operation, dict(request)), node_id=record.node_id)
+            result = dict(executor(operation, dict(request, node_id=node_id, user_scope=self.user_scope)), node_id=record.node_id)
+            if not result.get("error_code"):
+                for key in ("task_ref", "prepared_execution_ref", "execution_ref"):
+                    if result.get(key):
+                        self.registry.bind_reference(result[key], node_id, self.user_scope)
+            return result
         except (OSError, TimeoutError, socket.timeout):
             return {"error_code": "EXECUTION_OUTCOME_UNKNOWN", "operation_state": "UNKNOWN", "side_effect": "UNKNOWN", "retry": "RECONCILIATION_REQUIRED", "node_id": record.node_id}
 

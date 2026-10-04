@@ -156,9 +156,9 @@ class CentreService:
             supplied = request.get("capabilities", [])
             if not isinstance(supplied, list) or any(not isinstance(x, str) for x in supplied):
                 raise NodeProtocolError("INVALID_NODE_CAPABILITIES", "Capabilities must be a bounded list")
-            allowed = {"session.read", "session.status"} if effective.read_sessions else set()
+            allowed = {"session.read", "session.status", "execution.context", "execution.status"} if effective.read_sessions else set()
             if effective.execute_tasks:
-                allowed |= {"execution.prepare", "execution.start", "execution.status", "execution.cancel"}
+                allowed |= {"execution.adopt", "execution.prepare", "execution.start", "execution.status", "execution.context", "execution.cancel"}
             capabilities = tuple(sorted(set(supplied) & allowed))
             record = NodeRecord(
                 node_id=node_id, user_scope=effective.user_scope,
@@ -192,7 +192,8 @@ class AuthorizedRemoteClient:
             self.tls.peer(self.node_id)
             registered_scope = self.registry.scope(self.node_id, record.user_scope) if record else None
             effective = intersect_scope(registered_scope, scope)
-            if not effective.allows(operation, request.get("provider", SUPPORTED_PROVIDER)):
+            permission = "session.read" if operation in {"execution.context", "execution.status"} else operation
+            if not effective.allows(permission, request.get("provider", SUPPORTED_PROVIDER)):
                 raise NodeProtocolError("SHARING_SCOPE_DENIED", "Current centre approval denies this request")
             if record is None or not record.endpoint or record.stale or record.state == "OFFLINE":
                 raise NodeProtocolError("NODE_OFFLINE", "Registered node is offline")

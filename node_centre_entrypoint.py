@@ -49,6 +49,10 @@ def parser():
     configure.add_argument("--bind", default="0.0.0.0")
     configure.add_argument("--port", type=int, default=8772)
     configure.add_argument("--execution-config", type=Path)
+    configure.add_argument("--execution-thread", action="append")
+    configure.add_argument("--execution-project", action="append")
+    configure.add_argument("--execution-new-project", action="append")
+    configure.add_argument("--execution-cancel-project", action="append")
     return value
 
 
@@ -75,7 +79,9 @@ def main(argv=None) -> int:
         with private.lock():
             private.write("node-config.json", dict(schema_version=1, centre_id=args.centre,
                 centre_endpoint=args.endpoint, bind_address=args.bind, port=args.port,
-                execution_config=str(args.execution_config.resolve()) if args.execution_config else None))
+                execution_config=str(args.execution_config.resolve()) if args.execution_config else None,
+                execution_threads=args.execution_thread, execution_projects=args.execution_project,
+                execution_new_projects=args.execution_new_project, execution_cancel_projects=args.execution_cancel_project))
         print(json.dumps({"configured": True, "centre_id": args.centre}))
         return 0
     if args.command == "pair-connect":

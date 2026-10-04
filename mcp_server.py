@@ -1055,6 +1055,8 @@ class ClinxMCPServer:
                 result = self._tool_result(self._app_server_error_result(exc), is_error=True)
             except (M9IntegrationError, TaskRegistryError, bridge.BridgeError, KeyError, TypeError, ValueError) as exc:
                 payload = {"error": str(exc)}
+                if getattr(exc, "code", None):
+                    payload.update(error_code=exc.code, execution_started=False)
                 code = str(exc).split(':', 1)[0]
                 if code in {'AUTHORITY_REAUTHORIZATION_REQUIRED', 'POLICY_REAUTHORIZATION_BLOCKED', 'PRODUCTION_SCOPE_REQUIRED',
                             'POLICY_IDENTITY_CONFLICT', 'TARGET_NOT_AUTHORIZED', 'HOST_EXECUTOR_UNAVAILABLE',
@@ -1145,13 +1147,13 @@ def build_server(
     return ClinxMCPServer(integration, allow_execute=allow_execute)
 
 
-def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None) -> None:
+def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None, *, recover_existing: bool = True) -> None:
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     dispatcher = getattr(getattr(server, "integration", None), "dispatcher", None)
     start_completion = getattr(dispatcher, "start_completion_runtime", None)
     stop_completion = getattr(dispatcher, "stop_completion_runtime", None)
-    if callable(start_completion):
+    if recover_existing and callable(start_completion):
         start_completion()
     try:
         for line in stdin:
@@ -1182,13 +1184,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CLINX M12 MCP stdio server")
     parser.add_argument("--config", default="bridge.toml")
     parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
+    parser.add_argument("--no-recover-existing", action="store_true", help="parallel maintenance: existing executions remain with their running completion owner")
     parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")
     args = parser.parse_args(argv)
     if not args.stdio:
         print("MCP_TRANSPORT=BLOCKED: only authenticated external transport may expose CLINX", file=sys.stderr)
         return 2
     try:
-        serve_stdio(build_server(args.config, allow_execute=args.allow_execute))
+        serve_stdio(build_server(args.config, allow_execute=args.allow_execute), recover_existing=not args.no_recover_existing)
     except Exception as exc:
         print(f"MCP_SERVER=BLOCKED: {exc}", file=sys.stderr)
         return 1

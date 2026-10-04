@@ -15,6 +15,7 @@ import sqlite3
 from urllib.parse import urlsplit, unquote, quote
 
 from task_registry import TERMINAL_EXECUTION_STAGES
+from node_protocol import NodeProtocolError
 
 ID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 ROUTE_THREAD = "json_extract(routing_identity_json, '$.conversation.binding')"
@@ -87,6 +88,16 @@ def resolve_selector(cfg, *, host=None, **selectors):
                 routes.setdefault(alias.casefold(), set()).add(canonical)
         for alias in getattr(workspace, 'codex_host_ids', ()):
             desktop.setdefault(alias, set()).add(canonical)
+    router = getattr(cfg, 'node_router', None)
+    if router is not None:
+        for record in router.registry.list_nodes(user_scope=router.user_scope):
+            if not record.trusted or not record.authorized:
+                continue
+            for alias in (record.node_id, record.display_name, *record.route_ids):
+                if alias:
+                    routes.setdefault(alias.casefold(), set()).add(record.node_id)
+            for alias in record.route_ids:
+                desktop.setdefault(alias, set()).add(record.node_id)
     def unique(values, code):
         if not values:
             raise ThreadLookupError(code, 'Host is not an authorized configured route')
@@ -322,7 +333,18 @@ class ThreadIdentityReader:
                 if node_id is not None or host is not None or uri_host is not None or len(nodes) > 1:
                     if type(recent_turns) is not int or not 1 <= recent_turns <= 20 or type(max_bytes) is not int or not 1024 <= max_bytes <= 128000:
                         raise ThreadLookupError('INVALID_CONTEXT_LIMIT', 'recent_turns must be 1..20 and max_bytes 1024..128000')
-                    routed = node_router.read(thread_id=tid, node_id=node_id, host=host or uri_host, provider='codex_app_server',
+                    if host is not None or uri_host is not None:
+                        _, resolved, _ = resolve_selector(self.cfg, thread_id=thread_id, codex_uri=codex_uri, host=host)
+                        if node_id is not None and node_router._node_for(node_id=node_id).node_id != resolved:
+                            raise ThreadLookupError('THREAD_HOST_CONFLICT', 'node_id conflicts with host selector')
+                    else:
+                        resolved = None
+                    if execution_ref or project:
+                        target = node_router._node_for(node_id=node_id, host=resolved)
+                        return node_router.execute(node_id=target.node_id, operation='execution.context', request={
+                            'thread_id': tid, 'host': target.node_id, 'execution_ref': execution_ref,
+                            'project': project, 'recent_turns': recent_turns, 'max_bytes': max_bytes, 'cursor': cursor})
+                    routed = node_router.read(thread_id=tid, node_id=node_id, host=resolved, provider='codex_app_server',
                         cursor=cursor, recent_turns=recent_turns, max_bytes=max_bytes)
                     routed = dict(routed)
                     routed.setdefault('queried_thread_id', tid)
@@ -452,7 +474,7 @@ class ThreadIdentityReader:
                 output.setdefault('context_status', 'CONTEXT_UNAVAILABLE')
             return dict(output, queried_thread_id=tid, codex_uri='codex://threads/' + tid +
                 ('?hostId=' + quote(host_id, safe='') if host_id else ''), read_only=True, observed_at=stamp())
-        except ThreadLookupError as e:
+        except (ThreadLookupError, NodeProtocolError) as e:
             return dict(error_code=e.code, lookup_status=e.code, unavailable_reason=e.reason, queried_thread_id=tid, read_only=True, observed_at=stamp())
         except (sqlite3.Error, OSError, ValueError, KeyError, TypeError):
             return dict(error_code='THREAD_LOOKUP_UNAVAILABLE', lookup_status='THREAD_LOOKUP_UNAVAILABLE', unavailable_reason='Identity storage unavailable or incompatible', queried_thread_id=tid, read_only=True, observed_at=stamp())

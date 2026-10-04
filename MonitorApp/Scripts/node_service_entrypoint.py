@@ -82,6 +82,8 @@ def main() -> int:
         native_history = NativeHistory(Path(os.environ.get("CLINX_NATIVE_HOME", str(Path.home() / ".codex"))))
 
         def read_thread(thread_id: str, **kwargs: object) -> dict[str, object]:
+            if execution is not None:
+                return execution.context(thread_id=thread_id, host=record.node_id, **kwargs)
             try:
                 metadata = native_history.metadata(thread_id)
                 if metadata is None:
@@ -108,16 +110,22 @@ def main() -> int:
 
         execution = None
         execution_config = config.get("execution_config")
-        if local_scope.execute_tasks and isinstance(execution_config, str) and execution_config:
+        if isinstance(execution_config, str) and execution_config:
             try:
-                execution = CanonicalNodeExecutionAdapter.from_config(Path(execution_config), identity.public["node_id"])
+                execution = CanonicalNodeExecutionAdapter.from_config(Path(execution_config), identity.public["node_id"],
+                    allowed_threads=config.get('execution_threads'),
+                    allowed_projects=tuple(p.casefold() for p in config['execution_projects']) if config.get('execution_projects') is not None else None,
+                    allowed_new_projects=tuple(p.casefold() for p in config['execution_new_projects']) if config.get('execution_new_projects') is not None else None,
+                    allowed_cancel_projects=tuple(p.casefold() for p in config['execution_cancel_projects']) if config.get('execution_cancel_projects') is not None else None)
             except Exception as exc:
                 write_health("degraded", "EXECUTION_CONFIG_UNAVAILABLE", detail=type(exc).__name__)
         capabilities = ["session.read", "session.status"] if local_scope.read_sessions else []
         if execution is not None and local_scope.execute_tasks:
-            capabilities.extend(["execution.prepare", "execution.start", "execution.status", "execution.cancel"])
+            capabilities.extend(["execution.adopt", "execution.prepare", "execution.start", "execution.status", "execution.context", "execution.cancel"])
         service = NodeService(
             record, registry, scope=local_scope, read_thread=read_thread,
+            adopt_conversation=execution.adopt if execution else None,
+            context_execution=execution.context if execution else None,
             prepare_execution=execution.prepare if execution else None,
             start_execution=execution.start if execution else None,
             status_execution=execution.status if execution else None,
