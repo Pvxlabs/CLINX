@@ -39,7 +39,7 @@ READ_ONLY_TOOL_NAMES = (
     "clinx_get_capabilities",
     "clinx_prepare_execution",
 )
-DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_effective_authority", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization", "clinx_adopt_conversation")
+DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_effective_authority", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization", "clinx_register_derived_git_target", "clinx_revoke_derived_git_target", "clinx_adopt_conversation")
 
 
 class MCPServerError(RuntimeError):
@@ -141,7 +141,7 @@ def _authority_tools():
          'inputSchema': _json_schema({'task_ref': {'type': 'string'}}, ['task_ref']),
          'annotations': {'readOnlyHint': True, 'destructiveHint': False}},
         {'name': 'clinx_prepare_policy_reauthorization',
-         'description': 'Prepare a reviewed authority change on the SAME task. Existing authorization must cover the exact target scope. No execution starts; historical execution policies remain unchanged. Only the outer operator may call this, never the managed worker.',
+         'description': 'Prepare a reviewed authority change on the SAME task. New Git target scope must identify a registered task-owned worktree. No execution starts; historical execution policies remain unchanged. Only the outer operator may call this, never the managed worker.',
          'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
              'task_ref': {'type': 'string'}, 'expected_policy_hash': {'type': 'string', 'pattern': '^[0-9a-f]{64}$'},
              'target_policy': target, 'network_access': {'type': 'boolean'}, 'reason': {'type': 'string', 'minLength': 1}},
@@ -151,6 +151,20 @@ def _authority_tools():
          'description': 'Apply exactly one prepared authority change with explicit operator approval, CAS and immutable audit. Idempotent. Active ownership or unresolved side effects block application. Does not execute or replay deployment.',
          'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
              'prepared_reauthorization_ref': {'type': 'string'}}, ['approved', 'prepared_reauthorization_ref']),
+         'annotations': {'readOnlyHint': False, 'destructiveHint': True}},
+        {'name': 'clinx_register_derived_git_target',
+         'description': 'Explicit operator registration of one real linked Git worktree for one active task. Supply its successful task Host worktree-add receipt when available; otherwise record explicit operator adoption evidence. Returns a stable target identity; registration alone grants no push.',
+         'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
+             'task_ref': {'type': 'string'}, 'path': {'type': 'string'},
+             'ownership_evidence': {'type': 'string', 'minLength': 1},
+             'creation_host_execution_ref': {'type': 'string'}},
+             ['approved', 'task_ref', 'path', 'ownership_evidence']),
+         'annotations': {'readOnlyHint': False, 'destructiveHint': False}},
+        {'name': 'clinx_revoke_derived_git_target',
+         'description': 'Revoke one task-owned Git target. Existing policy history remains immutable; future push fails closed.',
+         'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
+             'task_ref': {'type': 'string'}, 'target': {'type': 'string'}},
+             ['approved', 'task_ref', 'target']),
          'annotations': {'readOnlyHint': False, 'destructiveHint': True}},
     ]
 
@@ -762,10 +776,24 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
         'backend_implemented': {'type': 'boolean'}, 'mcp_exposed': {'type': 'boolean'},
         'client_exposure': {'type': 'string'}, 'runtime_health': {'type': 'string'},
         'read_only': {'type': 'boolean'},
+        'derived_git_targets': {'type': 'array'},
     }
     for tool in tools:
         if tool['name'] in {'clinx_get_effective_authority', 'clinx_prepare_policy_reauthorization', 'clinx_apply_policy_reauthorization'}:
             tool['outputSchema'] = _json_schema(authority_outputs)
+        elif tool['name'] == 'clinx_register_derived_git_target':
+            tool['outputSchema'] = _json_schema({
+                'target_id': {'type': 'string'}, 'task_id': {'type': 'string'},
+                'path': {'type': 'string'}, 'worktree_key': {'type': 'string'},
+                'common_dir': {'type': 'string'}, 'git_dir': {'type': 'string'},
+                'git_dir_device': {'type': 'integer'}, 'git_dir_inode': {'type': 'integer'},
+                'branch': {'type': 'string'}, 'origin': {'type': 'string'},
+                'provenance': {'type': 'string'}, 'registered_at': {'type': 'string'},
+                'revoked_at': {'type': ['string', 'null']},
+            })
+        elif tool['name'] == 'clinx_revoke_derived_git_target':
+            tool['outputSchema'] = _json_schema({'task_ref': {'type': 'string'},
+                'target': {'type': 'string'}, 'revoked': {'type': 'boolean'}})
     for tool in tools:
         if tool['name'] == 'clinx_prepare_execution':
             tool['inputSchema']['properties']['requested_operations'] = {
@@ -936,6 +964,10 @@ class ClinxMCPServer:
             result = self.integration.prepare_policy_reauthorization(**arguments)
         elif name == "clinx_apply_policy_reauthorization":
             result = self.integration.apply_policy_reauthorization(**arguments)
+        elif name == "clinx_register_derived_git_target":
+            result = self.integration.register_derived_git_target(**arguments)
+        elif name == "clinx_revoke_derived_git_target":
+            result = self.integration.revoke_derived_git_target(**arguments)
         elif name == "clinx_prepare_execution":
             result = self.integration.prepare_execution(**arguments)
         elif name == "clinx_start_execution":
