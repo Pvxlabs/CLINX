@@ -57,6 +57,26 @@ def test_unmanaged_nullable_identity_shared_api_and_mcp(directory):
     assert server.handle({"id":2,"method":"server/discover"})["result"]["resultType"]=="complete"
 
 
+def test_canonical_mcp_keeps_observations_and_persistent_owner(directory, native, monkeypatch):
+    from execution_owner import ExecutionOwnerClient
+    from mcp_server import build_server
+    writer, reader, _, _, scope = directory
+    writer.accept("air", scope, dict(stream_id="stream", events=[event()]))
+    monkeypatch.setenv("LINEAR_API_KEY", "fixture-no-network")
+    monkeypatch.delenv("CLINX_ENABLE_NODE_ROUTER", raising=False)
+    with patch("bridge.BridgeConfig.load", return_value=native.cfg), \
+            patch("network_observation.directory_from_env", return_value=reader):
+        server = build_server("fixture.toml", task_db_path=native.registry.path)
+        owner = build_server("fixture.toml", task_db_path=native.registry.path, own_executions=True)
+    assert isinstance(server.integration.execution_owner_client, ExecutionOwnerClient)
+    assert getattr(owner.integration, "execution_owner_client", None) is None
+    for entrypoint in (server, owner):
+        result = entrypoint.handle({"id": 1, "method": "tools/call", "params": {
+            "name": "clinx_list_observations", "arguments": {}}})["result"]
+        assert not result["isError"]
+        assert result["structuredContent"]["items"] == reader.list()["items"]
+
+
 def test_offline_history_restart_and_read_only(directory):
     writer,reader,registry,approvals,scope=directory
     writer.accept("air",scope,dict(stream_id="stream",events=[event()]))
