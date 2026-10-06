@@ -202,14 +202,14 @@ private struct PairDeviceSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Image(systemName: "lock.shield").font(.system(size: 26)).foregroundStyle(DS.Palette.accent)
-            Text("\(alreadyPaired ? "Connect to" : "Pair with") \(device.displayName)").font(.system(size: 17, weight: .semibold))
+            Text("\(alreadyPaired ? "Connect to" : "Pair with") \(device.displayName)").interfaceFont(size: 17, weight: .semibold)
             Text(alreadyPaired ? "Device pairing is saved. You can retry the Monitor connection without another code." : "Enable pairing on this device, then enter the four-digit code shown there. Codes expire after 60 seconds.")
                 .font(DS.Font.body).foregroundStyle(DS.Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if !alreadyPaired {
                 SecureField("0000", text: $pin)
                 .accessibilityLabel("Four-digit pairing code")
-                .textFieldStyle(.roundedBorder).font(.system(size: 20, design: .monospaced))
+                .textFieldStyle(.roundedBorder).interfaceFont(size: 20, design: .monospaced)
                 .frame(width: 180).focused($codeFocused)
                 .disabled(devices.busyDeviceID != nil)
                 .onChange(of: pin) { value in pin = String(value.filter { $0.isASCII && $0.isNumber }.prefix(4)) }

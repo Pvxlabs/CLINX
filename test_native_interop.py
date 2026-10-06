@@ -15,7 +15,7 @@ import app_server
 import bridge
 from m9_integration import ClinxIntegration
 from mcp_server import ClinxMCPServer, tool_definitions
-from native_history import NativeHistory, SCAN_BYTES
+from native_history import NativeHistory, SCAN_BYTES, message
 from native_provider import select_writer_client
 from test_m6 import dispatcher_fixture, FakeClient
 from thread_identity import ThreadIdentityReader, resolve_selector, ThreadLookupError
@@ -283,6 +283,32 @@ def test_display_budget_redaction_and_projection_lag(native):
     assert len((r['last_user_intent']+r['last_codex_result']).encode())<=1024
     assert 'sampleSECRET' not in json.dumps(r) and r['context_truncated']
     assert r['provenance']['projection_incomplete']
+
+
+def test_native_context_preserves_markdown_structure_and_redaction(native):
+    text = ('## Result\n\nFirst paragraph.\n\n'
+            '| Item | Result |\n| --- | --- |\n| Repo | **PASS** |\n\n'
+            '- One\n- Two\n\n```python\nif ready:\n    run()\n```\n\n'
+            'api_key=sampleSECRET\nlin_api_sampleSECRET\n'
+            '<in-app-browser-context>private\nambient browser state</in-app-browser-context>')
+    with sqlite3.connect(native.root/'thread_history_1.sqlite') as c:
+        c.execute('UPDATE thread_items SET item_json=? WHERE item_id=?',
+                  (json.dumps({'type': 'agentMessage', 'text': text, 'phase': 'final_answer'}), '2-1'))
+    result = native.reader.read(thread_id=TID, context=True, max_bytes=16000)
+    assert result['context_status'] == 'AVAILABLE'
+    body = result['last_codex_result']
+    assert body.startswith('## Result\n\nFirst paragraph.\n\n| Item | Result |\n')
+    assert '- One\n- Two\n\n```python\nif ready:\n    run()\n```' in body
+    assert body.endswith('api_key=[REDACTED]\n[REDACTED]\n')
+    assert 'sampleSECRET' not in body and 'ambient browser state' not in body
+    assert not result['context_truncated']
+
+
+def test_display_retains_leading_code_indentation_and_blank_lines():
+    text = '    first()\n    second()\n\nFinal paragraph.\n'
+    assert message({'type': 'agentMessage', 'text': text}) == ('assistant', text)
+    assert message({'type': 'message', 'role': 'user', 'content': [
+        {'type': 'input_text', 'text': text + '\x00'}]}) == ('user', text)
 
 
 @pytest.mark.parametrize('states,expected', [(['notLoaded','idle'],'public'),(['idle','notLoaded'],'managed'),

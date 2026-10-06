@@ -82,7 +82,7 @@ private struct ActivityContentView: View {
             .padding(.horizontal, 24).padding(.vertical, 12)
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
+                    LazyVStack(alignment: .leading, spacing: 24) {
                         if let notice = feed.notice {
                             Text(notice).font(DS.Font.meta).foregroundStyle(DS.Palette.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -140,8 +140,7 @@ private struct ActivityContentView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Execution result · \(result.status)").font(DS.Font.metaEmphasis)
                                 if let summary = result.summary, !summary.isEmpty {
-                                    Text(summary).font(DS.Font.meta).textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true)
+                                    ActivityMarkdownView(text: summary).equatable()
                                 }
                             }
                         }
@@ -149,8 +148,9 @@ private struct ActivityContentView: View {
                             .font(DS.Font.micro).foregroundStyle(DS.Palette.textTertiary)
                         Color.clear.frame(height: 1).id("activity-bottom")
                     }
-                    .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: ActivityMarkdownView.readingWidth, alignment: .leading)
+                    .padding(.horizontal, 32).padding(.top, 16).padding(.bottom, 32)
+                    .frame(maxWidth: .infinity)
                     .background(ActivityScrollObserver { atBottom in
                         if following != atBottom { following = atBottom }
                         if atBottom { newActivity = false }
@@ -201,17 +201,15 @@ private struct ActivityContentView: View {
 private struct ActivityMessageView: View, Equatable {
     let message: ActivityMessage
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 14) {
+            Rectangle().fill(DS.Palette.border).frame(height: 1)
             HStack(spacing: 8) {
                 Text(message.kind == "result" ? "Codex · Final response" : "Codex")
                     .font(DS.Font.metaEmphasis)
                 Text(RelativeTime.clock(message.date))
                     .font(DS.Font.mono(10)).foregroundStyle(DS.Palette.textTertiary)
             }
-            Text(message.formattedText)
-                .font(.system(size: 12.5)).foregroundStyle(DS.Palette.textPrimary)
-                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            ActivityMarkdownView(text: message.text, prepared: message.formattedText).equatable()
             if message.truncated {
                 Text("Message shortened to 16 KB").font(DS.Font.micro).foregroundStyle(DS.Palette.textTertiary)
             }

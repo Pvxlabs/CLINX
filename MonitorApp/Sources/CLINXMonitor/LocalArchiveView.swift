@@ -57,7 +57,7 @@ private struct ArchiveRestoreRow: View {
                 .help(entry.title)
             Button(action: restore) {
                 Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 12))
+                    .interfaceFont(size: 12)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }

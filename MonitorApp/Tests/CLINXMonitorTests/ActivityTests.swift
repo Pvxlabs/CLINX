@@ -1,5 +1,8 @@
 import XCTest
 import Combine
+import MarkdownUI
+import AppKit
+import SwiftUI
 @testable import CLINXMonitor
 
 private func message(_ id: String, _ order: Int64, _ revision: Int64, _ text: String,
@@ -17,6 +20,16 @@ private func page(_ messages: [ActivityMessage], execution: String = "exec_test"
 
 @MainActor
 final class ActivityTests: XCTestCase {
+    func testMultilineCodeBlockGrowsToDisplayEveryLine() {
+        func height(_ lines: Int) -> CGFloat {
+            let text = "```text\n" + (1...lines).map { "Line \($0): evidence" }.joined(separator: "\n") + "\n```"
+            let host = NSHostingView(rootView: ActivityMarkdownView(text: text).frame(width: 400))
+            return host.fittingSize.height
+        }
+        XCTAssertGreaterThan(height(20) - height(2), 200,
+            "Code must grow vertically instead of truncating inside the horizontal scroll view")
+    }
+
     func testUnchangedBackgroundPollOnlyPublishesSyncTime() async throws {
         let store = ActivityStore(taskRef: "task_test", executionRef: "exec_test",
                                   service: EmptyDeltaActivityService())
@@ -44,9 +57,56 @@ final class ActivityTests: XCTestCase {
         XCTAssertEqual(wire["text"] as? String, original.text)
         let decoded = try JSONDecoder().decode(ActivityMessage.self, from: data)
         XCTAssertEqual(decoded, original)
-        XCTAssertEqual(String(decoded.formattedText.characters), "Bold and code\n下一行")
-        XCTAssertTrue(decoded.formattedText.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
-        XCTAssertTrue(decoded.formattedText.runs.contains { $0.inlinePresentationIntent?.contains(.code) == true })
+        let html = decoded.formattedText.renderHTML()
+        XCTAssertTrue(html.contains("<strong>Bold</strong>"))
+        XCTAssertTrue(html.contains("<code>code</code>"))
+        XCTAssertTrue(decoded.formattedText.renderPlainText().contains("下一行"))
+    }
+
+    func testFeedbackPreparesParagraphsTablesListsAndCodeBlocks() throws {
+        let text = """
+        ## 验证结果
+
+        First paragraph with **bold** and `inline code`.
+
+        Second paragraph with [details](https://example.com/details).
+
+        | 处理 | 结果 |
+        | --- | --- |
+        | 主仓库 | 保留 |
+
+        - 第一项
+        - 第二项
+
+        > Recorded evidence
+
+        ---
+
+        ```swift
+        if ready {
+            run()
+        }
+        ```
+        """
+        let decoded = try JSONDecoder().decode(ActivityMessage.self,
+            from: JSONEncoder().encode(message("formatted", 1, 1, text)))
+        XCTAssertEqual(decoded.text, text, "Presentation must preserve the received feedback")
+        let html = decoded.formattedText.renderHTML()
+        for tag in ["<h2>", "<p>", "<table>", "<ul>", "<blockquote>", "<hr", "<pre>", "<code"] {
+            XCTAssertTrue(html.contains(tag), "Missing structural Markdown: \(tag)")
+        }
+        XCTAssertTrue(html.contains("<a href=\"https://example.com/details\""))
+        XCTAssertTrue(html.contains("    run()"), "Code indentation must survive preparation")
+        // Compare the native table structure, which is what SwiftUI displays.
+        // The library's HTML exporter does not initialize cmark cell spans.
+        let table = message("table", 1, 1, "| 处理 | 结果 |\n| --- | --- |\n| 主仓库 | 保留 |").formattedText
+        let expected = MarkdownContent {
+            TextTable([["主仓库", "保留"]]) {
+                TextTableColumn(title: "处理") { $0[0] }
+                TextTableColumn(title: "结果") { $0[1] }
+            }
+        }
+        XCTAssertEqual(table, expected, "Table headings, rows and columns must remain distinct")
     }
 
     func testMergesRevisionsInCreationOrderAndIgnoresReplay() throws {

@@ -11,6 +11,7 @@ struct CLINXMonitorApp: App {
     var body: some Scene {
         WindowGroup("CLINX Monitor", id: "monitor") {
             MonitorRootView(store: store)
+                .font(DS.Font.body)
                 .frame(minWidth: DS.Metric.windowMinWidth, minHeight: DS.Metric.windowMinHeight)
                 .onAppear {
                     appDelegate.installMenu(store: store) { openWindow(id: "monitor") }
@@ -26,6 +27,7 @@ struct CLINXMonitorApp: App {
 
         Settings {
             MonitorSettingsView(store: store)
+                .font(DS.Font.body)
         }
 
     }
