@@ -29,11 +29,18 @@ enum TimestampParser {
         return formatter
     }()
 
-    /// The Observer emits microseconds; `DateFormatter` wants exactly three fraction digits,
-    /// so the fraction is normalised before parsing.
+    /// Native observations use Unix seconds; ISO timestamps may include microseconds.
     static func date(from value: String?) -> Date? {
         guard let value, !value.isEmpty else { return nil }
         if let date = parsedDates.object(forKey: value as NSString) { return date as Date }
+        if let seconds = TimeInterval(value), seconds.isFinite,
+           seconds >= Date.distantPast.timeIntervalSince1970,
+           seconds <= Date.distantFuture.timeIntervalSince1970 {
+            let date = Date(timeIntervalSince1970: seconds)
+            parsedDates.setObject(date as NSDate, forKey: value as NSString)
+            return date
+        }
+        // DateFormatter accepts three fraction digits, so normalize ISO microseconds.
         var normalized = value
         if let dot = value.firstIndex(of: ".") {
             var index = value.index(after: dot)
