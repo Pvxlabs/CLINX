@@ -13,7 +13,7 @@ struct SidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             if !rail {
                 Text("Executions")
-                    .font(.system(size: 11.5, weight: .medium))
+                    .interfaceFont(size: 11.5, weight: .medium)
                     .foregroundStyle(DS.Palette.textTertiary)
                     .padding(.horizontal, 8)
                     .padding(.top, 4)
@@ -36,7 +36,7 @@ struct SidebarView: View {
             if !rail {
                 if !store.hostOptions.isEmpty {
                     Text("Hosts")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .interfaceFont(size: 11.5, weight: .medium)
                         .foregroundStyle(DS.Palette.textTertiary)
                         .padding(.horizontal, 8)
                         .padding(.top, 16)
@@ -48,7 +48,7 @@ struct SidebarView: View {
                 }
 
                 Text("Chain")
-                    .font(.system(size: 11.5, weight: .medium))
+                    .interfaceFont(size: 11.5, weight: .medium)
                     .foregroundStyle(DS.Palette.textTertiary)
                     .padding(.horizontal, 8)
                     .padding(.top, 16)
@@ -116,7 +116,7 @@ private struct SidebarItemView: View {
                         .frame(width: 16)
                         .foregroundStyle(active ? DS.Palette.textPrimary : DS.Palette.textTertiary)
                     Text(view.label)
-                        .font(.system(size: 13, weight: .medium))
+                        .interfaceFont(size: 13, weight: .medium)
                         .foregroundStyle(active ? DS.Palette.textPrimary : DS.Palette.textSecondary)
                     Spacer(minLength: 6)
                     countView

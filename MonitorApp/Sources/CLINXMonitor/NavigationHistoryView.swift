@@ -13,7 +13,7 @@ struct NavigationHistoryView: View {
         let visits = recentVisits
         VStack(alignment: .leading, spacing: 4) {
             Text("Recently viewed")
-                .font(.system(size: 13))
+                .interfaceFont(size: 13)
                 .foregroundStyle(DS.Palette.textSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -66,7 +66,7 @@ private struct HistoryRow: View {
                 StatusGlyphView(glyph: status.glyph, color: status.color, size: 12)
                     .frame(width: 14)
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .interfaceFont(size: 13, weight: .medium)
                     .foregroundStyle(DS.Palette.textPrimary)
                     .lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)

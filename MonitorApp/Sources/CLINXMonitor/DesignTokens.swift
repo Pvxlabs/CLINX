@@ -97,20 +97,20 @@ enum DS {
     // MARK: - Typography
 
     enum Font {
-        static let inspectorTitle = SwiftUI.Font.system(size: 18, weight: .semibold)
-        static let rowTitle = SwiftUI.Font.system(size: 13, weight: .medium)
-        static let body = SwiftUI.Font.system(size: 12)
-        static let bodyEmphasis = SwiftUI.Font.system(size: 12, weight: .medium)
-        static let meta = SwiftUI.Font.system(size: 11)
-        static let metaEmphasis = SwiftUI.Font.system(size: 11, weight: .medium)
-        static let micro = SwiftUI.Font.system(size: 10.5)
-        static let microSemibold = SwiftUI.Font.system(size: 10.5, weight: .semibold)
-        static let sectionLabel = SwiftUI.Font.system(size: 10.5, weight: .semibold)
-        static let blockerTitle = SwiftUI.Font.system(size: 13.5, weight: .semibold)
-        static let statValue = SwiftUI.Font.system(size: 12.5, weight: .medium)
+        static let inspectorTitle = InterfaceFont(size: 18, weight: .semibold)
+        static let rowTitle = InterfaceFont(size: 13, weight: .medium)
+        static let body = InterfaceFont(size: 12)
+        static let bodyEmphasis = InterfaceFont(size: 12, weight: .medium)
+        static let meta = InterfaceFont(size: 11)
+        static let metaEmphasis = InterfaceFont(size: 11, weight: .medium)
+        static let micro = InterfaceFont(size: 10.5)
+        static let microSemibold = InterfaceFont(size: 10.5, weight: .semibold)
+        static let sectionLabel = InterfaceFont(size: 10.5, weight: .semibold)
+        static let blockerTitle = InterfaceFont(size: 13.5, weight: .semibold)
+        static let statValue = InterfaceFont(size: 12.5, weight: .medium)
 
-        static func mono(_ size: CGFloat, weight: SwiftUI.Font.Weight = .regular) -> SwiftUI.Font {
-            .system(size: size, weight: weight, design: .monospaced)
+        static func mono(_ size: CGFloat, weight: SwiftUI.Font.Weight = .regular) -> InterfaceFont {
+            InterfaceFont(size: size, weight: weight, design: .monospaced)
         }
 
         static let monoID = mono(11)
@@ -120,7 +120,7 @@ enum DS {
         /// Figma: TaskRow trailing metadata ("2m ago", "Blocked 6m ago") — one step below
         /// `meta`, so the right-hand column stays quieter than the row's own subject.
         static let rowTrailingSize: CGFloat = 9
-        static let rowTrailing = SwiftUI.Font.system(size: rowTrailingSize)
+        static let rowTrailing = InterfaceFont(size: rowTrailingSize)
     }
 }
 

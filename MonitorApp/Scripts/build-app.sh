@@ -12,6 +12,7 @@ app_dir="$PWD/.build/CLINX Monitor.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$binary_dir/CLINXMonitor" "$app_dir/Contents/MacOS/CLINXMonitor"
 cp Info.plist "$app_dir/Contents/Info.plist"
+cp ThirdPartyNotices.txt "$app_dir/Contents/Resources/ThirdPartyNotices.txt"
 
 # Matching, narrowly scoped adapter source; secrets travel only on inherited pipes.
 discovery_dir="$app_dir/Contents/Resources/Discovery"

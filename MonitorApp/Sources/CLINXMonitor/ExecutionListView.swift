@@ -23,7 +23,7 @@ struct ExecutionListView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text(store.view.label)
-                .font(.system(size: 13, weight: .medium))
+                .interfaceFont(size: 13, weight: .medium)
                 .foregroundStyle(DS.Palette.textPrimary)
             Text("\(store.visibleTasks.count)")
                 .font(DS.Font.meta)
@@ -152,7 +152,7 @@ struct ExecutionListView: View {
                 .frame(width: 34, height: 34)
                 .background(RoundedRectangle(cornerRadius: 8).strokeBorder(DS.Palette.border, lineWidth: 1))
             Text(store.searchText.isEmpty ? "Nothing in this view" : "No executions match “\(store.searchText)”")
-                .font(.system(size: 12))
+                .interfaceFont(size: 12)
                 .foregroundStyle(DS.Palette.textTertiary)
                 .multilineTextAlignment(.center)
             Spacer()
@@ -265,7 +265,7 @@ struct ExecutionRowView: View {
             if hovering && status.canArchiveLocally {
                 Button { store.archiveLocally(task) } label: {
                     Image(systemName: "archivebox")
-                        .font(.system(size: 12))
+                        .interfaceFont(size: 12)
                         .foregroundStyle(DS.Palette.textTertiary)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())

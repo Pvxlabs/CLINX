@@ -46,15 +46,14 @@ struct ObservationActivityView: View {
             .foregroundStyle(DS.Palette.textSecondary)
             .padding(.horizontal, 24).padding(.vertical, 12)
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 24) {
                     if let error = feed.error {
                         Text(error).foregroundStyle(DS.Palette.textSecondary)
                     }
                     if let response, !response.isEmpty {
-                        VStack(alignment: .leading, spacing: 7) {
+                        VStack(alignment: .leading, spacing: 14) {
                             Text("Codex · Session response").font(DS.Font.metaEmphasis)
-                            Text(response).textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
+                            ActivityMarkdownView(text: response).equatable()
                         }
                     } else {
                         Text(feed.selectedID == nil ? "Loading session feedback…" :
@@ -65,20 +64,27 @@ struct ObservationActivityView: View {
                         Button("Load earlier session response") { Task { await feed.loadContext(older: true) } }
                             .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
                     }
-                    if !updates.isEmpty {
-                        Text("Recorded updates").font(DS.Font.metaEmphasis)
-                        ForEach(updates) { entry in
-                            VStack(alignment: .leading, spacing: 7) {
-                                Text("\(entry.nativeState) · \(RelativeTime.clock(Date(timeIntervalSince1970: entry.recordedAt)))")
-                                    .font(DS.Font.micro).foregroundStyle(DS.Palette.textSecondary)
-                                Text(entry.text ?? "").textSelection(.enabled)
-                                    .fixedSize(horizontal: false, vertical: true)
+                    if !updates.isEmpty || feed.activityCursor != nil {
+                        Rectangle().fill(DS.Palette.border).frame(height: 1)
+                        DisclosureGroup {
+                            VStack(alignment: .leading, spacing: 24) {
+                                ForEach(updates) { entry in
+                                    VStack(alignment: .leading, spacing: 14) {
+                                        Text("\(entry.nativeState) · \(RelativeTime.clock(Date(timeIntervalSince1970: entry.recordedAt)))")
+                                            .font(DS.Font.micro).foregroundStyle(DS.Palette.textSecondary)
+                                        ActivityMarkdownView(text: entry.text ?? "").equatable()
+                                        Rectangle().fill(DS.Palette.border).frame(height: 1)
+                                    }
+                                }
+                                if feed.activityCursor != nil {
+                                    Button("Load earlier updates") { Task { await feed.loadActivity() } }
+                                        .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                                }
                             }
+                            .padding(.top, 16)
+                        } label: {
+                            Text("Recorded updates · \(updates.count)").font(DS.Font.metaEmphasis)
                         }
-                    }
-                    if feed.activityCursor != nil {
-                        Button("Load earlier updates") { Task { await feed.loadActivity() } }
-                            .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
                     }
                     if feed.context?.contextStatus == "UNCACHED_CONTENT_UNAVAILABLE" {
                         Text("Source text is unavailable. Showing received session records.")
@@ -89,8 +95,9 @@ struct ObservationActivityView: View {
                 }
                 .font(DS.Font.meta)
                 .foregroundStyle(DS.Palette.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 24)
+                .frame(maxWidth: ActivityMarkdownView.readingWidth, alignment: .leading)
+                .padding(.horizontal, 32).padding(.top, 16).padding(.bottom, 32)
+                .frame(maxWidth: .infinity)
             }
         }
         .task {

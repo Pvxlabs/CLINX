@@ -128,15 +128,15 @@ def message(item):
         return None
     if not isinstance(text, str) or not text.strip():
         return None
-    try:
-        from bridge import _context_text
-    except ImportError:  # pragma: no cover - exercised by the standalone bundle
-        def _context_text(value, limit):
-            return value[:limit]
+    # Display text must retain Markdown paragraphs, tables and code indentation.
+    # bridge._context_text intentionally flattens whitespace for recovery markers;
+    # keep its privacy filters here without applying that lossy transformation.
     text = re.sub(r'(?i)\b(authorization\s*[:=]\s*bearer\s+|(?:api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*)[^\s,;]+', r'\1[REDACTED]', text)
     text = re.sub(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,})\b', '[REDACTED]', text)
     text = re.sub(r'-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----', '[REDACTED]', text, flags=re.S)
-    return role, _context_text(text, len(text))
+    text = re.sub(r'\blin_api_[A-Za-z0-9]+\b', '[REDACTED]', text)
+    text = re.sub(r'<in-app-browser-context\b[^>]*>.*?</in-app-browser-context>', '', text, flags=re.I | re.S)
+    return role, text.replace('\x00', '')
 
 
 def context_result(tid, entries, *, source, max_bytes, turns, next_cursor=None, incomplete=False, evidence=None):

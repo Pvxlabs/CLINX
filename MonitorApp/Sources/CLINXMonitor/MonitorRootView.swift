@@ -339,11 +339,11 @@ struct ConnectivityStrip: View {
         HStack(spacing: 8) {
             StatusGlyphView(glyph: glyph, color: color, size: 11)
             Text(note)
-                .font(.system(size: 11.5, weight: .semibold))
+                .interfaceFont(size: 11.5, weight: .semibold)
                 .foregroundStyle(DS.Palette.textPrimary)
             if let detail = store.connectivityDetail {
                 Text(detail)
-                    .font(.system(size: 11.5))
+                    .interfaceFont(size: 11.5)
                     .foregroundStyle(DS.Palette.textSecondary)
                     .lineLimit(1)
             }

@@ -63,7 +63,7 @@ struct StatusPill: View {
         HStack(spacing: 6) {
             StatusIcon(status: status, size: compact ? 10 : 12)
             Text(status.label)
-                .font(.system(size: compact ? 11 : 12, weight: .medium))
+                .interfaceFont(size: compact ? 11 : 12, weight: .medium)
                 .foregroundStyle(DS.Palette.textPrimary)
         }
         .padding(.horizontal, compact ? 6 : 8)
@@ -155,10 +155,10 @@ struct RuntimeStatus: View {
                 .foregroundStyle(DS.Palette.textPrimary)
                 .lineLimit(1)
             Text("·")
-                .font(.system(size: 11, weight: .medium))
+                .interfaceFont(size: 11, weight: .medium)
                 .foregroundStyle(DS.Palette.textTertiary)
             Text(state.connection)
-                .font(.system(size: 11.5, weight: .medium))
+                .interfaceFont(size: 11.5, weight: .medium)
                 .foregroundStyle(DS.Palette.textPrimary)
         }
         .padding(.horizontal, 9)
@@ -248,7 +248,7 @@ struct Kbd: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10))
+            .interfaceFont(size: 10)
             .foregroundStyle(DS.Palette.textTertiary)
             .padding(.horizontal, 4)
             .frame(minWidth: 16, minHeight: 16)

@@ -95,7 +95,7 @@ struct InspectorView: View {
             tab = value
         } label: {
             Text(title)
-                .font(.system(size: 12.5, weight: .medium))
+                .interfaceFont(size: 12.5, weight: .medium)
                 .foregroundStyle(tab == value ? DS.Palette.textPrimary : DS.Palette.textSecondary)
                 .frame(height: DS.Metric.inspectorTabsHeight)
                 .overlay(alignment: .bottom) {
@@ -377,7 +377,7 @@ struct BlockerPanelView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
+                            .interfaceFont(size: 9, weight: .semibold)
                             .rotationEffect(.degrees(evidenceOpen ? 90 : 0))
                         Text(evidenceOpen ? "Hide evidence" : "Show evidence")
                             .font(DS.Font.meta)
@@ -522,7 +522,7 @@ struct TimelineRowView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title)
-                    .font(.system(size: 12, weight: item.kind == .error ? .semibold : .medium))
+                    .interfaceFont(size: 12, weight: item.kind == .error ? .semibold : .medium)
                     .foregroundStyle(item.kind == .error ? DS.Palette.error : DS.Palette.textPrimary)
                 if item.meta != nil || item.mono != nil {
                     HStack(spacing: 8) {
@@ -615,7 +615,7 @@ struct EmptyStateView: View {
                 .frame(width: 36, height: 36)
                 .background(RoundedRectangle(cornerRadius: 8).strokeBorder(DS.Palette.border, lineWidth: 1))
             Text(hasTasks ? "No execution selected" : "No executions observed")
-                .font(.system(size: 13, weight: .semibold))
+                .interfaceFont(size: 13, weight: .semibold)
                 .foregroundStyle(DS.Palette.textPrimary)
             Text(hasTasks
                  ? "Select an execution to inspect its stage, blocker and timeline. Use ↑ ↓ to move through the list."

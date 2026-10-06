@@ -1,4 +1,5 @@
 import Foundation
+@preconcurrency import MarkdownUI
 
 public struct ActivityMessage: Codable, Identifiable, Sendable, Equatable {
     public let id: String
@@ -10,7 +11,7 @@ public struct ActivityMessage: Codable, Identifiable, Sendable, Equatable {
     public let truncated: Bool
     // Prepared once on ObserverClient's actor during decoding, not when a lazy row
     // enters the viewport. Keep derived presentation out of the wire payload.
-    let formattedText: AttributedString
+    let formattedText: MarkdownContent
 
     enum CodingKeys: String, CodingKey {
         case id, ordinal, revision, timestampMs, kind, text, truncated
@@ -21,8 +22,7 @@ public struct ActivityMessage: Codable, Identifiable, Sendable, Equatable {
         self.id = id; self.ordinal = ordinal; self.revision = revision
         self.timestampMs = timestampMs; self.kind = kind; self.text = text
         self.truncated = truncated
-        formattedText = (try? AttributedString(markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+        formattedText = MarkdownContent(text)
     }
 
     public init(from decoder: Decoder) throws {

@@ -51,7 +51,7 @@ struct MonitorSettingsView: View {
                 case .shortcuts: ShortcutSettingsView()
                 }
             }
-            .frame(height: 440)
+            .frame(height: selectedTab == SettingsTab.appearance.rawValue ? 600 : 440)
         }
         .frame(width: 620)
         .background(SettingsWindowChrome())
@@ -234,58 +234,63 @@ private struct AppearanceSettingsView: View {
     @ObservedObject var store: MonitorStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Appearance automatically follows your Mac’s Light or Dark setting.")
-                .font(DS.Font.body)
-                .foregroundStyle(DS.Palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Appearance automatically follows your Mac’s Light or Dark setting.")
+                    .font(DS.Font.body)
+                    .foregroundStyle(DS.Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            Rectangle().fill(DS.Palette.divider).frame(height: 1)
+                Rectangle().fill(DS.Palette.divider).frame(height: 1)
 
-            HStack {
-                Text("Use synthetic acceptance data").font(DS.Font.body)
-                Spacer()
-                Toggle("Use synthetic acceptance data", isOn: Binding(
-                get: { store.syntheticScenario != nil },
-                set: { enabled in
-                    if enabled {
-                        store.useSynthetic(store.syntheticScenario ?? .running)
-                    } else {
-                        store.useLiveObserver()
-                    }
-                }))
-                .toggleStyle(.switch)
-                .labelsHidden()
-            }
+                TextSettingsView()
 
-            if store.syntheticScenario != nil {
-                HStack(spacing: 8) {
-                    Text("Scenario")
-                        .font(DS.Font.body)
-                        .foregroundStyle(DS.Palette.textSecondary)
-                    Picker("Scenario", selection: Binding(
-                        get: { store.syntheticScenario ?? .running },
-                        set: { store.useSynthetic($0) })) {
-                        ForEach(SyntheticScenario.allCases) { scenario in
-                            Text(scenario.label).tag(scenario)
+                Rectangle().fill(DS.Palette.divider).frame(height: 1)
+
+                HStack {
+                    Text("Use synthetic acceptance data").font(DS.Font.body)
+                    Spacer()
+                    Toggle("Use synthetic acceptance data", isOn: Binding(
+                    get: { store.syntheticScenario != nil },
+                    set: { enabled in
+                        if enabled {
+                            store.useSynthetic(store.syntheticScenario ?? .running)
+                        } else {
+                            store.useLiveObserver()
                         }
-                    }
+                    }))
+                    .toggleStyle(.switch)
                     .labelsHidden()
-                    .frame(width: 200)
                 }
-                Text("Synthetic data is served through the same read-only Observer contract and is always badged SYNTHETIC DATA.")
-                    .font(DS.Font.micro)
-                    .foregroundStyle(DS.Palette.textTertiary)
-            } else {
-                Text("Live mode reads the selected Observer with this Mac’s stored credential.")
-                    .font(DS.Font.micro)
-                    .foregroundStyle(DS.Palette.textTertiary)
-            }
 
-            Spacer()
+                if store.syntheticScenario != nil {
+                    HStack(spacing: 8) {
+                        Text("Scenario")
+                            .font(DS.Font.body)
+                            .foregroundStyle(DS.Palette.textSecondary)
+                        Picker("Scenario", selection: Binding(
+                            get: { store.syntheticScenario ?? .running },
+                            set: { store.useSynthetic($0) })) {
+                            ForEach(SyntheticScenario.allCases) { scenario in
+                                Text(scenario.label).tag(scenario)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 200)
+                    }
+                    Text("Synthetic data is served through the same read-only Observer contract and is always badged SYNTHETIC DATA.")
+                        .font(DS.Font.micro)
+                        .foregroundStyle(DS.Palette.textTertiary)
+                } else {
+                    Text("Live mode reads the selected Observer with this Mac’s stored credential.")
+                        .font(DS.Font.micro)
+                        .foregroundStyle(DS.Palette.textTertiary)
+                }
+
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
