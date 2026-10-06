@@ -236,9 +236,10 @@ struct ExecutionRowView: View {
                             .foregroundStyle(DS.Palette.textSecondary)
                     }
                     .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                    .truncationMode(.middle)
 
                     StageBadge(stage: task.stage, tone: StageBadge.Tone.forStatus(status))
+                        .layoutPriority(1)
 
                     Spacer(minLength: 4)
                     Text(task.rowTail(status: status))
@@ -246,10 +247,12 @@ struct ExecutionRowView: View {
                         .monospacedDigit()
                         .lineLimit(1)
                         .foregroundStyle(tailColor)
+                        .frame(width: 84, alignment: .trailing)
                 }
                 .padding(.leading, 20)
             }
             .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: DS.Metric.rowHeight)
             .background(selected ? DS.Palette.selection : (hovering ? DS.Palette.hover : .clear))
             // No status accent strip: the row reads its state from the status glyph, the

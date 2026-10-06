@@ -76,6 +76,7 @@ enum DS {
         static let controlRadius: CGFloat = 5
         static let windowMinWidth: CGFloat = 900
         static let windowMinHeight: CGFloat = 600
+        static let inspectorMinWidth: CGFloat = 320
         static let inspectorStackThreshold: CGFloat = 760
 
         /// Figma: the list/inspector panels sit 40pt above the MonitorWindow bottom in

@@ -17,18 +17,22 @@ struct MonitorRootView: View {
     @State private var navigationCloseTask: Task<Void, Never>?
     @State private var historyOpen = false
     @State private var listPopover: ListPopover?
+    @State private var preferredListWidth: CGFloat?
+    @State private var listResizeStartWidth: CGFloat?
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Wide windows start with a docked sidebar; compact windows use the overlay drawer.
     private var sidebarDocked: Bool { sidebarExpanded ?? (windowWidth >= 1280) }
     private var listWidth: CGFloat {
-        if windowWidth < 1000 { return DS.Metric.listWidthNarrow }
-        if windowWidth < 1280 { return DS.Metric.listWidthMedium }
-        return DS.Metric.listWidthWide
+        let defaultWidth = windowWidth < 1000 ? DS.Metric.listWidthNarrow
+            : (windowWidth < 1280 ? DS.Metric.listWidthMedium : DS.Metric.listWidthWide)
+        let maximum = max(DS.Metric.listWidthNarrow,
+                          windowWidth - sidebarWidth - 8 - DS.Metric.inspectorMinWidth)
+        return min(max(preferredListWidth ?? defaultWidth, DS.Metric.listWidthNarrow), maximum)
     }
     private var sidebarWidth: CGFloat { sidebarDocked ? DS.Metric.sidebarWidth : 8 }
-    private var inspectorWidth: CGFloat { max(0, windowWidth - sidebarWidth - listWidth) }
+    private var inspectorWidth: CGFloat { max(0, windowWidth - sidebarWidth - listWidth - 8) }
     private var inspectorStacked: Bool { inspectorWidth < DS.Metric.inspectorStackThreshold }
     private var borderWidth: CGFloat { 1 / max(displayScale, 1) }
 
@@ -58,6 +62,28 @@ struct MonitorRootView: View {
                                     Rectangle().fill(DS.Palette.border)
                                         .frame(width: borderWidth)
                                         .allowsHitTesting(false)
+                                }
+                                .overlay(alignment: .trailing) {
+                                    Color.clear
+                                        .frame(width: 10)
+                                        .contentShape(Rectangle())
+                                        .offset(x: 5)
+                                        .onHover { hovering in
+                                            if hovering { NSCursor.resizeLeftRight.set() }
+                                            else { NSCursor.arrow.set() }
+                                        }
+                                        .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                            .onChanged { value in
+                                                let start = listResizeStartWidth ?? listWidth
+                                                listResizeStartWidth = start
+                                                preferredListWidth = start + value.translation.width
+                                            }
+                                            .onEnded { _ in
+                                                preferredListWidth = listWidth
+                                                listResizeStartWidth = nil
+                                            })
+                                        .accessibilityLabel("Resize task list")
+                                        .accessibilityValue("\(Int(listWidth)) points")
                                 }
 
                             InspectorView(store: store, stacked: inspectorStacked)
