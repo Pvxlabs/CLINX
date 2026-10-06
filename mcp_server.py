@@ -39,7 +39,7 @@ READ_ONLY_TOOL_NAMES = (
     "clinx_get_capabilities",
     "clinx_prepare_execution",
 )
-DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_effective_authority", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization", "clinx_adopt_conversation")
+DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_effective_authority", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization", "clinx_register_derived_git_target", "clinx_revoke_derived_git_target", "clinx_adopt_conversation")
 
 
 class MCPServerError(RuntimeError):
@@ -141,7 +141,7 @@ def _authority_tools():
          'inputSchema': _json_schema({'task_ref': {'type': 'string'}}, ['task_ref']),
          'annotations': {'readOnlyHint': True, 'destructiveHint': False}},
         {'name': 'clinx_prepare_policy_reauthorization',
-         'description': 'Prepare a reviewed authority change on the SAME task. Existing authorization must cover the exact target scope. No execution starts; historical execution policies remain unchanged. Only the outer operator may call this, never the managed worker.',
+         'description': 'Prepare a reviewed authority change on the SAME task. New Git target scope must identify a registered task-owned worktree. No execution starts; historical execution policies remain unchanged. Only the outer operator may call this, never the managed worker.',
          'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
              'task_ref': {'type': 'string'}, 'expected_policy_hash': {'type': 'string', 'pattern': '^[0-9a-f]{64}$'},
              'target_policy': target, 'network_access': {'type': 'boolean'}, 'reason': {'type': 'string', 'minLength': 1}},
@@ -151,6 +151,20 @@ def _authority_tools():
          'description': 'Apply exactly one prepared authority change with explicit operator approval, CAS and immutable audit. Idempotent. Active ownership or unresolved side effects block application. Does not execute or replay deployment.',
          'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
              'prepared_reauthorization_ref': {'type': 'string'}}, ['approved', 'prepared_reauthorization_ref']),
+         'annotations': {'readOnlyHint': False, 'destructiveHint': True}},
+        {'name': 'clinx_register_derived_git_target',
+         'description': 'Explicit operator registration of one real linked Git worktree for one active task. Supply its successful task Host worktree-add receipt when available; otherwise record explicit operator adoption evidence. Returns a stable target identity; registration alone grants no push.',
+         'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
+             'task_ref': {'type': 'string'}, 'path': {'type': 'string'},
+             'ownership_evidence': {'type': 'string', 'minLength': 1},
+             'creation_host_execution_ref': {'type': 'string'}},
+             ['approved', 'task_ref', 'path', 'ownership_evidence']),
+         'annotations': {'readOnlyHint': False, 'destructiveHint': False}},
+        {'name': 'clinx_revoke_derived_git_target',
+         'description': 'Revoke one task-owned Git target. Existing policy history remains immutable; future push fails closed.',
+         'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
+             'task_ref': {'type': 'string'}, 'target': {'type': 'string'}},
+             ['approved', 'task_ref', 'target']),
          'annotations': {'readOnlyHint': False, 'destructiveHint': True}},
     ]
 
@@ -305,6 +319,7 @@ def _status_output_schema() -> dict[str, Any]:
         "host_executions": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "dynamic_tool_deliveries": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "provider_delivery": {"type": "object", "additionalProperties": True},
+        "execution_owner": {"type": ["object", "null"], "additionalProperties": True},
         "task_current_projection": {"type": "object", "additionalProperties": True},
         "selection_reason": {"type": "string"},
         "status_source": {"type": "string"},
@@ -634,6 +649,7 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
             ),
             "outputSchema": _json_schema({
                 "execution_started": {"type": "boolean"},
+                "execution_owner": {"type": "object", "additionalProperties": True},
                 "prepared_execution_ref": {"type": "string"},
                 "execution_ref": {"type": "string"},
                 "task_ref": {"type": "string"},
@@ -762,10 +778,24 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
         'backend_implemented': {'type': 'boolean'}, 'mcp_exposed': {'type': 'boolean'},
         'client_exposure': {'type': 'string'}, 'runtime_health': {'type': 'string'},
         'read_only': {'type': 'boolean'},
+        'derived_git_targets': {'type': 'array'},
     }
     for tool in tools:
         if tool['name'] in {'clinx_get_effective_authority', 'clinx_prepare_policy_reauthorization', 'clinx_apply_policy_reauthorization'}:
             tool['outputSchema'] = _json_schema(authority_outputs)
+        elif tool['name'] == 'clinx_register_derived_git_target':
+            tool['outputSchema'] = _json_schema({
+                'target_id': {'type': 'string'}, 'task_id': {'type': 'string'},
+                'path': {'type': 'string'}, 'worktree_key': {'type': 'string'},
+                'common_dir': {'type': 'string'}, 'git_dir': {'type': 'string'},
+                'git_dir_device': {'type': 'integer'}, 'git_dir_inode': {'type': 'integer'},
+                'branch': {'type': 'string'}, 'origin': {'type': 'string'},
+                'provenance': {'type': 'string'}, 'registered_at': {'type': 'string'},
+                'revoked_at': {'type': ['string', 'null']},
+            })
+        elif tool['name'] == 'clinx_revoke_derived_git_target':
+            tool['outputSchema'] = _json_schema({'task_ref': {'type': 'string'},
+                'target': {'type': 'string'}, 'revoked': {'type': 'boolean'}})
     for tool in tools:
         if tool['name'] == 'clinx_prepare_execution':
             tool['inputSchema']['properties']['requested_operations'] = {
@@ -823,7 +853,7 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
             **{key: {"type": ["string", "null"]} for key in (
                 "last_provider_activity_at", "last_host_delivery_at", "last_live_owner_at", "liveness_observed_at")},
         })
-        thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "native_thread", "native_status", "task_current_projection", "execution_result", "provenance", "provider_delivery")})
+        thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "native_thread", "native_status", "task_current_projection", "execution_result", "provenance", "provider_delivery", "execution_owner")})
         # Keep one strict root object for connector discovery and legacy clients.
         tool["outputSchema"]["properties"].update(thread_properties)
 
@@ -945,6 +975,10 @@ class ClinxMCPServer:
             result = self.integration.prepare_policy_reauthorization(**arguments)
         elif name == "clinx_apply_policy_reauthorization":
             result = self.integration.apply_policy_reauthorization(**arguments)
+        elif name == "clinx_register_derived_git_target":
+            result = self.integration.register_derived_git_target(**arguments)
+        elif name == "clinx_revoke_derived_git_target":
+            result = self.integration.revoke_derived_git_target(**arguments)
         elif name == "clinx_prepare_execution":
             result = self.integration.prepare_execution(**arguments)
         elif name == "clinx_start_execution":
@@ -1089,6 +1123,7 @@ def build_server(
     *,
     task_db_path: Path | str | None = None,
     allow_execute: bool = False,
+    own_executions: bool = False,
 ) -> ClinxMCPServer:
     cfg = bridge.BridgeConfig.load(Path(config_path).expanduser().resolve())
     registry = TaskRegistry(
@@ -1152,6 +1187,9 @@ def build_server(
     integration = ClinxIntegration(
         cfg, registry, dispatcher, reader, linear=linear, topic_reader=topic_reader
     )
+    if not own_executions:
+        from execution_owner import ExecutionOwnerClient
+        integration.execution_owner_client = ExecutionOwnerClient(registry)
     from network_observation import directory_from_env
     return ClinxMCPServer(integration, allow_execute=allow_execute, observations=directory_from_env())
 
@@ -1162,7 +1200,8 @@ def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None, *, recover_exis
     dispatcher = getattr(getattr(server, "integration", None), "dispatcher", None)
     start_completion = getattr(dispatcher, "start_completion_runtime", None)
     stop_completion = getattr(dispatcher, "stop_completion_runtime", None)
-    if recover_existing and callable(start_completion):
+    if (recover_existing and callable(start_completion)
+            and not getattr(getattr(server, 'integration', None), 'execution_owner_client', None)):
         start_completion()
     try:
         for line in stdin:
@@ -1194,9 +1233,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", default="bridge.toml")
     parser.add_argument("--observations-only", action="store_true", help="Read-only network directory; no canonical runtime construction")
     parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
+    parser.add_argument("--execution-owner", action="store_true", help="serve persistent canonical execution ownership on a private local socket")
     parser.add_argument("--no-recover-existing", action="store_true", help="parallel maintenance: existing executions remain with their running completion owner")
     parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")
     args = parser.parse_args(argv)
+    if args.execution_owner:
+        if args.stdio:
+            parser.error('--execution-owner cannot combine with --stdio')
+        from execution_owner import serve
+        server = build_server(args.config, own_executions=True)
+        # Never recover unrelated existing executions at service startup.
+        serve(server.integration)
+        return 0
     if not args.stdio:
         print("MCP_TRANSPORT=BLOCKED: only authenticated external transport may expose CLINX", file=sys.stderr)
         return 2

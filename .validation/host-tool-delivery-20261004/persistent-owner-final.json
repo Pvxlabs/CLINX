@@ -1,0 +1,1342 @@
+{
+  "source": "/home/pvxlabs/dev/clinx-host-delivery-fix-20261004",
+  "private_state": "/home/pvxlabs/.local/state/clinx/qualification/host-delivery-20261004/1791111778022925739",
+  "project": "/home/pvxlabs/dev/clinx-host-owner-fixture-1791111778022925739",
+  "owner_pid": 491467,
+  "executions": [
+    {
+      "start": {
+        "execution_started": true,
+        "prepared_execution_ref": "prepared_af1ca9f771fe4766ab1caf32ca45d4f3",
+        "execution_ref": "exec_af1ca9f771fe4766ab1caf32ca45d4f3",
+        "task_ref": "task_68bf69473ea646879d0c105aa736087b",
+        "task_action": "create",
+        "model": "gpt-6-luna",
+        "reasoning_effort": "low",
+        "execution_mode": "normal",
+        "network_access": false,
+        "NETWORK_ACCESS": "DISABLED",
+        "routing_identity": {
+          "host": {
+            "stable_identifier": "p620",
+            "display": "p620",
+            "machine_id": null,
+            "alias": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "stable_identifier": "host_executor",
+            "display": "Trusted Host Executor",
+            "capability_boundary": "bounded_p620_host_operations",
+            "status": "SUPPORTED"
+          },
+          "provider": {
+            "stable_identifier": "codex_app_server",
+            "display": "Codex app-server",
+            "bounded_task_backend": true,
+            "status": "SUPPORTED"
+          },
+          "transport": {
+            "stable_identifier": "local_stdio",
+            "display": "local stdio",
+            "remote": false,
+            "status": "SUPPORTED"
+          },
+          "workspace": {
+            "workspace_alias": "p620",
+            "project_alias": "clinx-host-owner-fixture-1791111778022925739",
+            "worktree_key": "95882a1d637448eea650bf71652375f350b481e0a79bc0af274914739bc71fd5"
+          },
+          "conversation": {
+            "status": "BOUND",
+            "binding": "REDACTED"
+          },
+          "authority": {
+            "stable_identifier": "clinx_task_bounded",
+            "scopes": [
+              "read_only_host",
+              "workspace_write"
+            ],
+            "status": "BOUNDED",
+            "identity_is_authority": false
+          },
+          "network_policy": {
+            "stable_identifier": "provider_turn_network_opt_in",
+            "network_access": false,
+            "mode": "DISABLED",
+            "remote_execution": false
+          },
+          "project_identity": "clinx-host-owner-fixture-1791111778022925739",
+          "routing_contract": "execution -> host -> surface -> provider -> transport",
+          "separation": {
+            "host_is_authority": false,
+            "surface_is_authority": false,
+            "provider_is_authority": false,
+            "transport_is_authority": false,
+            "network_is_authority": false,
+            "network_is_remote_execution": false
+          }
+        },
+        "execution_policy": {
+          "contract": "CLINX_EXECUTION_POLICY_V1",
+          "execution_surface": "HOST_EXECUTOR",
+          "required_capabilities": [
+            "GIT"
+          ],
+          "operation_classes": [
+            "READ_ONLY_HOST"
+          ],
+          "production_mutation_intent": false,
+          "host_executor_default": false,
+          "business_action_authority": false,
+          "operation_scopes": [
+            {
+              "capability": "GIT",
+              "operation": "status",
+              "operation_class": "READ_ONLY_HOST",
+              "target": ""
+            }
+          ]
+        },
+        "dispatch_status": "DISPATCHED",
+        "linear_audit": "PASS",
+        "read_only": false,
+        "execution_owner": {
+          "instance": "9b076d1c57ab40099f5565e5993e64aa",
+          "pid": 491467,
+          "source_path": "/home/pvxlabs/dev/clinx-host-delivery-fix-20261004",
+          "lifetime": "PERSISTENT_CONTROL_RUNTIME"
+        }
+      },
+      "requester_exit": -15,
+      "requester_pid": 491537,
+      "operation": {
+        "capability": "GIT",
+        "operation": "status",
+        "operation_class": "READ_ONLY_HOST",
+        "arguments": {}
+      },
+      "active": {
+        "task_ref": "task_68bf69473ea646879d0c105aa736087b",
+        "task_key": "clinx-host-owner-fixture-1791111778022925739/persistent-owner-requester-exit-read-only-host",
+        "host": "p620",
+        "project": "clinx-host-owner-fixture-1791111778022925739",
+        "project_name": "clinx-host-owner-fixture-1791111778022925739",
+        "title": "Persistent owner requester-exit READ_ONLY_HOST",
+        "summary": "Isolated Host delivery qualification",
+        "status": "ACTIVE",
+        "updated_at": "2026-10-04T11:02:59.172507+00:00",
+        "context_available": true,
+        "execution_state": "CODEX_RUNNING",
+        "current_stage": "Codex turn",
+        "current_blocker": null,
+        "last_progress_at": "2026-10-04T11:02:59.172407+00:00",
+        "codex_running": false,
+        "retry_required": false,
+        "failure_stage": null,
+        "failure_code": null,
+        "failure_evidence": null,
+        "routing_identity": {
+          "host": {
+            "stable_identifier": "p620",
+            "display": "p620",
+            "machine_id": null,
+            "alias": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "stable_identifier": "host_executor",
+            "display": "Trusted Host Executor",
+            "capability_boundary": "bounded_p620_host_operations",
+            "status": "SUPPORTED"
+          },
+          "provider": {
+            "stable_identifier": "codex_app_server",
+            "display": "Codex app-server",
+            "bounded_task_backend": true,
+            "status": "SUPPORTED"
+          },
+          "transport": {
+            "stable_identifier": "local_stdio",
+            "display": "local stdio",
+            "remote": false,
+            "status": "SUPPORTED"
+          },
+          "workspace": {
+            "workspace_alias": "p620",
+            "project_alias": "clinx-host-owner-fixture-1791111778022925739",
+            "worktree_key": "95882a1d637448eea650bf71652375f350b481e0a79bc0af274914739bc71fd5"
+          },
+          "conversation": {
+            "status": "BOUND",
+            "binding": "REDACTED"
+          },
+          "authority": {
+            "stable_identifier": "clinx_task_bounded",
+            "scopes": [
+              "read_only_host",
+              "workspace_write"
+            ],
+            "status": "BOUNDED",
+            "identity_is_authority": false
+          },
+          "network_policy": {
+            "stable_identifier": "provider_turn_network_opt_in",
+            "network_access": false,
+            "mode": "DISABLED",
+            "remote_execution": false
+          },
+          "project_identity": "clinx-host-owner-fixture-1791111778022925739",
+          "routing_contract": "execution -> host -> surface -> provider -> transport",
+          "separation": {
+            "host_is_authority": false,
+            "surface_is_authority": false,
+            "provider_is_authority": false,
+            "transport_is_authority": false,
+            "network_is_authority": false,
+            "network_is_remote_execution": false
+          }
+        },
+        "adoption_source": null,
+        "adopted_at": null,
+        "historical_status": null,
+        "historical_route_evidence": null,
+        "execution_result": null,
+        "read_only": true,
+        "execution_routing_identity": {
+          "host": {
+            "stable_identifier": "p620",
+            "display": "p620",
+            "machine_id": null,
+            "alias": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "stable_identifier": "host_executor",
+            "display": "Trusted Host Executor",
+            "capability_boundary": "bounded_p620_host_operations",
+            "status": "SUPPORTED"
+          },
+          "provider": {
+            "stable_identifier": "codex_app_server",
+            "display": "Codex app-server",
+            "bounded_task_backend": true,
+            "status": "SUPPORTED"
+          },
+          "transport": {
+            "stable_identifier": "local_stdio",
+            "display": "local stdio",
+            "remote": false,
+            "status": "SUPPORTED"
+          },
+          "workspace": {
+            "workspace_alias": "p620",
+            "project_alias": "clinx-host-owner-fixture-1791111778022925739",
+            "worktree_key": "95882a1d637448eea650bf71652375f350b481e0a79bc0af274914739bc71fd5"
+          },
+          "conversation": {
+            "status": "BOUND",
+            "binding": "REDACTED"
+          },
+          "authority": {
+            "stable_identifier": "clinx_task_bounded",
+            "scopes": [
+              "read_only_host",
+              "workspace_write"
+            ],
+            "status": "BOUNDED",
+            "identity_is_authority": false
+          },
+          "network_policy": {
+            "stable_identifier": "provider_turn_network_opt_in",
+            "network_access": false,
+            "mode": "DISABLED",
+            "remote_execution": false
+          },
+          "project_identity": "clinx-host-owner-fixture-1791111778022925739",
+          "routing_contract": "execution -> host -> surface -> provider -> transport",
+          "separation": {
+            "host_is_authority": false,
+            "surface_is_authority": false,
+            "provider_is_authority": false,
+            "transport_is_authority": false,
+            "network_is_authority": false,
+            "network_is_remote_execution": false
+          }
+        },
+        "execution_policy": {
+          "contract": "CLINX_EXECUTION_POLICY_V1",
+          "execution_surface": "HOST_EXECUTOR",
+          "required_capabilities": [
+            "GIT"
+          ],
+          "operation_classes": [
+            "READ_ONLY_HOST"
+          ],
+          "production_mutation_intent": false,
+          "host_executor_default": false,
+          "business_action_authority": false,
+          "operation_scopes": [
+            {
+              "capability": "GIT",
+              "operation": "status",
+              "operation_class": "READ_ONLY_HOST",
+              "target": ""
+            }
+          ]
+        },
+        "host_executions": [],
+        "network_access": false,
+        "NETWORK_ACCESS": "DISABLED",
+        "linear_audit_sync": "PASS",
+        "linear_retry_required": false,
+        "linear_last_error": null,
+        "active_execution": {
+          "execution_ref": "exec_af1ca9f771fe4766ab1caf32ca45d4f3",
+          "stage": "Codex turn"
+        },
+        "linear_issue_ref": "PVX-1895",
+        "EXECUTION_STATE": "CODEX_RUNNING",
+        "CODEX_RUNNING": false,
+        "CURRENT_STAGE": "Codex turn",
+        "CURRENT_BLOCKER": null,
+        "LAST_PROGRESS_AT": "2026-10-04T11:02:59.172407+00:00",
+        "TURN_PRESENT": true,
+        "RETRY_REQUIRED": false,
+        "execution_ref": "exec_af1ca9f771fe4766ab1caf32ca45d4f3",
+        "dynamic_tool_deliveries": [],
+        "provider_delivery": {
+          "source": "PERSISTED_DELIVERY_LEDGER",
+          "state": "NO_HOST_CALLS",
+          "count": 0,
+          "call_states": [],
+          "worker_reported_pending": false,
+          "worker_pending_is_stale_snapshot": false,
+          "business_result_independent": true,
+          "reconciliation_required": false
+        },
+        "execution_owner": {
+          "execution_ref": "exec_af1ca9f771fe4766ab1caf32ca45d4f3",
+          "prepared_execution_ref": "prepared_af1ca9f771fe4766ab1caf32ca45d4f3",
+          "owner_instance": "9b076d1c57ab40099f5565e5993e64aa",
+          "owner_pid": 491467,
+          "source_path": "/home/pvxlabs/dev/clinx-host-delivery-fix-20261004",
+          "state": "DISPATCHED",
+          "registered_at": 1791111778.2554345,
+          "updated_at": 1791111781.9546483,
+          "execution_state": "CODEX_RUNNING"
+        },
+        "selection_reason": "EXPLICIT_EXECUTION_REF",
+        "task_current_projection": {
+          "execution_state": "CODEX_RUNNING",
+          "codex_running": false,
+          "turn_id": "01a10694-d33e-7d82-9611-efea3d053a20",
+          "current_stage": "Codex turn",
+          "failure_stage": null,
+          "failure_code": null,
+          "failure_evidence": null
+        },
+        "status_source": "PERSISTED_EXECUTION",
+        "execution_turn_ref": "01a10694-d33e-7d82-9611-efea3d053a20",
+        "failure_source": "NONE",
+        "turn_id": "01a10694-d33e-7d82-9611-efea3d053a20",
+        "provider_liveness": "UNKNOWN",
+        "transport_health": "UNAVAILABLE",
+        "last_provider_activity_at": null,
+        "last_host_delivery_at": null,
+        "last_live_owner_at": null,
+        "liveness_reason": "NO_EXACT_OWNER_OBSERVATION",
+        "ownership_conflict": false,
+        "liveness_observed_at": null,
+        "liveness_grace_seconds": 120.0
+      },
+      "terminal": {
+        "task_ref": "task_68bf69473ea646879d0c105aa736087b",
+        "task_key": "clinx-host-owner-fixture-1791111778022925739/persistent-owner-requester-exit-read-only-host",
+        "host": "p620",
+        "project": "clinx-host-owner-fixture-1791111778022925739",
+        "project_name": "clinx-host-owner-fixture-1791111778022925739",
+        "title": "Persistent owner requester-exit READ_ONLY_HOST",
+        "summary": "Isolated Host delivery qualification",
+        "status": "ACTIVE",
+        "updated_at": "2026-10-04T11:03:09.987568+00:00",
+        "context_available": true,
+        "execution_state": "COMPLETED",
+        "current_stage": "COMPLETED",
+        "current_blocker": null,
+        "last_progress_at": "2026-10-04T11:03:09.987500+00:00",
+        "codex_running": false,
+        "retry_required": false,
+        "failure_stage": null,
+        "failure_code": null,
+        "failure_evidence": null,
+        "routing_identity": {
+          "host": {
+            "stable_identifier": "p620",
+            "display": "p620",
+            "machine_id": null,
+            "alias": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "stable_identifier": "host_executor",
+            "display": "Trusted Host Executor",
+            "capability_boundary": "bounded_p620_host_operations",
+            "status": "SUPPORTED"
+          },
+          "provider": {
+            "stable_identifier": "codex_app_server",
+            "display": "Codex app-server",
+            "bounded_task_backend": true,
+            "status": "SUPPORTED"
+          },
+          "transport": {
+            "stable_identifier": "local_stdio",
+            "display": "local stdio",
+            "remote": false,
+            "status": "SUPPORTED"
+          },
+          "workspace": {
+            "workspace_alias": "p620",
+            "project_alias": "clinx-host-owner-fixture-1791111778022925739",
+            "worktree_key": "95882a1d637448eea650bf71652375f350b481e0a79bc0af274914739bc71fd5"
+          },
+          "conversation": {
+            "status": "BOUND",
+            "binding": "REDACTED"
+          },
+          "authority": {
+            "stable_identifier": "clinx_task_bounded",
+            "scopes": [
+              "read_only_host",
+              "workspace_write"
+            ],
+            "status": "BOUNDED",
+            "identity_is_authority": false
+          },
+          "network_policy": {
+            "stable_identifier": "provider_turn_network_opt_in",
+            "network_access": false,
+            "mode": "DISABLED",
+            "remote_execution": false
+          },
+          "project_identity": "clinx-host-owner-fixture-1791111778022925739",
+          "routing_contract": "execution -> host -> surface -> provider -> transport",
+          "separation": {
+            "host_is_authority": false,
+            "surface_is_authority": false,
+            "provider_is_authority": false,
+            "transport_is_authority": false,
+            "network_is_authority": false,
+            "network_is_remote_execution": false
+          }
+        },
+        "adoption_source": null,
+        "adopted_at": null,
+        "historical_status": null,
+        "historical_route_evidence": null,
+        "execution_result": {
+          "status": "PASS",
+          "summary": "Host operation status succeeded; host_execution_ref=hostexec_1fae228654324c7d99e3c0f50d4336d8; stdout: ## codex/owner-fixture",
+          "changed_files": "NONE",
+          "validation": "Real Host output returned with exit_code=0.",
+          "blockers": "NONE",
+          "next_state": "COMPLETED",
+          "received_at": "2026-10-04T11:03:09.982649+00:00",
+          "writeback_state": "PENDING"
+        },
+        "read_only": true,
+        "execution_routing_identity": {
+          "host": {
+            "stable_identifier": "p620",
+            "display": "p620",
+            "machine_id": null,
+            "alias": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "stable_identifier": "host_executor",
+            "display": "Trusted Host Executor",
+            "capability_boundary": "bounded_p620_host_operations",
+            "status": "SUPPORTED"
+          },
+          "provider": {
+            "stable_identifier": "codex_app_server",
+            "display": "Codex app-server",
+            "bounded_task_backend": true,
+            "status": "SUPPORTED"
+          },
+          "transport": {
+            "stable_identifier": "local_stdio",
+            "display": "local stdio",
+            "remote": false,
+            "status": "SUPPORTED"
+          },
+          "workspace": {
+            "workspace_alias": "p620",
+            "project_alias": "clinx-host-owner-fixture-1791111778022925739",
+            "worktree_key": "95882a1d637448eea650bf71652375f350b481e0a79bc0af274914739bc71fd5"
+          },
+          "conversation": {
+            "status": "BOUND",
+            "binding": "REDACTED"
+          },
+          "authority": {
+            "stable_identifier": "clinx_task_bounded",
+            "scopes": [
+              "read_only_host",
+              "workspace_write"
+            ],
+            "status": "BOUNDED",
+            "identity_is_authority": false
+          },
+          "network_policy": {
+            "stable_identifier": "provider_turn_network_opt_in",
+            "network_access": false,
+            "mode": "DISABLED",
+            "remote_execution": false
+          },
+          "project_identity": "clinx-host-owner-fixture-1791111778022925739",
+          "routing_contract": "execution -> host -> surface -> provider -> transport",
+          "separation": {
+            "host_is_authority": false,
+            "surface_is_authority": false,
+            "provider_is_authority": false,
+            "transport_is_authority": false,
+            "network_is_authority": false,
+            "network_is_remote_execution": false
+          }
+        },
+        "execution_policy": {
+          "contract": "CLINX_EXECUTION_POLICY_V1",
+          "execution_surface": "HOST_EXECUTOR",
+          "required_capabilities": [
+            "GIT"
+          ],
+          "operation_classes": [
+            "READ_ONLY_HOST"
+          ],
+          "production_mutation_intent": false,
+          "host_executor_default": false,
+          "business_action_authority": false,
+          "operation_scopes": [
+            {
+              "capability": "GIT",
+              "operation": "status",
+              "operation_class": "READ_ONLY_HOST",
+              "target": ""
+            }
+          ]
+        },
+        "host_executions": [
+          {
+            "host_execution_ref": "hostexec_1fae228654324c7d99e3c0f50d4336d8",
+            "task_id": "task_68bf69473ea646879d0c105aa736087b",
+            "execution_ref": "exec_af1ca9f771fe4766ab1caf32ca45d4f3",
+            "host": "p620",
+            "surface": "host_executor",
+            "operation_class": "READ_ONLY_HOST",
+            "capability": "GIT",
+            "operation": "status",
+            "cwd_identity": "clinx-host-owner-fixture-1791111778022925739",
+            "target_identity": null,
+            "started_at": "2026-10-04T11:03:04.941974+00:00",
+            "completed_at": "2026-10-04T11:03:04.949063+00:00",
+            "duration_ms": 5,
+            "exit_code": 0,
+            "stdout": "## codex/owner-fixture\n",
+            "stderr": "",
+            "stdout_bytes": 23,
+            "stderr_bytes": 0,
+            "stdout_sha256": "5bdc750b17db170391e32002b19dfe1bd178685a1228b3b89876f1dcdf5b955d",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_truncated": false,
+            "stderr_truncated": false,
+            "result_state": "SUCCEEDED",
+            "timeout_seconds": 30.0,
+            "timed_out": false,
+            "cancel_requested": false,
+            "tool_call_id": "exec-3a4b2229-5ac1-496b-8b51-7122127a9db0",
+            "argv": [
+              "git",
+              "status",
+              "--short",
+              "--branch"
+            ]
+          }
+        ],
+        "network_access": false,
+        "NETWORK_ACCESS": "DISABLED",
+        "linear_audit_sync": "PASS",
+        "linear_retry_required": false,
+        "linear_last_error": null,
+        "active_execution": null,
+        "linear_issue_ref": "PVX-1895",
+        "EXECUTION_STATE": "COMPLETED",
+        "CODEX_RUNNING": false,
+        "CURRENT_STAGE": "COMPLETED",
+        "CURRENT_BLOCKER": null,
+        "LAST_PROGRESS_AT": "2026-10-04T11:03:09.987500+00:00",
+        "TURN_PRESENT": true,
+        "RETRY_REQUIRED": false,
+        "execution_ref": "exec_af1ca9f771fe4766ab1caf32ca45d4f3",
+        "dynamic_tool_deliveries": [
+          {
+            "execution_ref": "exec_af1ca9f771fe4766ab1caf32ca45d4f3",
+            "tool_call_id": "exec-3a4b2229-5ac1-496b-8b51-7122127a9db0",
+            "request_id": "1345",
+            "response_id": "1345",
+            "identity_json": "{\"client_pid\": 491467, \"connection_id\": \"94791b2a1d244522b2f59fb5cf55b437\", \"listener_id\": \"27270800225745c793a2fa6d4c4fc0f6\", \"namespace\": \"clinx\", \"provider_endpoint\": {\"created_ns\": 1790911103941516833, \"device\": 66308, \"inode\": 9568275, \"path\": \"/run/user/1001/clinx-provider.sock\"}, \"provider_session_id\": \"01a10694-d0ad-7e51-bc18-ddac55567ed6\", \"provider_user_agent\": \"linear-local-codex-bridge/0.156.1 (Ubuntu 24.4.0; x86_64) unknown (linear-local-codex-bridge; 1.0.0-m6)\", \"provider_version\": null, \"registry_generation\": 1, \"task_ref\": \"task_68bf69473ea646879d0c105aa736087b\", \"thread_id\": \"01a10694-d0ad-7e51-bc18-ddac55567ed6\", \"tool\": \"clinx_host_operation\", \"transport_child_pid\": 491550, \"turn_id\": \"01a10694-d33e-7d82-9611-efea3d053a20\"}",
+            "request_hash": "4ebbcd16efd43984e03c1a76284318e5ee21291b5133a22f672ef202cec3d486",
+            "host_execution_ref": "hostexec_1fae228654324c7d99e3c0f50d4336d8",
+            "host_exit_code": 0,
+            "execution_state": "COMMAND_EXECUTED_RESULT_DELIVERED",
+            "delivery_state": "DELIVERED",
+            "failure_code": null,
+            "admitted_at": 1791111784.9307775,
+            "host_completed_at": 1791111784.9503171,
+            "response_sent_at": 1791111784.9506679,
+            "acknowledged_at": 1791111784.9532807,
+            "provider_item_json": null,
+            "provider_failure_sha256": null,
+            "provider_observed_at": null,
+            "reconciliation_state": "OPEN",
+            "reconciled_at": null,
+            "reconciliation_json": null,
+            "call_state": "SUCCEEDED",
+            "operation_json": "{\"capability\": \"GIT\", \"operation\": \"status\", \"operation_class\": \"READ_ONLY_HOST\", \"target\": null}",
+            "validated_at": null,
+            "dispatched_at": 1791111784.9433417,
+            "side_effect_certainty": "EXECUTED",
+            "reconciliation_required": false,
+            "execution_can_continue": true,
+            "retry_required": false,
+            "result_certainty": "KNOWN",
+            "host_dispatched": true,
+            "continuation_state": "SAFE_TO_CONTINUE",
+            "retry_allowed": false,
+            "failure_stage": null
+          }
+        ],
+        "provider_delivery": {
+          "source": "PERSISTED_DELIVERY_LEDGER",
+          "state": "DELIVERED",
+          "count": 1,
+          "call_states": [
+            "SUCCEEDED"
+          ],
+          "worker_reported_pending": false,
+          "worker_pending_is_stale_snapshot": false,
+          "business_result_independent": true,
+          "reconciliation_required": false
+        },
+        "execution_owner": {
+          "execution_ref": "exec_af1ca9f771fe4766ab1caf32ca45d4f3",
+          "prepared_execution_ref": "prepared_af1ca9f771fe4766ab1caf32ca45d4f3",
+          "owner_instance": "9b076d1c57ab40099f5565e5993e64aa",
+          "owner_pid": 491467,
+          "source_path": "/home/pvxlabs/dev/clinx-host-delivery-fix-20261004",
+          "state": "DISPATCHED",
+          "registered_at": 1791111778.2554345,
+          "updated_at": 1791111781.9546483,
+          "execution_state": "COMPLETED"
+        },
+        "selection_reason": "EXPLICIT_EXECUTION_REF",
+        "task_current_projection": {
+          "execution_state": "COMPLETED",
+          "codex_running": false,
+          "turn_id": "01a10694-d33e-7d82-9611-efea3d053a20",
+          "current_stage": "COMPLETED",
+          "failure_stage": null,
+          "failure_code": null,
+          "failure_evidence": null
+        },
+        "status_source": "PERSISTED_EXECUTION",
+        "execution_turn_ref": "01a10694-d33e-7d82-9611-efea3d053a20",
+        "failure_source": "NONE",
+        "turn_id": "01a10694-d33e-7d82-9611-efea3d053a20",
+        "provider_liveness": "TERMINAL",
+        "transport_health": "HEALTHY",
+        "last_provider_activity_at": "2026-10-04T11:03:09.970115+00:00",
+        "last_host_delivery_at": "2026-10-04T11:03:04.953281+00:00",
+        "last_live_owner_at": "2026-10-04T11:03:09.176657+00:00",
+        "liveness_reason": "EXACT_OWNER_TERMINAL",
+        "ownership_conflict": false,
+        "liveness_observed_at": "2026-10-04T11:03:09.970115+00:00",
+        "liveness_grace_seconds": 120.0
+      },
+      "duplicate_call": "REJECTED_WITHOUT_DISPATCH"
+    },
+    {
+      "start": {
+        "execution_started": true,
+        "prepared_execution_ref": "prepared_f930969b37b4460085260b34a13a39b8",
+        "execution_ref": "exec_f930969b37b4460085260b34a13a39b8",
+        "task_ref": "task_16a75a0e295d4ed6bb8cae37510cdea7",
+        "task_action": "create",
+        "model": "gpt-6-luna",
+        "reasoning_effort": "low",
+        "execution_mode": "normal",
+        "network_access": false,
+        "NETWORK_ACCESS": "DISABLED",
+        "routing_identity": {
+          "host": {
+            "stable_identifier": "p620",
+            "display": "p620",
+            "machine_id": null,
+            "alias": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "stable_identifier": "host_executor",
+            "display": "Trusted Host Executor",
+            "capability_boundary": "bounded_p620_host_operations",
+            "status": "SUPPORTED"
+          },
+          "provider": {
+            "stable_identifier": "codex_app_server",
+            "display": "Codex app-server",
+            "bounded_task_backend": true,
+            "status": "SUPPORTED"
+          },
+          "transport": {
+            "stable_identifier": "local_stdio",
+            "display": "local stdio",
+            "remote": false,
+            "status": "SUPPORTED"
+          },
+          "workspace": {
+            "workspace_alias": "p620",
+            "project_alias": "clinx-host-owner-fixture-1791111778022925739",
+            "worktree_key": "95882a1d637448eea650bf71652375f350b481e0a79bc0af274914739bc71fd5"
+          },
+          "conversation": {
+            "status": "BOUND",
+            "binding": "REDACTED"
+          },
+          "authority": {
+            "stable_identifier": "clinx_task_bounded",
+            "scopes": [
+              "development_mutation",
+              "workspace_write"
+            ],
+            "status": "BOUNDED",
+            "identity_is_authority": false
+          },
+          "network_policy": {
+            "stable_identifier": "provider_turn_network_opt_in",
+            "network_access": false,
+            "mode": "DISABLED",
+            "remote_execution": false
+          },
+          "project_identity": "clinx-host-owner-fixture-1791111778022925739",
+          "routing_contract": "execution -> host -> surface -> provider -> transport",
+          "separation": {
+            "host_is_authority": false,
+            "surface_is_authority": false,
+            "provider_is_authority": false,
+            "transport_is_authority": false,
+            "network_is_authority": false,
+            "network_is_remote_execution": false
+          }
+        },
+        "execution_policy": {
+          "contract": "CLINX_EXECUTION_POLICY_V1",
+          "execution_surface": "HOST_EXECUTOR",
+          "required_capabilities": [
+            "LOCAL_HOST_PROCESS"
+          ],
+          "operation_classes": [
+            "DEVELOPMENT_MUTATION"
+          ],
+          "production_mutation_intent": false,
+          "host_executor_default": false,
+          "business_action_authority": false,
+          "operation_scopes": [
+            {
+              "capability": "LOCAL_HOST_PROCESS",
+              "operation": "development_command",
+              "operation_class": "DEVELOPMENT_MUTATION",
+              "target": ""
+            }
+          ]
+        },
+        "dispatch_status": "DISPATCHED",
+        "linear_audit": "PASS",
+        "read_only": false,
+        "execution_owner": {
+          "instance": "9b076d1c57ab40099f5565e5993e64aa",
+          "pid": 491467,
+          "source_path": "/home/pvxlabs/dev/clinx-host-delivery-fix-20261004",
+          "lifetime": "PERSISTENT_CONTROL_RUNTIME"
+        }
+      },
+      "requester_exit": -15,
+      "requester_pid": 493886,
+      "operation": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "development_command",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "arguments": {
+          "argv": [
+            "python3",
+            "-c",
+            "from pathlib import Path; p=Path('counter'); p.write_text(str(int(p.read_text())+1) if p.exists() else '1'); print('COUNTER='+p.read_text())"
+          ]
+        }
+      },
+      "active": {
+        "task_ref": "task_16a75a0e295d4ed6bb8cae37510cdea7",
+        "task_key": "clinx-host-owner-fixture-1791111778022925739/persistent-owner-requester-exit-development-mutation",
+        "host": "p620",
+        "project": "clinx-host-owner-fixture-1791111778022925739",
+        "project_name": "clinx-host-owner-fixture-1791111778022925739",
+        "title": "Persistent owner requester-exit DEVELOPMENT_MUTATION",
+        "summary": "Isolated Host delivery qualification",
+        "status": "ACTIVE",
+        "updated_at": "2026-10-04T11:03:12.029944+00:00",
+        "context_available": true,
+        "execution_state": "CODEX_RUNNING",
+        "current_stage": "Codex turn",
+        "current_blocker": null,
+        "last_progress_at": "2026-10-04T11:03:12.029889+00:00",
+        "codex_running": false,
+        "retry_required": false,
+        "failure_stage": null,
+        "failure_code": null,
+        "failure_evidence": null,
+        "routing_identity": {
+          "host": {
+            "stable_identifier": "p620",
+            "display": "p620",
+            "machine_id": null,
+            "alias": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "stable_identifier": "host_executor",
+            "display": "Trusted Host Executor",
+            "capability_boundary": "bounded_p620_host_operations",
+            "status": "SUPPORTED"
+          },
+          "provider": {
+            "stable_identifier": "codex_app_server",
+            "display": "Codex app-server",
+            "bounded_task_backend": true,
+            "status": "SUPPORTED"
+          },
+          "transport": {
+            "stable_identifier": "local_stdio",
+            "display": "local stdio",
+            "remote": false,
+            "status": "SUPPORTED"
+          },
+          "workspace": {
+            "workspace_alias": "p620",
+            "project_alias": "clinx-host-owner-fixture-1791111778022925739",
+            "worktree_key": "95882a1d637448eea650bf71652375f350b481e0a79bc0af274914739bc71fd5"
+          },
+          "conversation": {
+            "status": "BOUND",
+            "binding": "REDACTED"
+          },
+          "authority": {
+            "stable_identifier": "clinx_task_bounded",
+            "scopes": [
+              "development_mutation",
+              "workspace_write"
+            ],
+            "status": "BOUNDED",
+            "identity_is_authority": false
+          },
+          "network_policy": {
+            "stable_identifier": "provider_turn_network_opt_in",
+            "network_access": false,
+            "mode": "DISABLED",
+            "remote_execution": false
+          },
+          "project_identity": "clinx-host-owner-fixture-1791111778022925739",
+          "routing_contract": "execution -> host -> surface -> provider -> transport",
+          "separation": {
+            "host_is_authority": false,
+            "surface_is_authority": false,
+            "provider_is_authority": false,
+            "transport_is_authority": false,
+            "network_is_authority": false,
+            "network_is_remote_execution": false
+          }
+        },
+        "adoption_source": null,
+        "adopted_at": null,
+        "historical_status": null,
+        "historical_route_evidence": null,
+        "execution_result": null,
+        "read_only": true,
+        "execution_routing_identity": {
+          "host": {
+            "stable_identifier": "p620",
+            "display": "p620",
+            "machine_id": null,
+            "alias": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "stable_identifier": "host_executor",
+            "display": "Trusted Host Executor",
+            "capability_boundary": "bounded_p620_host_operations",
+            "status": "SUPPORTED"
+          },
+          "provider": {
+            "stable_identifier": "codex_app_server",
+            "display": "Codex app-server",
+            "bounded_task_backend": true,
+            "status": "SUPPORTED"
+          },
+          "transport": {
+            "stable_identifier": "local_stdio",
+            "display": "local stdio",
+            "remote": false,
+            "status": "SUPPORTED"
+          },
+          "workspace": {
+            "workspace_alias": "p620",
+            "project_alias": "clinx-host-owner-fixture-1791111778022925739",
+            "worktree_key": "95882a1d637448eea650bf71652375f350b481e0a79bc0af274914739bc71fd5"
+          },
+          "conversation": {
+            "status": "BOUND",
+            "binding": "REDACTED"
+          },
+          "authority": {
+            "stable_identifier": "clinx_task_bounded",
+            "scopes": [
+              "development_mutation",
+              "workspace_write"
+            ],
+            "status": "BOUNDED",
+            "identity_is_authority": false
+          },
+          "network_policy": {
+            "stable_identifier": "provider_turn_network_opt_in",
+            "network_access": false,
+            "mode": "DISABLED",
+            "remote_execution": false
+          },
+          "project_identity": "clinx-host-owner-fixture-1791111778022925739",
+          "routing_contract": "execution -> host -> surface -> provider -> transport",
+          "separation": {
+            "host_is_authority": false,
+            "surface_is_authority": false,
+            "provider_is_authority": false,
+            "transport_is_authority": false,
+            "network_is_authority": false,
+            "network_is_remote_execution": false
+          }
+        },
+        "execution_policy": {
+          "contract": "CLINX_EXECUTION_POLICY_V1",
+          "execution_surface": "HOST_EXECUTOR",
+          "required_capabilities": [
+            "LOCAL_HOST_PROCESS"
+          ],
+          "operation_classes": [
+            "DEVELOPMENT_MUTATION"
+          ],
+          "production_mutation_intent": false,
+          "host_executor_default": false,
+          "business_action_authority": false,
+          "operation_scopes": [
+            {
+              "capability": "LOCAL_HOST_PROCESS",
+              "operation": "development_command",
+              "operation_class": "DEVELOPMENT_MUTATION",
+              "target": ""
+            }
+          ]
+        },
+        "host_executions": [],
+        "network_access": false,
+        "NETWORK_ACCESS": "DISABLED",
+        "linear_audit_sync": "PASS",
+        "linear_retry_required": false,
+        "linear_last_error": null,
+        "active_execution": {
+          "execution_ref": "exec_f930969b37b4460085260b34a13a39b8",
+          "stage": "Codex turn"
+        },
+        "linear_issue_ref": "PVX-1896",
+        "EXECUTION_STATE": "CODEX_RUNNING",
+        "CODEX_RUNNING": false,
+        "CURRENT_STAGE": "Codex turn",
+        "CURRENT_BLOCKER": null,
+        "LAST_PROGRESS_AT": "2026-10-04T11:03:12.029889+00:00",
+        "TURN_PRESENT": true,
+        "RETRY_REQUIRED": false,
+        "execution_ref": "exec_f930969b37b4460085260b34a13a39b8",
+        "dynamic_tool_deliveries": [],
+        "provider_delivery": {
+          "source": "PERSISTED_DELIVERY_LEDGER",
+          "state": "NO_HOST_CALLS",
+          "count": 0,
+          "call_states": [],
+          "worker_reported_pending": false,
+          "worker_pending_is_stale_snapshot": false,
+          "business_result_independent": true,
+          "reconciliation_required": false
+        },
+        "execution_owner": {
+          "execution_ref": "exec_f930969b37b4460085260b34a13a39b8",
+          "prepared_execution_ref": "prepared_f930969b37b4460085260b34a13a39b8",
+          "owner_instance": "9b076d1c57ab40099f5565e5993e64aa",
+          "owner_pid": 491467,
+          "source_path": "/home/pvxlabs/dev/clinx-host-delivery-fix-20261004",
+          "state": "DISPATCHED",
+          "registered_at": 1791111791.1168506,
+          "updated_at": 1791111794.96225,
+          "execution_state": "CODEX_RUNNING"
+        },
+        "selection_reason": "EXPLICIT_EXECUTION_REF",
+        "task_current_projection": {
+          "execution_state": "CODEX_RUNNING",
+          "codex_running": false,
+          "turn_id": "01a10695-058b-78d2-b3fd-9241ad767046",
+          "current_stage": "Codex turn",
+          "failure_stage": null,
+          "failure_code": null,
+          "failure_evidence": null
+        },
+        "status_source": "PERSISTED_EXECUTION",
+        "execution_turn_ref": "01a10695-058b-78d2-b3fd-9241ad767046",
+        "failure_source": "NONE",
+        "turn_id": "01a10695-058b-78d2-b3fd-9241ad767046",
+        "provider_liveness": "UNKNOWN",
+        "transport_health": "UNAVAILABLE",
+        "last_provider_activity_at": null,
+        "last_host_delivery_at": null,
+        "last_live_owner_at": null,
+        "liveness_reason": "NO_EXACT_OWNER_OBSERVATION",
+        "ownership_conflict": false,
+        "liveness_observed_at": null,
+        "liveness_grace_seconds": 120.0
+      },
+      "terminal": {
+        "task_ref": "task_16a75a0e295d4ed6bb8cae37510cdea7",
+        "task_key": "clinx-host-owner-fixture-1791111778022925739/persistent-owner-requester-exit-development-mutation",
+        "host": "p620",
+        "project": "clinx-host-owner-fixture-1791111778022925739",
+        "project_name": "clinx-host-owner-fixture-1791111778022925739",
+        "title": "Persistent owner requester-exit DEVELOPMENT_MUTATION",
+        "summary": "Isolated Host delivery qualification",
+        "status": "ACTIVE",
+        "updated_at": "2026-10-04T11:03:25.864235+00:00",
+        "context_available": true,
+        "execution_state": "COMPLETED",
+        "current_stage": "COMPLETED",
+        "current_blocker": null,
+        "last_progress_at": "2026-10-04T11:03:25.864156+00:00",
+        "codex_running": false,
+        "retry_required": false,
+        "failure_stage": null,
+        "failure_code": null,
+        "failure_evidence": null,
+        "routing_identity": {
+          "host": {
+            "stable_identifier": "p620",
+            "display": "p620",
+            "machine_id": null,
+            "alias": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "stable_identifier": "host_executor",
+            "display": "Trusted Host Executor",
+            "capability_boundary": "bounded_p620_host_operations",
+            "status": "SUPPORTED"
+          },
+          "provider": {
+            "stable_identifier": "codex_app_server",
+            "display": "Codex app-server",
+            "bounded_task_backend": true,
+            "status": "SUPPORTED"
+          },
+          "transport": {
+            "stable_identifier": "local_stdio",
+            "display": "local stdio",
+            "remote": false,
+            "status": "SUPPORTED"
+          },
+          "workspace": {
+            "workspace_alias": "p620",
+            "project_alias": "clinx-host-owner-fixture-1791111778022925739",
+            "worktree_key": "95882a1d637448eea650bf71652375f350b481e0a79bc0af274914739bc71fd5"
+          },
+          "conversation": {
+            "status": "BOUND",
+            "binding": "REDACTED"
+          },
+          "authority": {
+            "stable_identifier": "clinx_task_bounded",
+            "scopes": [
+              "development_mutation",
+              "workspace_write"
+            ],
+            "status": "BOUNDED",
+            "identity_is_authority": false
+          },
+          "network_policy": {
+            "stable_identifier": "provider_turn_network_opt_in",
+            "network_access": false,
+            "mode": "DISABLED",
+            "remote_execution": false
+          },
+          "project_identity": "clinx-host-owner-fixture-1791111778022925739",
+          "routing_contract": "execution -> host -> surface -> provider -> transport",
+          "separation": {
+            "host_is_authority": false,
+            "surface_is_authority": false,
+            "provider_is_authority": false,
+            "transport_is_authority": false,
+            "network_is_authority": false,
+            "network_is_remote_execution": false
+          }
+        },
+        "adoption_source": null,
+        "adopted_at": null,
+        "historical_status": null,
+        "historical_route_evidence": null,
+        "execution_result": {
+          "status": "PASS",
+          "summary": "Host execution hostexec_886dba28690c44ee986428b821c7253c succeeded; stdout: COUNTER=1",
+          "changed_files": "counter",
+          "validation": "Real Host output: exit_code=0; stdout=COUNTER=1; stderr empty",
+          "blockers": "NONE",
+          "next_state": "COMPLETED",
+          "received_at": "2026-10-04T11:03:25.860857+00:00",
+          "writeback_state": "PENDING"
+        },
+        "read_only": true,
+        "execution_routing_identity": {
+          "host": {
+            "stable_identifier": "p620",
+            "display": "p620",
+            "machine_id": null,
+            "alias": "p620",
+            "status": "KNOWN"
+          },
+          "surface": {
+            "stable_identifier": "host_executor",
+            "display": "Trusted Host Executor",
+            "capability_boundary": "bounded_p620_host_operations",
+            "status": "SUPPORTED"
+          },
+          "provider": {
+            "stable_identifier": "codex_app_server",
+            "display": "Codex app-server",
+            "bounded_task_backend": true,
+            "status": "SUPPORTED"
+          },
+          "transport": {
+            "stable_identifier": "local_stdio",
+            "display": "local stdio",
+            "remote": false,
+            "status": "SUPPORTED"
+          },
+          "workspace": {
+            "workspace_alias": "p620",
+            "project_alias": "clinx-host-owner-fixture-1791111778022925739",
+            "worktree_key": "95882a1d637448eea650bf71652375f350b481e0a79bc0af274914739bc71fd5"
+          },
+          "conversation": {
+            "status": "BOUND",
+            "binding": "REDACTED"
+          },
+          "authority": {
+            "stable_identifier": "clinx_task_bounded",
+            "scopes": [
+              "development_mutation",
+              "workspace_write"
+            ],
+            "status": "BOUNDED",
+            "identity_is_authority": false
+          },
+          "network_policy": {
+            "stable_identifier": "provider_turn_network_opt_in",
+            "network_access": false,
+            "mode": "DISABLED",
+            "remote_execution": false
+          },
+          "project_identity": "clinx-host-owner-fixture-1791111778022925739",
+          "routing_contract": "execution -> host -> surface -> provider -> transport",
+          "separation": {
+            "host_is_authority": false,
+            "surface_is_authority": false,
+            "provider_is_authority": false,
+            "transport_is_authority": false,
+            "network_is_authority": false,
+            "network_is_remote_execution": false
+          }
+        },
+        "execution_policy": {
+          "contract": "CLINX_EXECUTION_POLICY_V1",
+          "execution_surface": "HOST_EXECUTOR",
+          "required_capabilities": [
+            "LOCAL_HOST_PROCESS"
+          ],
+          "operation_classes": [
+            "DEVELOPMENT_MUTATION"
+          ],
+          "production_mutation_intent": false,
+          "host_executor_default": false,
+          "business_action_authority": false,
+          "operation_scopes": [
+            {
+              "capability": "LOCAL_HOST_PROCESS",
+              "operation": "development_command",
+              "operation_class": "DEVELOPMENT_MUTATION",
+              "target": ""
+            }
+          ]
+        },
+        "host_executions": [
+          {
+            "host_execution_ref": "hostexec_886dba28690c44ee986428b821c7253c",
+            "task_id": "task_16a75a0e295d4ed6bb8cae37510cdea7",
+            "execution_ref": "exec_f930969b37b4460085260b34a13a39b8",
+            "host": "p620",
+            "surface": "host_executor",
+            "operation_class": "DEVELOPMENT_MUTATION",
+            "capability": "LOCAL_HOST_PROCESS",
+            "operation": "development_command",
+            "cwd_identity": "clinx-host-owner-fixture-1791111778022925739",
+            "target_identity": "clinx-host-owner-fixture-1791111778022925739",
+            "started_at": "2026-10-04T11:03:21.788470+00:00",
+            "completed_at": "2026-10-04T11:03:21.822131+00:00",
+            "duration_ms": 32,
+            "exit_code": 0,
+            "stdout": "COUNTER=1\n",
+            "stderr": "",
+            "stdout_bytes": 10,
+            "stderr_bytes": 0,
+            "stdout_sha256": "945a19222c9fb5db37d4ab2836674af96d7f5743ea440c6c43c9bfb790f01d45",
+            "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout_truncated": false,
+            "stderr_truncated": false,
+            "result_state": "SUCCEEDED",
+            "timeout_seconds": 30.0,
+            "timed_out": false,
+            "cancel_requested": false,
+            "tool_call_id": "exec-42c31b83-82c0-4f0c-9058-9bc7dcc6b053",
+            "argv": [
+              "python3",
+              "-c",
+              "from pathlib import Path; p=Path('counter'); p.write_text(str(int(p.read_text())+1) if p.exists() else '1'); print('COUNTER='+p.read_text())"
+            ]
+          }
+        ],
+        "network_access": false,
+        "NETWORK_ACCESS": "DISABLED",
+        "linear_audit_sync": "PASS",
+        "linear_retry_required": false,
+        "linear_last_error": null,
+        "active_execution": null,
+        "linear_issue_ref": "PVX-1896",
+        "EXECUTION_STATE": "COMPLETED",
+        "CODEX_RUNNING": false,
+        "CURRENT_STAGE": "COMPLETED",
+        "CURRENT_BLOCKER": null,
+        "LAST_PROGRESS_AT": "2026-10-04T11:03:25.864156+00:00",
+        "TURN_PRESENT": true,
+        "RETRY_REQUIRED": false,
+        "execution_ref": "exec_f930969b37b4460085260b34a13a39b8",
+        "dynamic_tool_deliveries": [
+          {
+            "execution_ref": "exec_f930969b37b4460085260b34a13a39b8",
+            "tool_call_id": "exec-42c31b83-82c0-4f0c-9058-9bc7dcc6b053",
+            "request_id": "1346",
+            "response_id": "1346",
+            "identity_json": "{\"client_pid\": 491467, \"connection_id\": \"3daeee779faa4bd39830e386bb8f6283\", \"listener_id\": \"791ac1cc74f2463588d4879042be2541\", \"namespace\": \"clinx\", \"provider_endpoint\": {\"created_ns\": 1790911103941516833, \"device\": 66308, \"inode\": 9568275, \"path\": \"/run/user/1001/clinx-provider.sock\"}, \"provider_session_id\": \"01a10695-02fc-7d32-ac44-0c8e3afe6de8\", \"provider_user_agent\": \"linear-local-codex-bridge/0.156.1 (Ubuntu 24.4.0; x86_64) unknown (linear-local-codex-bridge; 1.0.0-m6)\", \"provider_version\": null, \"registry_generation\": 1, \"task_ref\": \"task_16a75a0e295d4ed6bb8cae37510cdea7\", \"thread_id\": \"01a10695-02fc-7d32-ac44-0c8e3afe6de8\", \"tool\": \"clinx_host_operation\", \"transport_child_pid\": 493897, \"turn_id\": \"01a10695-058b-78d2-b3fd-9241ad767046\"}",
+            "request_hash": "7a74001bc29a76005cff3ec46ed1ca327fa1873a81a9a339401d4017f1ac06d5",
+            "host_execution_ref": "hostexec_886dba28690c44ee986428b821c7253c",
+            "host_exit_code": 0,
+            "execution_state": "COMMAND_EXECUTED_RESULT_DELIVERED",
+            "delivery_state": "DELIVERED",
+            "failure_code": null,
+            "admitted_at": 1791111801.7817824,
+            "host_completed_at": 1791111801.8231328,
+            "response_sent_at": 1791111801.823509,
+            "acknowledged_at": 1791111801.825714,
+            "provider_item_json": null,
+            "provider_failure_sha256": null,
+            "provider_observed_at": null,
+            "reconciliation_state": "OPEN",
+            "reconciled_at": null,
+            "reconciliation_json": null,
+            "call_state": "SUCCEEDED",
+            "operation_json": "{\"capability\": \"LOCAL_HOST_PROCESS\", \"operation\": \"development_command\", \"operation_class\": \"DEVELOPMENT_MUTATION\", \"target\": null}",
+            "validated_at": null,
+            "dispatched_at": 1791111801.7891047,
+            "side_effect_certainty": "EXECUTED",
+            "reconciliation_required": false,
+            "execution_can_continue": true,
+            "retry_required": false,
+            "result_certainty": "KNOWN",
+            "host_dispatched": true,
+            "continuation_state": "SAFE_TO_CONTINUE",
+            "retry_allowed": false,
+            "failure_stage": null
+          }
+        ],
+        "provider_delivery": {
+          "source": "PERSISTED_DELIVERY_LEDGER",
+          "state": "DELIVERED",
+          "count": 1,
+          "call_states": [
+            "SUCCEEDED"
+          ],
+          "worker_reported_pending": false,
+          "worker_pending_is_stale_snapshot": false,
+          "business_result_independent": true,
+          "reconciliation_required": false
+        },
+        "execution_owner": {
+          "execution_ref": "exec_f930969b37b4460085260b34a13a39b8",
+          "prepared_execution_ref": "prepared_f930969b37b4460085260b34a13a39b8",
+          "owner_instance": "9b076d1c57ab40099f5565e5993e64aa",
+          "owner_pid": 491467,
+          "source_path": "/home/pvxlabs/dev/clinx-host-delivery-fix-20261004",
+          "state": "DISPATCHED",
+          "registered_at": 1791111791.1168506,
+          "updated_at": 1791111794.96225,
+          "execution_state": "COMPLETED"
+        },
+        "selection_reason": "EXPLICIT_EXECUTION_REF",
+        "task_current_projection": {
+          "execution_state": "COMPLETED",
+          "codex_running": false,
+          "turn_id": "01a10695-058b-78d2-b3fd-9241ad767046",
+          "current_stage": "COMPLETED",
+          "failure_stage": null,
+          "failure_code": null,
+          "failure_evidence": null
+        },
+        "status_source": "PERSISTED_EXECUTION",
+        "execution_turn_ref": "01a10695-058b-78d2-b3fd-9241ad767046",
+        "failure_source": "NONE",
+        "turn_id": "01a10695-058b-78d2-b3fd-9241ad767046",
+        "provider_liveness": "TERMINAL",
+        "transport_health": "HEALTHY",
+        "last_provider_activity_at": "2026-10-04T11:03:25.838188+00:00",
+        "last_host_delivery_at": "2026-10-04T11:03:21.825714+00:00",
+        "last_live_owner_at": "2026-10-04T11:03:21.188171+00:00",
+        "liveness_reason": "EXACT_OWNER_TERMINAL",
+        "ownership_conflict": false,
+        "liveness_observed_at": "2026-10-04T11:03:25.838188+00:00",
+        "liveness_grace_seconds": 120.0
+      },
+      "duplicate_call": "REJECTED_WITHOUT_DISPATCH",
+      "counter": 1
+    }
+  ],
+  "owner_drained_exit": 0,
+  "result": "PASS"
+}

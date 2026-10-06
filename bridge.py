@@ -2851,7 +2851,8 @@ class TaskDispatcher:
 
     def start_completion_runtime(self) -> CompletionRuntime:
         if getattr(self, "_completion_runtime", None) is None:
-            self._completion_runtime = CompletionRuntime(self.tasks, self.reconcile_execution)
+            self._completion_runtime = CompletionRuntime(self.tasks, self.reconcile_execution,
+                owner_instance=getattr(self, 'completion_owner_instance', None))
         self._completion_runtime.start()
         return self._completion_runtime
 

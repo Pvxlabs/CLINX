@@ -716,6 +716,19 @@ class CodexAppServerClient:
 
     def _record_event(self, message: dict[str, Any]) -> None:
         if self._delivery_ledger is not None:
+            params = message.get('params', {})
+            item = params.get('item', {}) if isinstance(params, dict) else {}
+            if (not getattr(self, 'read_only_observer', False)
+                    and message.get('method') == 'item/started'
+                    and isinstance(item, dict)
+                    and item.get('type') in {'dynamicToolCall', 'DynamicToolCall'}
+                    and params.get('threadId') == self._dynamic_thread_id
+                    and params.get('turnId') == self._dynamic_turn_id):
+                request = {'id': None, 'params': {
+                    'threadId': params['threadId'], 'turnId': params['turnId'],
+                    'callId': item.get('id'), 'namespace': item.get('namespace'),
+                    'tool': item.get('tool'), 'arguments': item.get('arguments')}}
+                self._delivery_ledger.receive(request, self._dynamic_identity(request['params']))
             self._delivery_ledger.observe(message, owner=self._delivery_owner())
         method = message.get("method")
         if isinstance(method, str):
@@ -740,6 +753,17 @@ class CodexAppServerClient:
     def _delivery_owner(self):
         return {"connection_id": self.connection_id, "listener_id": self._dynamic_listener_id,
                 "registry_generation": self._dynamic_registry_generation}
+
+    def _dynamic_identity(self, params):
+        transport = self.transport
+        return {**self._delivery_owner(),
+            'thread_id': params.get('threadId'), 'turn_id': params.get('turnId'),
+            'namespace': params.get('namespace'), 'tool': params.get('tool'),
+            'client_pid': os.getpid(),
+            'provider_version': getattr(self.initialize_info, 'server_version', None),
+            'provider_user_agent': getattr(self.initialize_info, 'user_agent', None),
+            'provider_endpoint': self._endpoint_identity(),
+            'transport_child_pid': getattr(getattr(getattr(transport, '_byte_transport', None), '_process', None), 'pid', None)}
 
     def _pending_owned_deliveries(self):
         if self._delivery_ledger is None:
@@ -897,6 +921,9 @@ class CodexAppServerClient:
     def _validate_dynamic_tool_params(self, params: Any) -> tuple[dict[str, Any], str]:
         if not isinstance(params, dict):
             raise AppServerProtocolError("dynamic tool params must be an object")
+        if self._delivery_ledger is not None and (
+                not isinstance(params.get('callId'), str) or not params['callId'].strip()):
+            raise AppServerProtocolError('dynamic tool callId is required')
         if params.get("namespace") != self._dynamic_tool_namespace:
             raise AppServerProtocolError("dynamic tool namespace is not registered")
         if params.get("tool") != self._dynamic_tool_name:
@@ -937,6 +964,7 @@ class CodexAppServerClient:
             if handler is None:
                 raise AppServerProtocolError("dynamic tool handler is not configured")
             if ledger is not None:
+                ledger.receive(request, self._dynamic_identity(params))
                 pending = self._pending_owned_deliveries()
                 if pending and params.get("callId") not in {r['tool_call_id'] for r in pending}:
                     if len(self._delivery_waiting_requests) >= self.max_received_events:
@@ -987,6 +1015,10 @@ class CodexAppServerClient:
                 }],
             }
         except Exception as exc:
+            if getattr(exc, 'execution_state', None) == 'RECONCILIATION_REQUIRED':
+                exc.reconciliation_required = True
+            if ledger is not None and call_id is None:
+                call_id = ledger.reject_received(request, getattr(exc, 'code', 'INVALID_ARGUMENTS'))
             if ledger is not None and call_id is not None:
                 exc.execution_state = ledger.failed(call_id,
                     not_dispatched=getattr(exc, "command_not_dispatched", False),
@@ -1013,7 +1045,7 @@ class CodexAppServerClient:
             return
         if request.get("method") == "item/tool/call":
             params = request.get("params", {})
-            if self._dynamic_tool_handler is None or (
+            if not isinstance(params, dict) or self._dynamic_tool_handler is None or (
                 isinstance(params, dict) and params.get("threadId") != self._dynamic_thread_id
             ) or (
                 isinstance(params, dict) and self._dynamic_turn_id is not None
@@ -1024,6 +1056,13 @@ class CodexAppServerClient:
                 # Shared providers broadcast to subscribers. An observer must
                 # never race the owning connection with an unsupported reply.
                 return
+            if (self._delivery_ledger is not None
+                    and (not self.strict_dynamic_tool_binding or self._dynamic_turn_id is not None)):
+                try:
+                    self._delivery_ledger.receive(request, self._dynamic_identity(params))
+                except Exception as exc:
+                    self.transport.send({'id': request.get('id'), 'result': self._dynamic_failure_response(exc)})
+                    return
         request_id = request.get("id")
         request_key = self._server_request_key(request_id)
         record: _ServerRequestRecord | None = None
@@ -1032,6 +1071,14 @@ class CodexAppServerClient:
             existing = self._server_request_records.get(request_key)
             if existing is not None:
                 if existing.fingerprint != fingerprint:
+                    if request.get('method') == 'item/tool/call' and self._delivery_ledger is not None:
+                        exc = AppServerProtocolError('server request id was reused with different semantics')
+                        exc.code = 'TOOL_REQUEST_ID_CONFLICT'
+                        call_id = self._delivery_ledger.reject_received(request, exc.code)
+                        if call_id:
+                            self.transport.send({'id': request_id, 'result': self._dynamic_failure_response(exc)})
+                            self._delivery_ledger.sent(call_id, request_id)
+                            return
                     self.transport.send({
                         "id": request_id,
                         "error": {
@@ -1046,6 +1093,14 @@ class CodexAppServerClient:
                 # never enter its callback a second time.
                 return
             if len(self._server_request_records) >= self.max_received_events:
+                if request.get('method') == 'item/tool/call' and self._delivery_ledger is not None:
+                    exc = AppServerProtocolError('server request admission capacity exhausted')
+                    exc.code = 'TOOL_ADMISSION_CAPACITY_EXHAUSTED'
+                    call_id = self._delivery_ledger.reject_received(request, exc.code)
+                    self.transport.send({'id': request_id, 'result': self._dynamic_failure_response(exc)})
+                    if call_id:
+                        self._delivery_ledger.sent(call_id, request_id)
+                    return
                 self.transport.send({
                     "id": request_id,
                     "error": {
@@ -1098,11 +1153,29 @@ class CodexAppServerClient:
                 # callback result and remains pending for safe redelivery.
                 raise
             except Exception as exc:
+                call_id = None
+                if self._delivery_ledger is not None:
+                    exc.code = getattr(exc, 'code', 'INVALID_TOOL_BINDING')
+                    call_id = self._delivery_ledger.reject_received(request, exc.code)
+                    if call_id:
+                        exc.execution_state = 'COMMAND_NOT_DISPATCHED'
+                    else:
+                        # A malformed duplicate cannot erase an earlier Host
+                        # side effect or claim that it was never dispatched.
+                        identity = self._delivery_ledger.ingress_id(request)
+                        previous = next((r for r in self._delivery_ledger.records(
+                            self._delivery_ledger.registry, self._delivery_ledger.execution_ref)
+                            if r['tool_call_id'] == identity), None)
+                        if previous:
+                            exc.execution_state = previous['execution_state']
+                            exc.reconciliation_required = previous['reconciliation_required']
                 self._cache_and_send_server_response(
                     request_id,
                     self._dynamic_failure_response(exc),
                     record,
                 )
+                if self._delivery_ledger is not None and call_id:
+                    self._delivery_ledger.sent(call_id, request_id)
             return
         # Approval and user-input requests remain unsupported. Reply explicitly
         # so no server request can leave the transport waiting indefinitely.

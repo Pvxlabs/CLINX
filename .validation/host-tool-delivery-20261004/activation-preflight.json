@@ -1,0 +1,41 @@
+{
+  "active_executions": [],
+  "leases": [],
+  "running_host": [],
+  "pending_completions": [],
+  "backups": [
+    {
+      "path": "/home/pvxlabs/.config/clinx/node-centre.env",
+      "backup": "/home/pvxlabs/.local/state/clinx/qualification/host-delivery-20261004/activation-rollback/node-centre.env",
+      "sha256": "7cd5882b609ffc1c4c95d89e35e04141278f427d22dc915b7199b8b7331fb1d3"
+    },
+    {
+      "path": "/home/pvxlabs/.local/lib/clinx-control/launch-mcp",
+      "backup": "/home/pvxlabs/.local/state/clinx/qualification/host-delivery-20261004/activation-rollback/launch-mcp",
+      "sha256": "71a83599897dc46b2aff592b6d60f08fcd72d3af30431806918c35034a70166c"
+    }
+  ],
+  "historical_sha256": "4f85875ab74601c30c55fa1e655fa0cf9d9cf676cb490bcb109f4cfd37b116ec",
+  "future_policy": {
+    "business_action_authority": false,
+    "contract": "CLINX_EXECUTION_POLICY_V1",
+    "execution_surface": "HOST_EXECUTOR",
+    "host_executor_default": false,
+    "operation_classes": [
+      "DEVELOPMENT_MUTATION"
+    ],
+    "operation_scopes": [
+      {
+        "capability": "GIT",
+        "operation": "push_current_branch",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": "gitwt_21b60628c2544672903c7394a57348f0"
+      }
+    ],
+    "production_mutation_intent": false,
+    "required_capabilities": [
+      "GIT"
+    ]
+  },
+  "services": "MainPID=117298\nId=clinx-tunnel.service\nActiveState=active\nFragmentPath=/home/pvxlabs/.config/systemd/user/clinx-tunnel.service\n\nMainPID=2248996\nId=clinx-air-resume-canary.service\nActiveState=active\nFragmentPath=/run/user/1001/systemd/transient/clinx-air-resume-canary.service\n\nMainPID=2248985\nId=clinx-node-centre.service\nActiveState=active\nFragmentPath=/home/pvxlabs/.config/systemd/user/clinx-node-centre.service\n\nMainPID=1043359\nId=clinx.service\nActiveState=active\nFragmentPath=/home/pvxlabs/.config/systemd/user/clinx.service\n"
+}

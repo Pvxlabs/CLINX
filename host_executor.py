@@ -108,6 +108,7 @@ class _Command:
     target_identity: str | None = None
     mutating: bool = False
     resource_key: str | None = None
+    cwd: Path | None = None
 
 
 def _now() -> str:
@@ -555,6 +556,19 @@ class HostExecutor:
                 raise TargetNotRegistered("git push remote must be registered origin")
             task = self.registry.get_task(request.task_ref)
             branch = task.branch
+            git_cwd = request.project_root
+            target_id = arguments.get('target', '') if operation == 'push_current_branch' else ''
+            if target_id:
+                if not isinstance(target_id, str) or not target_id.startswith('gitwt_'):
+                    raise TargetNotRegistered('invalid derived Git target identity')
+                try:
+                    target = self.registry.resolve_derived_git_target(
+                        task_id=request.task_ref, target_id=target_id,
+                        trusted_roots=self.config.trusted_workspace_roots)
+                except Exception as exc:
+                    raise TargetNotRegistered(str(exc)) from exc
+                branch = target['branch']
+                git_cwd = Path(target['path'])
             if (not isinstance(branch, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", branch)
                     or any(x in branch for x in ("..", "//", "@{"))
                     or branch.endswith(("/", ".", ".lock"))):
@@ -562,7 +576,7 @@ class HostExecutor:
             if operation == "ahead_behind":
                 return _Command(("git", "rev-list", "--left-right", "--count",
                                  f"refs/heads/{branch}...refs/remotes/origin/{branch}", "--"), "origin")
-            self._registered_origin(request, push=operation == "push_current_branch")
+            self._registered_origin(request, push=operation == "push_current_branch", cwd=git_cwd)
             git = ("git", "-c", "core.hooksPath=/dev/null", "-c", "protocol.ext.allow=never")
             if operation == "fetch_origin":
                 return _Command((*git, "fetch", "--no-tags", "--no-recurse-submodules", "origin",
@@ -570,14 +584,17 @@ class HostExecutor:
             if operation == "remote_main_head":
                 return _Command((*git, "ls-remote", "--exit-code", "--refs", "origin", f"refs/heads/{branch}"), "origin")
             if operation == "push_current_branch":
-                if arguments.get("remote", "origin") != "origin":
-                    raise TargetNotRegistered("git push remote must be registered origin")
-                current = self._git_identity(request, "symbolic-ref", "--quiet", "--short", "HEAD")
+                from derived_git_targets import validate_push_state, DerivedGitTargetError
+                try:
+                    current = validate_push_state(git_cwd, task.repository_origin)
+                except DerivedGitTargetError as exc:
+                    raise TargetNotRegistered(str(exc)) from exc
                 if current != branch:
                     raise TargetNotRegistered("current branch differs from the registered branch")
                 return _Command((*git, "-c", "remote.origin.mirror=false", "-c", "push.followTags=false",
                                  "push", "--no-verify", "--no-force", "origin",
-                                 f"refs/heads/{branch}:refs/heads/{branch}"), "origin", True)
+                                 f"refs/heads/{branch}:refs/heads/{branch}"), target_id or "", True,
+                                cwd=git_cwd)
 
         if capability == "SSH":
             alias = self._text_argument(arguments, "target")
@@ -633,21 +650,21 @@ class HostExecutor:
             f"operation {operation!r} is not supported by capability {capability}"
         )
 
-    def _git_identity(self, request, *arguments):
-        result = subprocess.run(("git", *arguments), cwd=request.project_root,
+    def _git_identity(self, request, *arguments, cwd=None):
+        result = subprocess.run(("git", *arguments), cwd=cwd or request.project_root,
                                 env=self._clean_environment(), capture_output=True, text=True, timeout=5)
         if result.returncode != 0:
             raise TargetNotRegistered("registered Git identity is unavailable")
         return result.stdout.strip()
 
-    def _registered_origin(self, request, *, push=False):
+    def _registered_origin(self, request, *, push=False, cwd=None):
         expected = self.registry.get_task(request.task_ref).repository_origin
         if not expected:
             raise TargetNotRegistered("origin is not registered for this task")
-        actual = self._git_identity(request, "remote", "get-url", "--all", "origin")
+        actual = self._git_identity(request, "remote", "get-url", "--all", "origin", cwd=cwd)
         if actual != expected:
             raise TargetNotRegistered("origin differs from the registered task")
-        if push and self._git_identity(request, "remote", "get-url", "--push", "--all", "origin") != expected:
+        if push and self._git_identity(request, "remote", "get-url", "--push", "--all", "origin", cwd=cwd) != expected:
             raise TargetNotRegistered("push origin differs from the registered task")
 
     def _validate(self, request: HostExecutionRequest) -> _Command:
@@ -683,7 +700,11 @@ class HostExecutor:
             raise TargetNotRegistered("executor route does not match the registered worktree")
         command = self._command(request)
         scope_spec = operation_catalog(self.config).get(request.capability, {}).get(request.operation, {})
-        scope_target = (command.target_identity or "") if 'registered_targets' in scope_spec else ""
+        scope_target = (command.target_identity or "") if ('registered_targets' in scope_spec or
+            request.capability == 'GIT' and request.operation == 'push_current_branch') else ""
+        if (request.capability == 'GIT' and request.operation == 'push_current_branch' and scope_target
+                and request.policy.operation_scopes is None):
+            raise AuthorityDenied('derived Git push requires an explicit target scope')
         if not request.policy.permits_operation(request.capability, request.operation,
                 request.operation_class, scope_target):
             raise AuthorityDenied("operation/target is outside sealed task authority")
@@ -710,6 +731,9 @@ class HostExecutor:
             # Missing Host evidence after an arbitrary handler crash is NOT this proof.
             exc.command_not_dispatched = True
             raise
+        if request.tool_call_id:
+            from tool_delivery import ToolDeliveryLedger
+            ToolDeliveryLedger.validated(self.registry, request.execution_ref, request.tool_call_id)
         host_execution_ref = "hostexec_" + uuid.uuid4().hex
         started_at = _now()
         argv_json = json.dumps(
@@ -747,9 +771,11 @@ class HostExecutor:
                 with self._lock:
                     cancelled_before_start = request.execution_ref in self._cancelled
                     if not cancelled_before_start:
+                        if request.tool_call_id:
+                            ToolDeliveryLedger.running(self.registry, request.execution_ref, request.tool_call_id)
                         process = subprocess.Popen(
                             list(command.argv),
-                            cwd=str(request.project_root),
+                            cwd=str(command.cwd or request.project_root),
                             env=self._clean_environment(),
                             stdin=subprocess.DEVNULL,
                             stdout=stdout_file,

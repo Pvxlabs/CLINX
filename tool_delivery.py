@@ -1,6 +1,6 @@
 """Durable correlation of Host execution and provider delivery, never a runner.
 
-No command payloads or output are stored here. Host evidence remains authoritative
+Only operation names/targets and payload hashes are stored here. Host evidence remains authoritative
 for execution; provider item/completed is the separate delivery acknowledgement.
 """
 from __future__ import annotations
@@ -46,6 +46,7 @@ def delivery_summary(records, raw_result=''):
     mentions_pending = any(token in (raw_result or '') for token in
                            ('AWAITING_PROVIDER_ACK', 'COMMAND_EXECUTED_RESULT_DELIVERY_PENDING'))
     return {'source': 'PERSISTED_DELIVERY_LEDGER', 'state': state, 'count': len(states),
+            'call_states': [r.get('call_state', 'LEGACY') for r in records],
             'worker_reported_pending': mentions_pending,
             'worker_pending_is_stale_snapshot': mentions_pending and state == 'DELIVERED',
             'business_result_independent': True,
@@ -89,6 +90,10 @@ class ToolDeliveryLedger:
                 PRIMARY KEY(execution_ref,tool_call_id))''')
             columns = {row[1] for row in conn.execute('PRAGMA table_info(host_tool_deliveries)')}
             migrations = {
+                'call_state': "ALTER TABLE host_tool_deliveries ADD COLUMN call_state TEXT NOT NULL DEFAULT 'LEGACY'",
+                'operation_json': "ALTER TABLE host_tool_deliveries ADD COLUMN operation_json TEXT",
+                'validated_at': 'ALTER TABLE host_tool_deliveries ADD COLUMN validated_at REAL',
+                'dispatched_at': 'ALTER TABLE host_tool_deliveries ADD COLUMN dispatched_at REAL',
                 'provider_item_json': 'ALTER TABLE host_tool_deliveries ADD COLUMN provider_item_json TEXT',
                 'provider_failure_sha256': 'ALTER TABLE host_tool_deliveries ADD COLUMN provider_failure_sha256 TEXT',
                 'provider_observed_at': 'ALTER TABLE host_tool_deliveries ADD COLUMN provider_observed_at REAL',
@@ -109,12 +114,79 @@ class ToolDeliveryLedger:
                 'SELECT * FROM host_tool_deliveries WHERE execution_ref=? ORDER BY admitted_at',
                 (execution_ref,))]
 
+    @staticmethod
+    def _digest(params):
+        semantic = {k: params.get(k) for k in ('threadId', 'turnId', 'callId', 'namespace', 'tool', 'arguments')}
+        return hashlib.sha256(json.dumps(semantic, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+    @staticmethod
+    def ingress_id(request):
+        call_id = request['params'].get('callId')
+        if isinstance(call_id, str) and call_id.strip():
+            return call_id
+        # A malformed owned request still needs a durable rejection identity.
+        # This local identity is never passed to the Host executor as a valid call.
+        payload = json.dumps(request, sort_keys=True, separators=(',', ':')).encode()
+        return 'invalid-' + hashlib.sha256(payload).hexdigest()
+
+    def reject_received(self, request, failure_code):
+        call_id = self.ingress_id(request)
+        with self.registry._connect() as conn:
+            row = conn.execute('SELECT call_state FROM host_tool_deliveries WHERE execution_ref=? AND tool_call_id=?',
+                               (self.execution_ref, call_id)).fetchone()
+        if row is None or row['call_state'] != 'RECEIVED':
+            return None  # Never rewrite a duplicate's completed/uncertain Host evidence.
+        self.failed(call_id, not_dispatched=True, failure_code=failure_code)
+        return call_id
+
+    @staticmethod
+    def validated(registry, execution_ref, call_id):
+        with registry._connect() as conn:
+            columns = {r[1] for r in conn.execute('PRAGMA table_info(host_tool_deliveries)')}
+            if 'call_state' in columns:
+                conn.execute("UPDATE host_tool_deliveries SET call_state='VALIDATED',validated_at=? WHERE execution_ref=? AND tool_call_id=? AND call_state='DISPATCHED'",
+                             (time.time(), execution_ref, call_id))
+
+    @staticmethod
+    def running(registry, execution_ref, call_id):
+        with registry._connect() as conn:
+            if 'call_state' in {r[1] for r in conn.execute('PRAGMA table_info(host_tool_deliveries)')}:
+                conn.execute("UPDATE host_tool_deliveries SET call_state='RUNNING' WHERE execution_ref=? AND tool_call_id=?",
+                             (execution_ref, call_id))
+
+    def receive(self, request, identity):
+        """Commit ingress before schema, policy, queueing, or Host side effects."""
+        params = request['params']
+        call_id = self.ingress_id(request)
+        digest = self._digest(params)
+        values = params.get('arguments')
+        operation = ({k: values.get(k) for k in ('operation_class', 'capability', 'operation')}
+                     if isinstance(values, dict) else {})
+        arguments = values.get('arguments') if isinstance(values, dict) else None
+        operation['target'] = arguments.get('target') if isinstance(arguments, dict) else None
+        with self.registry._connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT * FROM host_tool_deliveries WHERE execution_ref=? AND tool_call_id=?',
+                               (self.execution_ref, call_id)).fetchone()
+            if row is not None:
+                if row['call_state'] == 'RECEIVED' and row['request_hash'] != digest:
+                    raise DeliveryReconciliationRequired('tool call identity reused with changed semantics')
+                return call_id
+            conn.execute('''INSERT INTO host_tool_deliveries
+                (execution_ref,tool_call_id,request_id,identity_json,request_hash,
+                 execution_state,delivery_state,admitted_at,call_state,operation_json)
+                 VALUES (?,?,?,?,?,?,'PENDING',?,'RECEIVED',?)''',
+                (self.execution_ref, call_id, json.dumps(request.get('id')),
+                 json.dumps({**self.context, **identity}, sort_keys=True), digest,
+                 'REQUEST_RECEIVED', time.time(), json.dumps(operation, sort_keys=True)))
+        return call_id
+
     def admit(self, request, identity):
         params = request['params']
         call_id = params.get('callId')
         if not isinstance(call_id, str) or not call_id.strip():
             raise DeliveryReconciliationRequired('dynamic tool callId is required before dispatch')
-        digest = hashlib.sha256(json.dumps(params, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        digest = self._digest(params)
         with self.registry._connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
             rows = conn.execute('SELECT * FROM host_tool_deliveries WHERE execution_ref=?',
@@ -124,16 +196,26 @@ class ToolDeliveryLedger:
                     'execution delivery was reconciled; a new execution is required'
                 )
             for row in rows:
-                if row['tool_call_id'] == call_id:
+                if row['tool_call_id'] == call_id and row['call_state'] != 'RECEIVED':
                     error = ToolCallReplayRejected('tool call already recorded; replay never executes Host again')
                     error.execution_state = row['execution_state']
                     error.reconciliation_required = requires_reconciliation(row)
                     raise error
-            if any(requires_reconciliation(row) for row in rows):
+            if any(requires_reconciliation(row) for row in rows if row['call_state'] != 'RECEIVED'):
                 raise DeliveryReconciliationRequired('existing invocation requires reconciliation; command retry prohibited')
+            existing = next((r for r in rows if r['tool_call_id'] == call_id), None)
+            if existing is not None:
+                if existing['request_hash'] != self._digest(params):
+                    raise DeliveryReconciliationRequired('tool call identity reused with changed semantics')
+                conn.execute('''UPDATE host_tool_deliveries SET request_id=?,identity_json=?,
+                    execution_state='COMMAND_DISPATCHED',call_state='VALIDATING'
+                    WHERE execution_ref=? AND tool_call_id=? AND call_state='RECEIVED' ''',
+                    (json.dumps(request['id']), json.dumps({**self.context, **identity}, sort_keys=True),
+                     self.execution_ref, call_id))
+                return call_id
             conn.execute('''INSERT INTO host_tool_deliveries
                 (execution_ref,tool_call_id,request_id,identity_json,request_hash,
-                 execution_state,delivery_state,admitted_at) VALUES (?,?,?,?,?,?,?,?)''',
+                 execution_state,delivery_state,admitted_at,call_state) VALUES (?,?,?,?,?,?,?,?,'VALIDATING')''',
                 (self.execution_ref, call_id, json.dumps(request['id']), json.dumps({**self.context, **identity}, sort_keys=True),
                  digest, 'COMMAND_DISPATCHED', 'PENDING', time.time()))
         return call_id
@@ -153,9 +235,10 @@ class ToolDeliveryLedger:
             if host['exit_code'] != result.get('exit_code'):
                 raise DeliveryReconciliationRequired('Host result does not match durable completion evidence')
             conn.execute('''UPDATE host_tool_deliveries SET host_execution_ref=?,host_exit_code=?,
-                execution_state=CASE WHEN delivery_state='FAILED' AND ?='COMMAND_EXECUTED_RESULT_DELIVERY_PENDING' THEN 'COMMAND_EXECUTED_RESULT_DELIVERY_FAILED' ELSE ? END,host_completed_at=?,failure_code=CASE WHEN delivery_state='FAILED' THEN failure_code ELSE NULL END
+                execution_state=CASE WHEN delivery_state='FAILED' AND ?='COMMAND_EXECUTED_RESULT_DELIVERY_PENDING' THEN 'COMMAND_EXECUTED_RESULT_DELIVERY_FAILED' ELSE ? END,host_completed_at=?,failure_code=CASE WHEN delivery_state='FAILED' THEN failure_code ELSE NULL END,
+                call_state=CASE WHEN ? IS NULL THEN 'UNKNOWN' WHEN ?=0 THEN 'SUCCEEDED' ELSE 'FAILED' END
                 WHERE execution_ref=? AND tool_call_id=?''',
-                (host_ref, result.get('exit_code'), state, state, time.time(), self.execution_ref, call_id))
+                (host_ref, result.get('exit_code'), state, state, time.time(), result.get('exit_code'), result.get('exit_code'), self.execution_ref, call_id))
 
     def sent(self, call_id, request_id):
         with self.registry._connect() as conn:
@@ -171,7 +254,7 @@ class ToolDeliveryLedger:
             row = conn.execute('SELECT * FROM host_tool_deliveries WHERE execution_ref=? AND tool_call_id=?',
                                (self.execution_ref, call_id)).fetchone()
             proven_not_dispatched = host is None and (not_dispatched or
-                (row is not None and row['execution_state'] == 'COMMAND_NOT_DISPATCHED'))
+                (row is not None and (row['execution_state'] == 'COMMAND_NOT_DISPATCHED' or row['call_state'] == 'RECEIVED')))
             state = ('COMMAND_NOT_DISPATCHED' if proven_not_dispatched else
                      'COMMAND_DISPATCHED' if host is None or host['exit_code'] is None else
                      'COMMAND_EXECUTED_RESULT_DELIVERY_FAILED' if host['exit_code'] == 0 else
@@ -181,10 +264,12 @@ class ToolDeliveryLedger:
                     'RESULT_DELIVERY_FAILED_AFTER_EXECUTION' if host is not None and host['exit_code'] is not None else
                     'RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH')
             conn.execute('''UPDATE host_tool_deliveries SET delivery_state='FAILED',
-                execution_state=?,failure_code=?,host_execution_ref=?,host_exit_code=?
+                execution_state=?,failure_code=?,host_execution_ref=?,host_exit_code=?,call_state=?
                 WHERE execution_ref=? AND tool_call_id=? AND delivery_state != 'DELIVERED' ''',
                 (state, code, host['host_execution_ref'] if host else None,
-                 host['exit_code'] if host else None, self.execution_ref, call_id))
+                 host['exit_code'] if host else None,
+                 'REJECTED' if proven_not_dispatched else 'UNKNOWN' if host is None or host['exit_code'] is None else 'SUCCEEDED' if host['exit_code'] == 0 else 'FAILED',
+                 self.execution_ref, call_id))
             return state
 
     def disconnected(self):

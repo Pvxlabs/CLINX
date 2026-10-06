@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import sqlite3
 import subprocess
+import time
 import unicodedata
 import uuid
 from typing import Any, Iterator
@@ -1102,6 +1103,25 @@ class TaskRegistry:
                 );
                 CREATE INDEX IF NOT EXISTS idx_host_executions_parent
                     ON host_executions(execution_ref, started_at DESC);
+                CREATE TABLE IF NOT EXISTS derived_git_targets (
+                    target_id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    path TEXT NOT NULL,
+                    worktree_key TEXT NOT NULL,
+                    common_dir TEXT NOT NULL,
+                    git_dir TEXT NOT NULL,
+                    git_dir_device INTEGER NOT NULL,
+                    git_dir_inode INTEGER NOT NULL,
+                    branch TEXT NOT NULL,
+                    origin TEXT NOT NULL,
+                    provenance TEXT NOT NULL,
+                    registered_at TEXT NOT NULL,
+                    revoked_at TEXT
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_active_derived_git_path
+                    ON derived_git_targets(path) WHERE revoked_at IS NULL;
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_active_derived_git_dir
+                    ON derived_git_targets(git_dir) WHERE revoked_at IS NULL;
                 CREATE TABLE IF NOT EXISTS linear_audit_events (
                     task_id TEXT NOT NULL REFERENCES tasks(task_id),
                     event_key TEXT NOT NULL,
@@ -1524,6 +1544,110 @@ class TaskRegistry:
         payload = "\x1f".join((host.strip().casefold(), os.path.realpath(cwd),
                                (repository_origin or "").strip().casefold()))
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def register_derived_git_target(self, *, task_id: str, path: str,
+                                    trusted_roots: tuple[Path, ...], provenance: str,
+                                    creation_host_execution_ref: str | None = None) -> dict:
+        from derived_git_targets import inspect_worktree, DerivedGitTargetError
+        if not isinstance(provenance, str) or not provenance.strip() or len(provenance) > 2000:
+            raise TaskRegistryError('derived Git target requires bounded ownership provenance')
+        with self._connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            task = conn.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+            if task is None or task['status'] != 'ACTIVE':
+                raise TaskRegistryError('derived Git target requires an active task')
+            if not task['repository_origin']:
+                raise TaskRegistryError('task has no canonical Git origin')
+            try:
+                identity = inspect_worktree(path, task['cwd'], task['repository_origin'], trusted_roots)
+            except DerivedGitTargetError as exc:
+                raise TaskRegistryError(str(exc)) from exc
+            if creation_host_execution_ref:
+                evidence = conn.execute('''SELECT * FROM host_executions
+                    WHERE host_execution_ref=? AND task_id=?''',
+                    (creation_host_execution_ref, task_id)).fetchone()
+                if evidence is None or evidence['capability'] != 'GIT' or evidence['operation'] != 'development_command' or \
+                        evidence['result_state'] != 'SUCCEEDED' or evidence['exit_code'] != 0:
+                    raise TaskRegistryError('derived Git target creation receipt is invalid')
+                argv = json.loads(evidence['argv_json'])
+                if not isinstance(argv, list) or not argv or argv[0] != 'git':
+                    raise TaskRegistryError('derived Git target creation receipt does not match worktree')
+                args = argv[1:]
+                if len(args) >= 2 and args[0] == '-C':
+                    if Path(args[1]).resolve() != Path(task['cwd']).resolve():
+                        raise TaskRegistryError('derived Git target creation receipt used another repository')
+                    args = args[2:]
+                if (len(args) < 5 or args[:3] != ['worktree', 'add', '-b'] or
+                    args[3] != identity['branch'] or args[4] != identity['path']):
+                    raise TaskRegistryError('derived Git target creation receipt does not match worktree')
+                provenance = json.dumps({'mode': 'TASK_HOST_EXECUTION',
+                    'host_execution_ref': creation_host_execution_ref,
+                    'execution_ref': evidence['execution_ref'],
+                    'operator_evidence': provenance.strip()}, sort_keys=True)
+            else:
+                provenance = json.dumps({'mode': 'EXPLICIT_OPERATOR_ADOPTION',
+                    'operator_evidence': provenance.strip()}, sort_keys=True)
+            existing = conn.execute('SELECT * FROM derived_git_targets WHERE path=? AND revoked_at IS NULL',
+                                    (identity['path'],)).fetchone()
+            if existing:
+                if existing['task_id'] != task_id:
+                    raise TaskRegistryError('derived Git target belongs to another task')
+                if any(existing[field] != identity[field] for field in (
+                        'common_dir', 'git_dir', 'git_dir_device', 'git_dir_inode', 'branch', 'origin')):
+                    raise TaskRegistryError('derived Git target identity changed')
+                return dict(existing)
+            if conn.execute('SELECT 1 FROM tasks WHERE cwd=? AND task_id!=?',
+                            (identity['path'], task_id)).fetchone():
+                raise TaskRegistryError('derived Git target is another task registered project')
+            if conn.execute('SELECT 1 FROM derived_git_targets WHERE path=? AND task_id!=?',
+                            (identity['path'], task_id)).fetchone():
+                raise TaskRegistryError('derived Git target belongs to another task')
+            if conn.execute('SELECT 1 FROM derived_git_targets WHERE git_dir=? AND revoked_at IS NULL',
+                            (identity['git_dir'],)).fetchone():
+                raise TaskRegistryError('derived Git worktree is already owned')
+            target_id = 'gitwt_' + uuid.uuid4().hex
+            key = self.worktree_key(host=task['host'], cwd=identity['path'],
+                                    repository_origin=identity['origin'])
+            conn.execute('''INSERT INTO derived_git_targets VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                         (target_id, task_id, identity['path'], key, identity['common_dir'],
+                          identity['git_dir'], identity['git_dir_device'], identity['git_dir_inode'],
+                          identity['branch'], identity['origin'], provenance.strip(), _now(), None))
+            return dict(conn.execute('SELECT * FROM derived_git_targets WHERE target_id=?',
+                                     (target_id,)).fetchone())
+
+    def list_derived_git_targets(self, task_id: str) -> list[dict]:
+        with self._connect() as conn:
+            return [dict(row) for row in conn.execute(
+                'SELECT * FROM derived_git_targets WHERE task_id=? AND revoked_at IS NULL ORDER BY registered_at',
+                (task_id,)).fetchall()]
+
+    def resolve_derived_git_target(self, *, task_id: str, target_id: str,
+                                   trusted_roots: tuple[Path, ...]) -> dict:
+        from derived_git_targets import inspect_worktree, DerivedGitTargetError
+        with self._connect() as conn:
+            task = conn.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+            target = conn.execute('SELECT * FROM derived_git_targets WHERE target_id=? AND task_id=? AND revoked_at IS NULL',
+                                  (target_id, task_id)).fetchone()
+        if task is None or task['status'] != 'ACTIVE' or target is None:
+            raise TaskRegistryError('derived Git target is not active for this task')
+        try:
+            current = inspect_worktree(target['path'], task['cwd'], task['repository_origin'], trusted_roots)
+        except (OSError, DerivedGitTargetError) as exc:
+            raise TaskRegistryError('derived Git target is invalid: ' + str(exc)) from exc
+        for field in ('path', 'common_dir', 'git_dir', 'git_dir_device', 'git_dir_inode', 'branch', 'origin'):
+            if current[field] != target[field]:
+                raise TaskRegistryError('derived Git target identity changed: ' + field)
+        if self.worktree_key(host=task['host'], cwd=current['path'], repository_origin=current['origin']) != target['worktree_key']:
+            raise TaskRegistryError('derived Git target worktree key changed')
+        return dict(target)
+
+    def revoke_derived_git_target(self, *, task_id: str, target_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            changed = conn.execute('UPDATE derived_git_targets SET revoked_at=? WHERE task_id=? AND target_id=? AND revoked_at IS NULL',
+                                   (_now(), task_id, target_id)).rowcount
+            if not changed:
+                raise TaskRegistryError('derived Git target is not active for this task')
 
     @staticmethod
     def _validate_metadata_value(
@@ -3595,6 +3719,11 @@ class TaskRegistry:
                 f"INSERT INTO host_executions({','.join(columns)}) VALUES ({placeholders})",
                 tuple(values[column] for column in columns),
             )
+            if values.get('tool_call_id') and 'call_state' in {
+                    r[1] for r in conn.execute('PRAGMA table_info(host_tool_deliveries)')}:
+                conn.execute("""UPDATE host_tool_deliveries SET call_state='DISPATCHED',
+                    dispatched_at=? WHERE execution_ref=? AND tool_call_id=?""",
+                    (time.time(), values['execution_ref'], values['tool_call_id']))
             self._append_shadow_observation(
                 conn,
                 task_id=values["task_id"],

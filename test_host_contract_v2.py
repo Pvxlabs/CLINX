@@ -192,6 +192,9 @@ def test_catalog_is_consumed_by_discovery_dynamic_schema_and_dispatch(v2):
                 args['target'] = spec['registered_targets'][0]['identity']
             request = d.host.request(d.task, d.ref, d.route, d.policy, capability, operation, args,
                                      operation_class=spec['operation_class'])
+            if capability == 'GIT' and operation == 'push_current_branch':
+                # Push identity is checked in the disposable-repository test below.
+                continue
             with patch.object(executor, '_registered_origin'), patch.object(executor, '_git_identity', return_value='main'):
                 command = executor._command(request)
             assert command.argv
@@ -210,6 +213,8 @@ def test_git_six_operations_in_real_disposable_repositories(tmp_path):
     git(root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
         'commit', '--allow-empty', '-m', 'initial')
     git(root, 'push', 'origin', 'main')
+    git(root, 'checkout', '-b', 'codex/fixture')
+    git(root, 'push', 'origin', 'codex/fixture')
     from task_registry import TaskRegistry
     from execution_semantics import build_routing_identity
     registry = TaskRegistry(tmp_path/'tasks.sqlite3')
@@ -219,7 +224,7 @@ def test_git_six_operations_in_real_disposable_repositories(tmp_path):
         worktree_key=registry.worktree_key(host='p620', cwd=str(root), repository_origin=str(remote)),
         project_identity='pilot', conversation_binding='thread', authority_scopes=policy.authority_scopes)
     task = registry.create_task(host='p620', workspace_alias='p620', project_alias='pilot', project_name='fixture',
-        cwd=str(root), repository_origin=str(remote), branch='main', title='Git fixture', routing_identity=route, execution_policy=policy)
+        cwd=str(root), repository_origin=str(remote), branch='codex/fixture', title='Git fixture', routing_identity=route, execution_policy=policy)
     executor = HostExecutor(dataclasses.replace(support.HostExecutorConfig(), enabled=True), registry)
     from host_executor import HostExecutionRequest
     def request(operation, args=None):
