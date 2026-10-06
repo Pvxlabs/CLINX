@@ -67,6 +67,43 @@ def hashes(f):
             [f.root/'state_5.sqlite', f.root/'thread_history_1.sqlite', f.registry.path, f.rollout]}
 
 
+def fork_rollout(native):
+    path = native.rollout.with_name(native.rollout.stem + '_01a10a7a-fbd5-7e62-a051-50c66e71ebf5.jsonl')
+    native.rollout.rename(path)
+    native.rollout = path
+    with sqlite3.connect(native.root / 'state_5.sqlite') as conn:
+        conn.execute('UPDATE threads SET rollout_path=? WHERE id=?', (str(path), TID))
+    history = NativeHistory(native.root)
+    return history, history.metadata(TID)
+
+
+def test_native_fork_suffix_reads_original_session_without_mutation(native):
+    history, metadata = fork_rollout(native)
+    before = hashes(native)
+    result = history.context(TID, 'p620', metadata, 4, 16000)
+    assert result['context_status'] == 'AVAILABLE'
+    assert result['last_codex_result'] == 'Answer 2'
+    assert hashes(native) == before
+
+
+@pytest.mark.parametrize('conflict', ['thread', 'project', 'outside-root', 'header-shape'])
+def test_native_fork_suffix_keeps_identity_and_root_guards(native, tmp_path, conflict):
+    history, metadata = fork_rollout(native)
+    if conflict == 'outside-root':
+        outside = tmp_path / native.rollout.name
+        native.rollout.rename(outside)
+        native.rollout.symlink_to(outside)
+    elif conflict == 'header-shape':
+        native.rollout.write_text('[]\n')
+    else:
+        header = json.loads(native.rollout.read_text())
+        header['payload']['id' if conflict == 'thread' else 'cwd'] = 'wrong-identity'
+        native.rollout.write_text(json.dumps(header) + '\n')
+    with pytest.raises(ThreadLookupError) as error:
+        history.context(TID, 'p620', metadata, 4, 16000)
+    assert error.value.code == 'NATIVE_IDENTITY_CONFLICT'
+
+
 def test_original_uri_schema_and_exact_route(native):
     server = ClinxMCPServer(native.integration)
     before = hashes(native)

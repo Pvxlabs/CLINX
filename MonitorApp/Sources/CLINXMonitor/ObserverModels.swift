@@ -53,6 +53,8 @@ public struct ObservedTask: Codable, Identifiable, Sendable {
     public let artifacts: [ArtifactMetadata]
     public let artifactsStatus: String
     public let menuState: String
+    /// Original v2 identity for read-only native session content; never an execution ref.
+    public var observationId: String? = nil
 }
 
 public struct ModelIdentity: Codable, Sendable {

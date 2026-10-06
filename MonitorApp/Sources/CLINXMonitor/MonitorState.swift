@@ -127,6 +127,7 @@ final class MonitorStore: ObservableObject {
     private static let archiveKey = "monitor.localArchives.v1"
 
     var activityService: (any ActivityServing)? { service as? any ActivityServing }
+    var observationService: (any NetworkObservationServing)? { networkService }
     var activitySource: String { archiveSource }
 
     private var service: (any ObserverServing)?

@@ -132,6 +132,11 @@ final class NetworkObservationStore: ObservableObject {
         }
     }
 
+    func refreshSelected() async {
+        guard let client, let id = selectedID else { return }
+        await refreshDetail(id, client: client)
+    }
+
     func loadHistory() async {
         guard let client, let id = selectedID, let cursor = historyCursor,
               !loadingHistory, turns.count < 512 else { return }
@@ -167,6 +172,7 @@ final class NetworkObservationStore: ObservableObject {
     func loadContext(older: Bool = false) async {
         guard let client, let id = selectedID, !loadingContext else { return }
         loadingContext = true
+        if older { pausedHistoryRefresh = true }
         defer { loadingContext = false }
         let generation = detailGeneration
         do {
