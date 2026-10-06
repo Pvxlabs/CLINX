@@ -911,7 +911,7 @@ class NodeRouter:
                 raise NodeProtocolError("UNKNOWN_NODE", "node_id is not a trusted registered node")
             return record
         if host:
-            matches = [record for record in self.registry.list_nodes(user_scope=self.user_scope) if host.casefold() in {record.node_id.casefold(), record.display_name.casefold(), *(route.casefold() for route in record.route_ids)}]
+            matches = [record for record in self.registry.list_nodes(user_scope=self.user_scope, authorized_only=True) if host.casefold() in {record.node_id.casefold(), record.display_name.casefold(), *(route.casefold() for route in record.route_ids)}]
             if not matches:
                 raise NodeProtocolError("UNKNOWN_THREAD_HOST", "Host is not an authorized node route")
             if len(matches) > 1:
@@ -928,6 +928,13 @@ class NodeRouter:
             and not result.get("error_code")
         )
 
+    def _local_reader_attached(self, record: NodeRecord) -> bool:
+        # An in-process reader has no network heartbeat. Let the real read
+        # establish liveness after idle; remote nodes still need freshness.
+        return (record.node_id == self.local_node_id
+                and record.node_id in self._readers
+                and record.node_id not in self._remote_clients)
+
     def read(self, *, thread_id: str, node_id: str | None = None, host: str | None = None, provider: str = SUPPORTED_PROVIDER, cursor: str | None = None, recent_turns: int = 8, max_bytes: int = 32000) -> dict[str, Any]:
         self.registry.refresh_states()
         request = {"operation": "session.read", "protocol_version": NODE_PROTOCOL_VERSION, "thread_id": thread_id, "user_scope": self.user_scope, "provider": provider, "recent_turns": recent_turns, "max_bytes": max_bytes}
@@ -937,7 +944,8 @@ class NodeRouter:
             if record.user_scope != self.user_scope or not record.authorized or not record.trusted:
                 return {"error_code": "SHARING_SCOPE_DENIED", "lookup_status": "SHARING_SCOPE_DENIED", "coverage": {"requested_node_id": record.node_id}}
             reader = self._reader_for(record)
-            if reader is None or record.stale or record.state == "OFFLINE":
+            if reader is None or ((record.stale or record.state == "OFFLINE")
+                                  and not self._local_reader_attached(record)):
                 return {"error_code": "NODE_OFFLINE", "lookup_status": "NODE_OFFLINE", "coverage": {"requested_node_id": record.node_id, "stale": record.stale}}
             try:
                 result = dict(reader(request))
@@ -951,7 +959,8 @@ class NodeRouter:
             return {"error_code": "THREAD_LOOKUP_UNAVAILABLE", "lookup_status": "THREAD_LOOKUP_UNAVAILABLE", "coverage": {"complete": False, "nodes_queried": [], "reason": "NO_AUTHORIZED_NODES"}}
         results: list[tuple[NodeRecord, Mapping[str, Any] | None, str]] = []
         def ask(record: NodeRecord) -> tuple[NodeRecord, Mapping[str, Any] | None, str]:
-            if record.stale or record.state == "OFFLINE":
+            if ((record.stale or record.state == "OFFLINE")
+                    and not self._local_reader_attached(record)):
                 return record, None, "OFFLINE"
             try:
                 reader = self._reader_for(record)
