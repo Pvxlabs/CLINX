@@ -22,6 +22,20 @@ private func networkFixture(_ key: String = "detail", id: String? = nil,
 }
 
 final class NetworkObservationModelTests: XCTestCase {
+    func testRepeatedSnapshotsDoNotRepeatSessionTextAcrossTurns() {
+        func entry(_ id: String, _ turn: String, _ text: String) -> ObservationActivityEntry {
+            ObservationActivityEntry(eventId: id, turnId: turn, executionRef: nil,
+                sourceSeq: 1, recordedAt: 100, nativeState: "COMPLETED", businessResult: nil,
+                kind: "result", text: text, artifacts: [])
+        }
+        let oldestFirst = [entry("a1", "turn-a", "first"), entry("b1", "turn-b", "second"),
+                           entry("a2", "turn-a", "first"), entry("b2", "turn-b", "second"),
+                           entry("a3", "turn-a", "changed"), entry("c1", "turn-c", "first")]
+        let displayed = ObservationActivityView.distinctUpdates(Array(oldestFirst.reversed()))
+        XCTAssertEqual(displayed.map(\.id), ["a1", "b1", "a3", "c1"])
+        XCTAssertEqual(displayed.map(\.text), ["first", "second", "changed", "first"])
+    }
+
     func testExternalCompletedIsVisibleWithoutCanonicalReferencesOrPass() throws {
         let item = try networkFixture().item
         XCTAssertNil(item.taskRef)
@@ -162,6 +176,11 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
 
         await store.select(try XCTUnwrap(store.active.first).taskRef)
         XCTAssertEqual(store.selected?.hostText, "p620")
+        XCTAssertEqual(store.selected?.observationId, items[0].observationId)
+        XCTAssertNil(store.selected?.executionRef, "A native content route must not fabricate a CLINX execution")
+        let selected = try XCTUnwrap(store.selected)
+        let restored = try JSONDecoder().decode(ObservedTask.self, from: JSONEncoder().encode(selected))
+        XCTAssertEqual(restored.observationId, items[0].observationId)
         let nativeTaskCalls = await service.taskCalls
         let nativeEventCalls = await service.eventCalls
         XCTAssertEqual(nativeTaskCalls, 0)
@@ -181,6 +200,7 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         XCTAssertEqual(store.allTasks.first?.taskRef, canonical.taskRef)
         XCTAssertFalse(store.allTasks.contains { NetworkObservationAdapter.isPresentationRef($0.taskRef) })
         await store.select(canonical.taskRef)
+        XCTAssertNil(store.selected?.observationId)
         let canonicalTaskCalls = await service.taskCalls
         XCTAssertEqual(canonicalTaskCalls, 1)
     }
@@ -233,6 +253,38 @@ private actor NetworkGate: NetworkObservationServing {
 
 @MainActor
 final class NetworkObservationStoreTests: XCTestCase {
+    func testNativeActivityLoadsRecordsAndSourceTextWithoutExecutionIdentity() async throws {
+        let detail = try networkFixture()
+        let service = RecordedNativeActivity(detail: detail)
+        let store = NetworkObservationStore(client: service)
+        await store.select(detail.item.id)
+        await store.loadContext()
+        XCTAssertEqual(store.activity.map(\.text), ["Recorded response"])
+        XCTAssertNil(store.activity.first?.executionRef)
+        XCTAssertEqual(store.activityCoverage, "RECEIVED_EVENTS_ONLY")
+        XCTAssertEqual(store.context?.lastCodexResult, "Full source response")
+        XCTAssertEqual(store.context?.nextCursor, "earlier-context")
+
+        await store.loadActivity()
+        XCTAssertEqual(store.activity.map(\.id), ["new", "old"])
+        XCTAssertEqual(store.activity.last?.text, "Earlier response")
+        XCTAssertNil(store.activityCursor)
+        XCTAssertTrue(store.pausedHistoryRefresh)
+        let requested = await service.requestedIDs
+        XCTAssertTrue(requested.allSatisfy { $0 == detail.item.observationId })
+    }
+
+    func testEarlierNativeContextPreservesBrowsingPositionDuringPolling() async throws {
+        let detail = try networkFixture()
+        let store = NetworkObservationStore(client: RecordedNativeActivity(detail: detail))
+        await store.select(detail.item.id)
+        await store.loadContext()
+        await store.loadContext(older: true)
+        XCTAssertEqual(store.context?.lastCodexResult, "Earlier source response")
+        XCTAssertNil(store.context?.nextCursor)
+        XCTAssertTrue(store.pausedHistoryRefresh)
+    }
+
     func testDelayedSelectionCannotContaminateAnotherThread() async throws {
         let first = try networkFixture(id: "obs_" + String(repeating: "a", count: 40), turn: "turn-a")
         let second = try networkFixture(id: "obs_" + String(repeating: "b", count: 40), turn: "turn-b")
@@ -261,5 +313,34 @@ final class NetworkObservationStoreTests: XCTestCase {
         await pending.value
         XCTAssertNil(store.detail)
         XCTAssertTrue(store.turns.isEmpty)
+    }
+}
+
+private actor RecordedNativeActivity: NetworkObservationServing {
+    let detail: ObservationDetail
+    private(set) var requestedIDs: [String] = []
+    init(detail: ObservationDetail) { self.detail = detail }
+    func observations(filters: ObservationFilters, cursor: String?) async throws -> ObservationPage {
+        throw MonitorError.invalidResponse // Opening Activity must not reload the task catalogue.
+    }
+    func observation(_ id: String, cursor: String?) async throws -> ObservationDetail {
+        requestedIDs.append(id)
+        return detail
+    }
+    func observationActivity(_ id: String, cursor: String?) async throws -> ObservationActivityPage {
+        requestedIDs.append(id)
+        let older = cursor != nil
+        return ObservationActivityPage(schemaVersion: "clinx-observation-v1", observationId: id,
+            items: [ObservationActivityEntry(eventId: older ? "old" : "new", turnId: "native-turn",
+                executionRef: nil, sourceSeq: older ? 1 : 2, recordedAt: older ? 100 : 200,
+                nativeState: "COMPLETED", businessResult: nil, kind: "result",
+                text: older ? "Earlier response" : "Recorded response", artifacts: [])],
+            coverage: "RECEIVED_EVENTS_ONLY", nextCursor: older ? nil : "earlier-activity", hasMore: !older)
+    }
+    func observationContext(_ id: String, cursor: String?) async throws -> ObservationContext {
+        requestedIDs.append(id)
+        return ObservationContext(schemaVersion: "clinx-observation-v1", contextStatus: "AVAILABLE",
+            lastUserIntent: "Original user request", lastCodexResult: cursor == nil ? "Full source response" : "Earlier source response",
+            nextCursor: cursor == nil ? "earlier-context" : nil)
     }
 }

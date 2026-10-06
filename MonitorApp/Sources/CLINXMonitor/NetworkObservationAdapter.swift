@@ -81,6 +81,7 @@ enum NetworkObservationAdapter {
             recentEvents: EventPage(schemaVersion: nil, taskRef: nil, observedAt: observed,
                                     items: [], nextCursor: "", hasMore: false, coverage: item.coverage),
             hostOperations: [], hostOperationsHasMore: false, finalResult: nil,
-            artifacts: [], artifactsStatus: "UNAVAILABLE", menuState: "READ_ONLY")
+            artifacts: [], artifactsStatus: "UNAVAILABLE", menuState: "READ_ONLY",
+            observationId: item.observationId)
     }
 }

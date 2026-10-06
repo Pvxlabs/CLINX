@@ -295,8 +295,23 @@ class NativeHistory:
 
     def _path(self, tid, metadata):
         path = Path(metadata['rollout_path']).resolve()
-        if not path.is_relative_to(self.root) or not path.name.endswith('-' + tid + '.jsonl'):
+        fork = re.fullmatch(r'.*-' + re.escape(tid) +
+            r'_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl', path.name)
+        if not path.is_relative_to(self.root) or not (path.name.endswith('-' + tid + '.jsonl') or fork):
             raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Indexed rollout is outside the native history root')
+        if fork:
+            # Desktop forks append a second UUID to the filename. The original
+            # session header, not that suffix, must match the indexed thread/project.
+            try:
+                with path.open('rb') as stream:
+                    header = json.loads(stream.readline(131072))
+            except (OSError, ValueError):
+                raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Fork rollout header unavailable') from None
+            meta = header.get('payload', {}) if isinstance(header, dict) else {}
+            if (not isinstance(header, dict) or not isinstance(meta, dict) or header.get('type') != 'session_meta'
+                    or meta.get('id') != tid or not isinstance(meta.get('cwd'), str)
+                    or Path(meta['cwd']).resolve() != Path(metadata['cwd']).resolve()):
+                raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Fork rollout session header disagrees with native index')
         return path
 
     def _legacy(self, tid, host, metadata, recent_turns, max_bytes, anchor, cursor):

@@ -36,9 +36,14 @@ struct InspectorView: View {
             }
             tabBar(task)
             if tab == .activity {
-                ActivityView(task: task, service: store.activityService)
-                    .equatable()
-                    .id(store.activitySource + task.taskRef + (task.executionRef ?? ""))
+                if NetworkObservationAdapter.isPresentationRef(task.taskRef), let id = task.observationId {
+                    ObservationActivityView(observationID: id, service: store.observationService)
+                        .id(store.activitySource + id)
+                } else {
+                    ActivityView(task: task, service: store.activityService)
+                        .equatable()
+                        .id(store.activitySource + task.taskRef + (task.executionRef ?? ""))
+                }
             } else {
                 ScrollView {
                     if tab == .raw {
