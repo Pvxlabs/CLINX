@@ -1,0 +1,24 @@
+{
+  "source_commit": "809fb6b19d3ae7bb9f9bdcd83450ad0ff67f045a",
+  "source_tree": "bfafc5e885812c657c9a7f198c0f452e5e953ea0",
+  "baseline": "1a7f93e81e25c3e25f499e251e111bc89a2b82b8",
+  "release": "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-809fb6b1",
+  "archive_sha256": "37e6777af5f47cc366b74c7f09997848daa131ab4ff27d9b7bc621338feebe15",
+  "files": {
+    "execution_owner.py": "e8a77948a022a6ee2a1e0f3e0a8fc0de29c94914429c613053e50e1699a9b6e1",
+    "app_server.py": "b7b7abdfc268af561e2f1f95989bac2878ed69a9f839b519d8b66ea8bd1184b0",
+    "tool_delivery.py": "f2d6535b442dbf86da0566b360f18dc9edb0e2916dc70879224b4ce0676b0795",
+    "mcp_server.py": "48833ebe824474cb18ca482e571f59b280d1e21968db0fd2855204ed0fa553d8",
+    "m9_integration.py": "69604d1cd2455a681033df2022e48b0095b4c6538a57549c019f7d56988355f7",
+    "completion_runtime.py": "85562990f914bee0e3d17b731b272ad27fdb87a0b9ab4c0619b54259088136d4",
+    "bridge.py": "027caa0724f7b18237ef34a9aeedb0b90beeeac34cbd970c7957ed0f9c9eecd9",
+    "host_executor.py": "17e87aa7bb0b26f0776e30ede2fc4440729e9c31ad86d76eaa93d3bb4a860822",
+    "task_registry.py": "48f7175a32acfc0781f6bec43c555357def60b1e7b89422030a87f77ece582bc",
+    "bin/clinx-execution-owner": "927c074dd3b936ca5782f4b0da97660cba4933833b6e991d06aee01c9f1ccacf",
+    "systemd/clinx-execution-owner.service": "3da44ea97df6ce3fab101902646e1ba1740f6bc21bf067b3c175976bf50992c9",
+    "kernel/target/release/clinx-kernel-eval": "eb35dd3ec3014dfade32ecd9f8dbb649a0afd9943e273b1f6924870785dd52a0",
+    "kernel/target/release/clinx-kernel-bench": "6d7a4f34ed13276b4549f473a9160c5293633a9f316b04d9831529f0c160d57c"
+  },
+  "dependencies": "/home/pvxlabs/.local/lib/clinx-control/releases/air-node-delivery-13e82d3/.venv-node",
+  "mcp_schema_sha256": "4414db664403bb6fd467637c621bf8efe99b617b73eb82353c1af0c7840f89f3"
+}

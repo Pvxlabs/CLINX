@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+home_dir=${HOME:-/home/pvxlabs}
+if [ -r "$home_dir/.config/clinx/node-centre.env" ]; then
+  . "$home_dir/.config/clinx/node-centre.env"
+fi
+launcher_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=${CLINX_NODE_CENTRE_RELEASE:-$(CDPATH= cd -- "$launcher_dir/.." && pwd)}
+python_bin=${CLINX_NODE_PYTHON:-$repo_root/.venv-node/bin/python}
+codex_path=$(command -v codex)
+node_path=$(command -v node)
+# The owner receives only sealed preparation references over its private socket.
+# Authority, task DB and provider selection remain in the canonical config.
+exec /usr/bin/env -i \
+  "HOME=$home_dir" \
+  "PATH=${codex_path%/*}:${node_path%/*}:/usr/bin:/bin" \
+  LANG=${LANG:-C.UTF-8} LC_ALL=${LC_ALL:-C.UTF-8} PYTHONUNBUFFERED=1 \
+  "$python_bin" "$repo_root/mcp_server.py" \
+  --config "$home_dir/dev/clinx/bridge.toml" --execution-owner --no-recover-existing

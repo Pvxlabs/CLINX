@@ -1,6 +1,7 @@
 -r requirements-discovery.txt
 pytest==9.1.1
 pytest-subtests==0.15.0
+jsonschema==4.26.0
 ruff==0.16.10
 mypy==2.4.0
 

@@ -1,0 +1,40 @@
+clinx-execution-owner.service: Failed with result 'exit-code'.
+clinx-execution-owner.service: Scheduled restart job, restart counter is at 11.
+Started clinx-execution-owner.service - CLINX persistent managed execution and Host delivery owner.
+Traceback (most recent call last):
+  File "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-c9319485/mcp_server.py", line 1250, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-c9319485/mcp_server.py", line 1236, in main
+    serve(server.integration)
+  File "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-c9319485/execution_owner.py", line 190, in serve
+    raise ExecutionOwnerError('EXECUTION_OWNER_DIRECTORY_UNTRUSTED')
+execution_owner.ExecutionOwnerError: EXECUTION_OWNER_DIRECTORY_UNTRUSTED
+clinx-execution-owner.service: Main process exited, code=exited, status=1/FAILURE
+clinx-execution-owner.service: Failed with result 'exit-code'.
+clinx-execution-owner.service: Scheduled restart job, restart counter is at 12.
+Started clinx-execution-owner.service - CLINX persistent managed execution and Host delivery owner.
+Traceback (most recent call last):
+  File "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-c9319485/mcp_server.py", line 1250, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-c9319485/mcp_server.py", line 1236, in main
+    serve(server.integration)
+  File "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-c9319485/execution_owner.py", line 190, in serve
+    raise ExecutionOwnerError('EXECUTION_OWNER_DIRECTORY_UNTRUSTED')
+execution_owner.ExecutionOwnerError: EXECUTION_OWNER_DIRECTORY_UNTRUSTED
+clinx-execution-owner.service: Main process exited, code=exited, status=1/FAILURE
+clinx-execution-owner.service: Failed with result 'exit-code'.
+clinx-execution-owner.service: Scheduled restart job, restart counter is at 13.
+Started clinx-execution-owner.service - CLINX persistent managed execution and Host delivery owner.
+Traceback (most recent call last):
+  File "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-c9319485/mcp_server.py", line 1250, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-c9319485/mcp_server.py", line 1236, in main
+    serve(server.integration)
+  File "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-c9319485/execution_owner.py", line 190, in serve
+    raise ExecutionOwnerError('EXECUTION_OWNER_DIRECTORY_UNTRUSTED')
+execution_owner.ExecutionOwnerError: EXECUTION_OWNER_DIRECTORY_UNTRUSTED
+clinx-execution-owner.service: Main process exited, code=exited, status=1/FAILURE
+clinx-execution-owner.service: Failed with result 'exit-code'.

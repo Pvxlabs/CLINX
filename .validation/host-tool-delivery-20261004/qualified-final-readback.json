@@ -1,0 +1,82 @@
+{
+  "executions": [
+    {
+      "execution_ref": "exec_c08600a6677d4ec4a346e6d6c7685916",
+      "task_ref": "task_6b199302aedd440c9db935a21ee28f0f",
+      "thread_id": "01a106a9-4a93-77f0-8952-354312803039",
+      "turn_id": "01a106a9-4d2a-71d0-b63b-824970b12c7c",
+      "tool_call_id": "exec-5cdfeaab-fd73-417d-94fb-be452201b108",
+      "host_execution_ref": "hostexec_c2603f9830c14ac586d2402d5c5a2a3f",
+      "ledger_status_exact_match": true,
+      "host_result": "SUCCEEDED",
+      "delivery": "DELIVERED",
+      "completion": "COMPLETED",
+      "owner_pid": 590006,
+      "writeback_state": "WRITTEN"
+    },
+    {
+      "execution_ref": "exec_2c70932b5cc24e48888ae53582a3a0cc",
+      "task_ref": "task_6f2deb2abf4542fdb245ba7d84382ba1",
+      "thread_id": "01a106aa-0048-7fd0-bfb6-4ad65f8bba20",
+      "turn_id": "01a106aa-02e2-7662-8e95-082a91c6a9d0",
+      "tool_call_id": "exec-72a29437-1c09-490f-8c36-5d14e2ef3699",
+      "host_execution_ref": "hostexec_5236304d8782460ab9172715e16e82db",
+      "ledger_status_exact_match": true,
+      "host_result": "SUCCEEDED",
+      "delivery": "DELIVERED",
+      "completion": "COMPLETED",
+      "owner_pid": 590006,
+      "writeback_state": "WRITTEN",
+      "duplicate_call": "REJECTED_WITHOUT_DISPATCH",
+      "counter": 1
+    }
+  ],
+  "historical_sha256": "4f85875ab74601c30c55fa1e655fa0cf9d9cf676cb490bcb109f4cfd37b116ec",
+  "historical_unchanged": true,
+  "active_execution_count": 0,
+  "lease_count": 0,
+  "future_policy_unchanged": true,
+  "runtime_hashes_verified": true,
+  "runtime_processes": [
+    {
+      "pid": 590006,
+      "argv": [
+        "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-809fb6b1/.venv-node/bin/python",
+        "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-809fb6b1/mcp_server.py",
+        "--config",
+        "/home/pvxlabs/dev/clinx/bridge.toml",
+        "--execution-owner",
+        "--no-recover-existing",
+        ""
+      ],
+      "cgroup": "0::/user.slice/user-1001.slice/user@1001.service/app.slice/clinx-execution-owner.service"
+    },
+    {
+      "pid": 590081,
+      "argv": [
+        "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-809fb6b1/.venv-node/bin/python",
+        "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-809fb6b1/mcp_server.py",
+        "--config",
+        "/home/pvxlabs/dev/clinx/bridge.toml",
+        "--stdio",
+        "--no-recover-existing",
+        ""
+      ],
+      "cgroup": "0::/user.slice/user-1001.slice/user@1001.service/app.slice/clinx-air-resume-canary.service"
+    },
+    {
+      "pid": 590099,
+      "argv": [
+        "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-809fb6b1/.venv-node/bin/python",
+        "/home/pvxlabs/.local/lib/clinx-control/releases/host-delivery-809fb6b1/mcp_server.py",
+        "--config",
+        "/home/pvxlabs/dev/clinx/bridge.toml",
+        "--stdio",
+        "--no-recover-existing",
+        ""
+      ],
+      "cgroup": "0::/user.slice/user-1001.slice/user@1001.service/app.slice/clinx-tunnel.service"
+    }
+  ],
+  "runtime_services": "MainPID=590006\nId=clinx-execution-owner.service\nActiveState=active\n\nMainPID=590046\nId=clinx-tunnel.service\nActiveState=active\n\nMainPID=590045\nId=clinx-air-resume-canary.service\nActiveState=active\n\nMainPID=2248985\nId=clinx-node-centre.service\nActiveState=active\n\nMainPID=1043359\nId=clinx.service\nActiveState=active\n"
+}

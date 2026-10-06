@@ -11,6 +11,11 @@ home_dir=${HOME:-/home/pvxlabs}
 node_centre_state=${CLINX_NODE_CENTRE_STATE:-$home_dir/.local/state/clinx/node-centre}
 node_id=${CLINX_NODE_ID:-$(hostname | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_.-]/-/g' | cut -c1-63)}
 user_scope=${CLINX_USER_SCOPE:-${CLINX_NODE_USER_SCOPE:-${USER:-default}}}
+# Node routing requires the repository-declared discovery dependencies.
+python_bin=/usr/bin/python3.12
+if [ -x "$repo_root/.venv-node/bin/python" ]; then
+  python_bin="$repo_root/.venv-node/bin/python"
+fi
 # The MCP child must be credential-isolated, but CLINX still needs the
 # installed Codex binary to create its app-server transport on demand.
 codex_path=$(command -v codex 2>/dev/null || true)
@@ -32,6 +37,6 @@ exec /usr/bin/env -i \
   "CLINX_NODE_CENTRE_STATE=$node_centre_state" \
   "CLINX_NODE_ID=$node_id" \
   "CLINX_USER_SCOPE=$user_scope" \
-  /usr/bin/python3.12 "$repo_root/mcp_server.py" \
+  "$python_bin" "$repo_root/mcp_server.py" \
   --config "$repo_root/bridge.toml" \
   --stdio
