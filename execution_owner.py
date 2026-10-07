@@ -28,7 +28,9 @@ MAX_MESSAGE = 256 * 1024
 
 
 class ExecutionOwnerError(TaskRegistryError):
-    pass
+    def __init__(self, message, *, details=None):
+        super().__init__(message)
+        self.details = details or {}
 
 
 def socket_path(registry):
@@ -104,7 +106,7 @@ class ExecutionOwnerClient:
             code = 'EXECUTION_OWNER_DELIVERY_UNKNOWN' if sent else 'EXECUTION_OWNER_UNAVAILABLE'
             raise ExecutionOwnerError(code + ': inspect the exact prepared execution; no fallback or replay') from exc
         if 'error' in response:
-            raise ExecutionOwnerError(response['error'])
+            raise ExecutionOwnerError(response['error'], details=response.get('failure_details'))
         return response['result']
 
 
@@ -178,7 +180,9 @@ class ExecutionOwner:
                     'lifetime': 'PERSISTENT_CONTROL_RUNTIME'}}}
                 state = 'DISPATCHED' if result.get('execution_started') else 'REJECTED'
             except Exception as exc:
-                response = {'error': str(exc)[:2000]}
+                from dispatch_errors import failure_details, safe_reason
+                response = {'error': safe_reason(exc), 'failure_details': failure_details(
+                    'clinx_start_execution', {'prepared_execution_ref': prepared}, exc, self.registry)}
                 state = 'UNKNOWN' if self.registry.get_execution_record(reference) else 'REJECTED'
             with self.registry._connect() as conn:
                 conn.execute('UPDATE clinx_execution_owners SET state=?,updated_at=?,response_json=? WHERE execution_ref=?',
@@ -238,7 +242,9 @@ def serve(integration, *, ready=None, stop=None):
             try:
                 response = owner.dispatch(json.loads(data))
             except Exception as exc:
-                response = {'error': str(exc)[:2000]}
+                from dispatch_errors import failure_details, safe_reason
+                response = {'error': safe_reason(exc), 'failure_details': failure_details(
+                    'execution_owner', {}, exc, integration.registry)}
             try:
                 self.wfile.write(json.dumps(response).encode() + b'\n')
             except OSError:

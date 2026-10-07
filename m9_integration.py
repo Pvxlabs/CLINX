@@ -17,8 +17,8 @@ import re
 from typing import Any
 
 from completion_runtime import serialized_execution, serialized_prepared_start
-from app_server import AppServerError
-from execution_semantics import RoutingIdentity, parse_routing_identity
+from app_server import AppServerError, ModelCapabilityError
+from execution_semantics import parse_routing_identity
 from execution_policy import (
     DEVELOPMENT_CAPABILITIES,
     DEVELOPMENT_MUTATION,
@@ -42,7 +42,9 @@ from tool_delivery import ToolDeliveryLedger, requires_reconciliation, delivery_
 
 
 class M9IntegrationError(RuntimeError):
-    pass
+    def __init__(self, message, *, details=None):
+        super().__init__(message)
+        self.details = details or {}
 
 
 class ResultParseError(M9IntegrationError):
@@ -1473,8 +1475,10 @@ class ClinxIntegration:
             "instructions": (
                 "Use CLINX for authoritative task context and command preparation. "
                 "Prepare with clinx_prepare_execution, then call "
-                "clinx_start_execution with only the returned prepared_execution_ref "
-                "and approved=true. New development tasks use SANDBOX_WORKSPACE "
+                "Read clinx_get_prepared_request before applying or starting, and use "
+                "its hash/task with optional expected_request_hash/expected_task_ref assertions. "
+                "clinx_start_execution accepts prepared_execution_ref and approved=true "
+                "without policy overrides. New development tasks use SANDBOX_WORKSPACE "
                 "by default, or NETWORKED_SANDBOX with network_access=true. "
                 "Host capabilities require an explicit policy request; continuation "
                 "preserves the sealed task policy. Describe required Host work with requested_operations "
@@ -1482,6 +1486,10 @@ class ClinxIntegration:
                 "Use clinx_get_effective_authority then prepare/apply_policy_reauthorization "
                 "when the user's authorization expands; never launch an incapable deployment turn. "
                 "Reauthorization affects future executions only and does not start deployment. "
+                "Pass structured requirements to get_effective_authority: reuse covered scopes, "
+                "reauthorize missing scopes on the same task. After a lost response read the "
+                "original prepared request and exact execution before any retry. QUEUED is "
+                "not running; report failure_stage/source or UNKNOWN, never presume an outer rejection. "
                 "Linear is optional audit/history compatibility "
                 "and is never required for Codex execution."
             ),
@@ -1526,7 +1534,17 @@ class ClinxIntegration:
                 if not os.access(workflow.argv[0], os.X_OK):
                     raise M9IntegrationError('WORKFLOW_EXECUTABLE_UNAVAILABLE: ' + op)
 
-    def get_effective_authority(self, *, task_ref):
+    def get_prepared_request(self, *, request_ref):
+        from prepared_requests import read_prepared_request
+        result = read_prepared_request(self.registry, request_ref)
+        if result['target']['repository_root'] is None:
+            # New preparations have a sealed worktree identity but no Task yet.
+            # Label the current registration separately from that immutable seal.
+            mapping = next((p for p in self.cfg.projects if p.alias.casefold() == result['target']['project'].casefold()), None)
+            result['target']['registered_repository_root'] = str(mapping.cwd) if mapping else None
+        return result
+
+    def get_effective_authority(self, *, task_ref, requested_operations=None):
         from host_contract import executable_contract
         task = self.registry.get_task(task_ref)
         policy = parse_execution_policy(task.execution_policy_json)
@@ -1554,7 +1572,14 @@ class ClinxIntegration:
             git_ops['push_current_branch']['task_authorized'] = bool(
                 git_ops['push_current_branch']['task_authorized'] or
                 any(item['task_target_authorized'] for item in derived))
+        from execution_policy import normalize_operation_scopes
+        requirements = normalize_operation_scopes(requested_operations)
+        missing = [dict(zip(('capability', 'operation', 'operation_class', 'target'), r))
+                   for r in requirements or () if policy is None or not policy.permits_operation(*r)]
         return {'task_ref': task_ref, **identity, 'future_execution_policy': policy.as_dict() if policy else None,
+                'requirements_evaluated': requested_operations is not None,
+                'requirements_covered': not missing if requested_operations is not None else None,
+                'missing_operations': missing,
                 'effective_authority': contract['effective_authority'], 'operations': contract['capabilities'],
                 'derived_git_targets': derived,
                 'network_access': bool(route and route.network_policy.network_access),
@@ -1610,7 +1635,8 @@ class ClinxIntegration:
             new_policy=policy, new_route=updated, requested_scope={'policy': policy.as_dict(),
                 'network_access': network, 'derived_git_targets': derived_audit}, reason=reason)
 
-    def apply_policy_reauthorization(self, *, prepared_reauthorization_ref, approved=False):
+    def apply_policy_reauthorization(self, *, prepared_reauthorization_ref, approved=False,
+                                    expected_request_hash=None, expected_task_ref=None):
         if approved is not True:
             raise M9IntegrationError('explicit approved=true is required for policy reauthorization')
         with self.registry._connect() as conn:
@@ -1620,6 +1646,9 @@ class ClinxIntegration:
                                    (prepared_reauthorization_ref,)).fetchone()
         if req is None:
             raise M9IntegrationError('unknown prepared reauthorization')
+        from prepared_requests import check_review, request_hash
+        check_review(request_hash(req), req['task_id'], expected_request_hash=expected_request_hash,
+                     expected_task_ref=expected_task_ref)
         if not applied:
             policy = parse_execution_policy(req['new_policy_json'])
             self._check_operation_requirements(policy, task_ref=req['task_id'])
@@ -1628,7 +1657,8 @@ class ClinxIntegration:
                 # Observes all configured owners; never resumes, interrupts or starts.
                 from native_provider import select_writer_client
                 select_writer_client(self.cfg, binding.thread_id)
-        return self.registry.apply_policy_reauthorization(prepared_reauthorization_ref, approved=approved)
+        return self.registry.apply_policy_reauthorization(prepared_reauthorization_ref, approved=approved,
+            expected_request_hash=expected_request_hash, expected_task_ref=expected_task_ref)
 
     def _linear_project_name(self) -> str:
         configured = getattr(self.cfg, "linear_project_name", None)
@@ -1862,9 +1892,12 @@ class ClinxIntegration:
 
         assert prepared_policy is not None
         if requirements:
-            for cap, op, cls, target in requirements:
-                if not prepared_policy.permits_operation(cap, op, cls, target):
-                    raise M9IntegrationError('AUTHORITY_REAUTHORIZATION_REQUIRED: requested operation exceeds current task policy; use clinx_prepare_policy_reauthorization')
+            missing = [dict(zip(('capability', 'operation', 'operation_class', 'target'), r))
+                       for r in requirements if not prepared_policy.permits_operation(*r)]
+            if missing:
+                raise M9IntegrationError('AUTHORITY_REAUTHORIZATION_REQUIRED: requested operations exceed current task policy',
+                    details={'task_ref': selected_ref, 'missing_operations': missing,
+                             'recovery_action': 'PREPARE_SAME_TASK_REAUTHORIZATION'})
         self._check_operation_requirements(prepared_policy, requirements, task_ref=selected_ref if task_mode == 'continue' else None)
         if prepared_policy.execution_surface == HOST_EXECUTOR:
             executor = getattr(self.dispatcher, "host_executor", None)
@@ -2086,12 +2119,18 @@ class ClinxIntegration:
 
     def start_execution(
         self, *, prepared_execution_ref: str, approved: bool = False,
+        expected_request_hash=None, expected_task_ref=None,
     ) -> dict[str, Any]:
         if approved is not True:
             raise M9IntegrationError('explicit approved=true is required for execution')
         remote = self._remote_dispatch('execution.start', locals(), reference=prepared_execution_ref)
         if remote is not None:
             return remote
+        if expected_request_hash is not None or expected_task_ref is not None:
+            from prepared_requests import check_review
+            reviewed = self.registry.verify_prepared_execution(prepared_execution_ref)
+            check_review(reviewed.integrity_hash, reviewed.task_ref or reviewed.resulting_task_id,
+                         expected_request_hash=expected_request_hash, expected_task_ref=expected_task_ref)
         owner = getattr(self, 'execution_owner_client', None)
         if owner is not None:
             # Forward before taking the canonical execution lock: the owner
@@ -2311,14 +2350,19 @@ class ClinxIntegration:
                     task_id, state=("BLOCKED" if getattr(exc, 'side_effect', None) == 'NONE'
                                     else "RECOVERY_REQUIRED"), detail=str(exc)
                 )
-            self.registry.restore_prepared_execution(prepared_execution_ref)
+            # Only a proven pre-dispatch failure can restore an unconsumed request.
+            # A lost turn/start response may have started the Provider; retain
+            # RUNNING and the stable execution ref for exact reconciliation.
+            if getattr(exc, 'side_effect', None) == 'NONE' or isinstance(exc, ModelCapabilityError):
+                self.registry.restore_prepared_execution(prepared_execution_ref)
             raise
         except Exception:
             if task_id:
                 self._linear_failure_writeback(
                     task_id, state="BLOCKED", detail="CLINX dispatch failure"
                 )
-            self.registry.fail_prepared_execution(prepared_execution_ref)
+            # An unclassified dispatch exception is not proof of no turn.
+            # Keep the request consumed until its exact operation is reconciled.
             raise
         audit = self._audit_task_index(result.task_id)
         index = self.registry.get_task_index(result.task_id)

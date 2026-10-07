@@ -3488,7 +3488,6 @@ class TaskRegistry:
 
     @staticmethod
     def _assert_authority_transition_safe(conn, task):
-        from tool_delivery import requires_reconciliation
         task_id = task['task_id']
         key = TaskRegistry.worktree_key(host=task['host'], cwd=task['cwd'],
                                        repository_origin=task['repository_origin'])
@@ -3543,7 +3542,8 @@ class TaskRegistry:
                 'new_policy': new_policy.as_dict(), 'requested_scope': requested_scope,
                 'expires_at': expires, 'execution_started': False}
 
-    def apply_policy_reauthorization(self, ref, *, approved):
+    def apply_policy_reauthorization(self, ref, *, approved,
+                                    expected_request_hash=None, expected_task_ref=None):
         if approved is not True:
             raise TaskRegistryError('explicit approved=true is required for policy reauthorization')
         with self._connect() as conn:
@@ -3551,6 +3551,9 @@ class TaskRegistry:
             request = conn.execute('SELECT * FROM policy_reauthorizations WHERE reauthorization_ref=?', (ref,)).fetchone()
             if request is None:
                 raise TaskRegistryError('unknown prepared reauthorization')
+            from prepared_requests import check_review, request_hash
+            check_review(request_hash(request), request['task_id'],
+                         expected_request_hash=expected_request_hash, expected_task_ref=expected_task_ref)
             applied = conn.execute('SELECT * FROM task_policy_versions WHERE reauthorization_ref=?', (ref,)).fetchone()
             if applied:
                 return {'task_ref': applied['task_id'], 'policy_version': applied['version'],
