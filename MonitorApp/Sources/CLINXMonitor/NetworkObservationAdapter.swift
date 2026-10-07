@@ -7,27 +7,44 @@ enum NetworkObservationAdapter {
     static func isPresentationRef(_ ref: String) -> Bool { ref.hasPrefix("native_observation_") }
 
     static func project(_ observations: [NetworkObservation], canonical: [ObservedTask]) -> [ObservedTask] {
-        let canonicalRefs = Set(canonical.map(\.taskRef))
-        let canonicalThreads = Set(observations.compactMap { item -> String? in
-            guard let ref = item.taskRef, canonicalRefs.contains(ref) else { return nil }
-            return threadKey(item)
-        })
         var byThread: [String: NetworkObservation] = [:]
         for item in observations where item.schemaVersion == "clinx-observation-v1" {
-            if let ref = item.taskRef, canonicalRefs.contains(ref) { continue }
             let key = threadKey(item)
-            if canonicalThreads.contains(key) { continue }
             if let current = byThread[key] {
-                // A bound observation carries more identity evidence; otherwise use the
-                // latest observation of the same native thread.
-                let itemBound = item.taskRef != nil
-                let currentBound = current.taskRef != nil
-                if itemBound == currentBound && item.receivedAt <= current.receivedAt { continue }
-                if !itemBound && currentBound { continue }
+                if item.turn.ordinal < current.turn.ordinal { continue }
+                if item.turn.ordinal == current.turn.ordinal && item.turn.turnId == current.turn.turnId {
+                    if current.turn.executionRef != nil && item.turn.executionRef == nil { continue }
+                    if item.turn.executionRef != nil && current.turn.executionRef == nil {
+                        byThread[key] = item
+                        continue
+                    }
+                }
+                if item.turn.ordinal == current.turn.ordinal && item.receivedAt <= current.receivedAt { continue }
             }
             byThread[key] = item
         }
-        return byThread.sorted { $0.key < $1.key }.map { row($0.value, key: $0.key) }
+        return byThread.sorted { $0.key < $1.key }.compactMap { key, item in
+            if let ref = item.taskRef, let execution = item.turn.executionRef,
+               canonical.contains(where: { $0.taskRef == ref && $0.executionRef == execution }) { return nil }
+            return row(item, key: key)
+        }
+    }
+
+    static func supersedesAdoption(_ task: ObservedTask, observations: [NetworkObservation]) -> Bool {
+        guard task.executionRef == nil, let identity = task.nativeConversation else { return false }
+        return observations.contains { item in
+            guard item.nodeId == identity.nodeId && item.provider == identity.provider &&
+                item.nativeThreadId == identity.threadId else { return false }
+            if item.turn.nativeState == "RUNNING" {
+                return item.liveness == "PROVEN" && item.freshness == "RECENT" &&
+                    (0..<30).contains(Date().timeIntervalSince1970 - item.receivedAt)
+            }
+            // Durable terminal evidence may supersede an older adoption, never a
+            // newer queued intent or any task with a canonical execution.
+            guard item.turn.isTerminal, item.turn.completedAt?.isEmpty == false,
+                  let updated = TimestampParser.date(from: task.timestamps.updatedAt) else { return false }
+            return Double(item.turn.ordinal) / 1000 >= updated.timeIntervalSince1970
+        }
     }
 
     private static func threadKey(_ item: NetworkObservation) -> String {
@@ -45,7 +62,8 @@ enum NetworkObservationAdapter {
             // Persisted native indexes are historical evidence, not proof that a
             // runtime is still executing. Only an explicit liveness proof may
             // enter the Monitor Active projection.
-            state = item.liveness == "PROVEN" ? "CODEX_RUNNING" : "UNKNOWN"
+            state = item.liveness == "PROVEN" && item.freshness == "RECENT" &&
+                (0..<30).contains(Date().timeIntervalSince1970 - item.receivedAt) ? "CODEX_RUNNING" : "UNKNOWN"
         case "FAILED": state = "FAILED"
         case "COMPLETED": state = "COMPLETED"
         case "CANCELLED", "INTERRUPTED", "TIMED_OUT", "DISCONNECTED": state = "CANCELLED"

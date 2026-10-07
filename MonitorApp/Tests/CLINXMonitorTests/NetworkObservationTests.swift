@@ -73,7 +73,7 @@ final class NetworkObservationModelTests: XCTestCase {
 }
 
 private func projectedObservation(node: String, host: String, thread: String, state: String,
-                                  taskRef: String? = nil, liveness: String = "NOT_PROVEN") throws -> NetworkObservation {
+                                  taskRef: String? = nil, liveness: String = "NOT_PROVEN", executionRef: String? = nil) throws -> NetworkObservation {
     let fixture = try networkFixture().item
     let encoder = JSONEncoder()
     encoder.keyEncodingStrategy = .convertToSnakeCase
@@ -81,7 +81,7 @@ private func projectedObservation(node: String, host: String, thread: String, st
     raw["node_id"] = node
     raw["device_name"] = host
     raw["native_thread_id"] = thread
-    raw["observation_id"] = "obs_" + String(repeating: "a", count: 40)
+    raw["observation_id"] = "obs_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased() + "00000000"
     raw["task_ref"] = taskRef.map { $0 as Any } ?? NSNull()
     raw["binding_evidence"] = taskRef == nil ? "THREAD_UNBOUND" : "CANONICAL_ROUTE"
     raw["received_at"] = Date().timeIntervalSince1970
@@ -89,6 +89,7 @@ private func projectedObservation(node: String, host: String, thread: String, st
     raw["liveness"] = liveness
     var turn = try XCTUnwrap(raw["turn"] as? [String: Any])
     turn["native_state"] = state
+    turn["execution_ref"] = executionRef.map { $0 as Any } ?? NSNull()
     raw["turn"] = turn
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -109,12 +110,14 @@ private func canonicalFixture() throws -> ObservedTask {
 private actor UnifiedProjectionService: ObserverServing, NetworkObservationServing {
     let canonical: [ObservedTask]
     let native: [NetworkObservation]
+    let paginated: Bool
     private(set) var taskCalls = 0
     private(set) var eventCalls = 0
 
-    init(canonical: [ObservedTask] = [], native: [NetworkObservation]) {
+    init(canonical: [ObservedTask] = [], native: [NetworkObservation], paginated: Bool = false) {
         self.canonical = canonical
         self.native = native
+        self.paginated = paginated
     }
     func health() async throws -> ObserverHealth {
         ObserverHealth(schemaVersion: "1", status: "OK", readOnly: true,
@@ -134,8 +137,15 @@ private actor UnifiedProjectionService: ObserverServing, NetworkObservationServi
         return canonical[0].recentEvents
     }
     func observations(filters: ObservationFilters, cursor: String?) async throws -> ObservationPage {
-        ObservationPage(schemaVersion: "clinx-observation-v1", items: native,
-                        nextCursor: nil, hasMore: false, coverage: [:], retentionEvicted: 0)
+        let candidates = native.filter { (filters.state.isEmpty || $0.turn.nativeState == filters.state) && (filters.nativeThreadId.isEmpty || $0.nativeThreadId == filters.nativeThreadId) }
+        let offset = Int(cursor ?? "0") ?? 0
+        let page = paginated ? Array(candidates.dropFirst(offset).prefix(50)) : candidates
+        let more = paginated && offset + page.count < candidates.count
+        return ObservationPage(schemaVersion: "clinx-observation-v1", items: page,
+                        nextCursor: more ? String(offset + page.count) : nil, hasMore: more,
+                        coverage: [:], retentionEvicted: 0,
+                        sources: paginated ? [ObservationSource(nodeId: "p620", displayName: "P620",
+                            state: "ONLINE", coverage: "RECEIVED", ackSeq: 1, gap: nil)] : nil)
     }
     func observation(_ id: String, cursor: String?) async throws -> ObservationDetail {
         throw MonitorError.invalidResponse
@@ -190,7 +200,7 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
     func testCanonicalBindingAndNativeThreadDeduplicateWithCanonicalPriority() async throws {
         let canonical = try canonicalFixture()
         let bound = try projectedObservation(node: "air", host: "Air", thread: "same", state: "RUNNING",
-                                             taskRef: canonical.taskRef)
+                                             taskRef: canonical.taskRef, executionRef: canonical.executionRef)
         let unbound = try projectedObservation(node: "air", host: "Air", thread: "same", state: "RUNNING")
         let service = UnifiedProjectionService(canonical: [canonical], native: [bound, unbound])
         let store = MonitorStore(service: service, defaults: UserDefaults(suiteName: UUID().uuidString)!)
@@ -219,6 +229,59 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         let row = try XCTUnwrap(NetworkObservationAdapter.project([live], canonical: []).first)
         XCTAssertEqual(row.monitorStatus, .running)
         XCTAssertTrue(row.codexRunning)
+    }
+
+    func testRunningNativeTasksBeyondHistoryWindowAreFetchedFirst() async throws {
+        var items: [NetworkObservation] = []
+        for index in 0..<350 {
+            items.append(try projectedObservation(node: "p620", host: "P620", thread: "history-\(index)", state: "COMPLETED"))
+        }
+        items.append(try projectedObservation(node: "p620", host: "P620", thread: "dock", state: "RUNNING", liveness: "PROVEN"))
+        items.append(try projectedObservation(node: "p620", host: "P620", thread: "spcx", state: "RUNNING", liveness: "PROVEN"))
+        let service = UnifiedProjectionService(native: items, paginated: true)
+        let store = MonitorStore(service: service, defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await store.refresh()
+        XCTAssertEqual(store.active.count, 2)
+        XCTAssertEqual(Set(store.active.compactMap(\.observationId)), Set(items.suffix(2).map(\.observationId)))
+        XCTAssertEqual(store.allTasks.count, 500 > items.count ? items.count : 500)
+    }
+
+    func testLiveNativeConversationSupersedesOnlyExactAdoption() async throws {
+        let fixture = try canonicalFixture()
+        let encoder = JSONEncoder(); encoder.keyEncodingStrategy = .convertToSnakeCase
+        var raw = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(fixture)) as? [String: Any])
+        raw["execution_ref"] = NSNull(); raw["state"] = "QUEUED"; raw["stage"] = "QUEUED"
+        raw["execution_state"] = "UNKNOWN"; raw["codex_running"] = false
+        raw["native_conversation"] = ["node_id": "p620", "provider": "codex_app_server", "thread_id": "spcx"]
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let adoption = try decoder.decode(ObservedTask.self, from: JSONSerialization.data(withJSONObject: raw))
+        XCTAssertEqual(adoption.withEvents([], coverage: "PARTIAL", hasMore: false).nativeConversation?.threadId, "spcx")
+        let live = try projectedObservation(node: "p620", host: "P620", thread: "spcx", state: "RUNNING", taskRef: adoption.taskRef, liveness: "PROVEN")
+        let unrelated = try projectedObservation(node: "air", host: "Air", thread: "spcx", state: "RUNNING", liveness: "PROVEN")
+        XCTAssertFalse(NetworkObservationAdapter.supersedesAdoption(adoption, observations: [unrelated]))
+        XCTAssertFalse(NetworkObservationAdapter.supersedesAdoption(fixture, observations: [live]))
+        let service = UnifiedProjectionService(canonical: [adoption], native: [live])
+        let store = MonitorStore(service: service, defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await store.refresh()
+        XCTAssertEqual(store.allTasks.count, 1)
+        XCTAssertEqual(store.allTasks.first?.monitorStatus, .running)
+        XCTAssertNil(store.allTasks.first?.executionRef)
+        XCTAssertEqual(store.allTasks.first?.observationId, live.observationId)
+        let stale = try projectedObservation(node: "p620", host: "P620", thread: "spcx", state: "RUNNING")
+        XCTAssertFalse(NetworkObservationAdapter.supersedesAdoption(adoption, observations: [stale]))
+        var terminalRaw = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(live)) as? [String: Any])
+        var turn = try XCTUnwrap(terminalRaw["turn"] as? [String: Any])
+        turn["native_state"] = "COMPLETED"; turn["completed_at"] = ISO8601DateFormatter().string(from: Date())
+        turn["ordinal"] = Int64(Date().timeIntervalSince1970 * 1000)
+        terminalRaw["turn"] = turn; terminalRaw["liveness"] = "NOT_PROVEN"
+        let completed = try decoder.decode(NetworkObservation.self, from: JSONSerialization.data(withJSONObject: terminalRaw))
+        XCTAssertTrue(NetworkObservationAdapter.supersedesAdoption(adoption, observations: [completed]))
+        let completedStore = MonitorStore(service: UnifiedProjectionService(canonical: [adoption], native: [completed], paginated: true),
+            defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await completedStore.refresh()
+        XCTAssertEqual(completedStore.allTasks.count, 1)
+        XCTAssertEqual(completedStore.allTasks.first?.monitorStatus, .completed)
+
     }
 
     func testTerminalNativeStatesDoNotEnterActive() throws {
@@ -286,7 +349,7 @@ final class NetworkObservationStoreTests: XCTestCase {
     }
 
     func testDelayedSelectionCannotContaminateAnotherThread() async throws {
-        let first = try networkFixture(id: "obs_" + String(repeating: "a", count: 40), turn: "turn-a")
+        let first = try networkFixture(id: "obs_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased() + "00000000", turn: "turn-a")
         let second = try networkFixture(id: "obs_" + String(repeating: "b", count: 40), turn: "turn-b")
         let service = NetworkGate(first)
         let store = NetworkObservationStore(client: service)

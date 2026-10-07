@@ -30,10 +30,12 @@ def order(value, fallback=0):
 
 class CodexObservationSource:
     provider = SUPPORTED_PROVIDER
-    def __init__(self, root, node_id, canonical_db=None, owner_host=None):
+    def __init__(self, root, node_id, canonical_db=None, owner_host=None, provider_config=None):
         self.history=NativeHistory(root)
         self.node_id=node_id
         self.canonical_db=Path(canonical_db) if canonical_db else None
+        self.provider_config=provider_config
+        self.live_cache={}
         from execution_semantics import normalize_host
         self.owner_host=normalize_host(owner_host or node_id).stable_identifier
 
@@ -162,6 +164,9 @@ class CodexObservationSource:
         if self.canonical_db and not all(state.get("canonical_complete_"+table,True) for table in ("executions","execution_history")):
             coverage="HISTORY_BACKFILL"
         if not turns: turns=[{"turn_id":None,"ordinal":0,"native_state":"UNKNOWN"}]
+        latest=max(turns,key=lambda t:t["ordinal"])
+        if self.provider_config and latest.get("turn_id") and latest.get("native_state")=="RUNNING":
+            latest["live_observation"]=self._observe_live(tid,metadata["cwd"],latest["turn_id"])
         state["active"]=any(t.get("native_state")=="RUNNING" or t.get("execution_state") in ("CODEX_RUNNING","FINALIZING","TURN_STARTED") for t in turns)
         task_refs={t["task_ref"] for t in canonical}
         if len(task_refs)>1:
@@ -172,6 +177,25 @@ class CodexObservationSource:
             source_generation=self.generation,source_updated_at=metadata.get("updated_at"),
             coverage=coverage,task_ref=task,binding_evidence="CANONICAL_ROUTE" if task else "THREAD_UNBOUND",
             turn={k:v for k,v in turn.items() if k!="task_ref"}) for turn in turns],state
+
+    def _observe_live(self,tid,project,turn_id):
+        """Bounded reads of configured existing owners; no execution/lease writes."""
+        from native_provider import observe_thread
+        from execution_liveness import classify
+        stamp=time.time()
+        cached=self.live_cache.get(tid)
+        if cached and cached["turn_id"]==turn_id and 0<=stamp-cached["observed_at"]<10:
+            return cached
+        rows=observe_thread(self.provider_config,tid)["observations"]
+        evidence=classify(rows,tid,turn_id)
+        owner=next((r for r in rows if r.get("endpoint")==evidence["owner_endpoint"]),{})
+        live=evidence["provider_liveness"]=="LIVE" and owner.get("cwd")==project
+        proof=dict(thread_id=tid,turn_id=turn_id,observed_at=stamp,
+            liveness="LIVE" if live else "UNKNOWN",
+            reason=evidence["liveness_reason"] if owner.get("cwd")==project or not owner else "WORKSPACE_MISMATCH")
+        if len(self.live_cache)>=128: self.live_cache.pop(next(iter(self.live_cache)))
+        self.live_cache[tid]=proof
+        return proof
 
     def _legacy(self,metadata,state):
         """Incremental allowlist parser; never collects reasoning/tool output."""

@@ -55,6 +55,13 @@ public struct ObservedTask: Codable, Identifiable, Sendable {
     public let menuState: String
     /// Original v2 identity for read-only native session content; never an execution ref.
     public var observationId: String? = nil
+    public var nativeConversation: NativeConversation? = nil
+}
+
+public struct NativeConversation: Codable, Sendable {
+    public let nodeId: String
+    public let provider: String
+    public let threadId: String
 }
 
 public struct ModelIdentity: Codable, Sendable {

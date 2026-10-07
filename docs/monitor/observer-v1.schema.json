@@ -704,6 +704,29 @@
             "BLOCKED",
             "PASS"
           ]
+        },
+        "native_conversation": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "node_id": {
+              "type": "string"
+            },
+            "provider": {
+              "const": "codex_app_server"
+            },
+            "thread_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "node_id",
+            "provider",
+            "thread_id"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

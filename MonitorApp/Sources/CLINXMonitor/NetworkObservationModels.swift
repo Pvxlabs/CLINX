@@ -112,12 +112,13 @@ protocol NetworkObservationServing: Sendable {
     func observationActivity(_ id: String, cursor: String?) async throws -> ObservationActivityPage
 }
 struct ObservationFilters: Equatable, Sendable {
+    var nativeThreadId = ""
     var node = ""
     var project = ""
     var state = ""
     var kind = ""
     var query: [URLQueryItem] {
-        [("node", node), ("project", project), ("state", state), ("kind", kind)]
+        [("node", node), ("project", project), ("state", state), ("kind", kind), ("native_thread_id", nativeThreadId)]
             .filter { !$0.1.isEmpty }.map { URLQueryItem(name: $0.0, value: $0.1) }
     }
 }
