@@ -39,7 +39,7 @@ READ_ONLY_TOOL_NAMES = (
     "clinx_get_capabilities",
     "clinx_prepare_execution",
 )
-DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_effective_authority", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization", "clinx_register_derived_git_target", "clinx_revoke_derived_git_target", "clinx_adopt_conversation")
+DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_effective_authority", "clinx_get_prepared_request", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization", "clinx_register_derived_git_target", "clinx_revoke_derived_git_target", "clinx_adopt_conversation")
 
 
 class MCPServerError(RuntimeError):
@@ -64,7 +64,8 @@ def _json_schema(properties: dict[str, Any], required: list[str] | None = None) 
 
 def _routing_identity_schema() -> dict[str, Any]:
     """Public route shape; conversation bindings are intentionally redacted."""
-    identity = lambda properties: _json_schema(properties)
+    def identity(properties):
+        return _json_schema(properties)
     return _json_schema({
         "host": identity({
             "stable_identifier": {"type": "string"},
@@ -138,7 +139,20 @@ def _authority_tools():
     return [
         {'name': 'clinx_get_effective_authority',
          'description': 'Read effective FUTURE execution authority for the exact canonical task. Separate policy, operation/target grants, client exposure and runtime health. Discovery never grants authority.',
-         'inputSchema': _json_schema({'task_ref': {'type': 'string'}}, ['task_ref']),
+         'inputSchema': _json_schema({'task_ref': {'type': 'string'}, 'requested_operations': scope}, ['task_ref']),
+         'annotations': {'readOnlyHint': True, 'destructiveHint': False}},
+        {'name': 'clinx_get_prepared_request',
+         'description': 'Read one exact prepared execution or policy change, including immutable content hash, target, scope differences, validity, applied version and exact execution/thread/turn readback. Does not apply, consume or start. Read this before approval and after lost responses; raw prompts and credentials are not returned.',
+         'inputSchema': _json_schema({'request_ref': {'type': 'string', 'pattern': '^(prepared|reauth)_[0-9a-f]{32}$'}}, ['request_ref']),
+         'outputSchema': _json_schema({
+             **{k: {'type': 'string'} for k in ('request_ref', 'request_type', 'request_hash', 'request_state', 'created_at', 'task_action', 'expiry_semantics', 'prompt_sha256', 'provider_running')},
+             **{k: {'type': ['string', 'null']} for k in ('task_ref', 'expires_at', 'baseline_policy_hash', 'current_policy_hash', 'execution_ref', 'execution_state', 'execution_stage', 'thread_id', 'turn_id', 'execution_owner_state', 'applied_at')},
+             **{k: {'type': ['integer', 'null']} for k in ('baseline_policy_version', 'current_policy_version', 'applied_policy_version')},
+             **{k: {'type': ['object', 'null']} for k in ('previous_policy', 'current_policy', 'proposed_policy', 'routing_identity')},
+             **{k: {'type': 'boolean'} for k in ('execution_present', 'network_access', 'previous_network_access', 'current_network_access', 'execution_started')},
+             'target': {'type': 'object'}, 'policy_difference': {'type': 'object'},
+             'read_only': {'type': 'boolean', 'const': True},
+         }, ['request_ref', 'request_type', 'request_hash', 'request_state', 'target', 'read_only']),
          'annotations': {'readOnlyHint': True, 'destructiveHint': False}},
         {'name': 'clinx_prepare_policy_reauthorization',
          'description': 'Prepare a reviewed authority change on the SAME task. New Git target scope must identify a registered task-owned worktree. No execution starts; historical execution policies remain unchanged. Only the outer operator may call this, never the managed worker.',
@@ -150,7 +164,9 @@ def _authority_tools():
         {'name': 'clinx_apply_policy_reauthorization',
          'description': 'Apply exactly one prepared authority change with explicit operator approval, CAS and immutable audit. Idempotent. Active ownership or unresolved side effects block application. Does not execute or replay deployment.',
          'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
-             'prepared_reauthorization_ref': {'type': 'string'}}, ['approved', 'prepared_reauthorization_ref']),
+             'prepared_reauthorization_ref': {'type': 'string'},
+             'expected_request_hash': {'type': 'string', 'pattern': '^[0-9a-f]{64}$'},
+             'expected_task_ref': {'type': 'string'}}, ['approved', 'prepared_reauthorization_ref']),
          'annotations': {'readOnlyHint': False, 'destructiveHint': True}},
         {'name': 'clinx_register_derived_git_target',
          'description': 'Explicit operator registration of one real linked Git worktree for one active task. Supply its successful task Host worktree-add receipt when available; otherwise record explicit operator adoption evidence. Returns a stable target identity; registration alone grants no push.',
@@ -456,8 +472,16 @@ MCP_INSTRUCTIONS = (
     "direct_mcp_execution=true is intentional. Execution uses CLINX as the "
     "command plane and requires explicit user approval. Resolve the exact task "
     "with CLINX, call clinx_prepare_execution, then call "
-    "clinx_start_execution with only the returned prepared_execution_ref and "
-    "approved=true. Linear role=AUDIT: it is the human-notification projection "
+    "Use pure UUID thread_id or full codex_uri; get_status has no max_bytes field. "
+    "Compare structured requested_operations with clinx_get_effective_authority: "
+    "reuse covered scopes; missing scopes require same-task reauthorization. "
+    "Read clinx_get_prepared_request before apply/start, then pass its request_hash "
+    "as expected_request_hash and task_ref as expected_task_ref when present. "
+    "clinx_start_execution accepts the prepared_execution_ref, approved=true and "
+    "these optional review assertions, never policy overrides. After lost responses "
+    "read the ORIGINAL prepared request and exact execution, never blindly retry. "
+    "QUEUED is not Provider running; report the observed failure layer or UNKNOWN, "
+    "not a presumed safety rejection. Linear role=AUDIT: it is the human-notification projection "
     "only and never gates execution. CLINX "
     "Use clinx_cancel_execution only with an opaque CLINX execution_ref returned "
     "by CLINX. It never accepts PID, shell, thread, turn, or cwd values. CLINX "
@@ -644,6 +668,8 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
                         "description": "Opaque reference returned by clinx_prepare_execution.",
                     },
                     "approved": {"type": "boolean", "const": True},
+                    "expected_request_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "expected_task_ref": {"type": "string"},
                 },
                 ["prepared_execution_ref", "approved"],
             ),
@@ -779,6 +805,9 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
         'client_exposure': {'type': 'string'}, 'runtime_health': {'type': 'string'},
         'read_only': {'type': 'boolean'},
         'derived_git_targets': {'type': 'array'},
+        'requirements_evaluated': {'type': 'boolean'},
+        'requirements_covered': {'type': ['boolean', 'null']},
+        'missing_operations': {'type': 'array'},
     }
     for tool in tools:
         if tool['name'] in {'clinx_get_effective_authority', 'clinx_prepare_policy_reauthorization', 'clinx_apply_policy_reauthorization'}:
@@ -971,6 +1000,8 @@ class ClinxMCPServer:
             result = self.integration.get_capabilities(**arguments)
         elif name == "clinx_get_effective_authority":
             result = self.integration.get_effective_authority(**arguments)
+        elif name == "clinx_get_prepared_request":
+            result = self.integration.get_prepared_request(**arguments)
         elif name == "clinx_prepare_policy_reauthorization":
             result = self.integration.prepare_policy_reauthorization(**arguments)
         elif name == "clinx_apply_policy_reauthorization":
@@ -982,10 +1013,10 @@ class ClinxMCPServer:
         elif name == "clinx_prepare_execution":
             result = self.integration.prepare_execution(**arguments)
         elif name == "clinx_start_execution":
-            unexpected = set(arguments) - {"prepared_execution_ref", "approved"}
+            unexpected = set(arguments) - {"prepared_execution_ref", "approved", "expected_request_hash", "expected_task_ref"}
             if unexpected:
                 raise TypeError(
-                    "clinx_start_execution accepts only prepared_execution_ref and approved"
+                    "clinx_start_execution accepts prepared_execution_ref, approved and optional review hash/task assertions"
                 )
             result = self.integration.start_execution(**arguments)
         elif name == "clinx_cancel_execution":
@@ -1008,14 +1039,15 @@ class ClinxMCPServer:
                 result = self.executor(**arguments)
         else:
             raise MCPRequestError(-32602, f"unknown tool: {name}")
-        return _public_json(result, native_identity=(name == 'clinx_adopt_conversation' or
+        return _public_json(result, native_identity=(name in {'clinx_adopt_conversation', 'clinx_get_prepared_request'} or
             (name in {'clinx_get_context', 'clinx_get_status'} and
              any(k in arguments for k in ('thread_id', 'codex_uri')))))
 
     @staticmethod
     def _app_server_error_result(exc: app_server.AppServerError) -> dict[str, Any]:
+        from dispatch_errors import safe_reason
         payload = {
-            "error": str(exc),
+            "error": safe_reason(exc),
             "error_type": type(exc).__name__,
             "codex_running": False,
             "retry_required": True,
@@ -1094,9 +1126,15 @@ class ClinxMCPServer:
             try:
                 result = self._tool_result(self._call_tool(name, arguments))
             except app_server.AppServerError as exc:
-                result = self._tool_result(self._app_server_error_result(exc), is_error=True)
+                from dispatch_errors import failure_details
+                payload = self._app_server_error_result(exc)
+                payload.update(failure_details(name, arguments, exc, getattr(self.integration, 'registry', None)))
+                if payload['outcome_certainty'] == 'UNKNOWN':
+                    payload.update(codex_running=None, retry_required=False)
+                result = self._tool_result(payload, is_error=True)
             except (M9IntegrationError, TaskRegistryError, bridge.BridgeError, KeyError, TypeError, ValueError) as exc:
-                payload = {"error": str(exc)}
+                from dispatch_errors import failure_details, safe_reason
+                payload = {"error": safe_reason(exc)}
                 if getattr(exc, "code", None):
                     payload.update(error_code=exc.code, execution_started=False)
                 code = str(exc).split(':', 1)[0]
@@ -1106,9 +1144,12 @@ class ClinxMCPServer:
                     payload.update({'failure_code': code, 'execution_started': False,
                         'evaluation_scope': 'PROPOSED_EXECUTION_ONLY_PRIOR_EVIDENCE_UNCHANGED',
                         'root_blocker': {'layer': 'AUTHORITY' if code.startswith(('AUTHORITY', 'POLICY', 'TARGET', 'PRODUCTION_SCOPE')) else 'CAPABILITY',
-                                         'status': 'BLOCKED', 'reason': str(exc)},
+                                         'status': 'BLOCKED', 'reason': safe_reason(exc)},
                         'downstream': {'QUALIFICATION': 'NOT_RUN', 'CAPACITY': 'UNVERIFIED',
                                        'DEPLOYMENT': 'NOT_RUN', 'READBACK': 'NOT_RUN', 'OBSERVATION': 'NOT_RUN'}})
+                payload.update(failure_details(name, arguments, exc, getattr(self.integration, 'registry', None)))
+                if payload['outcome_certainty'] == 'UNKNOWN':
+                    payload.pop('execution_started', None)
                 result = self._tool_result(payload, is_error=True)
         else:
             raise MCPRequestError(-32601, f"method not found: {method}")

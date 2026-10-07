@@ -77,6 +77,38 @@ def test_missing_owner_fails_before_any_local_dispatch(integration):
     assert integration.calls == []
 
 
+@pytest.mark.parametrize('transport', [False, True])
+def test_provider_failure_survives_owner_socket_without_replay(integration, transport):
+    import app_server
+    from dispatch_errors import failure_details
+
+    def fail(**request):
+        integration.calls.append(request)
+        if transport:
+            raise app_server.AppServerTransportError('response lost token=test-private')
+        raise app_server.AppServerRemoteError('turn/start', {'message': 'request refused'})
+
+    integration.start_execution = fail
+    ready, stop = threading.Event(), threading.Event()
+    thread = threading.Thread(target=serve, args=(integration,), kwargs={'ready': ready, 'stop': stop})
+    thread.start()
+    try:
+        assert ready.wait(5)
+        client = ExecutionOwnerClient(integration.registry)
+        for _ in range(2):
+            with pytest.raises(ExecutionOwnerError) as error:
+                client.start(prepared_execution_ref=request(integration)['prepared_execution_ref'], approved=True)
+            details = failure_details('clinx_start_execution', {}, error.value)
+            assert details['failure_source'] == ('PROVIDER_TRANSPORT' if transport else 'PROVIDER')
+            assert details['outcome_certainty'] == ('UNKNOWN' if transport else 'KNOWN')
+            assert 'test-private' not in str(error.value)
+            assert 'test-private' not in json.dumps(details)
+        assert len(integration.calls) == 1
+    finally:
+        stop.set()
+        thread.join(5)
+
+
 def test_socket_is_private_and_independent_of_shared_db_directory(integration):
     integration.registry.path.parent.chmod(0o775)
     before = integration.registry.path.parent.stat().st_mode

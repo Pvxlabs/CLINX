@@ -44,8 +44,11 @@ request alone does not grant production permission.
 
 Public MCP tools (also available through `ClinxIntegration`):
 
-1. `clinx_get_effective_authority(task_ref)` returns the future policy, generation
+1. `clinx_get_effective_authority(task_ref, requested_operations?)` returns the future policy, generation
    and `policy_hash`, including legacy route/network authority in the CAS identity.
+   Structured requirements return `requirements_covered` and exact
+   `missing_operations`. Covered scopes are reused without reauthorization.
+   A prose goal alone cannot establish whether future publishing is authorized.
 2. `clinx_prepare_policy_reauthorization(approved=true, task_ref,
    expected_policy_hash, target_policy, reason, network_access?)` records an
    immutable, 15-minute request. Host policy changes require exact operation scopes.
@@ -53,6 +56,55 @@ Public MCP tools (also available through `ClinxIntegration`):
    prepared_reauthorization_ref)` atomically compares identity and appends the
    approved version. Repeat apply returns the original receipt without starting work.
 4. A separate prepare/start continues or reopens that same canonical Task.
+
+`clinx_get_prepared_request(request_ref)` reads either a `reauth_...` or
+`prepared_...` record without applying, consuming, starting or probing a Provider.
+It returns the target node/project/repository, previous/current/proposed policy,
+policy differences, content hash, timestamps and validity. Policy requests expire
+after 15 minutes; execution preparations have no time expiry and are checked
+against their sealed policy/route instead. Applied requests retain their receipt
+after expiry. Raw prompts, credentials and operator environment are omitted;
+`prompt_sha256` identifies execution content without returning it.
+
+Before applying, inspect this readback. Pass its `request_hash` as the optional
+`expected_request_hash`, and the reviewed task as `expected_task_ref`, to
+`clinx_apply_policy_reauthorization`. Both assertions are checked inside the
+existing CAS transaction, including on idempotent repeats. The same review
+assertions are accepted by `clinx_start_execution`; they cannot override policy,
+target, prompt or authority. Existing clients remain compatible. `approved=true`
+records the operator assertion only; it does not override client-side approvals.
+
+After a lost apply response, read the SAME request and check
+`request_state=APPLIED`, `applied_policy_version` and the effective policy hash.
+After a lost start response, read the SAME prepared execution. The stable
+`execution_ref`, exact execution-owned thread/turn and persistent owner state
+identify what to inspect with `clinx_get_status(execution_ref=...)`. Neither a
+task's previous completed turn nor a QUEUED projection proves this execution ran.
+`provider_running=NOT_OBSERVED` on prepared readback is intentional; live status
+is a separate observation. Unknown dispatch errors retain a consumed request,
+and never restore it to PREPARED merely because the response was lost.
+
+Failure results include `failure_stage`, `failure_source`, `failure_code`,
+`correlation`, `side_effect_certainty`, `outcome_certainty`, `retry_allowed` and
+`recovery_action`. A server receipt states `server_received=true` and
+`caller_approval=NOT_OBSERVED`; CLINX cannot manufacture a client approval or
+explain a request rejected before reaching it. Missing logs/executions do not
+prove an external safety rejection. Preserve original client errors separately.
+
+Exact thread examples (the status tool does NOT accept `max_bytes`):
+
+```json
+{"thread_id":"01a11492-d1ae-7872-ab01-ca022e9cda3d","host":"p620"}
+```
+
+```json
+{"codex_uri":"codex://threads/01a11492-d1ae-7872-ab01-ca022e9cda3d?hostId=remote-ssh-discovered%3Ap620"}
+```
+
+Use either selector, not both. A full URI is never a `thread_id`.
+`THREAD_UNBOUND` can coexist with a native COMPLETED turn; native historical
+threads do not require automatic adoption. The public readback tool adds no
+App pages or interaction flows, and existing write-operation annotations remain.
 
 The audit records previous/new policy and route, requested/approved scope, reason,
 channel, actor limitation, timestamps and generation. The current MCP protocol

@@ -333,6 +333,7 @@ class M11MCPTests(unittest.TestCase):
             "clinx_list_projects", "clinx_get_status", "clinx_get_capabilities",
             "clinx_prepare_execution", "clinx_start_execution",
             "clinx_cancel_execution", "clinx_get_effective_authority",
+            "clinx_get_prepared_request",
             "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization",
             "clinx_register_derived_git_target", "clinx_revoke_derived_git_target", "clinx_adopt_conversation",
         ])
@@ -366,7 +367,7 @@ class M11MCPTests(unittest.TestCase):
 
     def test_every_default_tool_declares_an_object_output_schema(self):
         tools = tool_definitions()
-        self.assertEqual(len(tools), 15)
+        self.assertEqual(len(tools), 16)
         self.assertEqual({tool["name"] for tool in tools}, set(DEFAULT_TOOL_NAMES))
         for tool in tools:
             with self.subTest(tool=tool["name"]):
