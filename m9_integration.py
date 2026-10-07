@@ -1474,7 +1474,7 @@ class ClinxIntegration:
             },
             "instructions": (
                 "Use CLINX for authoritative task context and command preparation. "
-                "Prepare with clinx_prepare_execution, then call "
+                "Prepare with clinx_prepare_execution. "
                 "Read clinx_get_prepared_request before applying or starting, and use "
                 "its hash/task with optional expected_request_hash/expected_task_ref assertions. "
                 "clinx_start_execution accepts prepared_execution_ref and approved=true "
@@ -1540,8 +1540,8 @@ class ClinxIntegration:
         if result['target']['repository_root'] is None:
             # New preparations have a sealed worktree identity but no Task yet.
             # Label the current registration separately from that immutable seal.
-            mapping = next((p for p in self.cfg.projects if p.alias.casefold() == result['target']['project'].casefold()), None)
-            result['target']['registered_repository_root'] = str(mapping.cwd) if mapping else None
+            mapping = next((p for p in self.cfg.projects if p.project_alias.casefold() == result['target']['project'].casefold()), None)
+            result['target']['registered_repository_root'] = str(mapping.repo) if mapping else None
         return result
 
     def get_effective_authority(self, *, task_ref, requested_operations=None):

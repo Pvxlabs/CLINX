@@ -112,6 +112,23 @@ def test_execution_preview_integrity_and_review_guard(tmp_path):
         integration.get_prepared_request(request_ref=p['request_ref'])
 
 
+def test_new_task_preview_uses_real_project_mapping_without_creating_task(tmp_path):
+    import bridge
+    integration, registry, dispatcher, _ = make_fixture(tmp_path)
+    integration.cfg.projects = (bridge.ProjectMapping(linear_name='Fixture', repo=tmp_path, target_alias='orion'),)
+    p = integration.prepare_execution(approved=True, task_action='create', host='p620',
+                                     project='orion', title='New read-only fixture', summary='Read-only fixture',
+                                     prompt='Only read the known file')
+    before = snapshot(registry)
+    result = call(integration, 'clinx_get_prepared_request', request_ref=p['prepared_execution_ref'])
+    assert not result['isError']
+    preview = result['structuredContent']
+    assert preview['target']['registered_repository_root'] == str(tmp_path)
+    assert preview['target']['repository_root'] is None and preview['task_ref'] is None
+    assert preview['request_state'] == 'PREPARED' and not preview['execution_present']
+    assert snapshot(registry) == before and not dispatcher.dispatch_calls
+
+
 def test_lost_provider_response_is_not_restored_or_replayed(tmp_path):
     integration, registry, dispatcher, task = make_fixture(tmp_path)
     prepared = integration.prepare_execution(approved=True, task_ref=task.task_id, prompt='Fixture')
