@@ -10,8 +10,8 @@ if [ -e "$capture_dir/ready.txt" ] || [ -e "$capture_dir/complete.txt" ]; then
     exit 1
 fi
 ./Scripts/build-app.sh
-codesign --force --sign - '.build/CLINX Monitor.app'
-open -n '.build/CLINX Monitor.app' --env CLINX_CAPTURE_DIR="$capture_dir" \
+codesign --force --sign - '.build/CLINX.app'
+open -n '.build/CLINX.app' --env CLINX_CAPTURE_DIR="$capture_dir" \
     --env CLINX_CAPTURE_GEOMETRY=1 --env CLINX_CAPTURE_HOLD=1
 last_name=""
 attempts=0

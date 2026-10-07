@@ -19,17 +19,17 @@ final class MonitorMenuBar: NSObject, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
         statusItem.button?.image = Self.icon
-        statusItem.button?.toolTip = "CLINX Monitor"
-        statusItem.button?.setAccessibilityLabel("CLINX Monitor")
+        statusItem.button?.toolTip = "CLINX"
+        statusItem.button?.setAccessibilityLabel("CLINX")
         menu.autoenablesItems = false
         menu.delegate = self
-        let title = NSMenuItem(title: "CLINX Monitor", action: nil, keyEquivalent: "")
+        let title = NSMenuItem(title: "CLINX", action: nil, keyEquivalent: "")
         title.isEnabled = false
         connectionItem.isEnabled = false
         menu.addItem(title)
         menu.addItem(connectionItem)
         menu.addItem(.separator())
-        add("Open Monitor", action: #selector(openMonitor))
+        add("Open CLINX", action: #selector(openMonitor))
         for view in [MonitorView.active, .blocked, .failed, .recent, .completed] {
             let item = add(view.label, action: #selector(openCategory(_:)))
             item.representedObject = view.rawValue
@@ -39,7 +39,7 @@ final class MonitorMenuBar: NSObject, NSMenuDelegate {
         refreshItem = add("Refresh Now", action: #selector(refresh))
         settingsItem = add("Settings…", action: #selector(openSettings))
         menu.addItem(.separator())
-        add("Quit CLINX Monitor", action: #selector(quit))
+        add("Quit CLINX", action: #selector(quit))
         statusItem.menu = menu
     }
 
@@ -79,13 +79,7 @@ final class MonitorMenuBar: NSObject, NSMenuDelegate {
     }
 
     private func showMonitor() {
-        if let window = NSApp.windows.first(where: { $0.title == "CLINX Monitor" && $0.canBecomeMain }) {
-            window.deminiaturize(nil)
-            window.makeKeyAndOrderFront(nil)
-        } else {
-            openWindow()
-        }
-        NSApp.activate(ignoringOtherApps: true)
+        openWindow()
     }
 
     @objc private func refresh() {
@@ -125,7 +119,7 @@ final class MonitorMenuBar: NSObject, NSMenuDelegate {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "CLINX Monitor"
+        image.accessibilityDescription = "CLINX"
         return image
     }()
 }

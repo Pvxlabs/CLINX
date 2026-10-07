@@ -8,7 +8,7 @@ if ! security find-certificate -c "$signing_identity" >/dev/null 2>&1; then
 fi
 swift build -c release
 binary_dir="$(swift build -c release --show-bin-path)"
-app_dir="$PWD/.build/CLINX Monitor.app"
+app_dir="$PWD/.build/CLINX.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$binary_dir/CLINXMonitor" "$app_dir/Contents/MacOS/CLINXMonitor"
 cp Info.plist "$app_dir/Contents/Info.plist"
