@@ -1,14 +1,14 @@
 # 授权与派发链路最小修复及真实闭环验收
 
-截至 2026-10-07，本次代码、运行制品激活和真实 MCP→Provider 闭环已通过；ChatGPT 实际入口审批闭环尚未运行。因此整体 `FINAL_STATUS=BLOCKED`，唯一剩余动作见下方 C 验收文件。历史拒绝原因独立保留 UNKNOWN。
+截至 2026-10-07，本次代码、运行制品激活、真实 MCP→Provider 闭环及复用既有授权的 ChatGPT 实际入口验收均已通过。用户提交了 ChatGPT 本轮入口验收记录，本轮又按准确 execution_ref 核对 CLINX 持久化执行与结果。因此整体 `FINAL_STATUS=PASS`，本次无剩余验收动作。历史拒绝原因独立保留 UNKNOWN；ChatGPT 新增权限的 apply 没有在这轮重测。
 
 ```ini
-FINAL_STATUS=BLOCKED
+FINAL_STATUS=PASS
 ORIGINAL_REJECTION_ROOT_CAUSE=UNKNOWN
 IMPLEMENTATION_STATUS=PASS
 RUNTIME_ACTIVATION_STATUS=PASS
 MCP_PROVIDER_ROUNDTRIP=PASS
-CHATGPT_ENTRY_ROUNDTRIP=BLOCKED
+CHATGPT_ENTRY_ROUNDTRIP=PASS
 ORION_MUTATION=NONE
 CLINX_UI_UX_CHANGED=NO
 ```
@@ -23,7 +23,7 @@ CLINX_UI_UX_CHANGED=NO
 
 ## 实际修复和源码
 
-主修复提交 `2435377444b0189cad56f5d27a0071f14586d187`；真实运行验收发现新任务 prepared 读回引用不存在的 ProjectMapping.cwd，补充修复提交 `cf07b52eb6c88b1bb407dfefabae7676ffa433d4`。已在本地 main 收口，未推送远端。
+主修复提交 `2435377444b0189cad56f5d27a0071f14586d187`；真实运行验收发现新任务 prepared 读回引用不存在的 ProjectMapping.cwd，补充修复提交 `cf07b52eb6c88b1bb407dfefabae7676ffa433d4`。代码与验收文档已提交至 main；远端同步结果见 `/data/artifacts/clinx-authority-dispatch-20261007/git-delivery.json`。
 
 - `prepared_requests.py` 和 `clinx_get_prepared_request` 只读既有准备记录，返回准确目标、policy 差异、有效期/失效状态、内容摘要、已应用版本及准确 execution/thread/turn。原 prompt 不返回，只提供 prompt hash。
 - `m9_integration.py` 使用结构化 requested_operations 判断现有 policy 是否覆盖，覆盖时复用；缺少范围时返回明确 missing_operations，引导同 task reauthorization。新任务目标读回使用真实 ProjectMapping.repo/project_alias。
@@ -68,12 +68,16 @@ CLINX_UI_UX_CHANGED=NO
 
 真实重复提交已确认终态的同一 prepared 请求，返回原 dispatch 回执，Host ledger 仍只有一次，未产生新 turn。task 仍 ACTIVE 与 execution 已 COMPLETED 分开处理；错误使用 reopen 的真实拒绝已保留，后续依据读回使用 continue，没有改数据库状态。
 
-## C 层及唯一外部动作
+## C 层真实入口验收与收口
 
-本环境是 Codex，不能触发 ChatGPT 的真实调用审批，因此 C=BLOCKED。B 层成功、本地测试和 approved=true 均不替代 C。
+ChatGPT 入口的调用与真实审批由用户在当前 ChatGPT 对话完成，并将验收记录转交本线程；本轮 Codex 随后通过正式 CLINX 工具按准确 execution_ref 独立读回。入口来源证据是用户提交的 ChatGPT 验收记录，执行、Host 交付和终态证据来自 CLINX 持久化记录。
 
-已为同一专用测试 task 准备 `prepared_ffce98d79e1841299b4df7e4729a79d7`，摘要 `ca04d19e5ce0d74a5e46923bd049a96a7ebf7b8052daac28de25c33459f7da02`，预期 execution `exec_ffce98d79e1841299b4df7e4729a79d7`。当前 PREPARED、execution_present=false、thread/turn null；没有执行，也不会因存在记录自动开始。
+本轮实际消费 `prepared_ffce98d79e1841299b4df7e4729a79d7`，摘要 `ca04d19e5ce0d74a5e46923bd049a96a7ebf7b8052daac28de25c33459f7da02`，task `task_4ce2a4182bf34b2ab7c0f6fae991d51b`，execution `exec_ffce98d79e1841299b4df7e4729a79d7`，turn `01a114da-0cd3-7580-a87f-770023352ad2`。该 turn 与先前 B 的 turn 不同，不能混用旧回合证明本轮。
 
-唯一外部动作：在 ChatGPT 刷新 CLINX 工具定义并打开新对话，执行 `/data/artifacts/clinx-authority-dispatch-20261007/CHATGPT_ENTRY_VALIDATION_ZH.md` 中的完整准确调用。先核对 prepared/hash/task/现有 policy，经真实审批后只 start 一次，再按预期 execution 读回。真实拒绝或结果不确定时保留原错误，查询原请求，不切换入口或盲重派。若期间 policy/route 已变化，原准备会失效，不可用它报告通过。
+CLINX 独立读回确认仅一次 HOST_FILESYSTEM/path_read，Host 回执 `hostexec_31597b9ff5ad403db5f90fd6750d63fe`，05:33:22 UTC 读取 README 第一行 `# CLINX`，exit_code=0；call_state=SUCCEEDED，delivery_state=DELIVERED，reconciliation_required=false。05:33:25 UTC 收到本轮结果，execution_state=COMPLETED，STATUS=PASS，CHANGED_FILES=NONE，BLOCKERS=NONE，writeback_state=WRITTEN。Host delivery 身份中的 task/thread/turn 和 owner PID 3152482 与本轮关联一致，运行制品为 authority-dispatch-20261007-cf07b52eb6c8。
+
+本轮复用现有 policy_version=1，未重新授权或扩大范围。C=PASS 仅覆盖“复用既有授权，从 ChatGPT 实际入口启动并完成这个受限任务”；未从 ChatGPT 重新验证新增权限 apply，不保证所有未来权限申请都会获准。原始拒绝的具体原因仍为 UNKNOWN。A/B/C 当前均已满足本次收口要求，无需再启动请求或开展新一轮授权改造。
+
+原 `/data/artifacts/clinx-authority-dispatch-20261007/CHATGPT_ENTRY_VALIDATION_ZH.md` 现作为历史验收步骤保留，请勿重跑已消费请求。新验收与独立读回保存为 C-chatgpt-entry-acceptance.json、C-canonical-terminal-readback.json 和 C-canonical-identity-readback.json；早期 BLOCKED、未启动快照保留其采样时的含义。
 
 完整 A/B/C 回执、RPC 记录、manifest、健康读回、激活问题和回退脚本保存在 `/data/artifacts/clinx-authority-dispatch-20261007/`。ORION 原目标没有应用权限或执行；本次没有 ORION 代码修改、发布、fan-out 修复或交易动作，CLINX UI/UX 没有修改。

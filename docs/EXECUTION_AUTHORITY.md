@@ -108,7 +108,8 @@ App pages or interaction flows, and existing write-operation annotations remain.
 
 本次源码、P620 制品及 A/B/C 验收证据见
 [授权派发真实闭环验收](AUTHORITY_DISPATCH_ACCEPTANCE_20261007.md)。
-其中 B 已通过，ChatGPT 实际入口 C 尚未验证；不得将本地通过等同于外层审批通过。
+其中 B 和复用既有授权的 ChatGPT 实际入口 C 均已通过。
+本轮 C 没有重新验证新增权限 apply，不保证所有未来权限申请都会获准。
 
 The audit records previous/new policy and route, requested/approved scope, reason,
 channel, actor limitation, timestamps and generation. The current MCP protocol
