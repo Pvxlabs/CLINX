@@ -1007,7 +1007,13 @@ class NodeRouter:
         permission = "session.read" if operation in {"execution.context", "execution.status"} else operation
         if scope is None or not scope.allows(permission):
             return {"error_code": "SHARING_SCOPE_DENIED", "execution_started": False, "node_id": node_id}
-        if record.stale or record.state != "ONLINE":
+        # Scoped context reads use this route too. Like session.read, a local
+        # in-process reader has no heartbeat while idle; its successful read
+        # proves liveness. Never extend this exception to writes or remote RPC.
+        local_read = (operation in {"execution.context", "execution.status"}
+                      and self._local_reader_attached(record)
+                      and record.node_id in self._executors)
+        if (record.stale or record.state != "ONLINE") and not local_read:
             return {"error_code": "NODE_OFFLINE", "execution_started": False, "node_id": node_id}
         if record.node_id not in self._executors:
             self._reader_for(record)
@@ -1019,6 +1025,8 @@ class NodeRouter:
         try:
             result = dict(executor(operation, dict(request, node_id=node_id, user_scope=self.user_scope)), node_id=record.node_id)
             if not result.get("error_code"):
+                if local_read:
+                    self.registry.touch(record.node_id)
                 for key in ("task_ref", "prepared_execution_ref", "execution_ref"):
                     if result.get(key):
                         self.registry.bind_reference(result[key], node_id, self.user_scope)

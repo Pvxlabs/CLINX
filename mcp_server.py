@@ -1202,6 +1202,7 @@ def build_server(
         node_record = NodeRecord(
             node_id=node_id,
             user_scope=user_scope,
+            capabilities=("session.read", "session.status", "execution.context"),
             public_key_fingerprint=os.environ.get("CLINX_NODE_PUBLIC_KEY_FINGERPRINT", ""),
             route_ids=(cfg.runtime_host,),
             state="ONLINE",
@@ -1215,6 +1216,10 @@ def build_server(
             node_registry,
             scope=SharingScope(user_scope=user_scope, read_sessions=True, execute_tasks=False),
             read_thread=lambda thread_id, **kwargs: native_reader.read(context=True, thread_id=thread_id, **kwargs),
+            context_execution=lambda **request: native_reader.read(context=True, **{
+                key: request[key] for key in ("thread_id", "host", "project", "execution_ref",
+                                              "recent_turns", "max_bytes", "cursor")
+                if key in request}),
         )
         remote_factory = None
         identity_root = os.environ.get("CLINX_NODE_CENTRE_STATE") or os.environ.get("CLINX_NODE_STATE")
@@ -1223,7 +1228,9 @@ def build_server(
             remote_factory = remote_client_factory(Path(identity_root).expanduser(), node_id, node_registry)
         router = NodeRouter(node_registry, user_scope=user_scope, local_node_id=node_id,
                             remote_client_factory=remote_factory)
-        router.attach(node_record, reader=lambda request: local_service.handle(request), scope=local_service.scope)
+        router.attach(node_record, reader=lambda request: local_service.handle(request),
+                      executor=lambda operation, request: local_service.handle(dict(request, operation=operation)),
+                      scope=local_service.scope)
         cfg = dataclasses.replace(cfg, node_router=router)
     integration = ClinxIntegration(
         cfg, registry, dispatcher, reader, linear=linear, topic_reader=topic_reader
