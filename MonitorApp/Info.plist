@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
     <key>CFBundleIdentifier</key><string>com.pvxlabs.clinx.monitor</string>
-    <key>CFBundleName</key><string>CLINX Monitor</string>
-    <key>CFBundleDisplayName</key><string>CLINX Monitor</string>
+    <key>CFBundleName</key><string>CLINX</string>
+    <key>CFBundleDisplayName</key><string>CLINX</string>
     <key>CFBundleExecutable</key><string>CLINXMonitor</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>

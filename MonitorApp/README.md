@@ -1,4 +1,4 @@
-# CLINX Monitor macOS app
+# CLINX macOS app
 
 macOS 13+ SwiftUI read-only client for the private CLINX Observer. `Package.swift` is the
 project manifest; Xcode can open this package. `Sources/CLINXMonitor` contains the shipping
@@ -11,10 +11,10 @@ Phase 0/1 handoff snapshot and are not the app build source.
 cd MonitorApp
 swift test
 ./Scripts/build-app.sh
-open '.build/CLINX Monitor.app'
+open '.build/CLINX.app'
 ```
 
-The build script makes an unsigned local `.app` bundle and renders the app icon from the
+The build script makes a locally signed `.app` bundle and renders the app icon from the
 design spec (`Scripts/make-app-icon.swift`, Figma page 17 “App Icon”). Distribution signing
 and notarization have not been performed.
 
@@ -50,11 +50,16 @@ This self-signed identity is for local development, not distribution/notarizatio
 ### Menu bar
 
 The CLINX ring in the macOS menu bar shows the Observer connection and the same
-archive-aware, filtered category counts as the window sidebar. Open Monitor or a
+archive-aware, filtered category counts as the window sidebar. Open CLINX or a
 category brings the existing window forward, or reopens it after closing. Refresh,
 Settings and Quit are also available. Closing the window keeps the read-only
 Observer polling for the menu bar; Quit ends the app. The monochrome template mark
 adapts to the system menu bar appearance.
+
+Clicking the Dock icon uses the same restore action, including when only Settings is
+visible. Both actions reuse the current main window, so repeated clicks do not create duplicates.
+The bundle and display name are `CLINX`; the existing bundle identifier, signing identity,
+Keychain service and application-support directories retain their established values.
 
 ### Keyboard shortcuts
 
