@@ -33,6 +33,7 @@ def parser():
     serve.add_argument("--local-native-home", type=Path)
     serve.add_argument("--local-canonical-db", type=Path)
     serve.add_argument("--local-owner-host")
+    serve.add_argument("--local-provider-config", type=Path, help="Existing native owner configuration for read-only liveness observations")
     share = commands.add_parser("share")
     share.add_argument("--peer", required=True)
     share.add_argument("--local-source", action="store_true", help="Explicit local read_sessions grant; peer must equal this node")
@@ -123,9 +124,13 @@ def main(argv=None) -> int:
         if observations is None:
             raise ValueError("LOCAL_OBSERVATION_REQUIRES_PROJECTION")
         from observation_source import CodexObservationSource,ObservationCollector,LocalObservationRegistration
+        provider_config=None
+        if args.local_provider_config:
+            from bridge import BridgeConfig
+            provider_config=BridgeConfig.load(args.local_provider_config)
         approvals=NodeAuthorizationStore(args.state)
         collector=ObservationCollector(args.state / "local-observation-outbox.sqlite3",
-            CodexObservationSource(args.local_native_home,identity.public["node_id"],args.local_canonical_db,args.local_owner_host),
+            CodexObservationSource(args.local_native_home,identity.public["node_id"],args.local_canonical_db,args.local_owner_host,provider_config),
             identity,LocalObservationRegistration(identity,registry,approvals,observations,args.stale_after),
             lambda: approvals.get(identity.public["node_id"]),server.address[1],("session.read",))
     next_collection=0.0

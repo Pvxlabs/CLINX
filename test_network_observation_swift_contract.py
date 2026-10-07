@@ -13,8 +13,8 @@ def test_versioned_fixture_and_real_ui_entrypoint():
     assert raw["detail"]["item"]["task_ref"] is None
     assert raw["detail"]["item"]["turn"]["execution_ref"] is None
     sources=root/"MonitorApp/Sources/CLINXMonitor"
-    assert "NetworkObservationView(monitor: store)" in (sources/"MonitorRootView.swift").read_text()
-    assert "showNetwork = true" in (sources/"MonitorRootView.swift").read_text()
+    assert "ExecutionListView(store: store" in (sources/"MonitorRootView.swift").read_text()
+    assert "NetworkObservationAdapter.project" in (sources/"MonitorState.swift").read_text()
     assert "v2/observations" in (sources/"ObserverClient.swift").read_text()
     model=(sources/"NetworkObservationModels.swift").read_text()
     assert "let taskRef: String?" in model

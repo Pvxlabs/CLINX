@@ -11,6 +11,7 @@ import contextlib
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -94,6 +95,16 @@ def validate_event(event, node, scope):
     turn = event.get("turn") or {}
     if not isinstance(turn, dict):
         raise NodeProtocolError("INVALID_OBSERVATION", "Turn must be an object")
+    proof=turn.get("live_observation")
+    if proof is not None:
+        if (not isinstance(proof,dict) or proof.get("thread_id")!=thread
+                or not turn.get("turn_id") or proof.get("turn_id")!=turn.get("turn_id")
+                or type(proof.get("observed_at")) not in (int,float)
+                or not math.isfinite(proof["observed_at"])
+                or proof.get("liveness") not in ("LIVE","UNKNOWN")):
+            raise NodeProtocolError("INVALID_OBSERVATION", "Live proof requires exact thread, turn and timestamp")
+        proof={"thread_id":thread,"turn_id":proof["turn_id"],"observed_at":proof["observed_at"],
+            "liveness":proof["liveness"],"reason":clean(proof.get("reason"),80)}
     ordinal = turn.get("ordinal", 0)
     if type(ordinal) is not int or ordinal < 0:
         raise NodeProtocolError("INVALID_OBSERVATION", "Invalid turn order")
@@ -125,6 +136,7 @@ def validate_event(event, node, scope):
         "coverage": clean(event.get("coverage") or "PARTIAL", 80),
         "source_updated_at": clean(str(event.get("source_updated_at") or ""), 64),
         "turn": {
+            **({"live_observation":proof} if proof is not None else {}),
             "turn_id": bounded_id(turn.get("turn_id"), True), "ordinal": ordinal,
             "native_state": native_state, "execution_ref": eref,
             "execution_state": canonical, "business_result": result,
@@ -340,6 +352,11 @@ class ObservationDirectory:
             identity_conflict=any(self._allowed(json.loads(row[0])) for row in duplicates)
         if identity_conflict:
             payload=dict(payload,coverage="MULTI_SOURCE_THREAD_IDENTITY")
+        proof=turn.get("live_observation") or {}
+        proven=bool(available and not identity_conflict and turn["native_state"]=="RUNNING"
+            and proof.get("liveness")=="LIVE" and proof.get("thread_id")==payload["native_thread_id"]
+            and proof.get("turn_id")==turn["turn_id"] and turn["turn_id"]
+            and 0<=time.time()-proof.get("observed_at",0)<30)
         enabled=bool(available and scope and scope.execute_tasks and payload["task_ref"]
                      and "execution.prepare" in record.capabilities and not identity_conflict)
         reason=("THREAD_IDENTITY_CONFLICT" if identity_conflict else "NODE_OFFLINE" if not available else "READ_SESSIONS_ONLY" if not scope or not scope.execute_tasks
@@ -347,7 +364,7 @@ class ObservationDirectory:
                 else "EXPLICIT_ADOPTION_REQUIRED" if not payload["task_ref"] else "CANONICAL_AUTHORIZATION_REQUIRED")
         return dict(payload,schema_version=VERSION,received_at=received,device_name=record.display_name if record else payload["node_id"],
             freshness="RECENT" if available and time.time()-received<30 else "STALE" if available else "OFFLINE",
-            liveness="NOT_PROVEN",progress_percent=None,
+            liveness="PROVEN" if proven else "NOT_PROVEN",progress_percent=None,
             control={"node_id":payload["node_id"],"native_thread_id":payload["native_thread_id"],
                 "task_ref":payload["task_ref"],"execution_ref":turn["execution_ref"],
                 "entrypoint":"clinx_prepare_execution" if payload["task_ref"] else "clinx_adopt_conversation",
@@ -355,17 +372,23 @@ class ObservationDirectory:
                 "reason":reason,
                 "allowed_actions":[]})  # Observer offers a mapping; writes remain on canonical plane.
 
-    def list(self, *, node=None, project=None, state=None, kind=None, cursor=None, limit=50):
+    def list(self, *, node=None, project=None, state=None, kind=None, native_thread_id=None, cursor=None, limit=50):
         if type(limit) is not int or not 1<=limit<=100 or kind not in (None,"managed","external"):
             raise NodeProtocolError("INVALID_OBSERVATION_QUERY","Invalid pagination or kind")
         filters=[node,project,state,kind]
+        if native_thread_id is not None:
+            bounded_id(native_thread_id)
+            filters.append(native_thread_id)
         with database(self.path) as c:
             after=self._cursor(c,filters,cursor=cursor) if cursor else ""
             if not isinstance(after,str):
                 raise NodeProtocolError("INVALID_OBSERVATION_CURSOR","Invalid position")
             result=[]; scanned=0; last=after
             # Work and response bounds remain explicit even with sparse authorized rows.
-            rows=c.execute("SELECT * FROM items WHERE user=? AND id>? ORDER BY id LIMIT 501",(self.user_scope,after)).fetchall()
+            predicates=["user=?","id>?"];args=[self.user_scope,after]
+            if node: predicates.append("node=?");args.append(node)
+            if native_thread_id: predicates.append("thread=?");args.append(native_thread_id)
+            rows=c.execute("SELECT * FROM items WHERE "+" AND ".join(predicates)+" ORDER BY id LIMIT 501",args).fetchall()
             for row in rows[:500]:
                 if len(result)>=limit: break
                 scanned+=1;last=row["id"];payload=json.loads(row["payload"])

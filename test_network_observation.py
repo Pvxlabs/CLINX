@@ -13,6 +13,64 @@ from observation_source import CodexObservationSource,ObservationCollector
 from test_native_interop import native,TID,hashes
 
 
+@pytest.mark.parametrize("age,state,expected",[(0,"LIVE","PROVEN"),(31,"LIVE","NOT_PROVEN"),
+    (-5,"LIVE","NOT_PROVEN"),(0,"UNKNOWN","NOT_PROVEN")])
+def test_exact_live_proof_expires_without_read_plane_probes(directory,age,state,expected):
+    writer,reader,registry,approvals,scope=directory
+    proof=dict(thread_id="unmanaged",turn_id="turn-1",observed_at=time.time()-age,liveness=state)
+    item=event(); item["turn"]=dict(turn_id="turn-1",ordinal=1,native_state="RUNNING",live_observation=proof)
+    writer.accept("air",scope,dict(stream_id="stream",events=[item]))
+    with sqlite3.connect(writer.path.as_uri()+"?mode=ro",uri=True) as c: before=list(c.iterdump())
+    with patch("native_provider.observe_thread",side_effect=AssertionError("read plane cannot probe")):
+        result=reader.list()["items"][0]
+    assert result["liveness"]==expected
+    with sqlite3.connect(writer.path.as_uri()+"?mode=ro",uri=True) as c: assert list(c.iterdump())==before
+    registry.touch("air",state="OFFLINE")
+    assert reader.list()["items"][0]["liveness"]=="NOT_PROVEN"
+
+
+def test_mismatched_live_proof_rejected(directory):
+    writer,reader,registry,approvals,scope=directory
+    proof=dict(thread_id="unmanaged",turn_id="another-turn",observed_at=time.time(),liveness="LIVE")
+    item=event(); item["turn"]=dict(turn_id="turn-1",ordinal=1,native_state="RUNNING",live_observation=proof)
+    with pytest.raises(NodeProtocolError,match="exact thread"):
+        writer.accept("air",scope,dict(stream_id="stream",events=[item]))
+
+
+@pytest.mark.parametrize("variant,expected",[("live","LIVE"),("wrong-turn","UNKNOWN"),
+    ("conflict","UNKNOWN"),("offline","UNKNOWN"),("wrong-cwd","UNKNOWN")])
+def test_collector_reads_exact_existing_native_owner(tmp_path,variant,expected):
+    source=CodexObservationSource(tmp_path,"p620",provider_config=object())
+    live=dict(endpoint="native",state="active",thread_id="thread",turn_id="turn",
+        turn_status="inProgress",cwd="/approved")
+    rows=[dict(endpoint="proxy",state="notLoaded",thread_id="thread",turn_id="old",
+        turn_status="interrupted"),live]
+    if variant=="wrong-turn": live["turn_id"]="old"
+    if variant=="wrong-cwd": live["cwd"]="/another"
+    if variant=="conflict": rows.append(dict(live,endpoint="duplicate"))
+    if variant=="offline": rows=[dict(endpoint="native",state="OFFLINE")]
+    with patch("native_provider.observe_thread",return_value={"observations":rows}) as probe:
+        proof=source._observe_live("thread","/approved","turn")
+        assert proof["liveness"]==expected
+        assert source._observe_live("thread","/approved","turn")==proof
+        assert probe.call_count==1
+        source._observe_live("thread","/approved","new-turn")
+        assert probe.call_count==2
+
+
+def test_collector_publishes_proof_on_latest_native_turn(tmp_path):
+    source=CodexObservationSource(tmp_path,"p620",provider_config=object())
+    turns=[dict(turn_id="old",ordinal=1,native_state="RUNNING"),
+           dict(turn_id="current",ordinal=2,native_state="RUNNING")]
+    proof=dict(thread_id="thread",turn_id="current",observed_at=time.time(),liveness="LIVE")
+    with patch.object(source,"_legacy",return_value=(turns,"INDEXED")), \
+            patch.object(source,"_observe_live",return_value=proof) as probe:
+        events,_=source.sample(dict(id="thread",cwd="/approved"),{})
+    probe.assert_called_once_with("thread","/approved","current")
+    assert events[-1]["turn"]["live_observation"]==proof
+    assert "live_observation" not in events[0]["turn"]
+
+
 def event(seq=1,tid="unmanaged",turn="turn-1",ordinal=1,**changes):
     result=dict(seq=seq,native_thread_id=tid,provider="codex_app_server",project="/approved",
         title="简短标题\n不应铺满列表",source_generation="generation-1",
@@ -438,3 +496,16 @@ def test_frontend_cannot_claim_p620_canonical_execution(native):
     with pytest.raises(NodeProtocolError) as error:
         source.sample(source.history.metadata(TID),{})
     assert error.value.code=="OBSERVATION_FOREIGN_EXECUTION_OWNER"
+
+
+def test_exact_thread_filter_finds_terminal_outside_history_window(directory):
+    writer,reader,registry,approvals,scope=directory
+    writer.accept("air",scope,dict(stream_id="stream",events=[event(seq=1,tid="target"),event(seq=2,tid="other")]))
+    page=reader.list(node="air",native_thread_id="target")
+    assert [v["native_thread_id"] for v in page["items"]]==["target"]
+    assert not page["has_more"]
+    from observer_server import ObserverAPI
+    api=ObserverAPI(Mock(),lambda:"A"*32,reader)
+    assert api.request("GET","/v2/observations?node=air&native_thread_id=target","Bearer "+"A"*32)["items"]==page["items"]
+    approvals.revoke("air",user_scope="alice")
+    assert reader.list(node="air",native_thread_id="target")["items"]==[]

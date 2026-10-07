@@ -331,6 +331,10 @@ class ObserverStore:
                 row = None
         execution = dict(row) if row else {}
         eref = execution.get("execution_ref")
+        # Adoption is conversation metadata, never proof of a CLINX execution.
+        binding=conn.execute("SELECT thread_id FROM conversation_bindings WHERE task_id=?",(ref,)).fetchone()
+        native_conversation={"node_id":safe_text(task["host"]),"provider":"codex_app_server",
+            "thread_id":safe_text(binding[0])} if binding else None
         result = None
         if eref and execution.get("turn_id") and execution["turn_id"] == task["turn_id"]:
             row = conn.execute(
@@ -389,6 +393,7 @@ class ObserverStore:
             "schema_version": VERSION, "task_ref": ref, "execution_ref": eref,
             "project": safe_text(task["project_alias"]), "title": safe_text(task["title"], 512),
             "host": safe_text(task["host"]), "state": state, "stage": stage,
+            "native_conversation":native_conversation,
             "execution_state": safe_text(execution.get("execution_state")) or "UNKNOWN",
             "execution_stage": safe_text(execution.get("stage")) or "UNKNOWN",
             "model": {"logical": safe_text(execution.get("logical_model")),
@@ -493,7 +498,7 @@ class ObserverAPI:
             try:
                 if "limit" in arguments:
                     arguments["limit"] = int(arguments["limit"])
-                if url.path == "/v2/observations" and not set(arguments) - {"node", "project", "state", "kind", "cursor", "limit"}:
+                if url.path == "/v2/observations" and not set(arguments) - {"node", "project", "state", "kind", "native_thread_id", "cursor", "limit"}:
                     return self.observations.list(**arguments)
                 match = re.fullmatch(r"/v2/observations/(obs_[a-f0-9]{40})(/context|/activity)?", url.path)
                 if match and not set(arguments) - ({"cursor"} if match[2] == "/context" else {"cursor", "limit"}):

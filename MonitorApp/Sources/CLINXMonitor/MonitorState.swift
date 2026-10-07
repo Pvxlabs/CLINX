@@ -164,7 +164,11 @@ final class MonitorStore: ObservableObject {
     /// Rows are executions, not just task names. A task can have a historical terminal
     /// execution in the recent page while a newer execution is active. Merge exact
     /// identities by observation freshness and keep different executions separate.
-    var allTasks: [ObservedTask] { Self.merge(active + recent) }
+    var allTasks: [ObservedTask] {
+        Self.merge(active + recent).filter {
+            !NetworkObservationAdapter.supersedesAdoption($0, observations: networkObservations)
+        }
+    }
 
     private var archiveSource: String {
         syntheticScenario.map { "synthetic:\($0.rawValue)" } ?? endpointText
@@ -723,7 +727,8 @@ final class MonitorStore: ObservableObject {
                 (recentPage.hasMore ? Array(recent.filter { !NetworkObservationAdapter.isPresentationRef($0.taskRef) }.dropFirst(50)) : []))
             if let networkService {
                 do {
-                    let observations = try await Self.fetchObservations(using: networkService)
+                    let observations = try await Self.fetchObservations(using: networkService,
+                        canonical: Self.merge(canonicalActive + canonicalRecent))
                     guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
                     networkObservations = observations
                     observationRows = NetworkObservationAdapter.project(networkObservations,
@@ -754,6 +759,14 @@ final class MonitorStore: ObservableObject {
 
     private func reloadSelected(using service: any ObserverServing) async {
         guard let ref = selectedRef else { return }
+        if let task = selected, NetworkObservationAdapter.supersedesAdoption(task, observations: networkObservations),
+           let identity = task.nativeConversation,
+           let item = networkObservations.first(where: {
+               $0.nodeId == identity.nodeId && $0.provider == identity.provider && $0.nativeThreadId == identity.threadId
+           }), let row = observationRows.first(where: { $0.observationId == item.observationId }) {
+            await select(row.taskRef)
+            return
+        }
         if NetworkObservationAdapter.isPresentationRef(ref) {
             if let row = observationRows.first(where: { $0.taskRef == ref }) { seedSelection(row) }
             else { clearSelection() }
@@ -853,7 +866,7 @@ final class MonitorStore: ObservableObject {
         recent = Self.merge(canonicalRecent + observationRows.filter { $0.monitorStatus != .running })
     }
 
-    private static func fetchObservations(using service: any NetworkObservationServing) async throws -> [NetworkObservation] {
+    private static func fetchObservations(using service: any NetworkObservationServing, canonical: [ObservedTask]) async throws -> [NetworkObservation] {
         // Discover the authorized sources first, then page each node independently.
         // A global observation-id order can otherwise let two busy nodes consume the
         // entire bounded window and starve another online node from the frozen UI.
@@ -861,21 +874,40 @@ final class MonitorStore: ObservableObject {
         guard discovery.schemaVersion == "clinx-observation-v1" else { throw MonitorError.incompatibleSchema }
         let nodes = (discovery.sources ?? []).filter { $0.coverage == "RECEIVED" }.map(\.nodeId)
         guard !nodes.isEmpty else { return discovery.items }
-        let perNodeLimit = max(50, 500 / nodes.count)
         var items: [NetworkObservation] = []
+        // An adopted thread has no CLINX execution identity. Read its exact native
+        // conversation even after completion, outside the bounded history window.
+        for task in canonical where task.executionRef == nil {
+            guard let identity = task.nativeConversation, nodes.contains(identity.nodeId) else { continue }
+            var filters = ObservationFilters(); filters.node = identity.nodeId; filters.nativeThreadId = identity.threadId
+            let page = try await service.observations(filters: filters, cursor: nil)
+            guard page.schemaVersion == "clinx-observation-v1" else { throw MonitorError.incompatibleSchema }
+            items.append(contentsOf: page.items.filter {
+                $0.nodeId == identity.nodeId && $0.provider == identity.provider && $0.nativeThreadId == identity.threadId
+            })
+        }
+        let perNodeLimit = max(50, (500 - items.count) / nodes.count)
         for node in nodes {
-            var cursor: String?
             var nodeItems: [NetworkObservation] = []
-            for _ in 0..<20 {
-                var filters = ObservationFilters(); filters.node = node
+            // Read running candidates first so a hash-ordered history page cannot
+            // starve current native work. Liveness still gates the Active mapping.
+            for state in ["RUNNING", ""] {
+              var cursor: String?
+              for _ in 0..<20 {
+                var filters = ObservationFilters(); filters.node = node; filters.state = state
                 let page = try await service.observations(filters: filters, cursor: cursor)
                 guard page.schemaVersion == "clinx-observation-v1" else { throw MonitorError.incompatibleSchema }
-                nodeItems.append(contentsOf: page.items.prefix(max(0, perNodeLimit - nodeItems.count)))
+                let existing = Set(nodeItems.map(\.observationId))
+                nodeItems.append(contentsOf: page.items.filter { !existing.contains($0.observationId) }
+                    .prefix(max(0, perNodeLimit - nodeItems.count)))
                 guard nodeItems.count < perNodeLimit, page.hasMore, let next = page.nextCursor,
                       next != cursor else { break }
                 cursor = next
+              }
+              if nodeItems.count >= perNodeLimit { break }
             }
-            items.append(contentsOf: nodeItems)
+            let existing = Set(items.map(\.observationId))
+            items.append(contentsOf: nodeItems.filter { !existing.contains($0.observationId) })
         }
         return Array(items.prefix(500))
     }
@@ -946,6 +978,6 @@ extension ObservedTask {
                                              coverage: coverage),
                      hostOperations: hostOperations, hostOperationsHasMore: hostOperationsHasMore,
                      finalResult: finalResult, artifacts: artifacts, artifactsStatus: artifactsStatus,
-                     menuState: menuState)
+                     menuState: menuState, observationId: observationId, nativeConversation: nativeConversation)
     }
 }
