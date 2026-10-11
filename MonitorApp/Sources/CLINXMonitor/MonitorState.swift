@@ -11,19 +11,13 @@ enum DisplayState: String {
 
 extension ObservedTask {
     var displayState: DisplayState {
-        let exactResult = finalResult?.executionRef == executionRef ? finalResult : nil
-        if ["BLOCKED", "FAILED", "RECOVERY_REQUIRED", "TRANSPORT_UNCERTAIN"].contains(state)
-            || retryRequired || exactResult?.status == "BLOCKED" { return .blocked }
-        if ["CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING", "FINALIZING",
-            "CANCEL_REQUESTED", "CANCELLATION_PENDING"].contains(state)
-            || codexRunning { return .running }
-        if ["COMPLETED", "IN_REVIEW"].contains(state), exactResult?.status == "PASS" {
-            return .passed
+        switch monitorStatus {
+        case .blocked, .failed: return .blocked
+        case .completed: return resultPassed ? .passed : .idle
+        case .cancelled: return .idle
+        case .running: return .running
+        case .unknown, .stale: return state == "QUEUED" ? .idle : .unknown
         }
-        if ["QUEUED", "STOPPED", "CANCELLED", "COMPLETED", "IN_REVIEW"].contains(state) {
-            return .idle
-        }
-        return .unknown
     }
 
     var primaryLabel: String { title?.isEmpty == false ? title! : taskRef }
@@ -543,16 +537,17 @@ final class MonitorStore: ObservableObject {
                 return
             }
             guard token == selectionToken else { return }
-            selected = detail
+            let snapshots = [selected].compactMap { $0 }.filter {
+                $0.executionIdentity == detail.executionIdentity
+            } + allTasks.filter { $0.executionIdentity == detail.executionIdentity } + [detail]
+            let resolved = Self.merge(snapshots)[0]
+            selected = resolved
             selectedDetailIncomplete = false
             // Detail can be newer than the list snapshot. Keep the same execution's
             // row and inspector aligned without replacing a newer list observation.
             func refreshed(_ row: ObservedTask) -> ObservedTask {
-                guard row.taskRef == detail.taskRef, row.executionRef == detail.executionRef,
-                      let observed = TimestampParser.date(from: detail.timestamps.observedAt),
-                      let previous = TimestampParser.date(from: row.timestamps.observedAt),
-                      observed >= previous else { return row }
-                return detail
+                guard row.executionIdentity == resolved.executionIdentity else { return row }
+                return resolved
             }
             active = Self.merge(active.map(refreshed))
             recent = Self.merge(recent.map(refreshed))
@@ -740,8 +735,8 @@ final class MonitorStore: ObservableObject {
                 }
             } else { networkObservations = []; observationRows = [] }
             health = newHealth
-            active = Self.merge(canonicalActive + observationRows.filter { $0.monitorStatus == .running })
-            recent = Self.merge(canonicalRecent + observationRows.filter { $0.monitorStatus != .running })
+            active = reconcile(canonicalActive + observationRows.filter { $0.monitorStatus == .running })
+            recent = reconcile(canonicalRecent + observationRows.filter { $0.monitorStatus != .running })
             activeNextOffset = canonicalActive.count > 50 ? activeNextOffset : activePage.nextOffset
             recentNextOffset = canonicalRecent.count > 50 ? recentNextOffset : recentPage.nextOffset
             lastObservedAt = activePage.observedAt
@@ -912,6 +907,16 @@ final class MonitorStore: ObservableObject {
         return Array(items.prefix(500))
     }
 
+    /// Preserve accepted state only for identities still present in the fetched page.
+    /// Reading another execution or switching sources never transfers its terminal state.
+    private func reconcile(_ rows: [ObservedTask]) -> [ObservedTask] {
+        let previous = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.executionIdentity, $0) })
+        return Self.merge(rows.map { row in
+            guard let existing = previous[row.executionIdentity] else { return row }
+            return Self.merge([existing, row])[0]
+        })
+    }
+
     private static func merge(_ tasks: [ObservedTask]) -> [ObservedTask] {
         var positions: [String: Int] = [:]
         var merged: [ObservedTask] = []
@@ -928,7 +933,16 @@ final class MonitorStore: ObservableObject {
     }
 
     private static func isNewer(_ candidate: ObservedTask, than current: ObservedTask) -> Bool {
-        guard candidate.executionRef == current.executionRef else { return false }
+        guard candidate.executionIdentity == current.executionIdentity else { return false }
+        // Request observation time is not execution progress. A later GET can still
+        // contain an old RUNNING snapshot; an exact canonical terminal wins in either order.
+        if candidate.executionRef != nil {
+            if candidate.hasCanonicalTerminalState && current.monitorStatus == .running { return true }
+            if current.hasCanonicalTerminalState && candidate.monitorStatus == .running { return false }
+        }
+        if let candidateUpdated = TimestampParser.date(from: candidate.timestamps.updatedAt),
+           let currentUpdated = TimestampParser.date(from: current.timestamps.updatedAt),
+           candidateUpdated != currentUpdated { return candidateUpdated > currentUpdated }
         let candidateObserved = TimestampParser.date(from: candidate.timestamps.observedAt)
         let currentObserved = TimestampParser.date(from: current.timestamps.observedAt)
         if let candidateObserved, let currentObserved, candidateObserved != currentObserved {
@@ -943,7 +957,7 @@ final class MonitorStore: ObservableObject {
                 return terminal(candidate.monitorStatus)
             }
         }
-        return false
+        return candidateObserved == currentObserved
     }
     private static func uniqueEvents(_ events: [ObserverEvent]) -> [ObserverEvent] {
         var seen = Set<String>()
