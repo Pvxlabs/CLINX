@@ -296,3 +296,11 @@ regression logs and exact incident reconciliation readback). The source includes
 the preceding native URI/discovery repair. The installed CLINX release has not
 been switched; isolated source acceptance and incident maintenance do not prove
 that future requests on the old resident runtime use the repair.
+
+The controlled release integration selects only `c05732a` onto GitHub main
+`fd6ae02`, preserving that main's Air Monitor terminal/observation fixes byte for
+byte. It does not include the preceding `ea18bc7` UI/URI change. The stale catalog
+size assertion is replaced by an independent exact 16-tool allowlist, including
+the already-shipped `clinx_get_prepared_request`; no runtime tool is added.
+Release activation and formal connector results are recorded separately in
+`/data/artifacts/clinx-control-release-20261012/`.
