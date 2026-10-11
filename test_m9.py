@@ -1,6 +1,11 @@
+import copy
+import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+
+import jsonschema
 
 from mcp_server import (
     DEFAULT_TOOL_NAMES,
@@ -273,6 +278,46 @@ class M9SurfaceTests(unittest.TestCase):
 
 
 class M9MCPTests(unittest.TestCase):
+    _private_identity_fields = frozenset({
+        "thread_id", "threadId", "session_id", "sessionId", "turn_id", "turnId",
+        "cwd", "credentials", "token", "authorization",
+    })
+
+    def _assert_public_schema_identity_contract(self, tools):
+        # Exceptions belong to one tool, one schema direction and one exact
+        # property path. Prepared readback is not a generic identity API.
+        thread_selector = {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        }
+        allowed = {
+            (name, "inputSchema", "properties", "thread_id"): thread_selector
+            for name in ("clinx_get_context", "clinx_get_status", "clinx_adopt_conversation")
+        }
+        allowed.update({
+            ("clinx_get_prepared_request", "outputSchema", "properties", field):
+                {"type": ["string", "null"]}
+            for field in ("thread_id", "turn_id")
+        })
+        observed = set()
+
+        def check(value, path):
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    location = (*path, key)
+                    if key in self._private_identity_fields:
+                        self.assertIn(location, allowed, f"private identity at {location}")
+                        self.assertEqual(item, allowed[location])
+                        observed.add(location)
+                    check(item, location)
+            elif isinstance(value, list):
+                for index, item in enumerate(value):
+                    check(item, (*path, str(index)))
+
+        for tool in tools:
+            check(tool, (tool["name"],))
+        self.assertEqual(observed, set(allowed))
+
     class FakeIntegration:
         def __init__(self):
             self.calls = []
@@ -378,24 +423,7 @@ class M9MCPTests(unittest.TestCase):
         })["result"]["protocolVersion"], "2025-06-18")
 
     def test_public_schemas_and_results_do_not_expose_private_identity(self):
-        forbidden = {
-            "thread_id", "threadId", "session_id", "sessionId", "turn_id", "turnId",
-            "cwd", "credentials", "token", "authorization",
-        }
-
-        def keys(value):
-            if isinstance(value, dict):
-                for key, item in value.items():
-                    yield key
-                    yield from keys(item)
-            elif isinstance(value, list):
-                for item in value:
-                    yield from keys(item)
-
-        self.assertTrue((forbidden - {"thread_id"}).isdisjoint(set(keys(tool_definitions()))))
-        for tool in tool_definitions():
-            if "thread_id" in tool["inputSchema"].get("properties", {}):
-                self.assertIn(tool["name"], {"clinx_get_context", "clinx_get_status", "clinx_adopt_conversation"})
+        self._assert_public_schema_identity_contract(tool_definitions())
         response = self.server.handle({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "clinx_get_context", "arguments": {"task_ref": "task_public"}},
@@ -404,6 +432,78 @@ class M9MCPTests(unittest.TestCase):
         self.assertNotIn("cwd", payload)
         self.assertNotIn("turn_ids", payload.get("provenance", {}))
         self.assertNotIn("turn-private", response["result"]["content"][0]["text"])
+
+    def test_identity_allowlist_applies_to_extended_catalogs(self):
+        for nodes, execute in ((True, False), (False, True), (True, True)):
+            with self.subTest(nodes=nodes, execute=execute):
+                self._assert_public_schema_identity_contract(
+                    tool_definitions(include_nodes=nodes, include_execute=execute))
+
+    def test_identity_allowlist_rejects_wrong_tool_direction_path_and_type(self):
+        cases = [
+            ("clinx_get_status", "outputSchema", "turn_id", {"type": ["string", "null"]}),
+            ("clinx_get_prepared_request", "inputSchema", "turn_id", {"type": "string"}),
+            ("clinx_get_prepared_request", "outputSchema", "session_id", {"type": "string"}),
+            ("clinx_get_context", "inputSchema", "thread_id", {"type": "string"}),
+            ("clinx_get_prepared_request", "outputSchema", "turn_id", {"type": "object"}),
+            ("clinx_get_prepared_request", "outputSchema", "details", {
+                "type": "object", "properties": {"turn_id": {"type": ["string", "null"]}}}),
+            ("clinx_get_status", "outputSchema", "items", {
+                "type": "array", "items": {"properties": {"credentials": {"type": "string"}}}}),
+        ]
+        for name, direction, field, declaration in cases:
+            with self.subTest(tool=name, direction=direction, field=field):
+                tools = copy.deepcopy(tool_definitions())
+                tool = next(t for t in tools if t["name"] == name)
+                tool[direction]["properties"][field] = declaration
+                with self.assertRaises(AssertionError):
+                    self._assert_public_schema_identity_contract(tools)
+
+    def test_prepared_readback_preserves_exact_identity_and_rejects_other_fields(self):
+        definition = next(t for t in tool_definitions() if t["name"] == "clinx_get_prepared_request")
+        payload = {
+            "request_ref": "prepared_" + "a" * 32, "request_type": "EXECUTION",
+            "request_hash": "fixture-hash", "request_state": "DISPATCHED",
+            "target": {"host": "p620", "project": "clinx"}, "read_only": True,
+            "thread_id": "thread-prepared", "turn_id": "turn-prepared",
+        }
+        with patch.object(self.integration, "get_prepared_request", create=True, return_value=payload):
+            response = self.server.handle({"id": "prepared-readback", "method": "tools/call",
+                "params": {"name": definition["name"],
+                           "arguments": {"request_ref": payload["request_ref"]}}})["result"]
+        self.assertFalse(response["isError"])
+        public = response["structuredContent"]
+        jsonschema.validate(public, definition["outputSchema"])
+        self.assertEqual(public["thread_id"], payload["thread_id"])
+        self.assertEqual(public["turn_id"], payload["turn_id"])
+        self.assertEqual(json.loads(response["content"][0]["text"]), public)
+        for field in self._private_identity_fields - {"thread_id", "turn_id"}:
+            with self.subTest(leaked_field=field), self.assertRaises(jsonschema.ValidationError):
+                jsonschema.validate({**public, field: "private"}, definition["outputSchema"])
+        for field in ("thread_id", "turn_id"):
+            with self.subTest(input_field=field), self.assertRaises(jsonschema.ValidationError):
+                jsonschema.validate({"request_ref": payload["request_ref"], field: "private"},
+                                    definition["inputSchema"])
+
+    def test_other_public_responses_scrub_nested_identity_and_secrets(self):
+        leaks = {field: "private-" + field for field in self._private_identity_fields}
+        # Secrets remain forbidden even when exact prepared identity is allowed.
+        leaks.update({"api_key": "private-api-key", "raw_result": "private-raw-result"})
+        for method in ("get_context", "get_status", "get_prepared_request"):
+            with self.subTest(method=method):
+                injected = (leaks if method != "get_prepared_request" else
+                            {field: leaks[field] for field in
+                             ("credentials", "token", "authorization", "api_key", "raw_result")})
+                payload = {"task_ref": "task_public", "read_only": True,
+                           "nested": [injected]}
+                arguments = ({"request_ref": "prepared_" + "a" * 32}
+                             if method == "get_prepared_request" else {"task_ref": "task_public"})
+                with patch.object(self.integration, method, create=True, return_value=payload):
+                    response = self.server.handle({"id": "privacy", "method": "tools/call",
+                        "params": {"name": "clinx_" + method, "arguments": arguments}})["result"]
+                self.assertFalse(response["isError"])
+                self.assertEqual(response["structuredContent"]["nested"], [{}])
+                self.assertEqual(json.loads(response["content"][0]["text"]), response["structuredContent"])
 
     def test_read_tool_delegation_and_execute_is_not_public(self):
         response = self.server.handle({
