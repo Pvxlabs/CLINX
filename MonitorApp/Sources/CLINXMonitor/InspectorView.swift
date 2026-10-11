@@ -126,6 +126,16 @@ struct InspectorView: View {
                 .init(label: "Result", value: resultText(task), mono: true),
                 .init(label: "Coverage", value: store.eventCoverage, mono: false),
             ])
+            if let uri = task.codexUri, let url = URL(string: uri),
+               url.scheme == "codex", url.host == "threads" {
+                Link("在 Codex 打开", destination: url)
+                    .font(DS.Font.meta)
+                Text(uri)
+                    .font(DS.Font.mono(10))
+                    .foregroundStyle(DS.Palette.textSecondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

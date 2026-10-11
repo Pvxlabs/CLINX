@@ -705,6 +705,14 @@
             "PASS"
           ]
         },
+        "codex_uri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2048,
+          "pattern": "^codex://threads/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\\?hostId=[A-Za-z0-9_.:%-]+)?$"
+        },
         "native_conversation": {
           "type": [
             "object",

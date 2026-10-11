@@ -206,6 +206,7 @@ def _public_task_schema() -> dict[str, Any]:
     return _json_schema({
         "task_ref": {"type": "string"},
         "task_key": {"type": ["string", "null"]},
+        "codex_uri": {"type": ["string", "null"]},
         "host": {"type": "string"},
         "project": {"type": "string"},
         "project_name": {"type": "string"},
@@ -426,10 +427,15 @@ def _prepare_output_schema() -> dict[str, Any]:
     return _json_schema({
         "execution_available": {"type": "boolean", "const": True},
         "command_plane": {"type": "string", "const": "CLINX"},
+        "linear_role": {"type": "string", "const": "AUDIT"},
+        "prepared_execution_ref": {"type": "string"},
+        "linear_audit": {"type": "object", "properties": {
+            "optional": {"type": "boolean"}, "purpose": {"type": "string"}}, "additionalProperties": False},
         "requires_user_approval": {"type": "boolean", "const": True},
         "requires_command_write": {"type": "boolean", "const": False},
         "approval_state": {"type": "string", "const": "SATISFIED"},
         "handoff_ready": {"type": "boolean", "const": True},
+        "codex_uri": {"type": ["string", "null"]},
         "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
         "task_ref": {"type": ["string", "null"]},
         "host": {"type": "string"},
@@ -604,7 +610,7 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
         },
         {
             "name": "clinx_prepare_execution",
-            "description": "Prepare, but do not execute, a canonical CLINX command for a user-approved Codex task.",
+            "description": "Prepare, but do not execute, a canonical CLINX command for a user-approved Codex task. When supplied, codex_uri selects an exact native conversation for association/continuation; create without it starts a new thread. Active owners and sealed authority remain protected.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -613,6 +619,7 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
                     "task_mode": {"type": "string", "enum": ["new", "continue"]},
                     "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
                     "task_ref": {"type": "string"},
+                    "codex_uri": {"type": "string", "maxLength": 2048},
                     "host": {"type": "string"},
                     "project": {"type": "string"},
                     "query": {"type": "string"},
@@ -675,6 +682,7 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
             ),
             "outputSchema": _json_schema({
                 "execution_started": {"type": "boolean"},
+                "codex_uri": {"type": ["string", "null"]},
                 "execution_owner": {"type": "object", "additionalProperties": True},
                 "prepared_execution_ref": {"type": "string"},
                 "execution_ref": {"type": "string"},

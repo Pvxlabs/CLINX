@@ -56,6 +56,7 @@ public struct ObservedTask: Codable, Identifiable, Sendable {
     /// Original v2 identity for read-only native session content; never an execution ref.
     public var observationId: String? = nil
     public var nativeConversation: NativeConversation? = nil
+    public var codexUri: String? = nil
 }
 
 public struct NativeConversation: Codable, Sendable {
