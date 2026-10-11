@@ -150,14 +150,21 @@ final class MonitorStoreTests: XCTestCase {
     }
 
     private func snapshot(state: String, execution: String = "exec_snapshot",
-                          observed: String = "2026-10-01T05:40:00Z") throws -> ObservedTask {
+                          observed: String = "2026-10-01T05:40:00Z", pass: Bool = false) throws -> ObservedTask {
         let original = try example("pass_detail", as: ObservedTask.self)
         let encoded = try JSONEncoder.observerWire.encode(original)
         var record = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         record["execution_ref"] = execution
         record["state"] = state
         record["execution_state"] = state
-        record["final_result"] = NSNull()
+        record["stage"] = state
+        record["execution_stage"] = state
+        record["codex_running"] = true // Stale liveness must not outrank completion.
+        if pass {
+            var result = try XCTUnwrap(record["final_result"] as? [String: Any])
+            result["execution_ref"] = execution
+            record["final_result"] = result
+        } else { record["final_result"] = NSNull() }
         var timestamps = try XCTUnwrap(record["timestamps"] as? [String: Any])
         // Keep the synthetic snapshot inside the default one-day filter. The
         // test changes observation time to exercise merge ordering; leaving the
@@ -166,6 +173,7 @@ final class MonitorStoreTests: XCTestCase {
         timestamps["last_progress_at"] = observed
         timestamps["updated_at"] = observed
         timestamps["observed_at"] = observed
+        timestamps["completed_at"] = state == "COMPLETED" ? observed : NSNull()
         record["timestamps"] = timestamps
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -227,6 +235,60 @@ final class MonitorStoreTests: XCTestCase {
         XCTAssertEqual(store.allTasks.first?.monitorStatus, .completed)
         XCTAssertEqual(store.counts[.completed], 1)
         XCTAssertEqual(store.counts[.active], 0)
+    }
+
+    @MainActor
+    func testTerminalDetailAlignsRowAndSurvivesRefreshAndDeselection() async throws {
+        let row = try snapshot(state: "CODEX_RUNNING", observed: recentTimestamp(secondsAgo: 10))
+        let detail = try snapshot(state: "COMPLETED", observed: recentTimestamp(secondsAgo: 30), pass: true)
+        let store = MonitorStore(service: SnapshotService(row: row, detail: detail))
+        await store.refresh()
+        await store.select(row.taskRef, executionRef: row.executionRef)
+        for _ in 0..<2 {
+            let resolved = try XCTUnwrap(store.allTasks.first)
+            XCTAssertEqual(resolved.monitorStatus, .completed)
+            XCTAssertEqual(resolved.displayState, .passed)
+            XCTAssertEqual(resolved.stage, "COMPLETED")
+            XCTAssertEqual(resolved.durationText, detail.durationText)
+            XCTAssertEqual(store.selected?.durationText, detail.durationText)
+            XCTAssertEqual(store.selectedStatus, .completed)
+            XCTAssertEqual(store.counts[.active], 0)
+            XCTAssertEqual(store.counts[.completed], 1)
+            await store.refresh()
+        }
+        store.clearSelection()
+        await store.refresh()
+        XCTAssertEqual(store.allTasks.first?.monitorStatus, .completed)
+        await store.select(row.taskRef, executionRef: row.executionRef)
+        XCTAssertEqual(store.selected?.displayState, .passed)
+    }
+
+    @MainActor
+    func testTerminalWinsOverLaterRunningGetInEitherPageOrder() async throws {
+        let running = try snapshot(state: "CODEX_RUNNING", observed: recentTimestamp(secondsAgo: 10))
+        for state in ["COMPLETED", "FAILED", "CANCELLED", "STOPPED"] {
+            let terminal = try snapshot(state: state, observed: recentTimestamp(secondsAgo: 30))
+            for (active, recent) in [(running, terminal), (terminal, running)] {
+                let store = MonitorStore(service: OverlappingPagesService(active: active, recent: recent))
+                await store.refresh()
+                XCTAssertEqual(store.allTasks.count, 1)
+                XCTAssertEqual(store.allTasks.first?.monitorStatus, terminal.monitorStatus)
+                await store.select(terminal.taskRef, executionRef: terminal.executionRef)
+                XCTAssertEqual(store.selectedStatus, terminal.monitorStatus)
+            }
+        }
+    }
+
+    @MainActor
+    func testOlderDetailUsesSameNewerSnapshotAsList() async throws {
+        let row = try snapshot(state: "CODEX_RUNNING", observed: recentTimestamp(secondsAgo: 10))
+        let detail = try snapshot(state: "BLOCKED", observed: recentTimestamp(secondsAgo: 30))
+        let store = MonitorStore(service: SnapshotService(row: row, detail: detail))
+        await store.refresh()
+        await store.select(row.taskRef, executionRef: row.executionRef)
+        XCTAssertEqual(store.selectedStatus, .running)
+        XCTAssertEqual(store.selected?.stage, store.allTasks.first?.stage)
+        XCTAssertEqual(store.selected?.durationText, store.allTasks.first?.durationText)
     }
 
     @MainActor

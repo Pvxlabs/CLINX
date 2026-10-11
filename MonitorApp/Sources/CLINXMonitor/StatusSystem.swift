@@ -65,6 +65,9 @@ enum StatusGlyph {
 // MARK: - Observer → UI status mapping
 
 extension ObservedTask {
+    var hasCanonicalTerminalState: Bool {
+        ["COMPLETED", "IN_REVIEW", "FAILED", "CANCELLED", "STOPPED"].contains(state)
+    }
     /// A structured result only counts for the execution it was produced for.
     var exactResult: FinalResult? {
         guard let finalResult, finalResult.executionRef == executionRef else { return nil }
