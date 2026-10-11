@@ -23,6 +23,22 @@ from node_protocol import NodeAuthorizationStore, NodeRecord, NodeRegistry, Node
 from node_runtime import NodeRegistrationClient, PairedTLS, endpoint_address, node_request_handler  # noqa: E402
 
 
+
+def configured_observation_source(native_home, node_id, config):
+    """Load an explicit read-only provider route, independent of execution grants."""
+    from observation_source import CodexObservationSource
+    provider = None
+    path = config.get("observation_provider_config")
+    if path is not None:
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("Invalid observation_provider_config")
+        from bridge import BridgeConfig
+        provider = BridgeConfig.load(Path(path).expanduser())
+    return CodexObservationSource(native_home, node_id,
+        config.get("observation_canonical_db"), config.get("observation_owner_host"),
+        provider_config=provider)
+
+
 def main() -> int:
     state = Path(os.environ.get(
         "CLINX_NODE_STATE",
@@ -145,11 +161,9 @@ def main() -> int:
         )
         actual_port = server.address[1]
         registration = NodeRegistrationClient(tls, centre_id, centre_endpoint)
-        from observation_source import CodexObservationSource, ObservationCollector
-        canonical_db = config.get("observation_canonical_db")
+        from observation_source import ObservationCollector
         collector = ObservationCollector(state / "observation-outbox.sqlite3",
-            CodexObservationSource(native_history.root, record.node_id, canonical_db,
-                                   config.get("observation_owner_host")),
+            configured_observation_source(native_history.root, record.node_id, config),
             identity, registration, lambda: approvals.get(centre_id), actual_port, capabilities,
             previous_stream_id=config.get("observation_previous_stream"))
         next_collection = 0.0
