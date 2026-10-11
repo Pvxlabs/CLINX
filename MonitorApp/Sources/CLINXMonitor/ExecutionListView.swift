@@ -118,7 +118,6 @@ struct ExecutionListView: View {
         ForEach(tasks, id: \.executionIdentity) { task in
             ExecutionRowView(store: store,
                              task: task,
-                             status: store.status(of: task),
                              dimmed: store.isStaleSnapshot) {
                 store.beginSelection(task.taskRef, executionRef: task.executionRef)
                 listFocused = true
@@ -192,7 +191,6 @@ struct ExecutionListView: View {
 struct ExecutionRowView: View {
     @ObservedObject var store: MonitorStore
     let task: ObservedTask
-    let status: MonitorStatus
     let dimmed: Bool
     let onSelect: () -> Void
 
@@ -204,6 +202,10 @@ struct ExecutionRowView: View {
     }
 
     var body: some View {
+        // Lazy rows can retain their original value while observing later store
+        // publications. Resolve the exact execution before projecting every field.
+        let task = store.allTasks.first { $0.executionIdentity == self.task.executionIdentity } ?? self.task
+        let status = store.status(of: task)
         Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
@@ -246,7 +248,7 @@ struct ExecutionRowView: View {
                         .font(DS.Font.rowTrailing)
                         .monospacedDigit()
                         .lineLimit(1)
-                        .foregroundStyle(tailColor)
+                        .foregroundStyle(tailColor(status))
                         .frame(width: 84, alignment: .trailing)
                 }
                 .padding(.leading, 20)
@@ -281,7 +283,7 @@ struct ExecutionRowView: View {
         .contextMenu {
             Button("Copy title") { copy(task.titleText) }
             Button("Copy execution ID") { copy(task.executionText) }
-            Button("Copy summary") { copy(summaryText) }
+            Button("Copy summary") { copy(summaryText(task: task, status: status)) }
             if status.canArchiveLocally {
                 Divider()
                 Button("Archive on this Mac") { store.archiveLocally(task) }
@@ -294,13 +296,13 @@ struct ExecutionRowView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private var tailColor: Color {
+    private func tailColor(_ status: MonitorStatus) -> Color {
         if status.isAttention { return status.color }
         if status == .stale { return DS.Palette.stale }
         return DS.Palette.textTertiary
     }
 
-    private var summaryText: String {
+    private func summaryText(task: ObservedTask, status: MonitorStatus) -> String {
         var lines = ["\(status.label) · \(task.titleText)",
                      "\(task.projectText) · \(task.hostText) · \(task.executionText)",
                      "stage \(task.stage) · last progress \(task.lastProgressText)"]
