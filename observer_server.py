@@ -230,9 +230,10 @@ class ActivityReader:
 
 class ObserverStore:
     """Read-only repository adapter; each request gets a coherent SQLite snapshot."""
-    def __init__(self, path, native_home=None):
+    def __init__(self, path, native_home=None, *, codex_host_ids=None):
         self.path = Path(path).expanduser().resolve()
         self.activity_reader = ActivityReader(native_home or Path.home() / ".codex")
+        self.codex_host_ids = dict(codex_host_ids or {})
 
     @contextlib.contextmanager
     def snapshot(self):
@@ -335,6 +336,16 @@ class ObserverStore:
         binding=conn.execute("SELECT thread_id FROM conversation_bindings WHERE task_id=?",(ref,)).fetchone()
         native_conversation={"node_id":safe_text(task["host"]),"provider":"codex_app_server",
             "thread_id":safe_text(binding[0])} if binding else None
+        # Prefer the exact execution route over a later Task successor binding.
+        captured = object_json(execution.get('routing_identity_json'))
+        thread = captured.get('conversation', {}).get('binding') if execution else binding[0] if binding else None
+        from thread_identity import canonical_codex_uri
+        codex_uri = canonical_codex_uri(thread, host_id=self.codex_host_ids.get(task['host']))
+        if native_conversation and execution:
+            if isinstance(thread, str) and thread not in {'UNBOUND', 'UNKNOWN', 'BOUND'}:
+                native_conversation['thread_id'] = thread
+            else:
+                native_conversation = None
         result = None
         if eref and execution.get("turn_id") and execution["turn_id"] == task["turn_id"]:
             row = conn.execute(
@@ -394,6 +405,7 @@ class ObserverStore:
             "project": safe_text(task["project_alias"]), "title": safe_text(task["title"], 512),
             "host": safe_text(task["host"]), "state": state, "stage": stage,
             "native_conversation":native_conversation,
+            "codex_uri": codex_uri,
             "execution_state": safe_text(execution.get("execution_state")) or "UNKNOWN",
             "execution_stage": safe_text(execution.get("stage")) or "UNKNOWN",
             "model": {"logical": safe_text(execution.get("logical_model")),
@@ -639,7 +651,12 @@ def main():
         raise SystemExit("CLINX_OBSERVER_DB must identify the existing canonical registry")
     from network_observation import directory_from_env
     observations = directory_from_env()
-    store = ObserverStore(path)
+    desktop_routes = json.loads(os.environ.get('CLINX_OBSERVER_CODEX_HOST_IDS', '{}'))
+    if not isinstance(desktop_routes, dict) or any(
+            not isinstance(k, str) or not isinstance(v, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]+', v)
+            for k, v in desktop_routes.items()):
+        raise SystemExit('CLINX_OBSERVER_CODEX_HOST_IDS must map canonical hosts to configured Desktop host IDs')
+    store = ObserverStore(path, codex_host_ids=desktop_routes)
     store.health()  # Fail closed; never initialize a missing registry.
     server = ObserverHTTPServer(int(os.environ.get("CLINX_OBSERVER_PORT", "8766")),
                                 ObserverAPI(store, lambda: os.environ.get("CLINX_OBSERVER_TOKEN"), observations),

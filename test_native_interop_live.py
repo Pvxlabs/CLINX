@@ -62,9 +62,12 @@ def test_real_unregistered_native_read_adopt_and_two_continuations(tmp_path):
             for index in range(2):
                 task=registry.get_task(first['task_ref'])
                 preparation=integration.prepare_execution(approved=True,task_ref=task.task_id,
-                    task_action='continue' if task.status=='ACTIVE' else 'reopen',
+                    codex_uri=uri, task_action='create',
                     prompt='Reply with a PASS CLINX execution result. No tools or file changes. This is isolated native continuation '+str(index))
+                assert preparation['task_action'] in ('continue', 'reopen')
+                assert preparation['codex_uri'] == uri
                 started=integration.start_execution(approved=True,prepared_execution_ref=preparation['prepared_execution_ref'])
+                assert started['codex_uri'] == uri
                 ref=started['execution_ref'];deadline=time.monotonic()+60
                 result=None
                 while time.monotonic()<deadline:
