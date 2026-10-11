@@ -185,3 +185,26 @@ def test_uri_uses_only_configured_unambiguous_host_alias(native):
     cfg = dataclasses.replace(native.cfg, workspaces=tuple(dataclasses.replace(w,
         codex_host_ids=('local', 'remote-ssh-discovered:p620')) for w in native.cfg.workspaces))
     assert canonical_codex_uri(TID, cfg=cfg, host='p620') == 'codex://threads/' + TID
+
+
+@pytest.mark.parametrize('uri', [None, 'codex://threads/' + TID, URI])
+def test_observer_schema_accepts_canonical_uri_and_legacy_response(uri):
+    root = Path(__file__).resolve().parent
+    schema = json.loads((root / 'docs/monitor/observer-v1.schema.json').read_text())
+    examples = json.loads((root / 'docs/monitor/api-examples.json').read_text())
+    task = next(e['response'] for e in examples['examples'] if e['name'] == 'pass_detail')
+    jsonschema.validate(task, schema)
+    task['codex_uri'] = uri
+    jsonschema.validate(task, schema)
+
+
+@pytest.mark.parametrize('uri', ['https://threads/' + TID, 'codex://threads/not-a-thread',
+    URI + '&hostId=local', 'codex://threads/' + TID + '?token=private', URI + '#fragment'])
+def test_observer_schema_rejects_noncanonical_uri(uri):
+    root = Path(__file__).resolve().parent
+    schema = json.loads((root / 'docs/monitor/observer-v1.schema.json').read_text())
+    examples = json.loads((root / 'docs/monitor/api-examples.json').read_text())
+    task = next(e['response'] for e in examples['examples'] if e['name'] == 'pass_detail')
+    task['codex_uri'] = uri
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(task, schema)
