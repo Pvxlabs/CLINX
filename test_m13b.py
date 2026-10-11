@@ -1245,7 +1245,15 @@ class DynamicToolProtocolTests(unittest.TestCase):
     def test_public_catalog_includes_adoption_without_shell_tools(self):
         names = tuple(item["name"] for item in tool_definitions())
         self.assertEqual(names, DEFAULT_TOOL_NAMES)
-        self.assertEqual(len(names), 15)
+        self.assertEqual(names, (
+            "clinx_find_task", "clinx_get_context", "clinx_get_topic_status",
+            "clinx_list_projects", "clinx_get_status", "clinx_get_capabilities",
+            "clinx_prepare_execution", "clinx_start_execution", "clinx_cancel_execution",
+            "clinx_get_effective_authority", "clinx_get_prepared_request",
+            "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization",
+            "clinx_register_derived_git_target", "clinx_revoke_derived_git_target",
+            "clinx_adopt_conversation",
+        ))
         self.assertFalse(any("shell" in name or "host_exec" in name or "ssh" in name for name in names))
 
     def test_dynamic_tool_schema_has_no_raw_identity_or_shell_fields(self):
