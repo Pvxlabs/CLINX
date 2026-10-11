@@ -2666,7 +2666,11 @@ class TaskDispatcher:
         return (
             "CLINX MANAGED EXECUTION CONTRACT\n"
             + json.dumps(contract, sort_keys=True) + "\n"
-            "Use only the Host capability already bound to this execution for host work. "
+            "Use Codex native workspace tools for authorized development, tests and refactoring "
+            "within the configured sandbox, approval and network boundaries. "
+            "Use the bound Host capability only for operations requiring controlled Host access. "
+            "Host grants do not expand native sandbox permissions; native tools must not bypass "
+            "Host authorization, production scopes or a failed delivery's no-replay boundary. "
             "Do not call clinx_prepare_execution, clinx_start_execution, policy reauthorization, cancellation, "
             "or reconciliation to create or operate another execution. Those are outer "
             "operator actions; approval for this execution does not approve nested work. "
@@ -2905,6 +2909,24 @@ class TaskDispatcher:
                 raise TaskRegistryError("delivery reconciliation requires tool_call_id and proof")
             if proof.get('execution_ref', execution_ref) != execution_ref:
                 raise TaskRegistryError("DELIVERY_RECONCILIATION_IDENTITY_CONFLICT")
+            # Fresh exact Provider observation, never a caller-supplied ACK or
+            # a stale terminal projection, authorizes releasing the old lease.
+            from native_provider import observe_execution
+            from execution_liveness import record as record_liveness
+            route = self.tasks.get_execution_routing_identity(execution_ref)
+            execution = self.tasks.get_execution_record(execution_ref)
+            if (route is None or execution is None
+                    or route.conversation.binding != proof.get('thread_id')
+                    or execution.get('execution_owned_turn') != proof.get('turn_id')):
+                raise TaskRegistryError('DELIVERY_RECONCILIATION_IDENTITY_CONFLICT')
+            if 'released_at' in execution:
+                # An exact accepted review is idempotent, including after a later
+                # Task turn. Do not refresh/rewrite liveness of historical work.
+                return self.tasks.reconcile_host_delivery_failure(execution_ref, call_id, proof)
+            evidence = observe_execution(self.cfg, proof['thread_id'], proof['turn_id'])
+            if evidence['provider_liveness'] != 'TERMINAL' or not evidence['release_safe']:
+                raise TaskRegistryError('DELIVERY_RECONCILIATION_OWNER_NOT_TERMINAL')
+            record_liveness(self.tasks, execution_ref, proof['thread_id'], proof['turn_id'], evidence)
             return self.tasks.reconcile_host_delivery_failure(execution_ref, call_id, proof)
         if result_reconciliation is not None:
             if restore_cancelled:
@@ -3348,7 +3370,8 @@ class TaskDispatcher:
                 if (getattr(self, '_uses_default_client_factory', False) and self.cfg.app_server.local_socket
                         and canonical_host(target.target_host) == canonical_host(self.cfg.runtime_host)):
                     from native_provider import select_writer_client
-                    client = select_writer_client(self.cfg, binding.thread_id)
+                    client = select_writer_client(self.cfg, binding.thread_id,
+                        host_tools=policy.execution_surface == HOST_EXECUTOR)
                 else:
                     client = self.client_factory(target)
                 self._execution_state(leased.task_id, "DISPATCHING", current_stage="identity guard")
@@ -3371,7 +3394,8 @@ class TaskDispatcher:
                         turn_start_guard(thread)
                     provider_rebound = not self.tasks.provider_policy_binding_current(task.task_id)
                     dynamic_schema_upgrade = (policy.execution_surface == HOST_EXECUTOR
-                        and self.tasks.provider_dynamic_tool_upgrade_required(task.task_id))
+                        and (getattr(client, 'host_successor_required', False)
+                             or self.tasks.provider_dynamic_tool_upgrade_required(task.task_id)))
                     if provider_rebound or dynamic_schema_upgrade:
                         version = self.tasks.get_task_policy_identity(task.task_id)['policy_version']
                         previous_thread = binding.thread_id
@@ -3400,6 +3424,8 @@ class TaskDispatcher:
                             binding = self.tasks.bind_dynamic_tool_upgrade(
                                 task_id=task.task_id, execution_ref=execution_ref,
                                 expected_thread=previous_thread,
+                                reason=('HOST_PROVIDER_ISOLATION' if getattr(client, 'host_successor_required', False)
+                                        else 'DYNAMIC_TOOL_SCHEMA_UPGRADE'),
                                 successor={**started, 'appServerVersion': self._initialize_version(
                                     initialize_info, target.app_server_version)})
                             route = dataclasses.replace(route,

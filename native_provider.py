@@ -68,7 +68,7 @@ def observe_thread(cfg, tid):
             'source': 'LIVE_PROVIDER_OBSERVATION', 'writer_claimed': False}
 
 
-def select_writer_client(cfg, tid):
+def select_writer_client(cfg, tid, *, host_tools=False):
     """Select a proved idle owner before one authorized resume; never retry resume."""
     evidence = observe_thread(cfg, tid)
     rows = evidence['observations']
@@ -85,8 +85,19 @@ def select_writer_client(cfg, tid):
     endpoint = loaded[0]['endpoint'] if loaded else available[0]['endpoint'] if available else None
     if endpoint is None:
         raise NativeWriterError('NATIVE_WRITER_ENDPOINT_UNAVAILABLE', 'no configured existing endpoint is available')
+    successor_required = False
+    if host_tools:
+        # Desktop broadcasts dynamic calls to clients which do not own CLINX's
+        # handler. Never send a Host turn there, even when it owns an idle chat.
+        dedicated = endpoints(cfg)[0] if cfg.app_server.local_socket else None
+        row = next((r for r in rows if r['endpoint'] == dedicated), None)
+        if row is None or row['state'] == 'OFFLINE':
+            raise NativeWriterError('HOST_PROVIDER_UNAVAILABLE', 'configured dedicated Provider is unavailable')
+        successor_required = endpoint != dedicated
+        endpoint = dedicated
     client = existing_client(endpoint, cfg.app_server.request_timeout_seconds, read_only=False)
     client.writer_route_evidence = evidence
+    client.host_successor_required = successor_required
     return client
 
 

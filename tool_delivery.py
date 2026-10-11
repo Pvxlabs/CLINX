@@ -356,6 +356,9 @@ class ToolDeliveryLedger:
             if row is None:
                 raise DeliveryReconciliationRequired('unknown Host delivery call')
             if row['reconciliation_state'] == 'RESOLVED':
+                saved = json.loads(row['reconciliation_json'] or '{}').get('proof')
+                if saved != proof:
+                    raise DeliveryReconciliationRequired('reconciliation proof differs from the accepted receipt review')
                 return {'state': 'ALREADY_APPLIED', 'execution_ref': self.execution_ref,
                         'tool_call_id': call_id, 'delivery_state': row['delivery_state'],
                         'reconciliation_state': 'RESOLVED'}
@@ -386,7 +389,19 @@ class ToolDeliveryLedger:
             if host['mutating'] is None:
                 raise DeliveryReconciliationRequired('Host mutating property is unknown')
             if bool(host['mutating']):
-                raise DeliveryReconciliationRequired('mutating Host delivery requires the stricter reconciliation path')
+                # A known DEV process exit can be accepted by the outer operator
+                # without claiming business success or redelivering/replaying it.
+                # Production/unknown effects still require domain reconciliation.
+                review = proof.get('completion_review', {})
+                if (host['operation_class'] != 'DEVELOPMENT_MUTATION'
+                        or not isinstance(review, dict)
+                        or review.get('approved') is not True
+                        or review.get('disposition') != 'ACCEPT_RECORDED_COMPLETION_NO_REPLAY'
+                        or not isinstance(review.get('reason'), str) or not review['reason'].strip()
+                        or not host['stdout_sha256'] or not host['stderr_sha256']
+                        or review.get('stdout_sha256') != host['stdout_sha256']
+                        or review.get('stderr_sha256') != host['stderr_sha256']):
+                    raise DeliveryReconciliationRequired('mutating Host delivery requires exact DEV completion review')
             for key, value in {'operation_class': host['operation_class'],
                                'capability': host['capability'], 'operation': host['operation'],
                                'mutating': bool(host['mutating'])}.items():
