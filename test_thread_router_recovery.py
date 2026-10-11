@@ -7,8 +7,47 @@ import pytest
 
 from mcp_server import ClinxMCPServer, build_server
 from node_protocol import NodeProtocolError, NodeRegistry, NodeRouter
-from test_native_interop import native, hashes, TID, URI
+from test_native_interop import native as native, hashes, TID, URI
 from test_node_protocol import record, scope
+
+
+@pytest.mark.parametrize("stale", [False, True])
+@pytest.mark.parametrize("revoked", [False, True])
+def test_node_status_separates_cache_connection_and_task_authority(native, stale, revoked):
+    import jsonschema
+    from mcp_server import tool_definitions
+
+    registry = NodeRegistry()
+    router = NodeRouter(registry, user_scope="user-a", local_node_id="p620")
+    callback = Mock(side_effect=AssertionError("node status must not read a thread or start a provider"))
+    node = expired(record("p620")) if stale else record("p620")
+    router.attach(node, reader=callback, scope=scope())
+    if revoked:
+        registry.revoke("p620", "user-a")
+    native.integration.cfg = dataclasses.replace(native.cfg, node_router=router)
+    before = hashes(native)
+    cached_before = registry.get("p620").as_dict()
+    server = ClinxMCPServer(native.integration)
+    result = server.handle({"id": 1, "method": "tools/call", "params": {
+        "name": "clinx_get_node_status", "arguments": {"node_id": "p620"}}})["result"]
+    assert not result["isError"]
+    status = result["structuredContent"]
+    schema = next(t["outputSchema"] for t in tool_definitions(include_nodes=True)
+                  if t["name"] == "clinx_get_node_status")
+    jsonschema.validate(status, schema)
+    assert status["cache_status"]["stale"] is stale
+    assert status["cache_status"]["node_reachable"] is (not stale and not revoked)
+    assert status["connection_status"]["source"] == "NOT_PROBED"
+    assert status["connection_status"]["state"] == "UNKNOWN"
+    assert status["node_reachable"] is status["provider_reachable"] is None
+    assert status["execution_active"] is None
+    assert status["task_authority"]["task_authorized"] is None
+    assert status["task_authority"]["source"] == "NO_TASK_SELECTED"
+    assert status["scope"]["execute_tasks"] is False
+    assert status["history_readable"] is (not revoked)
+    callback.assert_not_called()
+    assert registry.get("p620").last_seen == cached_before["last_seen"]
+    assert hashes(native) == before
 
 
 def expired(node):

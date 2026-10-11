@@ -1177,11 +1177,21 @@ class ClinxIntegration:
         if record is None:
             return {"error_code": "UNKNOWN_NODE", "read_only": True}
         scope = router.registry.scope(node_id, router.user_scope)
-        return {"node": record.as_dict(), "scope": scope.as_dict() if scope else None,
-                "node_reachable": bool(record.state == "ONLINE" and not record.stale),
-                "provider_reachable": bool(record.state == "ONLINE" and not record.stale),
-                "history_readable": bool(scope and scope.read_sessions and record.authorized),
-                "execution_active": False, "observed_at": record.last_seen,
+        cached = record.as_dict()
+        return {"node": cached, "scope": scope.as_dict() if scope else None,
+                "cache_status": {"source": "NODE_REGISTRY_CACHE", "state": record.state,
+                    "stale": cached["stale"], "age_seconds": cached["age_seconds"],
+                    "observed_at": record.last_seen,
+                    "node_reachable": bool(record.state == "ONLINE" and not cached["stale"])},
+                "connection_status": {"state": "UNKNOWN", "source": "NOT_PROBED",
+                    "node_reachable": None, "provider_reachable": None, "observed_at": None},
+                "task_authority": {"source": "NO_TASK_SELECTED", "task_authorized": None,
+                    "execution_active": None,
+                    "instructions": "Use clinx_get_effective_authority for an exact task and clinx_get_status for an exact execution/thread; SharingScope is node access, not task authority."},
+                "node_reachable": None, "provider_reachable": None,
+                "history_readable": bool(scope and scope.read_sessions and not scope.revoked and record.authorized),
+                "execution_active": None, "observed_at": record.last_seen,
+                "status_source": "NODE_REGISTRY_CACHE_CONNECTION_NOT_PROBED",
                 "read_only": True}
 
     def get_status(

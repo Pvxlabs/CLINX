@@ -2611,6 +2611,10 @@ class TaskDispatcher:
     @staticmethod
     def _managed_result_instructions() -> str:
         return (
+            "CLINX owns the final response format, including for no-tool and acceptance-only tasks. "
+            "Requests to only echo a token or output an acceptance identifier refer to the task payload: "
+            "put that exact payload in SUMMARY and VALIDATION within the result below, never return it alone. "
+            "Do not call tools or perform extra work just to produce this result. "
             "At the end return exactly one multiline result with every field: "
             "CLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<one concise paragraph>\n"
             "CHANGED_FILES=<comma-separated paths or NONE>\nVALIDATION=<tests/checks and outcomes>\n"
@@ -3039,6 +3043,10 @@ class TaskDispatcher:
             )
             developer_instructions = self._managed_host_instructions(policy)
             prompt = title + "\n\n" + prompt
+            if policy.execution_surface != HOST_EXECUTOR:
+                # Keep the current-turn contract visible for new native tasks,
+                # just as for continuation; an echo request must not hide it.
+                prompt += "\n\nCLINX TURN RESULT REQUIREMENTS\n" + self._managed_result_instructions()
             task = self.tasks.create_task(
                 host=host or workspace.alias,
                 workspace_alias=workspace.alias,

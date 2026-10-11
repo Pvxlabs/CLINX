@@ -111,7 +111,8 @@ def test_prepare_start_native_route_matches_discovery(local, network, explicit, 
     turn = next(call for call in provider.calls if call[0] == "turn/start")
     assert start["sandbox"] == "workspace-write"
     assert start["dynamic_tools"] is None
-    assert turn[2].endswith("\n\nRun project checks")
+    assert "\n\nRun project checks\n\nCLINX TURN RESULT REQUIREMENTS\n" in turn[2]
+    assert turn[2].endswith(dispatcher._managed_result_instructions())
     instructions = start["developer_instructions"]
     assert "MANAGED EXECUTION CONTRACT" not in turn[2]
     assert "Use Codex native workspace tools" in instructions
@@ -138,7 +139,7 @@ def test_direct_dispatch_uses_same_native_default(local, network):
     policy = parse_execution_policy(dispatcher.tasks.get_task(result.task_id).execution_policy_json)
     assert policy == build_development_policy(network_access=network)
     prompt = next(call[2] for call in provider.calls if call[0] == "turn/start")
-    assert prompt == "Direct native\n\nRun project checks"
+    assert prompt == "Direct native\n\nRun project checks\n\nCLINX TURN RESULT REQUIREMENTS\n" + dispatcher._managed_result_instructions()
     assert "Use only the Host capability" not in prompt
     dispatcher.host_executor.dynamic_tool_spec.assert_not_called()
 
@@ -194,4 +195,26 @@ def test_production_and_host_authority_are_not_native_development(local):
     with pytest.raises(ExecutionPolicyError, match="explicit capabilities"):
         build_execution_policy(development_workspace=True, production_mutation_intent=True)
     assert not provider.calls
+    dispatcher.host_executor.execute.assert_not_called()
+
+
+def test_acceptance_echo_keeps_sealed_payload_and_current_turn_result_contract(local):
+    integration, dispatcher, provider, _repo = local
+    prompt = "验收标识 CHATGPT-NEW-READ。仅输出该验收标识，不调用任何工具，不读取或写入任何文件。"
+    prepared = integration.prepare_execution(
+        approved=True, task_action="create", host="p620", project="pilot",
+        title="Acceptance echo", summary="No-tool result contract", prompt=prompt,
+    )
+    sealed = dispatcher.tasks.verify_prepared_execution(prepared["prepared_execution_ref"])
+    assert sealed.prompt == prompt
+    integration.start_execution(prepared_execution_ref=prepared["prepared_execution_ref"], approved=True)
+    sent = next(call[2] for call in provider.calls if call[0] == "turn/start")
+    assert prompt in sent
+    assert sent.endswith(dispatcher._managed_result_instructions())
+    assert "put that exact payload in SUMMARY and VALIDATION" in sent
+    assert "never return it alone" in sent
+    instructions = next(call[1]["developer_instructions"] for call in provider.calls if call[0] == "thread/start")
+    assert "including for no-tool and acceptance-only tasks" in instructions
+    assert "Do not call tools or perform extra work" in instructions
+    assert not any(call[0] == "configure_dynamic_tool" for call in provider.calls)
     dispatcher.host_executor.execute.assert_not_called()
