@@ -992,6 +992,7 @@ extension ObservedTask {
                                              coverage: coverage),
                      hostOperations: hostOperations, hostOperationsHasMore: hostOperationsHasMore,
                      finalResult: finalResult, artifacts: artifacts, artifactsStatus: artifactsStatus,
-                     menuState: menuState, observationId: observationId, nativeConversation: nativeConversation)
+                     menuState: menuState, observationId: observationId, nativeConversation: nativeConversation,
+                     codexUri: codexUri)
     }
 }
