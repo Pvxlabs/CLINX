@@ -180,7 +180,7 @@ def test_real_provider_rejection_after_host_exit_never_reexecutes(request, tmp_p
             assert (root/'counter').read_text() == '1'
         assert len(registry.list_host_executions(execution_ref=reference)) == 1
         reconciliation = None
-        if readonly_reconcile:
+        if readonly_reconcile or os.environ.get('CLINX_LIVE_DELIVERY_DEV_RECONCILE') == '1':
             with registry._connect() as conn:
                 host = dict(conn.execute('SELECT * FROM host_executions WHERE host_execution_ref=?',
                     (hosts[0]['host_execution_ref'],)).fetchone())
@@ -192,8 +192,14 @@ def test_real_provider_rejection_after_host_exit_never_reexecutes(request, tmp_p
                      'operation': host['operation'], 'argv': json.loads(host['argv_json']),
                      'mutating': bool(host['mutating']),
                      'provider_failure_sha256': deliveries[0]['provider_failure_sha256']}
-            reconciliation = registry.reconcile_host_delivery_failure(reference,
-                deliveries[0]['tool_call_id'], proof)
+            if not readonly_reconcile:
+                assert (root/'counter').read_text() == '1'
+                proof['completion_review'] = dict(approved=True,
+                    disposition='ACCEPT_RECORDED_COMPLETION_NO_REPLAY',
+                    reason='Observed exactly one completed disposable counter increment.',
+                    stdout_sha256=host['stdout_sha256'], stderr_sha256=host['stderr_sha256'])
+            reconciliation = integration.reconcile_host_delivery(execution_ref=reference,
+                tool_call_id=deliveries[0]['tool_call_id'], proof=proof)
             assert reconciliation['terminal_state'] == 'BLOCKED'
             assert reconciliation['original_result_preserved'] is True
             assert not registry.has_execution_lease(reference)

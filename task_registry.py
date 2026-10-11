@@ -887,7 +887,7 @@ class TaskRegistry:
                     idx_conversation_bindings_thread_id
                     ON conversation_bindings(thread_id);
                 CREATE TABLE IF NOT EXISTS conversation_binding_lineage (
-                    task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
                     predecessor_thread TEXT NOT NULL,
                     successor_thread TEXT NOT NULL UNIQUE,
                     migration_reason TEXT NOT NULL,
@@ -896,7 +896,8 @@ class TaskRegistry:
                     predecessor_project_id TEXT,
                     predecessor_app_server_version TEXT,
                     predecessor_status TEXT NOT NULL DEFAULT 'SUPERSEDED',
-                    successor_status TEXT NOT NULL DEFAULT 'ACTIVE'
+                    successor_status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    PRIMARY KEY(task_id, predecessor_thread)
                 );
                 CREATE TABLE IF NOT EXISTS conversation_policy_lineage (
                     task_id TEXT NOT NULL REFERENCES tasks(task_id),
@@ -1172,6 +1173,27 @@ class TaskRegistry:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_executions_ref ON executions(execution_ref)")
             from execution_liveness import SCHEMA
             conn.execute(SCHEMA)
+            # Preserve every predecessor across repeated Desktop/Host transitions.
+            if not conn.in_transaction:
+                conn.execute('BEGIN IMMEDIATE')
+            lineage_pk = [r['name'] for r in conn.execute('PRAGMA table_info(conversation_binding_lineage)') if r['pk']]
+            if lineage_pk == ['task_id']:
+                conn.execute('ALTER TABLE conversation_binding_lineage RENAME TO legacy_binding_lineage')
+                conn.execute("""CREATE TABLE IF NOT EXISTS conversation_binding_lineage (
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    predecessor_thread TEXT NOT NULL,
+                    successor_thread TEXT NOT NULL UNIQUE,
+                    migration_reason TEXT NOT NULL,
+                    migrated_at TEXT NOT NULL,
+                    predecessor_session_id TEXT NOT NULL,
+                    predecessor_project_id TEXT,
+                    predecessor_app_server_version TEXT,
+                    predecessor_status TEXT NOT NULL DEFAULT 'SUPERSEDED',
+                    successor_status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    PRIMARY KEY(task_id, predecessor_thread)
+                )""")
+                conn.execute('INSERT INTO conversation_binding_lineage SELECT * FROM legacy_binding_lineage')
+                conn.execute('DROP TABLE legacy_binding_lineage')
             from thread_identity import INDEX_SQL
             for index_sql in INDEX_SQL:
                 conn.execute(index_sql)
@@ -1792,11 +1814,13 @@ class TaskRegistry:
 
     def get_binding_lineage(self, task_id: str) -> ConversationBindingLineage | None:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM conversation_policy_lineage WHERE task_id=? ORDER BY policy_version DESC LIMIT 1", (task_id,)
-            ).fetchone()
-            if row is None:
-                row = conn.execute("SELECT * FROM conversation_binding_lineage WHERE task_id=?", (task_id,)).fetchone()
+            row = conn.execute("""SELECT task_id,predecessor_thread,successor_thread,migration_reason,
+                migrated_at,predecessor_session_id,predecessor_project_id,predecessor_app_server_version,
+                predecessor_status,successor_status FROM conversation_binding_lineage WHERE task_id=?
+                UNION ALL SELECT task_id,predecessor_thread,successor_thread,migration_reason,
+                migrated_at,predecessor_session_id,predecessor_project_id,predecessor_app_server_version,
+                predecessor_status,successor_status FROM conversation_policy_lineage WHERE task_id=?
+                ORDER BY migrated_at DESC LIMIT 1""", (task_id, task_id)).fetchone()
         values = dict(row) if row is not None else None
         if values is not None:
             values.pop('policy_version', None)
@@ -1809,17 +1833,19 @@ class TaskRegistry:
                 return False
             return conn.execute("""SELECT 1 FROM host_tool_deliveries d
                 JOIN execution_history h ON h.execution_ref=d.execution_ref
-                WHERE h.task_id=? AND d.delivery_state='FAILED'
+                JOIN conversation_bindings b ON b.task_id=h.task_id
+                WHERE h.task_id=? AND json_extract(d.identity_json, '$.thread_id')=b.thread_id AND d.delivery_state='FAILED'
                   AND d.execution_state='COMMAND_EXECUTED_RESULT_DELIVERY_FAILED'
                   AND d.provider_item_json IS NOT NULL
                   AND d.provider_item_json LIKE '%Unsupported dynamic tool namespace%'
-                  AND NOT EXISTS (SELECT 1 FROM conversation_binding_lineage l WHERE l.task_id=h.task_id)
-                  AND NOT EXISTS (SELECT 1 FROM conversation_policy_lineage l WHERE l.task_id=h.task_id)
                   LIMIT 1""", (task_id,)).fetchone() is not None
 
     def bind_dynamic_tool_upgrade(self, *, task_id: str, execution_ref: str,
-                                  expected_thread: str, successor: dict[str, Any]) -> ConversationBinding:
+                                  expected_thread: str, successor: dict[str, Any],
+                                  reason: str = 'DYNAMIC_TOOL_SCHEMA_UPGRADE') -> ConversationBinding:
         """Bind a successor Provider thread under the active Task lease."""
+        if reason not in {'DYNAMIC_TOOL_SCHEMA_UPGRADE', 'HOST_PROVIDER_ISOLATION'}:
+            raise TaskRegistryError('unsupported conversation migration reason')
         required = ('id', 'sessionId')
         if any(not isinstance(successor.get(key), str) or not successor[key] for key in required):
             raise TaskRegistryError('provider successor identity is incomplete')
@@ -1831,11 +1857,12 @@ class TaskRegistry:
             execution = conn.execute('SELECT * FROM executions WHERE task_id=? AND execution_ref=?',
                                       (task_id, execution_ref)).fetchone()
             if (task is None or old is None or old['thread_id'] != expected_thread
-                    or execution is None or execution['stage'] not in ('CLAIMED', 'DISPATCHING')
+                    or execution is None or execution['execution_state'] not in ('CLAIMED', 'DISPATCHING')
+                    or execution['turn_id'] is not None
                     or not conn.execute('SELECT 1 FROM worktree_leases WHERE task_id=? AND execution_ref=?',
                                         (task_id, execution_ref)).fetchone()):
                 raise TaskRegistryError('PROVIDER_SCHEMA_UPGRADE_OWNER_CONFLICT')
-            if conn.execute('SELECT 1 FROM conversation_binding_lineage WHERE task_id=?', (task_id,)).fetchone():
+            if conn.execute('SELECT 1 FROM conversation_binding_lineage WHERE task_id=? AND predecessor_thread=?', (task_id, expected_thread)).fetchone():
                 raise TaskRegistryError('PROVIDER_SCHEMA_UPGRADE_ALREADY_BOUND')
             if conn.execute('SELECT 1 FROM conversation_bindings WHERE thread_id=?', (successor['id'],)).fetchone():
                 raise TaskRegistryError('PROVIDER_SCHEMA_UPGRADE_THREAD_CONFLICT')
@@ -1843,7 +1870,7 @@ class TaskRegistry:
                 (task_id,predecessor_thread,successor_thread,migration_reason,migrated_at,
                  predecessor_session_id,predecessor_project_id,predecessor_app_server_version)
                 VALUES (?,?,?,?,?,?,?,?)""", (task_id, old['thread_id'], successor['id'],
-                'DYNAMIC_TOOL_SCHEMA_UPGRADE', stamp, old['session_id'], old['project_id'],
+                reason, stamp, old['session_id'], old['project_id'],
                 old['app_server_version']))
             conn.execute("""UPDATE conversation_bindings SET thread_id=?,session_id=?,project_id=?,
                 bound_at=?,last_verified_at=?,app_server_version=? WHERE task_id=?""",
@@ -2986,16 +3013,29 @@ class TaskRegistry:
         evidence and only releases the old execution after exact ownership and
         terminal result checks pass.
         """
-        from tool_delivery import ToolDeliveryLedger
+        from tool_delivery import ToolDeliveryLedger, requires_reconciliation
         existing = self.get_execution_result(execution_ref)
         if existing is None or existing.status != 'BLOCKED' or 'RESULT_DELIVERY_FAILED_AFTER_EXECUTION' not in existing.blockers:
             raise TaskRegistryError('DELIVERY_RECONCILIATION_RESULT_NOT_BLOCKED')
         if proof.get('task_id') != existing.task_id or proof.get('turn_id') != existing.turn_id:
             raise TaskRegistryError('DELIVERY_RECONCILIATION_IDENTITY_CONFLICT')
         active = self.get_active_execution(execution_ref)
+        if active is None:
+            retained = self.get_execution_record(execution_ref)
+            records = ToolDeliveryLedger.records(self, execution_ref)
+            reconciled = next((r for r in records if r['tool_call_id'] == tool_call_id
+                               and r['reconciliation_state'] == 'RESOLVED'), None)
+            if retained and 'released_at' in retained and reconciled:
+                outcome = ToolDeliveryLedger(self, execution_ref).reconcile_failed(tool_call_id, proof=proof)
+                return {**outcome, 'execution_ref': execution_ref,
+                        'terminal_state': retained['stage'], 'delivery_state': 'FAILED',
+                        'original_result_preserved': True, 'retry_required': False}
         if active is None or active.get('task_id') != existing.task_id:
             raise TaskRegistryError('DELIVERY_RECONCILIATION_EXECUTION_NOT_ACTIVE')
         with self._connect() as conn:
+            from execution_liveness import release_allowed
+            if not release_allowed(conn, execution_ref):
+                raise TaskRegistryError('DELIVERY_RECONCILIATION_OWNER_NOT_TERMINAL')
             competing = conn.execute("""SELECT execution_ref FROM executions
                 WHERE task_id=? AND execution_ref<>?""", (existing.task_id, execution_ref)).fetchone()
             lease = conn.execute("SELECT task_id,execution_ref FROM worktree_leases WHERE execution_ref=?",
@@ -3008,9 +3048,13 @@ class TaskRegistry:
                 raise TaskRegistryError('DELIVERY_RECONCILIATION_HOST_IN_FLIGHT')
         ledger = ToolDeliveryLedger(self, execution_ref)
         outcome = ledger.reconcile_failed(tool_call_id, proof=proof)
-        if outcome['state'] == 'ALREADY_APPLIED':
-            return {**outcome, 'terminal_state': self.get_task(existing.task_id).execution_state,
-                    'retry_required': self.get_task(existing.task_id).retry_required}
+        # Resolving one receipt cannot release an execution with other unknown
+        # Host outcomes or unconfirmed deliveries. A repeated call can finish a
+        # prior reconciliation interrupted between ledger commit and release.
+        if any(requires_reconciliation(r)
+               for r in ToolDeliveryLedger.records(self, execution_ref)):
+            return {**outcome, 'terminal_state': 'RECOVERY_REQUIRED',
+                    'retry_required': False, 'original_result_preserved': True}
         evidence = ('host_execution_ref=' + str(proof['host_execution_ref'])
                     + '; provider_failure_sha256=' + str(proof['provider_failure_sha256']))
         task = self.reconcile_terminal(execution_ref, 'BLOCKED',
@@ -3586,9 +3630,12 @@ class TaskRegistry:
             version = conn.execute('SELECT COALESCE(MAX(version), 0) FROM task_policy_versions WHERE task_id=?', (task_id,)).fetchone()[0]
             if version == 0:
                 return True
-            return conn.execute("""SELECT 1 FROM conversation_policy_lineage l JOIN conversation_bindings b
-                ON b.task_id=l.task_id AND b.thread_id=l.successor_thread
-                WHERE l.task_id=? AND l.policy_version=?""", (task_id, version)).fetchone() is not None
+            return conn.execute("""WITH RECURSIVE bound(thread_id) AS (
+                SELECT successor_thread FROM conversation_policy_lineage WHERE task_id=? AND policy_version=?
+                UNION SELECT l.successor_thread FROM conversation_binding_lineage l
+                    JOIN bound ON l.predecessor_thread=bound.thread_id WHERE l.task_id=?
+                ) SELECT 1 FROM bound JOIN conversation_bindings b ON b.thread_id=bound.thread_id
+                  WHERE b.task_id=?""", (task_id, version, task_id, task_id)).fetchone() is not None
 
     def bind_reauthorized_provider(self, *, task_id, execution_ref, expected_thread, successor, version):
         """Bind a new tool contract only before a turn, under the claimed lease.

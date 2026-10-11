@@ -171,7 +171,7 @@ def test_explicit_host_and_sealed_continuation_remain_host(local, archived):
     assert dispatcher.tasks.get_task(task.task_id).execution_policy_json == original_policy
     assert dispatcher.tasks.get_execution_routing_identity(second["execution_ref"]).surface.stable_identifier == "host_executor"
     assert any(call[0] == "configure_dynamic_tool" for call in provider.calls)
-    assert "Use only the Host capability" in next(call[1]["developer_instructions"] for call in provider.calls if call[0] == "thread/resume")
+    assert "Use Codex native workspace tools" in next(call[1]["developer_instructions"] for call in provider.calls if call[0] == "thread/resume")
     assert next(call[2] for call in provider.calls if call[0] == "turn/start") == task.title + "\n\nContinue original authorization"
     with pytest.raises(M9IntegrationError, match="cannot override the sealed execution policy"):
         integration.prepare_execution(

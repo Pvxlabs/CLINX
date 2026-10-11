@@ -230,3 +230,69 @@ after a safe local mutation and verifies the counter stays one under replay.
 All live tests use disposable registries, Provider endpoints and local targets.
 Final counts, exact source/release and production limitations belong in the
 accompanying acceptance receipt, not an inferred overall PASS.
+
+## 2026-10-12 execution continuity repair
+
+Ordinary DEV remains native by default. An explicit Host execution also retains
+its already-authorized Codex workspace tools within the same sandbox, approval
+and network policy. The Host operation grant applies to controlled Host access;
+it neither disables workspace development nor lets native tools bypass production
+scopes, Host authority or a no-replay requirement.
+
+A Host continuation must use the configured dedicated Provider. Selecting the
+idle Desktop owner, as native continuation normally does, is unsafe for dynamic
+tools: shared clients receive the same call and can race the owning Host handler
+with an unsupported-namespace response. If Desktop owns an idle predecessor,
+CLINX creates a successor on its dedicated Provider under the SAME Task lease,
+with unchanged policy. Active, conflicting or unknown ownership still prevents
+that transition. No unsubscribe, takeover or Desktop data write is performed.
+The predecessor remains readable by its exact thread/Execution identity.
+`HOST_PROVIDER_ISOLATION` uses the existing conversation lineage, now retaining
+multiple predecessors; an endpoint transition does not increment policy generation.
+A policy change continues to use the existing prepare/apply reauthorization APIs.
+
+Known successful DEV receipt reconciliation uses the existing
+`recover-execution --reconcile-delivery --tool-call-id ... --delivery-proof-json ...` maintenance path / `reconcile_host_delivery`.
+In addition to the exact task/thread/turn/call/Host refs, argv and Provider failure
+hash, a mutating DEV receipt requires `completion_review` with `approved=true`,
+`disposition=ACCEPT_RECORDED_COMPLETION_NO_REPLAY`, a reviewed reason, and the
+persisted `stdout_sha256` / `stderr_sha256`. This is an outer operator assertion,
+not a generated human signature or an ACK. The caller must inspect the actual
+operation and effects. Production mutation, unknown completion, timeout, missing
+receipt, conflicting identity and unreviewed effects remain ineligible.
+Fresh exact terminal Provider ownership is required before releasing the old
+lease. Other unresolved deliveries continue to block release. Accepted reviews
+are idempotent and audited; the Host command is never rerun, delivery remains
+FAILED and the original BLOCKED result stays immutable.
+
+Validation in the isolated source worktree:
+
+- Real Provider Native → Host → Native on one Task: PASS. Native code creation,
+  unittest execution and native workspace tools during Host mode all ran.
+- Two real disposable Providers: PASS. An idle shared predecessor received a
+  dedicated successor, then resumed that successor; three Host receipts each
+  received exact DELIVERED acknowledgement, with no competing Task.
+- Real injected delivery failure: PASS for recovery/no-replay. The counter was
+  incremented once, DEV receipt review released the lease, original BLOCKED and
+  FAILED delivery were retained. The first test attempt hit an import error in
+  the recovery helper; it was corrected and a new disposable execution passed.
+- Extended regression: 287 passed / 44 subtests passed, one pre-existing catalog
+  count failure (`15` expected, `16` current). This is not an all-suite PASS.
+  Final focused recovery/authority/lineage checks: 55 passed, including active,
+  unknown and stale owner rejection.
+
+The real incident `exec_ec5ffc7143de419f8a788404fd2981ad` was reconciled through
+this maintenance path after a read-only snapshot/dry run and a fresh terminal
+owner observation. Host `hostexec_cee39eb6a4cb4d9ba480541c1152f636` executed once
+and exited 0; delivery was rejected with `Unsupported dynamic tool namespace: clinx`
+on the Desktop endpoint. Its DEV-class argv only read load, Git metadata and
+existing files. Reconciliation is RESOLVED and the old lease is released;
+execution/result remains BLOCKED, delivery remains FAILED, Owner and sealed
+policy are unchanged. No ORION continuation or business operation was started.
+The identity of the external client that supplied the rejection remains unknown.
+
+Evidence: `/data/artifacts/clinx-execution-continuity-20261012/` (live acceptance,
+regression logs and exact incident reconciliation readback). The source includes
+the preceding native URI/discovery repair. The installed CLINX release has not
+been switched; isolated source acceptance and incident maintenance do not prove
+that future requests on the old resident runtime use the repair.

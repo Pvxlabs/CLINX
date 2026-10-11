@@ -33,7 +33,7 @@ class Wire:
 def delivery():
     host = support.HostExecutorFixture()
     host.setUp()
-    task, ref, route, policy, lease = host.bound(classes=(DEVELOPMENT_MUTATION, READ_ONLY_HOST))
+    task, ref, route, policy, lease = host.bound(classes=(DEVELOPMENT_MUTATION, READ_ONLY_HOST), conversation="thread")
     wire = Wire()
     ledger = ToolDeliveryLedger(host.registry, ref)
     client = app_server.CodexAppServerClient(wire)
@@ -302,7 +302,8 @@ def test_known_provider_failure_reconciles_without_host_replay(delivery):
         d.ledger.admit({**d.request, 'params': {**d.request['params'], 'callId': 'call-2'}}, {})
 
 
-def test_registry_delivery_reconciliation_releases_only_old_execution(delivery):
+@pytest.mark.parametrize('owner', ['terminal', 'active', 'unknown', 'stale'])
+def test_registry_delivery_reconciliation_releases_only_old_execution(delivery, owner):
     d = delivery
     d.request['params']['arguments']['readonly'] = True
     d.host.registry.bind_conversation(task_id=d.task.task_id, thread_id='thread',
@@ -330,11 +331,27 @@ def test_registry_delivery_reconciliation_releases_only_old_execution(delivery):
              'capability': host['capability'], 'operation': host['operation'],
              'argv': json.loads(host['argv_json']), 'mutating': bool(host['mutating']),
              'provider_failure_sha256': row['provider_failure_sha256']}
+    from execution_liveness import record as record_liveness, classify
+    state = {'terminal': 'idle', 'active': 'active', 'unknown': 'UNKNOWN', 'stale': 'idle'}[owner]
+    record_liveness(d.host.registry, d.ref, 'thread', 'turn', classify([
+        {'endpoint': 'fixture', 'state': state, 'thread_id': 'thread',
+         'turn_id': 'turn', 'turn_status': 'inProgress' if owner == 'active' else 'completed'}],
+        'thread', 'turn'), now=time.time() - (121 if owner == 'stale' else 0))
+    if owner != 'terminal':
+        from task_registry import TaskRegistryError
+        with pytest.raises(TaskRegistryError, match='OWNER_NOT_TERMINAL'):
+            d.host.registry.reconcile_host_delivery_failure(d.ref, 'call-1', proof)
+        assert d.host.registry.has_execution_lease(d.ref)
+        assert rows(d)[0]['reconciliation_state'] == 'OPEN'
+        return
     result = d.host.registry.reconcile_host_delivery_failure(d.ref, 'call-1', proof)
     assert result['terminal_state'] == 'BLOCKED'
     assert result['original_result_preserved'] is True
     assert not d.host.registry.has_execution_lease(d.ref)
     assert d.host.registry.get_execution_result(d.ref).status == 'BLOCKED'
+    assert d.host.registry.reconcile_host_delivery_failure(d.ref, 'call-1', proof)['state'] == 'ALREADY_APPLIED'
+    with pytest.raises(DeliveryReconciliationRequired):
+        d.host.registry.reconcile_host_delivery_failure(d.ref, 'call-1', dict(proof, argv=['false']))
 
 
 def test_owned_endpoint_has_no_shared_daemon_fallback(tmp_path):

@@ -283,3 +283,21 @@ def test_expired_approval_cannot_apply(authority):
         with pytest.raises(TaskRegistryError,match='EXPIRED'):
             apply_change(integration,prepared)
     assert registry.get_task_policy_identity(task.task_id)['policy_version']==0
+
+
+def test_policy_binding_survives_transport_successor_without_reauthorization(authority):
+    integration, registry, task, root, dispatcher = authority
+    registry.bind_conversation(task_id=task.task_id, thread_id='native', session_id='native',
+                               project_id=None, app_server_version='test')
+    apply_change(integration, prepare_change(integration,task))
+    with registry.execution(task.task_id, execution_ref='exec_authorized', retain=True):
+        registry.set_execution_state(task.task_id, 'CLAIMED', current_stage='claim')
+        registry.bind_reauthorized_provider(task_id=task.task_id, execution_ref='exec_authorized',
+            expected_thread='native', successor={'id':'host','sessionId':'host'}, version=1)
+        assert registry.provider_policy_binding_current(task.task_id)
+        registry.bind_dynamic_tool_upgrade(task_id=task.task_id, execution_ref='exec_authorized',
+            expected_thread='host', successor={'id':'dedicated','sessionId':'dedicated'},
+            reason='HOST_PROVIDER_ISOLATION')
+        assert registry.provider_policy_binding_current(task.task_id)
+        assert registry.get_task_policy_identity(task.task_id)['policy_version']==1
+        assert registry.get_binding_lineage(task.task_id).successor_thread=='dedicated'

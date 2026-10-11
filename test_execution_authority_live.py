@@ -100,10 +100,12 @@ print(json.dumps(result,sort_keys=True))
                     operation='workflow:SAFE_DEPLOY:apply',arguments={'target':'safe-data','parameters':{
                     'source_sha':candidate,'scope':'DATA','artifact_digest':'f'*64}}))
             bprep=tool('clinx_prepare_execution',dict(approved=True,task_ref=a['task_ref'],requested_operations=[scope()],
-                prompt='This is explicitly authorized isolated negative/positive workflow acceptance. Use ONLY clinx.clinx_host_operation. '
+                prompt='This is explicitly authorized isolated negative/positive workflow acceptance. First use your native shell to run '
+                    'python3 -c \"from pathlib import Path; Path(\\\"host-native-marker\\\").write_text(\\\"native works\\\")\". '
+                    'Then use clinx.clinx_host_operation for the controlled workflow calls. '
                     'Call these three requests exactly once each, sequentially: '+json.dumps(requests)+'. '
                     'The first intentionally invalid candidate must be rejected before dispatch, and this expected rejection is a successful check. '
-                    'Then continue immediately with the two legal candidates. No native shell or other tools, no retries, no self reauthorization. '
+                    'Then continue immediately with the two legal candidates. No other operations, no retries, no self reauthorization. '
                     'Return exactly a multiline CLINX_EXECUTION_RESULT with STATUS=PASS if the invalid candidate was rejected and both valid '
                     'candidates exited 0, SUMMARY=Same Task workflow accepted, CHANGED_FILES=calls.jsonl, VALIDATION=actual Host refs and expected rejection, '
                     'BLOCKERS=NONE, NEXT_STATE=COMPLETED. Each field on its own line.'))
@@ -122,10 +124,35 @@ print(json.dumps(result,sort_keys=True))
             assert all(h['exit_code']==0 for h in hosts)
             assert all(r['delivery_state']=='DELIVERED' for r in deliveries[1:])
             assert len((root/'calls.jsonl').read_text().splitlines())==2
+            assert (root/'host-native-marker').read_text() == 'native works'
             old=tool('clinx_get_status',{'thread_id':first_binding.thread_id})
             assert old['task_ref']==a['task_ref'] and old['execution_ref']==a['execution_ref']
             evidence['host']={'task_ref':b['task_ref'],'execution_ref':b['execution_ref'],'result':dataclasses.asdict(br),
                 'deliveries':deliveries,'host_count':len(hosts),'lineage':dataclasses.asdict(lineage),'policy_change':changed}
+            # Return to native on the SAME Task through the existing authority API.
+            host_policy = registry.get_execution_policy(b['execution_ref'])
+            identity = tool('clinx_get_effective_authority', {'task_ref': a['task_ref']})
+            change = tool('clinx_prepare_policy_reauthorization', dict(approved=True, task_ref=a['task_ref'],
+                expected_policy_hash=identity['policy_hash'], target_policy={
+                    'execution_surface': 'SANDBOX_WORKSPACE', 'required_capabilities': [],
+                    'operation_classes': [], 'production_mutation_intent': False},
+                network_access=False, reason='Continue authorized ordinary DEV using native workspace'))
+            tool('clinx_apply_policy_reauthorization', dict(approved=True,
+                prepared_reauthorization_ref=change['prepared_reauthorization_ref']))
+            cp = tool('clinx_prepare_execution', dict(approved=True, task_ref=a['task_ref'],
+                prompt='Use native workspace tools to create add.py defining add(a,b) returning a+b, '
+                    'and test_add.py using unittest to assert add(2,3)==5. Run python3 -m unittest -q. '
+                    'Do not call Host tools. Finish the CLINX result with actual validation.'))
+            c = tool('clinx_start_execution', dict(approved=True, prepared_execution_ref=cp['prepared_execution_ref']))
+            cr = wait(c['execution_ref']); assert cr.status == 'PASS', cr
+            assert c['task_ref'] == a['task_ref']
+            assert (root/'add.py').is_file() and (root/'test_add.py').is_file()
+            subprocess.run(['python3', '-m', 'unittest', '-q'], cwd=root, check=True)
+            assert registry.get_execution_policy(b['execution_ref']) == host_policy
+            assert registry.get_execution_policy(a['execution_ref']) == first_policy
+            assert registry.list_host_executions(execution_ref=c['execution_ref']) == []
+            evidence['native_return'] = dict(execution_ref=c['execution_ref'], result=dataclasses.asdict(cr),
+                                            lineage=dataclasses.asdict(registry.get_binding_lineage(a['task_ref'])))
             with registry._connect() as conn:
                 assert conn.execute('SELECT count(*) FROM tasks').fetchone()[0]==1
                 assert conn.execute('SELECT count(*) FROM worktree_leases').fetchone()[0]==0

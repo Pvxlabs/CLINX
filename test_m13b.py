@@ -609,9 +609,9 @@ class HostExecutorFixture(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def bound(self, *, capabilities=("LOCAL_HOST_PROCESS",), classes=(READ_ONLY_HOST,)):
+    def bound(self, *, capabilities=("LOCAL_HOST_PROCESS",), classes=(READ_ONLY_HOST,), conversation="thread-m13b"):
         policy = host_policy(capabilities=capabilities, classes=classes)
-        route = host_route(self.root, policy)
+        route = host_route(self.root, policy, conversation=conversation)
         task = self.registry.create_task(
             host="p620", workspace_alias="p620", project_alias="pilot",
             project_name="Pilot", cwd=str(self.root), repository_origin=None,
