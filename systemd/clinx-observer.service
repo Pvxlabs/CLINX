@@ -8,6 +8,7 @@ Type=simple
 EnvironmentFile=%h/.config/clinx-observer/observer.env
 Environment=CLINX_OBSERVER_DB=%h/.local/state/clinx/tasks.sqlite3
 Environment=CLINX_OBSERVER_PORT=8766
+Environment='CLINX_OBSERVER_CODEX_HOST_IDS={"p620":"remote-ssh-discovered:p620"}'
 Environment=CLINX_OBSERVER_AUDIT_METHODS=1
 ExecStart=%h/.local/lib/clinx-observer/current/bin/clinx-observer
 Restart=on-failure

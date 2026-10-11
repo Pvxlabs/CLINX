@@ -931,6 +931,7 @@ class ClinxIntegration:
                     task_key='native-' + tid, task_index=None, require_direct_input=False,
                     native_thread=identity, include_created=True, discovery_evidence='Exact authorized host + native state index + session header')
                 return {'adoption_status': 'ADOPTED' if created else 'ALREADY_ADOPTED',
+                    'codex_uri': self._public(task)['codex_uri'],
                     'task_ref': task.task_id, 'task_created': created, 'task': self._public(task),
                     'thread_id': binding.thread_id, 'session_id': binding.session_id,
                     'native_name': identity.get('name'), 'cwd': str(cwd), 'host': route_host,
@@ -1293,6 +1294,12 @@ class ClinxIntegration:
             if execution_ref else parse_execution_policy(task.execution_policy_json)
         )
         status["execution_policy"] = policy.as_dict() if policy is not None else None
+        from thread_identity import canonical_codex_uri
+        if record:
+            # Keep the selected execution's thread across a later successor.
+            captured = json.loads(record.get('routing_identity_json') or '{}')
+            status['codex_uri'] = canonical_codex_uri(captured.get('conversation', {}).get('binding'),
+                cfg=self.cfg, host=captured.get('host', {}).get('stable_identifier') or task.host)
         status["host_executions"] = self.registry.list_host_executions(
             execution_ref=execution_ref,
             task_id=None,
@@ -1714,11 +1721,18 @@ class ClinxIntegration:
         operation_classes: list[str] | None = None,
         production_mutation_intent: bool | None = None,
         requested_operations: list[dict[str, str]] | None = None,
+        codex_uri: str | None = None,
     ) -> dict[str, Any]:
         """Prepare an integrity-checked CLINX execution command without dispatching."""
+        request_arguments = dict(locals())
         if approved is not True:
             raise M9IntegrationError("explicit approved=true is required for preparation")
-        remote = self._remote_dispatch('execution.prepare', locals(), reference=task_ref, host=host)
+        if codex_uri is not None:
+            from thread_identity import resolve_selector
+            if query is not None:
+                raise M9IntegrationError('IDENTITY_SELECTOR_CONFLICT: codex_uri cannot use fuzzy query')
+            _, host, _ = resolve_selector(self.cfg, codex_uri=codex_uri, host=host)
+        remote = self._remote_dispatch('execution.prepare', {**request_arguments, 'host': host}, reference=task_ref, host=host)
         if remote is not None:
             return remote
         prompt = self._validated_text("prompt", prompt)
@@ -1741,6 +1755,44 @@ class ClinxIntegration:
             raise M9IntegrationError("execution_mode must be normal or fast")
         if network_access is not None and not isinstance(network_access, bool):
             raise M9IntegrationError("network_access must be a boolean")
+        if codex_uri is not None:
+            # An explicit conversation outranks create intent. Exact observation
+            # and canonical adoption never claim a Provider writer or grant new
+            # authority. The existing sealed continuation path handles both.
+            from thread_identity import ThreadIdentityReader, resolve_selector
+            tid, route_host, _ = resolve_selector(self.cfg, codex_uri=codex_uri, host=host)
+            observed = ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader).read(
+                codex_uri=codex_uri, host=route_host, project=project)
+            if observed.get('lookup_status') not in {'RESOLVED', 'THREAD_UNBOUND'}:
+                raise M9IntegrationError(observed.get('error_code') or 'NATIVE_IDENTITY_UNAVAILABLE')
+            if observed.get('lookup_status') == 'RESOLVED' and not observed.get('is_current_thread'):
+                raise M9IntegrationError('THREAD_SUCCESSOR_REQUIRED: supplied URI is historical', details={
+                    'task_ref': observed.get('task_ref'), 'successor_thread_id': observed.get('current_thread_id')})
+            binding = self.registry.get_binding_by_thread(tid)
+            if task_ref is not None and (binding is None or binding.task_id != task_ref):
+                raise M9IntegrationError('THREAD_IDENTITY_CONFLICT: URI does not belong to task_ref')
+            evidence = observed.get('provider_observation') or {}
+            if evidence.get('ownership_conflict') or any(
+                    row.get('state') == 'active' for row in evidence.get('observations', [])) or evidence.get('state') == 'active':
+                raise M9IntegrationError('NATIVE_ACTIVE_OWNER: preparation cannot replace an active execution')
+            if binding is not None:
+                active = self.registry.get_latest_execution_for_task(binding.task_id)
+                if active is not None and self.registry.get_active_execution(active['execution_ref']) is not None:
+                    raise M9IntegrationError('ACTIVE_EXECUTION_CONFLICT: existing owner must finish first')
+                task_ref = binding.task_id
+            else:
+                # Adoption cannot install Host tools or grant Host authority.
+                if execution_surface not in (None, 'SANDBOX_WORKSPACE') or required_capabilities or operation_classes or production_mutation_intent or requested_operations or network_access:
+                    raise M9IntegrationError('AUTHORITY_REAUTHORIZATION_REQUIRED: adopt native policy before requesting additional authority')
+                adopted = self.adopt_conversation(codex_uri=codex_uri, host=route_host,
+                    project=project, title=title, summary=summary)
+                if adopted.get('adoption_status') not in {'ADOPTED', 'ALREADY_ADOPTED'}:
+                    raise M9IntegrationError(adopted.get('error_code') or 'NATIVE_ADOPTION_BLOCKED')
+                task_ref = adopted['task_ref']
+            host = route_host
+            task_mode = 'continue'
+            if task_action == 'create':
+                task_action = None
         selected_model = self._validated_text("model", model, required=False) or "gpt-5.6-luna"
         selected_reasoning = (
             self._validated_text("reasoning_effort", reasoning_effort, required=False)
@@ -1975,7 +2027,7 @@ class ClinxIntegration:
             routing_identity=prepared_route,
             execution_policy=prepared_policy,
         )
-        return ExecutionHandoff(
+        handoff = ExecutionHandoff(
             task_action=selected_action,
             task_ref=selected_ref,
             host=selected_host,
@@ -1996,6 +2048,8 @@ class ClinxIntegration:
             routing_identity=prepared_route_public,
             execution_policy=prepared_policy.as_dict(),
         ).as_dict()
+        handoff['codex_uri'] = self._public(self.registry.get_task(selected_ref))['codex_uri'] if selected_ref else None
+        return handoff
 
     def _audit_task_index(self, task_id: str) -> str:
         """Best-effort 1:1 Linear mirror; never gates Codex dispatch."""
@@ -2095,8 +2149,8 @@ class ClinxIntegration:
             )
             return "DEGRADED"
 
-    @staticmethod
     def _execution_public(
+        self,
         *,
         prepared: Any,
         execution_ref: str,
@@ -2105,8 +2159,11 @@ class ClinxIntegration:
         linear_audit: str,
         routing_identity: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        from thread_identity import canonical_codex_uri
+        dispatched = self.registry.get_prepared_execution(prepared.prepared_execution_ref)
         return {
             "execution_started": True,
+            "codex_uri": canonical_codex_uri(dispatched.resulting_thread_id, cfg=self.cfg, host=prepared.host),
             "prepared_execution_ref": prepared.prepared_execution_ref,
             "execution_ref": execution_ref,
             "task_ref": task_ref,
@@ -2265,8 +2322,9 @@ class ClinxIntegration:
                                 "linear_audit": "NOT_ATTEMPTED",
                                 "read_only": False,
                             }
-                        task_id = duplicate.task_id
-                        dispatch_mode = "continue"
+                        # A create without an exact URI always gets a new native
+                        # conversation. Similar metadata is not identity.
+                        duplicate = None
                 if conflict is not None and duplicate is None:
                     return {
                         "execution_started": False,
@@ -2560,12 +2618,15 @@ class ClinxIntegration:
 
     def _public(self, task: Any) -> dict[str, Any]:
         adoption = self.registry.get_adoption(task.task_id)
+        from thread_identity import canonical_codex_uri
+        binding = self.registry.get_binding(task.task_id)
         context_available = bool(
             self.registry.get_binding(task.task_id)
             or self.registry.latest_context_checkpoint(task.task_id)
         )
         return {
             "task_ref": task.task_id,
+            "codex_uri": canonical_codex_uri(binding.thread_id, cfg=self.cfg, host=task.host) if binding else None,
             "task_key": task.task_key,
             "host": task.host,
             "project": task.project_alias,

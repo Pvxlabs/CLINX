@@ -1440,7 +1440,7 @@ class CodexAppServerClient:
     def _request(self, method: str, params: dict[str, Any] | None = None) -> Any:
         if getattr(self, 'read_only_observer', False) and method not in {
             'initialize', 'thread/read', 'thread/turns/list', 'thread/items/list',
-        }:
+        } and not (method == 'thread/list' and (params or {}).get('useStateDbOnly') is True):
             raise AppServerProtocolError('Read-only native observer cannot claim or mutate a thread')
         request_id = str(uuid.uuid4())
         request: dict[str, Any] = {"id": request_id, "method": method}
@@ -1670,6 +1670,10 @@ class CodexAppServerClient:
 
     def thread_list(self, *, cursor: str | None = None, limit: int = 100) -> dict[str, Any]:
         params: dict[str, Any] = {"limit": limit}
+        if getattr(self, 'read_only_observer', False):
+            # The ordinary listing can repair rollout metadata. Observers may
+            # only read the existing native index, never trigger that repair.
+            params['useStateDbOnly'] = True
         if cursor is not None:
             params["cursor"] = cursor
         result = self._request("thread/list", params)

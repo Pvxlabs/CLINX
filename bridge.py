@@ -3635,7 +3635,12 @@ class TaskDispatcher:
                 cwd=str(project.repo),
                 repository_origin=project.repository_origin,
                 branch=project.branch or "",
-                app_server_version=target.app_server_version,
+                # Offline native adoption has no initialized Provider. Its
+                # verified session version is provenance; client_version is
+                # CLINX's own version, not a Codex compatibility requirement.
+                # Continuation separately guards the actual live Provider.
+                app_server_version=(thread.get('cliVersion') if native_thread is not None
+                                    else target.app_server_version),
                 target_host=target.target_host,
             )
             if require_direct_input:

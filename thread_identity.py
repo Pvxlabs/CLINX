@@ -114,6 +114,29 @@ def resolve_selector(cfg, *, host=None, **selectors):
     return tid, resolved, host_id
 
 
+def canonical_codex_uri(thread_id, *, cfg=None, host=None, host_id=None):
+    """Format an exact native identity; a URI is never visibility evidence.
+
+    Desktop host IDs are configured aliases, not inferred SSH addresses. Do
+    not choose between ambiguous aliases or fabricate a remote route.
+    """
+    if not isinstance(thread_id, str) or not re.fullmatch(ID_PATTERN, thread_id):
+        return None
+    if cfg is not None and host_id is None:
+        from execution_semantics import normalize_host
+        canonical = normalize_host(host or cfg.runtime_host).stable_identifier
+        aliases = {alias for workspace in cfg.workspaces
+                   if normalize_host(workspace.host or workspace.alias).stable_identifier == canonical
+                   for alias in getattr(workspace, 'codex_host_ids', ())}
+        if len(aliases) == 1:
+            host_id = next(iter(aliases))
+    uri = 'codex://threads/' + thread_id
+    if host_id is not None:
+        uri += '?hostId=' + quote(host_id, safe='')
+    _parse_uri(uri)
+    return uri
+
+
 @contextlib.contextmanager
 def readonly(path):
     conn = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
@@ -474,8 +497,9 @@ class ThreadIdentityReader:
             output['host'] = host
             if context:
                 output.setdefault('context_status', 'CONTEXT_UNAVAILABLE')
-            return dict(output, queried_thread_id=tid, codex_uri='codex://threads/' + tid +
-                ('?hostId=' + quote(host_id, safe='') if host_id else ''), read_only=True, observed_at=stamp())
+            return dict(output, queried_thread_id=tid,
+                codex_uri=canonical_codex_uri(tid, cfg=self.cfg, host=host, host_id=host_id),
+                read_only=True, observed_at=stamp())
         except (ThreadLookupError, NodeProtocolError) as e:
             return dict(error_code=e.code, lookup_status=e.code, unavailable_reason=e.reason, queried_thread_id=tid, read_only=True, observed_at=stamp())
         except (sqlite3.Error, OSError, ValueError, KeyError, TypeError):

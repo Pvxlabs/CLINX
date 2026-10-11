@@ -15,6 +15,22 @@ clinx_adopt_conversation(codex_uri=uri)
 
 ## URI 和路由
 
+执行准备支持原生对话优先：`clinx_prepare_execution(approved=True, codex_uri=uri, prompt=...)`
+对精确 host/thread 校验后，关联原生对话或沿用其 canonical Task，再走已有 sealed policy continuation。
+即使传 `task_action="create"`，有 URI 也优先续用；已完成 Task 自动选择 reopen。
+URI 可与属于同一 thread 的 `task_ref` 联用以校验归属，不能与 fuzzy `query` 联用。
+活动 Provider Owner 或未结束的 CLINX Execution 拒绝新 preparation，不接管权限或历史。
+历史 predecessor URI 返回 `THREAD_SUCCESSOR_REQUIRED`，不能静默续用另一个 successor。
+未纳管 native thread 只能按原生 workspace 权限关联；额外 Host 权限仍需单独 canonical reauthorization。
+
+新建请求未提供 URI 时创建新线程，不按相似标题或 summary 续用旧对话；活动重复和 worktree lease 仍阻止重复执行。
+已有显式 Task continuation 入口保持兼容。prepare/adopt/start/status 返回 `codex_uri`；历史 execution 返回其捕获的线程 URI。
+Monitor 现有详情区域显示可复制 URI 和“在 Codex 打开”链接，不把链接生成视为 Desktop 验收。
+只读 Observer 的 `CLINX_OBSERVER_CODEX_HOST_IDS` 显式映射来自部署配置，P620 unit 与 bridge 的
+`remote-ssh-discovered:p620` 一致；没有 route 配置时不推断跨机器地址。
+
+本次实际 Desktop 验收与边界见 [20261011 验收记录](NATIVE_DESKTOP_DISCOVERY_20261011.md)。
+
 严格解析 URL，唯一允许的 query 为单个 hostId，只做一次 UTF-8 percent decode。拒绝重复/未知参数、fragment、userinfo、port、多余 path、空白/control、畸形或双重编码。URI hostId 与显式 host 冲突返回结构化错误。
 
 `[workspaces.p620].codex_host_ids = ["remote-ssh-discovered:p620"]` 映射到已有 P620 route。URI 不能提供 SSH 地址或命令。iMac/Air hostId 不推断；未知 host 不改查本机。当前实现仅支持 runtime host 的本地原生 history；其他配置 route 没有 reader 时返回 `NATIVE_HOST_UNAVAILABLE`。MCP schema 接受完整 Desktop URI，由同一后端 resolver 验证歧义。
