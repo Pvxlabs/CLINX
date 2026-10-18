@@ -2287,6 +2287,44 @@ def _default_app_server_client(
     return client
 
 
+def _publish_created_thread(cfg: BridgeConfig, target: TargetConfig, title: str) -> str:
+    """Publish one authorized new thread's title to the existing Desktop daemon.
+
+    Independent Providers share persistence but do not broadcast their metadata
+    notifications to Desktop. This is a metadata write on the creation path,
+    never observer reconciliation or execution-owner selection. Do not start a
+    proxy/daemon, resume, subscribe, retry, or move the execution Provider.
+    """
+    native = cfg.app_server.native_socket
+    if (not native or not target.target_host or not cfg.runtime_host
+            or canonical_host(target.target_host) != canonical_host(cfg.runtime_host)
+            or target.transport not in ("", "local", "local_stdio")):
+        return "NOT_CONFIGURED"
+    from native_provider import existing_client
+    try:
+        _, endpoint = _local_socket_command((), native)
+        with existing_client(endpoint, timeout=min(cfg.app_server.request_timeout_seconds, 3),
+                             read_only=False) as client:
+            client.initialize(client_name=cfg.app_server.client_name,
+                              client_title=cfg.app_server.client_title,
+                              client_version=cfg.app_server.client_version)
+            thread = client.thread_read(target.thread_id)
+            if (thread.get("id") != target.thread_id or thread.get("cwd") != target.cwd
+                    or thread.get("originator") != cfg.app_server.client_name
+                    or thread.get("threadSource") != "user"
+                    or thread.get("name") not in (None, title)):
+                return "IDENTITY_MISMATCH"
+            client.thread_name_set(target.thread_id, title)
+        return "METADATA_PUBLISHED"
+    except (AppServerError, OSError):
+        # Visibility failure must never retry dispatch or lose a real binding.
+        import logging
+        logging.getLogger(__name__).warning(
+            "Desktop metadata publication unavailable for new thread %s", target.thread_id
+        )
+        return "UNAVAILABLE"
+
+
 class TaskDispatcher:
     """M5 task dispatcher: durable task identity plus exact thread binding."""
 
@@ -2808,6 +2846,7 @@ class TaskDispatcher:
             started = client.thread_start(
                 cwd=str(project.repo), model=executable_model,
                 sandbox=self.cfg.sandbox, ephemeral=False,
+                thread_source="user",
                 dynamic_tools=[self._managed_host_spec(policy)],
             )
             new_thread_id = started.get("id")
@@ -2836,6 +2875,8 @@ class TaskDispatcher:
                 conversation=ConversationIdentity(migrated.thread_id, "BOUND"),
             )
             self.tasks.update_routing_identity(task_id, migrated_route)
+            client.thread_name_set(new_thread_id, task.title)
+            _publish_created_thread(self.cfg, new_target, task.title)
             if historical_context.strip():
                 self.tasks.save_context_checkpoint(
                     task_id=task_id,
@@ -3116,6 +3157,7 @@ class TaskDispatcher:
                             model=executable_model,
                             sandbox=self.cfg.sandbox,
                             ephemeral=False,
+                            thread_source="user",
                             developer_instructions=developer_instructions,
                             dynamic_tools=(
                                 [self._managed_host_spec(policy)]
@@ -3171,6 +3213,7 @@ class TaskDispatcher:
                             execution_ref=execution_ref,
                         )
                         client.thread_name_set(new_thread_id, task.title)
+                        _publish_created_thread(self.cfg, target, task.title)
                         self._configure_host_turn(
                             client=client,
                             task_id=leased.task_id,
@@ -3409,6 +3452,7 @@ class TaskDispatcher:
                         }
                         started = client.thread_start(cwd=str(project.repo), model=executable_model,
                             sandbox=self.cfg.sandbox, ephemeral=False,
+                            thread_source="user",
                             developer_instructions=developer_instructions,
                             dynamic_tools=[self._managed_host_spec(policy)] if policy.execution_surface == HOST_EXECUTOR else None)
                         if not started.get('id') or not started.get('sessionId'):
@@ -3442,6 +3486,8 @@ class TaskDispatcher:
                             developer_instructions=developer_instructions,
                         )
                     client.thread_name_set(binding.thread_id, task.title)
+                    if provider_rebound or dynamic_schema_upgrade:
+                        _publish_created_thread(self.cfg, target, task.title)
                     thread = self._read_and_guard(client, target, initialize_info)
                     turn_start_guard(thread)
                     self.tasks.mark_verified(
@@ -6058,6 +6104,7 @@ class Dispatcher:
                     model=executable_model,
                     sandbox=self.cfg.sandbox,
                     ephemeral=False,
+                    thread_source="user",
                 )
                 new_thread_id = started.get("id")
                 new_session_id = started.get("sessionId")
@@ -6103,6 +6150,7 @@ class Dispatcher:
                     repository_evidence=repository_evidence,
                 )
                 turn_start_guard(thread)
+                _publish_created_thread(self.cfg, target, prompt.partition("\n")[0][:120] or "CLINX task")
                 turn = client.turn_start(
                     new_thread_id,
                     prompt,
