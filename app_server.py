@@ -39,6 +39,11 @@ class AppServerProtocolError(AppServerError):
     pass
 
 
+class AppServerSharedWriterError(AppServerProtocolError):
+    code = "NATIVE_SHARED_WRITER_NOT_QUALIFIED"
+    side_effect = "NONE"
+
+
 class AppServerSandboxPolicyError(AppServerProtocolError):
     """The requested per-turn sandbox policy could not be honored."""
 
@@ -1833,6 +1838,8 @@ class CodexAppServerClient:
         network_access: bool | None = None,
         writable_roots: list[str] | None = None,
     ) -> TurnStartInfo:
+        if getattr(self, "shared_native_writer", False):
+            raise AppServerSharedWriterError("Managed start on the shared Desktop daemon lacks atomic writer admission")
         if network_access is not None and not isinstance(network_access, bool):
             raise AppServerSandboxPolicyError("network_access must be a boolean")
         params: dict[str, Any] = {

@@ -16,6 +16,7 @@ import dataclasses
 from production_workflows import load_workflows
 import fcntl
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -2284,45 +2285,37 @@ def _default_app_server_client(
         strict_dynamic_tool_binding=True,
     )
     client.provider_endpoint = str(endpoint) if endpoint is not None else None
+    native = cfg.app_server.native_socket
+    if endpoint is not None and native:
+        _, native_endpoint = _local_socket_command((), native)
+        client.shared_native_writer = str(endpoint) == str(native_endpoint)
     return client
 
 
-def _publish_created_thread(cfg: BridgeConfig, target: TargetConfig, title: str) -> str:
-    """Publish one authorized new thread's title to the existing Desktop daemon.
+def _publish_created_thread(cfg: BridgeConfig, target: TargetConfig, title: str, *, registry=None) -> str:
+    """Enroll authorized creation in the durable metadata-only outbox.
 
-    Independent Providers share persistence but do not broadcast their metadata
-    notifications to Desktop. This is a metadata write on the creation path,
-    never observer reconciliation or execution-owner selection. Do not start a
-    proxy/daemon, resume, subscribe, retry, or move the execution Provider.
+    Publication cannot change the turn's outcome or retry execution. Missing
+    configuration and storage errors are explicit diagnostics, never success.
     """
-    native = cfg.app_server.native_socket
-    if (not native or not target.target_host or not cfg.runtime_host
-            or canonical_host(target.target_host) != canonical_host(cfg.runtime_host)
-            or target.transport not in ("", "local", "local_stdio")):
+    if not cfg.app_server.native_socket:
         return "NOT_CONFIGURED"
-    from native_provider import existing_client
+    from desktop_publication import DesktopPublicationOutbox
     try:
-        _, endpoint = _local_socket_command((), native)
-        with existing_client(endpoint, timeout=min(cfg.app_server.request_timeout_seconds, 3),
-                             read_only=False) as client:
-            client.initialize(client_name=cfg.app_server.client_name,
-                              client_title=cfg.app_server.client_title,
-                              client_version=cfg.app_server.client_version)
-            thread = client.thread_read(target.thread_id)
-            if (thread.get("id") != target.thread_id or thread.get("cwd") != target.cwd
-                    or thread.get("originator") != cfg.app_server.client_name
-                    or thread.get("threadSource") != "user"
-                    or thread.get("name") not in (None, title)):
-                return "IDENTITY_MISMATCH"
-            client.thread_name_set(target.thread_id, title)
-        return "METADATA_PUBLISHED"
-    except (AppServerError, OSError):
-        # Visibility failure must never retry dispatch or lose a real binding.
-        import logging
-        logging.getLogger(__name__).warning(
-            "Desktop metadata publication unavailable for new thread %s", target.thread_id
-        )
-        return "UNAVAILABLE"
+        if registry is None:
+            path = getattr(cfg, 'task_db_path', None)
+            if path is None:
+                return "OUTBOX_NOT_CONFIGURED"
+            registry = TaskRegistry(path)
+        outbox = DesktopPublicationOutbox(registry, cfg)
+        key = outbox.enqueue(target, title)
+        if key is None:
+            return "NOT_CONFIGURED"
+        status = outbox.process(key)
+        return "METADATA_PUBLISHED" if status['state'] == 'APPLIED' else status['last_error'] or status['state']
+    except Exception as exc:  # noqa: BLE001 - metadata failures must not alter dispatch outcome
+        logging.getLogger(__name__).error("Desktop publication enrollment failed for thread %s: %s", target.thread_id, type(exc).__name__)
+        return "PUBLICATION_ENROLLMENT_FAILED"
 
 
 class TaskDispatcher:
@@ -2876,7 +2869,7 @@ class TaskDispatcher:
             )
             self.tasks.update_routing_identity(task_id, migrated_route)
             client.thread_name_set(new_thread_id, task.title)
-            _publish_created_thread(self.cfg, new_target, task.title)
+            self._publish_created_thread(new_target, task.title)
             if historical_context.strip():
                 self.tasks.save_context_checkpoint(
                     task_id=task_id,
@@ -2898,10 +2891,24 @@ class TaskDispatcher:
                 )
             return migrated
 
+    def _publish_created_thread(self, target, title):
+        # Persist before starting maintenance: a worker startup failure must not
+        # prevent the intent from surviving process restart.
+        result = _publish_created_thread(self.cfg, target, title, registry=self.tasks)
+        try:
+            if self.cfg.app_server.native_socket:
+                self.start_completion_runtime()
+        except Exception as exc:  # noqa: BLE001 - runtime startup cannot cause turn replay
+            logging.getLogger(__name__).error("Desktop publication worker unavailable for thread %s: %s", target.thread_id, type(exc).__name__)
+        return result
+
     def start_completion_runtime(self) -> CompletionRuntime:
         if getattr(self, "_completion_runtime", None) is None:
+            from desktop_publication import DesktopPublicationOutbox
             self._completion_runtime = CompletionRuntime(self.tasks, self.reconcile_execution,
-                owner_instance=getattr(self, 'completion_owner_instance', None))
+                owner_instance=getattr(self, 'completion_owner_instance', None),
+                maintenance=(DesktopPublicationOutbox(self.tasks, self.cfg).run_once
+                             if self.cfg.app_server.native_socket else None))
         self._completion_runtime.start()
         return self._completion_runtime
 
@@ -3213,7 +3220,7 @@ class TaskDispatcher:
                             execution_ref=execution_ref,
                         )
                         client.thread_name_set(new_thread_id, task.title)
-                        _publish_created_thread(self.cfg, target, task.title)
+                        self._publish_created_thread(target, task.title)
                         self._configure_host_turn(
                             client=client,
                             task_id=leased.task_id,
@@ -3487,7 +3494,7 @@ class TaskDispatcher:
                         )
                     client.thread_name_set(binding.thread_id, task.title)
                     if provider_rebound or dynamic_schema_upgrade:
-                        _publish_created_thread(self.cfg, target, task.title)
+                        self._publish_created_thread(target, task.title)
                     thread = self._read_and_guard(client, target, initialize_info)
                     turn_start_guard(thread)
                     self.tasks.mark_verified(

@@ -335,6 +335,7 @@ def _status_output_schema() -> dict[str, Any]:
         "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
         "host_executions": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "dynamic_tool_deliveries": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "desktop_publication": {"type": ["object", "null"], "additionalProperties": True},
         "provider_delivery": {"type": "object", "additionalProperties": True},
         "execution_owner": {"type": ["object", "null"], "additionalProperties": True},
         "task_current_projection": {"type": "object", "additionalProperties": True},

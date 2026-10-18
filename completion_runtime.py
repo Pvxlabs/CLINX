@@ -103,13 +103,15 @@ class CompletionIdentity:
 class CompletionRuntime:
     """One bounded observer loop, recovering only durable enrolled executions."""
     def __init__(self, registry: Any, reconcile: Callable[..., dict[str, Any]], *,
-                 interval_seconds: float = 5.0, owner_instance: str | None = None):
+                 interval_seconds: float = 5.0, owner_instance: str | None = None,
+                 maintenance: Callable[[], Any] | None = None):
         if interval_seconds <= 0:
             raise ValueError('completion interval must be positive')
         self.registry = registry
         self.reconcile = reconcile
         self.interval_seconds = interval_seconds
         self.owner_instance = owner_instance
+        self.maintenance = maintenance
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -284,6 +286,11 @@ class CompletionRuntime:
                         self.run_once()
                     except Exception as exc:
                         _LOG.error('completion observer retry required: %s', type(exc).__name__)
+                    if self.maintenance is not None:
+                        try:
+                            self.maintenance()
+                        except Exception as exc:  # noqa: BLE001 - isolate metadata retry from completion ownership
+                            _LOG.error("metadata publication retry required: %s", type(exc).__name__)
                     self._wake.wait(self.interval_seconds)
             self._thread = threading.Thread(target=observe, name='clinx-completion', daemon=True)
             self._thread.start()

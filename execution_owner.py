@@ -266,6 +266,7 @@ def serve(integration, *, ready=None, stop=None):
         finally:
             os.umask(old_umask)
         server.timeout = 0.2
+        integration.dispatcher.start_completion_runtime()
         if ready:
             ready.set()
         while not stopping.is_set() or owner.has_active_executions():

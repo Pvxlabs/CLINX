@@ -267,6 +267,18 @@ class EventStore:
                 raise LedgerValidationError(
                     "unattributed task event must not invent execution identity"
                 )
+        elif request.aggregate_type == "desktop_publication":
+            # Metadata delivery is its own observed-intent stream; it cannot
+            # carry execution identity or enter the execution-state reducer.
+            fields = {"host", "thread_id", "cwd", "title", "originator", "endpoint"}
+            if (request.event_type != "V1DesktopPublicationRequestedObserved"
+                    or set(payload) != fields | {"task_id"}
+                    or any(not isinstance(payload[k], str) or not payload[k] or len(payload[k]) > 4096 for k in fields)
+                    or (payload["task_id"] is not None and not isinstance(payload["task_id"], str))
+                    or len(request.outbox) != 1
+                    or request.outbox[0].destination != "codex_desktop_metadata_v1"
+                    or request.outbox[0].payload.to_dict() != payload):
+                raise LedgerValidationError("invalid metadata-only publication intent")
         else:
             raise LedgerValidationError(
                 f"unsupported shadow aggregate_type: {request.aggregate_type}"

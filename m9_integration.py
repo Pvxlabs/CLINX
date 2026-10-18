@@ -1395,6 +1395,8 @@ class ClinxIntegration:
         if execution_ref:
             from execution_owner import owner_record
             status['execution_owner'] = owner_record(self.registry, execution_ref)
+        from desktop_publication import inspect_publication
+        status["desktop_publication"] = inspect_publication(self.registry.path, task_id=task.task_id)
         status["selection_reason"] = selection_reason
         status["task_current_projection"] = {
             "execution_state": task.execution_state, "codex_running": bool(task.codex_running),

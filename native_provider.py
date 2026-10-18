@@ -85,6 +85,16 @@ def select_writer_client(cfg, tid, *, host_tools=False):
     endpoint = loaded[0]['endpoint'] if loaded else available[0]['endpoint'] if available else None
     if endpoint is None:
         raise NativeWriterError('NATIVE_WRITER_ENDPOINT_UNAVAILABLE', 'no configured existing endpoint is available')
+    # A second client on Desktop's daemon can receive the existing turn id
+    # from turn/start (implicit steer). A CLINX lease cannot fence that writer.
+    native = getattr(cfg.app_server, 'native_socket', None)
+    native_endpoint = None
+    if native:
+        from types import SimpleNamespace
+        native_endpoint = endpoints(SimpleNamespace(app_server=SimpleNamespace(local_socket=None, native_socket=native)))[0]
+    if not host_tools and native_endpoint and Path(endpoint).resolve() == Path(native_endpoint).resolve():
+        raise NativeWriterError('NATIVE_SHARED_WRITER_NOT_QUALIFIED',
+            'Desktop owns this daemon; release its thread writer before dedicated Provider continuation')
     successor_required = False
     if host_tools:
         # Desktop broadcasts dynamic calls to clients which do not own CLINX's
@@ -95,6 +105,9 @@ def select_writer_client(cfg, tid, *, host_tools=False):
             raise NativeWriterError('HOST_PROVIDER_UNAVAILABLE', 'configured dedicated Provider is unavailable')
         successor_required = endpoint != dedicated
         endpoint = dedicated
+    if native_endpoint and Path(endpoint).resolve() == Path(native_endpoint).resolve():
+        raise NativeWriterError('NATIVE_SHARED_WRITER_NOT_QUALIFIED',
+            'Configured Provider aliases the shared Desktop daemon')
     client = existing_client(endpoint, cfg.app_server.request_timeout_seconds, read_only=False)
     client.writer_route_evidence = evidence
     client.host_successor_required = successor_required

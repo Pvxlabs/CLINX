@@ -100,6 +100,8 @@ class CanonicalNodeExecutionAdapter:
         reader = bridge.TaskContextReader(cfg, registry)
         integration = ClinxIntegration(cfg, registry, dispatcher, reader, linear=None,
                                        topic_reader=bridge.TopicStatusReader(cfg, registry))
+        if cfg.app_server.native_socket:
+            dispatcher.start_completion_runtime()
         return cls(integration, node_id, **scope)
 
     def prepare(self, **request: Any) -> dict[str, Any]:
