@@ -900,9 +900,6 @@ class TaskRegistry:
                     last_verified_at TEXT NOT NULL,
                     app_server_version TEXT
                 );
-                CREATE UNIQUE INDEX IF NOT EXISTS
-                    idx_conversation_bindings_thread_id
-                    ON conversation_bindings(thread_id);
                 CREATE TABLE IF NOT EXISTS conversation_binding_lineage (
                     task_id TEXT NOT NULL REFERENCES tasks(task_id),
                     predecessor_thread TEXT NOT NULL,
@@ -1215,6 +1212,7 @@ class TaskRegistry:
                 conn.execute('INSERT INTO conversation_binding_lineage SELECT * FROM legacy_binding_lineage')
                 conn.execute('DROP TABLE legacy_binding_lineage')
             from thread_identity import INDEX_SQL
+            self._migrate_conversation_namespace(conn)
             for index_sql in INDEX_SQL:
                 conn.execute(index_sql)
             migrations = {
@@ -1825,14 +1823,63 @@ class TaskRegistry:
             ).fetchone()
         return ConversationBinding(**dict(row)) if row is not None else None
 
-    def get_binding_by_thread(self, thread_id: str) -> ConversationBinding | None:
+    @staticmethod
+    def _migrate_conversation_namespace(conn):
+        """Forward-only constraint migration; preserve all identity/provenance values.
+
+        Managed legacy rows have a host, not a proved paired node identity. Do
+        not invent that identity: use their existing host namespace. Native rows
+        keep the authoritative node/provider key in native_task_bindings, whose
+        configured route is one-to-one with host. This registry supports Codex
+        only; another provider requires its own explicit schema migration.
+        """
+        conn.execute('DROP INDEX IF EXISTS idx_conversation_bindings_thread_id')
+        for table, column in (
+            ('conversation_binding_lineage', 'successor_thread'),
+            ('conversation_policy_lineage', 'successor_thread'),
+            ('conversation_adoptions', 'thread_id'),
+        ):
+            schema = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
+            if re.search(r'\b' + column + r' TEXT NOT NULL UNIQUE\b', schema):
+                # Inline SQLite UNIQUE autoindexes cannot be dropped. Copy the
+                # exact row values transactionally; no historical rebinding.
+                conn.execute(f'ALTER TABLE {table} RENAME TO namespace_old_{table}')
+                conn.execute(re.sub(r'\b' + column + r' TEXT NOT NULL UNIQUE\b', column + ' TEXT NOT NULL', schema))
+                conn.execute(f'INSERT INTO {table} SELECT * FROM namespace_old_{table}')
+                conn.execute(f'DROP TABLE namespace_old_{table}')
+        tables = (('conversation_bindings', 'thread_id'), ('conversation_adoptions', 'thread_id'),
+                  ('conversation_binding_lineage', 'successor_thread'), ('conversation_policy_lineage', 'successor_thread'))
+        for table, column in tables:
+            conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{table}_{column} ON {table}({column})')
+            for operation in ('INSERT', 'UPDATE'):
+                excluding = ' AND b.rowid != OLD.rowid' if operation == 'UPDATE' else ''
+                conn.execute(f"""CREATE TRIGGER IF NOT EXISTS scoped_{table}_{operation.lower()}
+                    BEFORE {operation} ON {table} WHEN EXISTS (
+                        SELECT 1 FROM {table} b JOIN tasks previous ON previous.task_id=b.task_id
+                        JOIN tasks current ON current.task_id=NEW.task_id
+                        WHERE b.{column}=NEW.{column} AND previous.host=current.host{excluding})
+                    BEGIN SELECT RAISE(ABORT, 'thread already bound in host namespace'); END""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_policy_lineage_predecessor ON conversation_policy_lineage(predecessor_thread)")
+        for operation in ('UPDATE', 'DELETE'):
+            conn.execute(f"""CREATE TRIGGER IF NOT EXISTS policy_lineage_no_{operation.lower()}
+                BEFORE {operation} ON conversation_policy_lineage BEGIN
+                SELECT RAISE(ABORT, 'immutable policy lineage'); END""")
+        conn.execute("""CREATE TRIGGER IF NOT EXISTS bound_task_host_immutable BEFORE UPDATE OF host ON tasks
+            WHEN NEW.host != OLD.host AND (EXISTS(SELECT 1 FROM conversation_bindings WHERE task_id=OLD.task_id)
+                OR EXISTS(SELECT 1 FROM native_task_bindings WHERE task_id=OLD.task_id))
+            BEGIN SELECT RAISE(ABORT, 'bound task host is immutable'); END""")
+
+    def get_binding_by_thread(self, thread_id: str, *, host: str | None = None) -> ConversationBinding | None:
         """Return the canonical task binding for an exact thread, if any."""
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM conversation_bindings WHERE thread_id = ?",
-                (thread_id,),
-            ).fetchone()
-        return ConversationBinding(**dict(row)) if row is not None else None
+            rows = conn.execute(
+                "SELECT b.* FROM conversation_bindings b JOIN tasks t USING(task_id) WHERE b.thread_id = ?"
+                + (" AND t.host=?" if host is not None else "") + " LIMIT 2",
+                (thread_id, host) if host is not None else (thread_id,),
+            ).fetchall()
+        if len(rows) > 1:
+            raise TaskRegistryError('THREAD_IDENTITY_AMBIGUOUS: explicit host required')
+        return ConversationBinding(**dict(rows[0])) if rows else None
 
     def get_binding_lineage(self, task_id: str) -> ConversationBindingLineage | None:
         with self._connect() as conn:
@@ -1886,7 +1933,7 @@ class TaskRegistry:
                 raise TaskRegistryError('PROVIDER_SCHEMA_UPGRADE_OWNER_CONFLICT')
             if conn.execute('SELECT 1 FROM conversation_binding_lineage WHERE task_id=? AND predecessor_thread=?', (task_id, expected_thread)).fetchone():
                 raise TaskRegistryError('PROVIDER_SCHEMA_UPGRADE_ALREADY_BOUND')
-            if conn.execute('SELECT 1 FROM conversation_bindings WHERE thread_id=?', (successor['id'],)).fetchone():
+            if conn.execute('SELECT 1 FROM conversation_bindings b JOIN tasks t USING(task_id) WHERE b.thread_id=? AND t.host=?', (successor['id'], task['host'])).fetchone():
                 raise TaskRegistryError('PROVIDER_SCHEMA_UPGRADE_THREAD_CONFLICT')
             conn.execute("""INSERT INTO conversation_binding_lineage
                 (task_id,predecessor_thread,successor_thread,migration_reason,migrated_at,
@@ -1920,7 +1967,7 @@ class TaskRegistry:
         stamp = _now()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            task = conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+            task = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
             if task is None:
                 raise UnknownTaskError(f"Unknown task: {task_id}")
             old = conn.execute(
@@ -1929,7 +1976,7 @@ class TaskRegistry:
             if old is None:
                 raise TaskRegistryError("conversation migration requires an existing binding")
             if conn.execute(
-                "SELECT 1 FROM conversation_bindings WHERE thread_id = ?", (successor_thread,)
+                "SELECT 1 FROM conversation_bindings b JOIN tasks t USING(task_id) WHERE b.thread_id=? AND t.host=?", (successor_thread, task['host'])
             ).fetchone() is not None:
                 raise TaskRegistryError(f"Thread {successor_thread} is already bound")
             if conn.execute(
@@ -2042,8 +2089,8 @@ class TaskRegistry:
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
-                "SELECT task_id FROM conversation_bindings WHERE thread_id = ?",
-                (thread_id,),
+                "SELECT b.task_id FROM conversation_bindings b JOIN tasks t USING(task_id) WHERE b.thread_id=? AND t.host=?",
+                (thread_id, host),
             ).fetchone()
             if existing is not None:
                 raise TaskRegistryError(

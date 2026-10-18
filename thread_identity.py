@@ -240,7 +240,7 @@ class ThreadIdentityReader:
             if not ids:
                 return None
             tasks = [dict(c.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone() or {}) for task_id in ids]
-            if facts.get('native_registry'):
+            if facts.get('native_registry') or len(tasks) > 1:
                 # A native UUID is namespaced by its paired node. Unrelated
                 # legacy managed relations on another host are not its owners.
                 from execution_semantics import normalize_host

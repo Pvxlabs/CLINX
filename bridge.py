@@ -3739,7 +3739,7 @@ class TaskDispatcher:
                 raise DispatchContractError(
                     f"ADOPTION=FAIL: routing identity is unavailable: {exc}"
                 ) from exc
-            existing = self.tasks.get_binding_by_thread(thread_id)
+            existing = self.tasks.get_binding_by_thread(thread_id, host=target.target_host)
             if existing is not None and not reuse_existing:
                 raise TaskRegistryError(
                     f"ADOPTION=FAIL: thread {thread_id} is already bound to task {existing.task_id}"
@@ -3773,7 +3773,7 @@ class TaskDispatcher:
             except TaskRegistryError as exc:
                 # A concurrent adopter may have committed between the
                 # pre-check and this transaction.  Return its canonical task.
-                raced = self.tasks.get_binding_by_thread(thread_id)
+                raced = self.tasks.get_binding_by_thread(thread_id, host=target.target_host)
                 if raced is None or "already bound" not in str(exc).casefold():
                     raise
                 task, binding = self.tasks.get_task(raced.task_id), raced
@@ -3805,7 +3805,8 @@ class TaskDispatcher:
         discovery_evidence: str = "bounded exact conversation identity and project guard",
     ) -> tuple[Any, ...]:
         """Adopt a thread once, or reuse its canonical existing task binding."""
-        existing = self.tasks.get_binding_by_thread(thread_id)
+        workspace = self._workspace(host)
+        existing = self.tasks.get_binding_by_thread(thread_id, host=canonical_host(host or workspace.host or workspace.alias))
         if existing is not None:
             task = self.tasks.get_task(existing.task_id)
             if native_thread is not None and (existing.session_id != native_thread.get('sessionId')

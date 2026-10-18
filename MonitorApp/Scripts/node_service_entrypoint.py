@@ -141,7 +141,9 @@ def main() -> int:
                 write_health("degraded", "EXECUTION_CONFIG_UNAVAILABLE", detail=type(exc).__name__)
         capabilities = ["session.read", "session.status"] if local_scope.read_sessions else []
         if execution is not None and local_scope.execute_tasks:
+            from node_protocol import NATIVE_HANDOFF_CAPABILITY
             capabilities.extend(["execution.adopt", "execution.prepare", "execution.start", "execution.status", "execution.context", "execution.cancel"])
+            capabilities.append(NATIVE_HANDOFF_CAPABILITY)
         service = NodeService(
             record, registry, scope=local_scope, read_thread=read_thread,
             adopt_conversation=execution.adopt if execution else None,

@@ -145,6 +145,35 @@ def select_execution_client(cfg, tid, *, read_only=True, turn_id=None):
     return client
 
 
+def cancel_native_turn(cfg, tid, turn_id):
+    """Interrupt only the explicitly selected live native turn. Never resume.
+
+    Authorization and durable request audit are owned by NodeService. An RPC
+    acknowledgement is a request receipt; terminal state remains observational.
+    """
+    if not isinstance(turn_id, str) or not turn_id or len(turn_id) > 256:
+        raise NativeWriterError('INVALID_NATIVE_TURN_ID', 'A bounded exact turn id is required')
+    evidence = observe_execution(cfg, tid, turn_id)
+    if evidence.get('provider_liveness') != 'LIVE' or not evidence.get('owner_endpoint'):
+        error = NativeWriterError('NATIVE_EXECUTION_OWNER_UNPROVEN', 'Exact live owner must be proved before cancellation')
+        error.liveness_evidence = evidence
+        raise error
+    endpoint = evidence['owner_endpoint']
+    with existing_client(endpoint, cfg.app_server.request_timeout_seconds, read_only=False) as client:
+        client.initialize(client_name=cfg.app_server.client_name, client_title=cfg.app_server.client_title,
+                          client_version=cfg.app_server.client_version)
+        # Repeat at the write boundary. The exact turn parameter also prevents
+        # a delayed request from interrupting a successor turn.
+        current = observe_execution(cfg, tid, turn_id)
+        if current.get('provider_liveness') != 'LIVE' or current.get('owner_endpoint') != endpoint:
+            raise NativeWriterError('NATIVE_EXECUTION_OWNER_CHANGED', 'Native owner changed before interrupt')
+        client.turn_interrupt(tid, turn_id)
+    return {'thread_id': tid, 'native_turn_id': turn_id, 'cancel_requested': True,
+                'cancel_confirmed': False, 'execution_cancelled': False, 'operation_state': 'CANCELLATION_PENDING',
+                'status': 'CANCELLATION_PENDING', 'retry_required': True, 'read_only': False,
+                'provider_observation': current}
+
+
 def observe_execution(cfg, tid, turn_id):
     """Read every configured endpoint, bounded to five pages of exact turns."""
     from execution_liveness import classify

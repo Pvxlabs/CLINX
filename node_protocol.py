@@ -34,6 +34,7 @@ from typing import Any, Callable, Mapping
 
 NODE_PROTOCOL_VERSION = "clinx-node-v1"
 SUPPORTED_PROVIDER = "codex_app_server"
+NATIVE_HANDOFF_CAPABILITY = "execution.native_canonical_v1"
 MAX_FRAME_BYTES = 256 * 1024
 READ_OPERATIONS = frozenset({"node.status", "session.read", "session.status", "execution.context", "execution.status"})
 NODE_ID_RE = re.compile(r"[a-z0-9][a-z0-9_.-]{0,62}\Z")
@@ -774,7 +775,24 @@ class NodeService:
 
     def prepare(self, request: Mapping[str, Any]) -> dict[str, Any]:
         self._authorize("execution.prepare", request)
+        request = self._canonical_request(request)
         return self._idempotent("execution.prepare", request, self.prepare_execution, mutating=False)
+
+    def _canonical_request(self, request):
+        record, scope = self._snapshot()
+        # Never accept an owner assertion supplied by a remote request. This
+        # snapshot follows the authenticated bilateral execution authorization.
+        request = dict(request)
+        request.pop("_canonical_owner", None)
+        identity = request.get("canonical_identity")
+        if identity is not None:
+            if (not isinstance(identity, dict) or identity.get("node_id") != record.node_id
+                    or identity.get("user_scope") != scope.user_scope
+                    or not scope.allows_project(identity.get("cwd", ""))):
+                raise NodeProtocolError("CANONICAL_HANDOFF_SCOPE_DENIED", "Canonical identity is outside the approved owner scope")
+            request["_canonical_owner"] = {"owner": record.node_id, "user": scope.user_scope,
+                                              "fingerprint": record.public_key_fingerprint}
+        return request
 
     def start(self, request: Mapping[str, Any]) -> dict[str, Any]:
         self._authorize("execution.start", request)
@@ -817,6 +835,7 @@ class NodeService:
 
     def cancel(self, request: Mapping[str, Any]) -> dict[str, Any]:
         self._authorize("execution.cancel", request)
+        request = self._canonical_request(request)
         result = self._idempotent("execution.cancel", request, self.cancel_execution)
         if result.get("operation_state") in {"CANCELLED", "COMPLETED", "CONFIRMED"} and request.get("thread_id"):
             self.registry.release_fence(self._identity(request), request.get("execution_ref", ""))
@@ -834,6 +853,7 @@ class NodeService:
             if operation == "session.status": return self.status(request)
             if operation == "execution.adopt":
                 self._authorize(operation, request)
+                request = self._canonical_request(request)
                 if self.adopt_conversation is None:
                     raise NodeProtocolError("OPERATION_NOT_IMPLEMENTED", "Native adoption is unavailable")
                 try:
@@ -1024,6 +1044,11 @@ class NodeRouter:
         # owned by this node; an unacknowledged request stays UNKNOWN.
         try:
             result = dict(executor(operation, dict(request, node_id=node_id, user_scope=self.user_scope)), node_id=record.node_id)
+            expected = request.get('canonical_identity')
+            if expected and not result.get('error_code') and result.get('task_ref') != expected.get('task_id'):
+                return {"error_code": 'CANONICAL_HANDOFF_ACK_CONFLICT', "node_id": record.node_id,
+                            "execution_started": False, "operation_state": 'UNKNOWN', "side_effect": 'UNKNOWN',
+                            "retry": 'RECONCILIATION_REQUIRED'}
             if not result.get("error_code"):
                 if local_read:
                     self.registry.touch(record.node_id)

@@ -820,7 +820,7 @@ class ClinxIntegration:
             return None
         return route.public_dict() if route is not None else None
 
-    def _remote_dispatch(self, operation, arguments, *, reference=None, host=None):
+    def _remote_dispatch(self, operation, arguments, *, reference=None, host=None, native_association=None):
         """Resolve only authenticated node routes; never fall back after routing."""
         router = getattr(self.cfg, 'node_router', None)
         if router is None:
@@ -836,6 +836,14 @@ class ClinxIntegration:
             return None
         request = {key: value for key, value in arguments.items() if key != 'self' and value is not None}
         request['host'] = node_id
+        if native_association and native_association['origin'] == 'CODEX_NATIVE':
+            from native_lifecycle import handoff
+            from node_protocol import NATIVE_HANDOFF_CAPABILITY
+            if NATIVE_HANDOFF_CAPABILITY not in router.registry.get(node_id).capabilities:
+                raise NodeProtocolError('NATIVE_REMOTE_HANDOFF_NOT_QUALIFIED', 'Execution owner has not advertised canonical native identity support')
+            if native_association['node_id'] != node_id or native_association['user_scope'] != router.user_scope:
+                raise NodeProtocolError('CANONICAL_HANDOFF_SCOPE_DENIED', 'Native identity conflicts with authenticated route')
+            request['canonical_identity'] = handoff(self.registry, native_association)
         if operation in {'execution.prepare', 'execution.start', 'execution.cancel'}:
             import uuid
             request['request_id'] = reference if operation != 'execution.prepare' else 'prepare-' + uuid.uuid4().hex
@@ -898,10 +906,10 @@ class ClinxIntegration:
                 from native_lifecycle import binding as native_binding
 
                 associated = native_binding(self.registry.path, host=route_host, thread=tid)
-                if associated and associated['origin'] == 'CODEX_NATIVE' and route_host != normalize_host(self.cfg.runtime_host).stable_identifier:
+                if associated and associated['origin'] == 'CODEX_NATIVE' and route_host != normalize_host(self.cfg.runtime_host).stable_identifier and getattr(self.cfg, 'node_router', None) is None:
                     raise ThreadLookupError('NATIVE_REMOTE_HANDOFF_NOT_QUALIFIED', 'Shared canonical identity must be qualified on the execution owner first')
                 remote = self._remote_dispatch('execution.adopt', dict(project=project, host=route_host,
-                    thread_id=tid, title=title, summary=summary), host=route_host)
+                    thread_id=tid, title=title, summary=summary), host=route_host, native_association=associated)
                 if remote is not None:
                     return remote
                 reader = ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader)
@@ -986,7 +994,7 @@ class ClinxIntegration:
                 summary or "Bounded historical Codex evidence: " + ", ".join(candidate.matched_terms)
             ).strip()
 
-        existing = self.registry.get_binding_by_thread(thread_id)
+        existing = self.registry.get_binding_by_thread(thread_id, host=host)
         index = None
         if self.linear is not None:
             index = LinearTaskIndex(self.linear, self.registry, str(getattr(self.cfg, "team_id", "")))
@@ -1755,6 +1763,7 @@ class ClinxIntegration:
         request_arguments = dict(locals())
         if approved is not True:
             raise M9IntegrationError("explicit approved=true is required for preparation")
+        association = None
         if codex_uri is not None:
             from thread_identity import resolve_selector
             if query is not None:
@@ -1763,17 +1772,26 @@ class ClinxIntegration:
             from native_lifecycle import binding as native_binding
             association = native_binding(self.registry.path, host=host, thread=tid)
             from execution_semantics import normalize_host
-            if association and association['origin'] == 'CODEX_NATIVE' and host != normalize_host(self.cfg.runtime_host).stable_identifier:
+            if association and association['origin'] == 'CODEX_NATIVE' and host != normalize_host(self.cfg.runtime_host).stable_identifier and getattr(self.cfg, 'node_router', None) is None:
                 raise M9IntegrationError('NATIVE_REMOTE_HANDOFF_NOT_QUALIFIED: canonical identity must reach the execution owner before preparation')
         if task_ref:
             from native_lifecycle import binding as native_binding
             association = native_binding(self.registry.path, task=task_ref)
             from execution_semantics import normalize_host
-            if association and association['origin'] == 'CODEX_NATIVE' and association['host'] != normalize_host(self.cfg.runtime_host).stable_identifier:
+            if association and association['origin'] == 'CODEX_NATIVE' and association['host'] != normalize_host(self.cfg.runtime_host).stable_identifier and getattr(self.cfg, 'node_router', None) is None:
                 raise M9IntegrationError('NATIVE_REMOTE_HANDOFF_NOT_QUALIFIED: observation does not transfer canonical execution ownership')
-        remote = self._remote_dispatch('execution.prepare', {**request_arguments, 'host': host}, reference=task_ref, host=host)
+            if association:
+                host = host or association['host']
+        remote = self._remote_dispatch('execution.prepare', {**request_arguments, 'host': host}, reference=task_ref, host=host, native_association=association)
         if remote is not None:
             return remote
+        if association and association['origin'] == 'CODEX_NATIVE' and self.registry.get_binding(association['task_id']) is None:
+            # Both local and remote owners use the existing exact native
+            # preparation/adoption contract, including active-writer checks
+            # and refusal to add authority during adoption.
+            codex_uri = codex_uri or 'codex://threads/' + association['thread_id']
+            host = association['host']
+            task_ref = association['task_id']
         prompt = self._validated_text("prompt", prompt)
         if task_action is not None:
             if task_action not in {"create", "continue", "reopen"}:
@@ -1807,7 +1825,7 @@ class ClinxIntegration:
             if observed.get('lookup_status') == 'RESOLVED' and not observed.get('is_current_thread'):
                 raise M9IntegrationError('THREAD_SUCCESSOR_REQUIRED: supplied URI is historical', details={
                     'task_ref': observed.get('task_ref'), 'successor_thread_id': observed.get('current_thread_id')})
-            binding = self.registry.get_binding_by_thread(tid)
+            binding = self.registry.get_binding_by_thread(tid, host=route_host)
             if task_ref is not None and observed.get('task_ref') != task_ref:
                 raise M9IntegrationError('THREAD_IDENTITY_CONFLICT: URI does not belong to task_ref')
             evidence = observed.get('provider_observation') or {}
@@ -2490,8 +2508,33 @@ class ClinxIntegration:
             ),
         )
 
-    def cancel_execution(self, *, execution_ref: str) -> dict[str, Any]:
-        """Cancel one active opaque CLINX execution; never accepts raw IDs."""
+    def cancel_execution(self, *, execution_ref: str | None = None, task_ref: str | None = None,
+                         native_turn_id: str | None = None, approved: bool = False) -> dict[str, Any]:
+        """Cancel a managed execution or an explicitly approved canonical native turn."""
+        if task_ref is not None or native_turn_id is not None:
+            if (execution_ref is not None or approved is not True or not task_ref
+                    or not isinstance(native_turn_id, str) or not native_turn_id or len(native_turn_id) > 256):
+                raise M9IntegrationError('NATIVE_CANCEL_APPROVAL_REQUIRED: use task_ref, exact native_turn_id and approved=true')
+            from native_lifecycle import binding as native_binding, handoff
+            association = native_binding(self.registry.path, task=task_ref)
+            router = getattr(self.cfg, 'node_router', None)
+            if not association or association['origin'] != 'CODEX_NATIVE' or router is None:
+                raise M9IntegrationError('NATIVE_CANCEL_OWNER_REQUIRED: an explicitly authorized node execution owner is required')
+            node = router._node_for(host=association['host']).node_id
+            from node_protocol import NATIVE_HANDOFF_CAPABILITY
+            if NATIVE_HANDOFF_CAPABILITY not in router.registry.get(node).capabilities:
+                raise M9IntegrationError('NATIVE_REMOTE_HANDOFF_NOT_QUALIFIED: native cancellation requires the qualified owner adapter')
+            if node != association['node_id'] or router.user_scope != association['user_scope']:
+                raise M9IntegrationError('CANONICAL_HANDOFF_SCOPE_DENIED')
+            import hashlib
+            request_id = 'native-cancel-' + hashlib.sha256((task_ref + '\0' + native_turn_id).encode()).hexdigest()
+            identity = handoff(self.registry, association)
+            identity.pop('title', None)  # replay remains stable after a title edit
+            result = router.execute(node_id=node, operation='execution.cancel', request={
+                "host": node, "task_ref": task_ref, "native_turn_id": native_turn_id, "approved": True,
+                "request_id": request_id, "canonical_identity": identity})
+            # Endpoint/Thread details remain in the authenticated node audit.
+            return {k: v for k, v in result.items() if k not in {'thread_id', 'provider_observation'}}
         if not isinstance(execution_ref, str) or not execution_ref.startswith("exec_"):
             raise M9IntegrationError("execution_ref must be an opaque CLINX execution reference")
         remote = self._remote_dispatch('execution.cancel', locals(), reference=execution_ref)

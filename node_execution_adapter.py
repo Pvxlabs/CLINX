@@ -15,6 +15,36 @@ class CanonicalNodeExecutionAdapter:
         self.allowed_threads, self.allowed_projects = allowed_threads, allowed_projects
         self.allowed_new_projects, self.allowed_cancel_projects = allowed_new_projects, allowed_cancel_projects
 
+    def _qualify(self, request):
+        envelope = request.get('canonical_identity')
+        if envelope is None:
+            return
+        from native_history import NativeHistory
+        from native_lifecycle import qualify_handoff
+        scope = request.get('_canonical_owner')
+        if not scope or scope['owner'] != self.node_id:
+            raise NodeProtocolError('CANONICAL_HANDOFF_SCOPE_DENIED', 'Authenticated owner scope is required')
+        if request.get('task_ref') not in (None, envelope.get('task_id')):
+            raise NodeProtocolError('CANONICAL_HANDOFF_IDENTITY_CONFLICT', 'Task selector conflicts with handoff')
+        tid = envelope.get('thread_id')
+        if request.get('thread_id') not in (None, tid):
+            raise NodeProtocolError('CANONICAL_HANDOFF_IDENTITY_CONFLICT', 'Thread selector conflicts with handoff')
+        matches = [p for p in self.integration.cfg.projects if str(p.repo) == envelope.get('cwd')]
+        if len(matches) != 1:
+            raise NodeProtocolError('EXECUTION_TARGET_DENIED', 'Exact native cwd must map to one local project')
+        project = matches[0]
+        if request.get('project') and request['project'].casefold() not in (project.project_alias.casefold(), project.linear_name.casefold()):
+            raise NodeProtocolError('EXECUTION_TARGET_DENIED', 'Project selector conflicts with handoff')
+        # Check the original-thread allowlist before importing any identity.
+        self._target({'host': self.node_id, 'project': project.project_alias, 'thread_id': tid})
+        root = self.integration.cfg.app_server.native_home or Path.home()/'.codex'
+        native = NativeHistory(root)
+        metadata = native.metadata(tid)
+        if not metadata:
+            raise NodeProtocolError('NATIVE_THREAD_NOT_FOUND', 'Exact local native index record is required')
+        identity = native.identity(tid, metadata)
+        qualify_handoff(self.integration.registry, envelope, project=project, identity=identity, **scope)
+
     def _target(self, request):
         if request.get('host') not in (None, self.node_id):
             raise NodeProtocolError('NODE_TARGET_MISMATCH', 'Host must match the authenticated node')
@@ -26,6 +56,10 @@ class CanonicalNodeExecutionAdapter:
             if task.host != self.node_id:
                 raise NodeProtocolError('NODE_TARGET_MISMATCH', 'Task belongs to another node')
             project, thread = task.project_alias, binding.thread_id if binding else None
+            if not thread:
+                from native_lifecycle import binding as native_binding
+                native = native_binding(self.integration.registry.path, node=self.node_id, task=task.task_id)
+                thread = native['thread_id'] if native else None
         if self.allowed_projects is not None and project and project.casefold() not in self.allowed_projects:
             raise NodeProtocolError('EXECUTION_TARGET_DENIED', 'Project is outside the owner approved scope')
         if self.allowed_threads is not None and thread and thread not in self.allowed_threads:
@@ -34,6 +68,7 @@ class CanonicalNodeExecutionAdapter:
                 raise NodeProtocolError('EXECUTION_TARGET_DENIED', 'Native thread is outside the owner approved scope')
 
     def adopt(self, **request):
+        self._qualify(request)
         self._target(request)
         fields = inspect.signature(self.integration.adopt_conversation).parameters
         arguments = {key: value for key, value in request.items() if key in fields}
@@ -70,6 +105,9 @@ class CanonicalNodeExecutionAdapter:
     def prepare(self, **request: Any) -> dict[str, Any]:
         if request.get("host") not in (None, self.node_id):
             raise NodeProtocolError("NODE_TARGET_MISMATCH", "Execution host must be the authenticated node")
+        if request.get('approved') is not True:
+            raise NodeProtocolError('APPROVAL_REQUIRED', 'Explicit preparation approval is required')
+        self._qualify(request)
         self._target(request)
         if self.allowed_new_projects is not None and not request.get('task_ref') and request.get('project', '').casefold() not in self.allowed_new_projects:
             raise NodeProtocolError('EXECUTION_TARGET_DENIED', 'Only an approved original thread or new task project may execute')
@@ -102,6 +140,8 @@ class CanonicalNodeExecutionAdapter:
         return dict(self.integration.get_status(execution_ref=request.get("execution_ref"), task_ref=request.get("task_ref")), node_id=self.node_id)
 
     def cancel(self, **request: Any) -> dict[str, Any]:
+        if request.get('native_turn_id') is not None:
+            return self._cancel_native(request)
         record = self.integration.registry.get_execution_record(request.get('execution_ref'))
         if record is None:
             raise NodeProtocolError('UNKNOWN_EXECUTION', 'Execution is not owned by this node')
@@ -112,6 +152,31 @@ class CanonicalNodeExecutionAdapter:
         result = self.integration.cancel_execution(execution_ref=request.get("execution_ref"))
         return dict(result, node_id=self.node_id,
                     operation_state="CANCELLED" if result.get("cancel_confirmed") else "CANCELLATION_PENDING")
+
+    def _cancel_native(self, request):
+        from native_lifecycle import binding as native_binding
+        from native_provider import cancel_native_turn
+        if request.get('approved') is not True or request.get('execution_ref') is not None:
+            raise NodeProtocolError('APPROVAL_REQUIRED', 'Native cancellation requires explicit approval and no managed execution reference')
+        envelope = request.get('canonical_identity')
+        if envelope:
+            # Check cancellation scope before the optional identity handoff.
+            matches = [p for p in self.integration.cfg.projects if str(p.repo) == envelope.get('cwd')]
+            project = matches[0].project_alias if len(matches) == 1 else ''
+        else:
+            project = self.integration.registry.get_task(request['task_ref']).project_alias
+        if self.allowed_cancel_projects is not None and project.casefold() not in self.allowed_cancel_projects:
+            raise NodeProtocolError('EXECUTION_TARGET_DENIED', 'Cancellation is outside the owner approved project scope')
+        self._qualify(request)
+        self._target(request)
+        association = native_binding(self.integration.registry.path, node=self.node_id, task=request['task_ref'])
+        if not association or association['origin'] != 'CODEX_NATIVE':
+            raise NodeProtocolError('NATIVE_IDENTITY_UNAVAILABLE', 'An exact native canonical association is required')
+        active = self.integration.registry.get_latest_execution_for_task(request['task_ref'])
+        if active and self.integration.registry.get_active_execution(active['execution_ref']):
+            raise NodeProtocolError('MANAGED_EXECUTION_OWNER', 'Use the existing managed execution cancellation contract')
+        return dict(cancel_native_turn(self.integration.cfg, association['thread_id'], request['native_turn_id']),
+                    task_ref=request['task_ref'], node_id=self.node_id, source='CODEX_NATIVE', execution_ref=None)
 
     def close(self) -> None:
         stop = getattr(self.integration.dispatcher, "stop_completion_runtime", None)

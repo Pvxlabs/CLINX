@@ -489,8 +489,11 @@ MCP_INSTRUCTIONS = (
     "QUEUED is not Provider running; report the observed failure layer or UNKNOWN, "
     "not a presumed safety rejection. Linear role=AUDIT: it is the human-notification projection "
     "only and never gates execution. CLINX "
-    "Use clinx_cancel_execution only with an opaque CLINX execution_ref returned "
-    "by CLINX. It never accepts PID, shell, thread, turn, or cwd values. CLINX "
+    "Use clinx_cancel_execution with an opaque managed execution_ref, or with "
+    "a canonical native task_ref, its observed native_turn_id and approved=true. "
+    "Native cancellation also requires the owning node's explicit execution scope; "
+    "an interrupt acknowledgement is pending until the native terminal event is observed. "
+    "It never accepts PID, shell, raw thread_id, turn_id, or cwd values. CLINX "
     "does not expose arbitrary execution inputs, and humans do not need task, "
     "thread, session, turn, or cwd IDs."
 )
@@ -709,17 +712,27 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
         {
             "name": "clinx_cancel_execution",
             "description": (
-                "Cancel one active CLINX-managed Codex turn by opaque execution_ref. "
-                "PID, shell, thread, turn, and cwd inputs are not accepted."
+                "Cancel a managed turn by execution_ref, or an observed native turn by canonical "
+                "task_ref, exact native_turn_id and approved=true through its authorized node owner. "
+                "Native cancellation creates no managed execution record; acknowledgement is pending until observed."
             ),
-            "inputSchema": _json_schema(
-                {"execution_ref": {"type": "string", "pattern": "^exec_[A-Za-z0-9]+$"}},
-                ["execution_ref"],
-            ),
+            "inputSchema": dict(_json_schema({
+                "execution_ref": {"type": "string", "pattern": "^exec_[A-Za-z0-9]+$"},
+                "task_ref": {"type": "string", "pattern": "^task_[A-Za-z0-9]+$"},
+                "native_turn_id": {"type": "string", "minLength": 1, "maxLength": 256},
+                "approved": {"type": "boolean", "const": True},
+            }), oneOf=[
+                {"required": ["execution_ref"], "not": {"anyOf": [{"required": ["task_ref"]}, {"required": ["native_turn_id"]}]}},
+                {"required": ["task_ref", "native_turn_id", "approved"], "not": {"required": ["execution_ref"]}},
+            ]),
             "outputSchema": _json_schema({
                 "execution_cancelled": {"type": "boolean"},
-                "execution_ref": {"type": "string"},
+                "execution_ref": {"type": ["string", "null"]},
                 "task_ref": {"type": "string"},
+                "native_turn_id": {"type": "string"},
+                "node_id": {"type": "string"},
+                "source": {"type": "string"},
+                "operation_state": {"type": "string"},
                 "status": {"type": "string", "enum": ["CANCELLED", "CANCELLATION_PENDING"]},
                 "cancel_requested": {"type": "boolean", "const": True},
                 "cancel_confirmed": {"type": "boolean"},
@@ -1033,9 +1046,9 @@ class ClinxMCPServer:
                 )
             result = self.integration.start_execution(**arguments)
         elif name == "clinx_cancel_execution":
-            unexpected = set(arguments) - {"execution_ref"}
+            unexpected = set(arguments) - {"execution_ref", "task_ref", "native_turn_id", "approved"}
             if unexpected:
-                raise TypeError("clinx_cancel_execution accepts only execution_ref")
+                raise TypeError("clinx_cancel_execution accepts execution_ref or an explicitly approved canonical native turn")
             result = self.integration.cancel_execution(**arguments)
         elif name == "clinx_execute":
             if not self.allow_execute:

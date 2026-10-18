@@ -90,11 +90,12 @@ UI 的运行态要求精确 thread/turn owner liveness、在线且证明在 30 �
 活跃 owner 拒绝和正式 cancel execution 接口仍是唯一受管控制入口。
 观察/发现不会触发这些入口。活跃 native owner 的 prepare 在写 preparation 前拒绝。
 
-**尚未完成的控制闭环：** 原生-only turn 没有 CLINX execution_ref，不能经既有
-`cancel_execution(execution_ref)` 取消；没有新增旁路来伪造执行身份。
-远端 native Task 的 canonical identity 尚未传播并限定到远端执行 owner，故跨节点
-prepare/adopt 明确拒绝 `NATIVE_REMOTE_HANDOFF_NOT_QUALIFIED`，避免远端另建第二个 Task。
-不能把该拒绝或只有 observer 可见宣称为双向操作 PASS。
+**控制闭环增量：** [隔离 DEV 资格与未完成验收](UNIFIED_TASK_LIFECYCLE_V1_CONTROL.md)
+记录 canonical identity 的授权远端传播、无 execution_ref 的原生 turn 精确取消，
+以及沿用既有 prepare/start 的同 Thread 继续。仅 advertise
+`execution.native_canonical_v1` 的 owner 可接收；旧节点仍拒绝
+`NATIVE_REMOTE_HANDOFF_NOT_QUALIFIED`。这不代表正式节点已部署，也不代表
+Desktop 并发操作或三设备 GUI 整体闭环已通过。
 
 ## 当前 App 与 Codex UI
 
