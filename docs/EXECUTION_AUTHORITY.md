@@ -240,16 +240,49 @@ it neither disables workspace development nor lets native tools bypass productio
 scopes, Host authority or a no-replay requirement.
 
 A Host continuation must use the configured dedicated Provider. Selecting the
-idle Desktop owner, as native continuation normally does, is unsafe for dynamic
-tools: shared clients receive the same call and can race the owning Host handler
-with an unsupported-namespace response. If Desktop owns an idle predecessor,
-CLINX creates a successor on its dedicated Provider under the SAME Task lease,
-with unchanged policy. Active, conflicting or unknown ownership still prevents
-that transition. No unsubscribe, takeover or Desktop data write is performed.
+idle Desktop owner is unsafe for dynamic tools: shared clients receive the same
+call and can race the owning Host handler with an unsupported-namespace response.
+The 2026-10-18 owner guard also rejects a Host successor transition while the
+selected owner is the shared Desktop daemon. An idle observation is not an
+exclusive Canonical Task handoff; a successor Thread alone cannot fence Desktop.
+Active, conflicting or unknown ownership still prevents continuation. No
+unsubscribe, takeover or Desktop data write is performed.
 The predecessor remains readable by its exact thread/Execution identity.
 `HOST_PROVIDER_ISOLATION` uses the existing conversation lineage, now retaining
 multiple predecessors; an endpoint transition does not increment policy generation.
 A policy change continues to use the existing prepare/apply reauthorization APIs.
+
+### Shared native writer constraint and uncertain recovery
+
+The official `turn/start` protocol has no compare-and-start admission token.
+Two clients of one daemon can receive the same Turn ID; a successful response
+alone does not prove a new exclusive execution. Known shared-daemon creation,
+resume and start therefore fail before RPC with `side_effect=NONE`, including
+Host routes and configured socket aliases. Read-only observation and authorized
+exact-Turn cancellation remain available through their existing interfaces.
+
+The dedicated Provider is an operational boundary, not proof against arbitrary
+external writers. The supported managed execution condition is that all writers
+on that Provider participate in the existing CLINX owner/lease/fencing protocol;
+Desktop must not simultaneously control the same Canonical Task. Socket naming,
+an idle probe, or a second daemon does not establish that condition. Uncoordinated
+external clients and the observation-to-start window remain outside an atomic
+guarantee. Do not automatically unload Desktop or create a successor to evade
+a shared-writer rejection.
+
+For a pre-wire shared-writer rejection, no execution was dispatched; keep the
+Task/Thread association and use native Desktop continuation, or an independently
+qualified exclusive execution environment. Retrying the same shared route does
+not qualify it. For a timeout or lost start ACK, keep the consumed prepared
+request and retained lease: `UNKNOWN` / `RECOVERY_REQUIRED` means no replay and
+no guessed Turn ID. A process restart does not authorize a new start. Use the
+existing exact execution/liveness reconciliation only when its persisted
+Task/Thread/Turn identity and fresh owner evidence are available. Without the
+exact Turn identity, stop for evidence review; do not adopt the latest Desktop
+turn or mark the execution successful. Cancellation requires the exact observed
+turn and explicit existing scope; an interrupt ACK remains pending until the
+native terminal event is observed. An unavailable daemon never proves that a
+writer stopped or that a lease may be released.
 
 Known successful DEV receipt reconciliation uses the existing
 `recover-execution --reconcile-delivery --tool-call-id ... --delivery-proof-json ...` maintenance path / `reconcile_host_delivery`.

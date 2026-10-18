@@ -92,9 +92,12 @@ def select_writer_client(cfg, tid, *, host_tools=False):
     if native:
         from types import SimpleNamespace
         native_endpoint = endpoints(SimpleNamespace(app_server=SimpleNamespace(local_socket=None, native_socket=native)))[0]
-    if not host_tools and native_endpoint and Path(endpoint).resolve() == Path(native_endpoint).resolve():
+    # HOST execution may use a successor thread, but that is still the same
+    # Canonical Task. An idle Desktop owner has not handed off its authority;
+    # switching daemons must not bypass the shared-writer refusal.
+    if native_endpoint and Path(endpoint).resolve() == Path(native_endpoint).resolve():
         raise NativeWriterError('NATIVE_SHARED_WRITER_NOT_QUALIFIED',
-            'Desktop owns this daemon; release its thread writer before dedicated Provider continuation')
+            'Desktop owns this daemon; idle observation is not an exclusive Task handoff')
     successor_required = False
     if host_tools:
         # Desktop broadcasts dynamic calls to clients which do not own CLINX's
