@@ -446,6 +446,8 @@ class ThreadIdentityReader:
                     output.update(source='CODEX_NATIVE', status_source='NATIVE_OBSERVATION',
                         binding_status='NATIVE_REGISTERED', execution_state=task['execution_state'],
                         observation_provenance=json.loads(snapshot['facts']['native_registry'][0]['latest_provenance_json']))
+                from m9_integration import public_execution_result
+                output['execution_result'] = public_execution_result(snapshot['result'])
                 from tool_delivery import delivery_summary
                 output.update(dynamic_tool_deliveries=snapshot['deliveries'], host_executions=snapshot['hosts'],
                     provider_delivery=delivery_summary(snapshot['deliveries'],

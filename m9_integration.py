@@ -122,9 +122,24 @@ class ExecutionResult:
     blockers: str
     next_state: str
     raw_result: str
-    # The public result contract remains PASS/BLOCKED. The execution lifecycle
-    # can additionally terminate as FAILED when provider evidence is definitive.
+    # Legacy reports use PASS/BLOCKED. Native replies use COMPLETED for the
+    # turn lifecycle only; CLINX does not judge their business outcome.
     terminal_state: str | None = None
+
+
+def public_execution_result(record: Any) -> dict[str, Any] | None:
+    """Return the original Markdown separately from execution metadata."""
+    if record is None:
+        return None
+    def value(key):
+        return record[key] if isinstance(record, dict) else getattr(record, key)
+    result = {key: value(key) for key in (
+        'status', 'summary', 'changed_files', 'validation', 'blockers',
+        'next_state', 'received_at', 'writeback_state')}
+    result.update(response_text=value('raw_result'), response_format='markdown')
+    if value('status') == 'COMPLETED':
+        result.update(status_scope='NATIVE_TURN', business_outcome='NOT_EVALUATED')
+    return result
 
 
 @dataclasses.dataclass(frozen=True)
@@ -495,10 +510,11 @@ class ExecutionFinalizer:
         provider_outcome: str,
         provider_status: str | None,
         reconcile_delivery: bool = True,
+        native_reply: bool = False,
     ) -> _FinalizationDecision:
         parsed: ExecutionResult | None = None
         parse_error = ResultParseError("missing CLINX_EXECUTION_RESULT header", "RESULT_MARKER_MISSING")
-        if raw_result:
+        if raw_result and not native_reply:
             try:
                 parsed = parse_codex_result(raw_result)
             except ResultParseError as exc:
@@ -607,6 +623,16 @@ class ExecutionFinalizer:
                 ),
             )
 
+        if native_reply:
+            return _FinalizationDecision(
+                result=ExecutionResult(status='COMPLETED',
+                    summary='Codex turn completed; original response attached.',
+                    changed_files='UNKNOWN',
+                    validation='Native turn completed; business outcome is not evaluated by CLINX.',
+                    blockers='UNKNOWN', next_state='COMPLETED',
+                    raw_result=raw_result or '', terminal_state='COMPLETED'),
+                terminal_state='COMPLETED', retry_required=False)
+
         if parsed is not None:
             terminal_state = "BLOCKED" if parsed.status == "BLOCKED" else "COMPLETED"
             return _FinalizationDecision(
@@ -660,6 +686,7 @@ class ExecutionFinalizer:
         }:
             raise TaskRegistryError(f"Unsupported provider terminal outcome: {provider_outcome}")
         execution = self._validate_owner(execution_ref, task_id, turn_id)
+        native_reply = (result_source or {}).get('format') == 'NATIVE_MARKDOWN'
         existing = self.registry.get_execution_result(execution_ref)
         if existing and (execution.get("failure_code") or "").startswith(("RESULT_DELIVERY_", "HOST_SIDE_EFFECT_")):
             if (existing.task_id, existing.turn_id) != (task_id, turn_id):
@@ -691,6 +718,7 @@ class ExecutionFinalizer:
                     raw_result or existing.raw_result,
                     provider_outcome=provider_outcome,
                     provider_status=provider_status,
+                    native_reply=native_reply,
                 )
                 terminal_state = decision.terminal_state
                 result = dataclasses.replace(result, terminal_state=terminal_state)
@@ -736,9 +764,14 @@ class ExecutionFinalizer:
                 raw_result,
                 provider_outcome=provider_outcome,
                 provider_status=provider_status,
+                native_reply=native_reply,
             )
             decision = decision_evidence(decision, ingestion)
             result = bounded_result(decision.result)
+            if native_reply:
+                # Keep the user's complete message, including whitespace and
+                # links. The ingestion evidence retains its bounded excerpt.
+                result = dataclasses.replace(result, raw_result=raw_result or '')
             self.registry.record_execution_result(
                 execution_ref=execution_ref,
                 task_id=task_id,
@@ -1265,6 +1298,11 @@ class ClinxIntegration:
                 else:
                     retained_recovery = self.registry.get_execution_record(execution_ref)
                     if retained_recovery is None:
+                        from prepared_requests import unstarted_execution_status
+                        prepared_status = unstarted_execution_status(
+                            self.registry, execution_ref, task_ref=task_ref)
+                        if prepared_status is not None:
+                            return prepared_status
                         raise M9IntegrationError(f"Unknown execution ref: {execution_ref}")
                     task = self.registry.get_task(retained_recovery["task_id"])
         else:
@@ -1299,18 +1337,7 @@ class ClinxIntegration:
             execution_ref = selected['execution_ref'] if selected else None
         record = self.registry.get_execution_record(execution_ref) if execution_ref else None
         result = self.registry.get_execution_result(execution_ref) if execution_ref else None
-        execution_result = None
-        if result is not None:
-            execution_result = {
-                "status": result.status,
-                "summary": result.summary,
-                "changed_files": result.changed_files,
-                "validation": result.validation,
-                "blockers": result.blockers,
-                "next_state": result.next_state,
-                "received_at": result.received_at,
-                "writeback_state": result.writeback_state,
-            }
+        execution_result = public_execution_result(result)
         status = {
             **self._public(task),
             "execution_result": execution_result,
@@ -1428,67 +1455,14 @@ class ClinxIntegration:
 
     def get_capabilities(self) -> dict[str, Any]:
         """Describe the separated CLINX command, Codex execution, and Linear audit planes."""
-        host_executor = getattr(self.dispatcher, "host_executor", None)
-        if (
-            host_executor is None
-            and self.dispatcher is not None
-            and self.dispatcher.cfg.host_executor.enabled
-        ):
-            host_executor = self.dispatcher.ensure_host_executor()
-        host_capabilities = (
-            host_executor.capabilities() if host_executor is not None else {
-                "available": False,
-                "default": False,
-                "capabilities": {},
-            }
-        )
-        # Preserve the legacy probe map, but explicitly separate it from the
-        # vocabulary accepted by prepare. Discovery never grants authority or
-        # proves command dispatch, target connectivity, or QEX admission.
-        host_capabilities = {
-            **host_capabilities,
-            "available_meaning": "CONFIGURATION_ENABLED",
-            "capabilities_kind": "INFORMATIONAL_LOCAL_PROBES",
-            "runtime_health": "NOT_PROBED",
-            "control_runtime": {
-                "process_id": os.getpid(),
-                "source_root": str(Path(__file__).resolve().parent),
-                "source_observation": "LOADED_MODULE_LOCATION_NOT_GIT_HEAD",
-                "authority_tools": ["clinx_get_effective_authority", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization"],
-                "outer_client_exposure": "NOT_OBSERVED",
-            },
-            "request_contract": {
-                "execution_surface": HOST_EXECUTOR,
-                "required_capabilities": list(HOST_CAPABILITIES),
-                "operation_classes": list(OPERATION_CLASSES),
-                "capability_probe_keys": dict(HOST_CAPABILITY_PROBES),
-                "probe_labels_are_request_values": False,
-                "capability_names_grant_authority": False,
-                "development_operation_class": DEVELOPMENT_MUTATION,
-                "constraints": (
-                    "Use canonical required_capabilities, not probe labels or operation names. "
-                    "Preparation checks probe availability; execution also checks the sealed "
-                    "task policy, route, lease, operation and target. DEVELOPMENT_MUTATION "
-                    "permits bounded repository commands. PRODUCTION_MUTATION requires "
-                    "explicit production_mutation_intent=true. BUSINESS_ACTION is denied. "
-                    "AVAILABLE probes do not prove end-to-end execution health."
-                ),
-            },
-        }
         return {
-            "context_plane": {
-                "available": True,
-                "transport": "CLINX_MCP",
-                "name": "CLINX",
-                "read_only": True,
-            },
+            "context_plane": {"available": True, "transport": "CLINX_MCP", "name": "CLINX", "read_only": True},
             "context_read_only": True,
-            "thread_lookup": {"selectors": ["thread_id", "codex_uri"], "exact": True, "read_only": True, "fuzzy_fallback": False,
-                "context_sources": ["CODEX_NATIVE_HISTORY", "CODEX_LOCAL_SESSION", "CLINX_CHECKPOINT"],
-                "provider_connection": "EXISTING_SOCKET_ONLY_NO_START_NO_RESUME", "native_registration_required": False,
-                "host_ids": {w.alias: list(w.codex_host_ids) for w in getattr(self.cfg, 'workspaces', ())},
-                "adoption_tool": "clinx_adopt_conversation", "adoption_starts_execution": False,
-                "pagination": "host/thread/source scoped cursor", "instructions": "Use exact selectors directly; preserve Desktop hostId. Never call clinx_find_task first or put IDs in query."},
+            "thread_lookup": {
+                "selectors": ["thread_id", "codex_uri"], "exact": True,
+                "read_only": True, "fuzzy_fallback": False,
+                "instructions": "Pass an exact codex_uri directly to prepare_execution; no preliminary search, status read or adoption call is needed. Preserve hostId.",
+            },
             "execution_available": True,
             "command_plane": "CLINX",
             "prepare_tool": "clinx_prepare_execution",
@@ -1496,57 +1470,27 @@ class ClinxIntegration:
             "cancel_tool": "clinx_cancel_execution",
             "status_tool": "clinx_get_status",
             "execution": {
-                "available": True,
-                "direct_mcp_execution": True,
-                "command_plane": "CLINX",
-                "requires_user_approval": True,
-                "prepare_tool": "clinx_prepare_execution",
-                "start_tool": "clinx_start_execution",
+                "available": True, "direct_mcp_execution": True,
+                "command_plane": "CLINX", "requires_user_approval": True,
+                "prepare_tool": "clinx_prepare_execution", "start_tool": "clinx_start_execution",
             },
-            "execution_surfaces": {
-                "SANDBOX_WORKSPACE": {
-                    "available": True,
-                    "default": True,
-                    "network_access": False,
-                },
-                "NETWORKED_SANDBOX": {
-                    "available": True,
-                    "default": False,
-                    "network_access": True,
-                },
-                "HOST_EXECUTOR": host_capabilities,
-            },
-            "host_executor_available": bool(host_capabilities.get("available")),
-            "host_executor_default": False,
-            "status": {
-                "available": True,
-                "tool": "clinx_get_status",
-            },
-            "linear": {
-                "role": "AUDIT",
-                "failure_does_not_block_codex": True,
-                "task_issue_binding": "1:1",
-            },
+            "execution_surfaces": {"CODEX_NATIVE": {
+                "available": True, "default": True,
+                "runtime_configuration": "INHERIT_CODEX",
+                "sandbox_overrides": False,
+            }},
+            "control_runtime": {"process_id": os.getpid(), "source_root": str(Path(__file__).resolve().parent)},
+            "status": {"available": True, "tool": "clinx_get_status"},
+            "linear": {"role": "AUDIT", "failure_does_not_block_codex": True, "task_issue_binding": "1:1"},
             "instructions": (
-                "Use CLINX for authoritative task context and command preparation. "
-                "Prepare with clinx_prepare_execution. "
-                "Read clinx_get_prepared_request before applying or starting, and use "
-                "its hash/task with optional expected_request_hash/expected_task_ref assertions. "
-                "clinx_start_execution accepts prepared_execution_ref and approved=true "
-                "without policy overrides. New development tasks use SANDBOX_WORKSPACE "
-                "by default, or NETWORKED_SANDBOX with network_access=true. "
-                "Host capabilities require an explicit policy request; continuation "
-                "preserves the sealed task policy. Describe required Host work with requested_operations "
-                "(exact capability/operation/class/target), and request network explicitly. "
-                "Use clinx_get_effective_authority then prepare/apply_policy_reauthorization "
-                "when the user's authorization expands; never launch an incapable deployment turn. "
-                "Reauthorization affects future executions only and does not start deployment. "
-                "Pass structured requirements to get_effective_authority: reuse covered scopes, "
-                "reauthorize missing scopes on the same task. After a lost response read the "
-                "original prepared request and exact execution before any retry. QUEUED is "
-                "not running; report failure_stage/source or UNKNOWN, never presume an outer rejection. "
-                "Linear is optional audit/history compatibility "
-                "and is never required for Codex execution."
+                "Forward user-approved tasks to native Codex conversations. "
+                "Use the supplied codex_uri directly, including hostId; otherwise reuse a known task_ref. "
+                "Prepare once, then start its prepared_execution_ref directly. "
+                "The user's instruction to send or continue the task supplies approval; do not ask again. "
+                "Do not search, read status, inspect authority or reread preparation as routine prerequisites. "
+                "Read the original preparation only to resolve ambiguity or a lost start response; never blindly repeat execution. "
+                "CLINX does not select an executor or override Codex sandbox, writable roots, network or approval settings. "
+                "Task identity, duplicate prevention, execution ownership and receipts remain coordinated."
             ),
             "read_only": True,
         }
@@ -1627,13 +1571,14 @@ class ClinxIntegration:
             git_ops['push_current_branch']['task_authorized'] = bool(
                 git_ops['push_current_branch']['task_authorized'] or
                 any(item['task_target_authorized'] for item in derived))
-        from execution_policy import normalize_operation_scopes
-        requirements = normalize_operation_scopes(requested_operations)
-        missing = [dict(zip(('capability', 'operation', 'operation_class', 'target'), r))
-                   for r in requirements or () if policy is None or not policy.permits_operation(*r)]
+        contract['effective_authority'].update(
+            source='NATIVE_PROVIDER', operation_authority='PROVIDER_AND_TARGET_ENVIRONMENT',
+            target_authorization='NOT_EVALUATED_BY_CLINX',
+            task_forwarding_requires_operation_grants=False)
+        missing = []
         return {'task_ref': task_ref, **identity, 'future_execution_policy': policy.as_dict() if policy else None,
-                'requirements_evaluated': requested_operations is not None,
-                'requirements_covered': not missing if requested_operations is not None else None,
+                'requirements_evaluated': False,
+                'requirements_covered': None,
                 'missing_operations': missing,
                 'effective_authority': contract['effective_authority'], 'operations': contract['capabilities'],
                 'derived_git_targets': derived,
@@ -1736,6 +1681,36 @@ class ClinxIntegration:
             return ""
         return value.strip()
 
+    def _native_forwarding_policy(self, task, *, network_access):
+        """Retire legacy Host grants through the existing versioned transition.
+
+        Historical executions remain sealed. Ownership and unresolved delivery
+        checks still prevent replacing an execution that may be running.
+        """
+        from execution_semantics import normalize_surface, normalize_authority, normalize_network_policy
+        policy = build_execution_policy(network_access=network_access)
+        route = parse_routing_identity(task.routing_identity_json)
+        if route is None:
+            raise M9IntegrationError("Task execution route is unavailable")
+        if route.surface.status == 'UNKNOWN':
+            # Legacy native bindings have no Host policy to retire. Preserve
+            # their route until the dispatcher observes the actual provider.
+            return task, policy
+        updated = dataclasses.replace(route, surface=normalize_surface(policy.route_surface),
+            authority=normalize_authority(scopes=policy.authority_scopes),
+            network_policy=normalize_network_policy(network_access))
+        existing = parse_execution_policy(task.execution_policy_json) or legacy_policy_for_route(route)
+        if existing == policy and updated == route:
+            return task, policy
+        identity = self.registry.get_task_policy_identity(task.task_id)
+        prepared = self.registry.prepare_policy_reauthorization(task_id=task.task_id,
+            expected_policy_hash=identity['policy_hash'], new_policy=policy, new_route=updated,
+            requested_scope={'mode': 'NATIVE_TASK_FORWARDING', 'policy': policy.as_dict()},
+            reason='CLINX forwards tasks; operation authority belongs to the native provider')
+        self.apply_policy_reauthorization(approved=True,
+            prepared_reauthorization_ref=prepared['prepared_reauthorization_ref'])
+        return self.registry.get_task(task.task_id), policy
+
     def prepare_execution(
         self,
         *,
@@ -1814,6 +1789,8 @@ class ClinxIntegration:
             raise M9IntegrationError("execution_mode must be normal or fast")
         if network_access is not None and not isinstance(network_access, bool):
             raise M9IntegrationError("network_access must be a boolean")
+        if production_mutation_intent is not None and not isinstance(production_mutation_intent, bool):
+            raise M9IntegrationError("production_mutation_intent must be a boolean")
         if codex_uri is not None:
             # An explicit conversation outranks create intent. Exact observation
             # and canonical adoption never claim a Provider writer or grant new
@@ -1840,9 +1817,6 @@ class ClinxIntegration:
                     raise M9IntegrationError('ACTIVE_EXECUTION_CONFLICT: existing owner must finish first')
                 task_ref = binding.task_id
             else:
-                # Adoption cannot install Host tools or grant Host authority.
-                if execution_surface not in (None, 'SANDBOX_WORKSPACE') or required_capabilities or operation_classes or production_mutation_intent or requested_operations or network_access:
-                    raise M9IntegrationError('AUTHORITY_REAUTHORIZATION_REQUIRED: adopt native policy before requesting additional authority')
                 adopted = self.adopt_conversation(codex_uri=codex_uri, host=route_host,
                     project=project, title=title, summary=summary)
                 if adopted.get('adoption_status') not in {'ADOPTED', 'ALREADY_ADOPTED'}:
@@ -1852,19 +1826,28 @@ class ClinxIntegration:
             task_mode = 'continue'
             if task_action == 'create':
                 task_action = None
-        selected_model = self._validated_text("model", model, required=False) or "gpt-5.6-luna"
+        selected_model = self._validated_text("model", model, required=False) or "inherit"
         selected_reasoning = (
             self._validated_text("reasoning_effort", reasoning_effort, required=False)
             or self._validated_text("reasoning", reasoning, required=False)
-            or "high"
+            or "inherit"
         )
 
-        from execution_policy import normalize_operation_scopes
-        requirements = normalize_operation_scopes(requested_operations)
-        if task_mode == 'new' and requirements:
-            required_capabilities = list(dict.fromkeys([*(required_capabilities or []), *(r[0] for r in requirements)]))
-            operation_classes = list(dict.fromkeys([*(operation_classes or []), *(r[2] for r in requirements)]))
-        if task_mode == 'new' and network_access is None:
+        # Legacy authority fields are task context, never a CLINX admission rule.
+        # Keep them in the sealed payload so the native agent receives the intent.
+        operation_context = {key: value for key, value in {
+            'required_capabilities': required_capabilities,
+            'operation_classes': operation_classes,
+            'production_mutation_intent': production_mutation_intent,
+            'requested_operations': requested_operations,
+        }.items() if value is not None}
+        if operation_context:
+            prompt += ("\n\nREQUESTED OPERATION CONTEXT (user task data; CLINX does not "
+                       "interpret operation names or restrict repository targets):\n"
+                       + json.dumps(operation_context, ensure_ascii=False, sort_keys=True))
+        # Legacy network input is not execution configuration. Preserve the
+        # historical route on continuation and use a storage placeholder on create.
+        if task_mode == 'new':
             network_access = False
         prepared_route = "{}"
         prepared_route_public: dict[str, Any] | None = None
@@ -1924,72 +1907,18 @@ class ClinxIntegration:
             prepared_route = task.routing_identity_json or "{}"
             parsed_route = parse_routing_identity(prepared_route)
             prepared_route_public = parsed_route.public_dict() if parsed_route is not None else None
-            if network_access is None:
-                network_access = bool(parsed_route and parsed_route.network_policy.network_access)
-            existing_policy = parse_execution_policy(task.execution_policy_json)
-            legacy_unknown_policy = False
-            if existing_policy is None:
-                if parsed_route is None:
-                    raise M9IntegrationError("Task execution policy is unavailable")
-                existing_policy = legacy_policy_for_route(parsed_route)
-                legacy_unknown_policy = parsed_route.surface.status == "UNKNOWN"
-            try:
-                requested_policy = build_execution_policy(
-                    execution_surface=(
-                        execution_surface
-                        if execution_surface is not None
-                        else None if legacy_unknown_policy
-                        else existing_policy.execution_surface
-                    ),
-                    required_capabilities=(
-                        required_capabilities
-                        if required_capabilities is not None
-                        else existing_policy.required_capabilities
-                    ),
-                    operation_classes=(
-                        operation_classes
-                        if operation_classes is not None
-                        else existing_policy.operation_classes
-                    ),
-                    production_mutation_intent=(
-                        production_mutation_intent
-                        if production_mutation_intent is not None
-                        else existing_policy.production_mutation_intent
-                    ),
-                    network_access=network_access,
-                    operation_scopes=existing_policy.as_dict().get("operation_scopes"),
-                )
-            except ExecutionPolicyError as exc:
-                raise M9IntegrationError(str(exc)) from exc
-            if (
-                not legacy_unknown_policy
-                and requested_policy.as_dict() != existing_policy.as_dict()
-            ):
-                raise M9IntegrationError("AUTHORITY_REAUTHORIZATION_REQUIRED: continuation cannot override the sealed execution policy; use clinx_prepare_policy_reauthorization")
-            prepared_policy = requested_policy
+            network_access = bool(parsed_route and parsed_route.network_policy.network_access)
+            task, prepared_policy = self._native_forwarding_policy(task, network_access=network_access)
+            prepared_route = task.routing_identity_json
+            prepared_route_public = parse_routing_identity(prepared_route).public_dict()
         else:
             selected_host = self._validated_text("host", host)
             selected_project = self._validated_text("project", project)
             selected_title = self._validated_text("title", title)
-            selected_summary = self._validated_text("summary", summary, required=False)
+            selected_summary = self._validated_text("summary", summary, required=False) or None
             selected_action = "create"
             selected_ref = None
-            try:
-                prepared_policy = build_execution_policy(
-                    execution_surface=execution_surface,
-                    required_capabilities=required_capabilities,
-                    operation_classes=operation_classes,
-                    production_mutation_intent=(
-                        False
-                        if production_mutation_intent is None
-                        else production_mutation_intent
-                    ),
-                    network_access=network_access,
-                    operation_scopes=requested_operations,
-                )
-                prepared_policy.validate_new_task_authority()
-            except ExecutionPolicyError as exc:
-                raise M9IntegrationError(str(exc)) from exc
+            prepared_policy = build_execution_policy(network_access=network_access)
             if not hasattr(self.dispatcher, "resolve_project"):
                 raise M9IntegrationError("project resolver is not configured")
             workspace, descriptor, project_mapping = self.dispatcher.resolve_project(
@@ -2012,38 +1941,6 @@ class ClinxIntegration:
                 prepared_route_public = route.public_dict()
 
         assert prepared_policy is not None
-        if requirements:
-            missing = [dict(zip(('capability', 'operation', 'operation_class', 'target'), r))
-                       for r in requirements if not prepared_policy.permits_operation(*r)]
-            if missing:
-                raise M9IntegrationError('AUTHORITY_REAUTHORIZATION_REQUIRED: requested operations exceed current task policy',
-                    details={'task_ref': selected_ref, 'missing_operations': missing,
-                             'recovery_action': 'PREPARE_SAME_TASK_REAUTHORIZATION'})
-        self._check_operation_requirements(prepared_policy, requirements, task_ref=selected_ref if task_mode == 'continue' else None)
-        if prepared_policy.execution_surface == HOST_EXECUTOR:
-            executor = getattr(self.dispatcher, "host_executor", None)
-            if executor is None:
-                raise M9IntegrationError("HOST_EXECUTOR_UNAVAILABLE")
-            available = executor.capabilities()
-            if not available.get("available"):
-                raise M9IntegrationError("HOST_EXECUTOR_UNAVAILABLE")
-            unavailable = [
-                item for item in prepared_policy.required_capabilities
-                if available.get("capabilities", {}).get(HOST_CAPABILITY_PROBES[item]) != "AVAILABLE"
-            ]
-            # The unified DEVELOPMENT envelope intentionally spans the local
-            # toolchain. Missing optional tools should produce the command's
-            # own result, not block preparation or force a new authority.
-            if (
-                prepared_policy.operation_classes == (DEVELOPMENT_MUTATION,)
-                and prepared_policy.required_capabilities == DEVELOPMENT_CAPABILITIES
-            ):
-                unavailable = []
-            if unavailable:
-                raise M9IntegrationError(
-                    "CAPABILITY_UNAVAILABLE: " + ", ".join(unavailable)
-                )
-
         linear_project = self._linear_project_name()
         description_lines = [
             "CLINX_M12_EXECUTION_PREPARATION_V1",

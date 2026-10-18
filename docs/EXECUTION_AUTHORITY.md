@@ -1,5 +1,104 @@
 # Canonical Task execution authority
 
+## Native task forwarding (2026-10-17)
+
+CLINX forwards messages to native Codex conversations. The only execution
+configuration accepted by the public connector is `model` and `reasoning_effort`.
+Each is independent: omitted values inherit the conversation's configuration;
+CLINX does not choose a default model or reasoning effort for forwarded work.
+
+Pass the complete `codex://threads/...?...hostId=...` URI to
+`clinx_prepare_execution`, preserving its original hostId. No preliminary search,
+status read, separate adoption or policy review is needed. A known task_ref can
+also select the conversation. The normal flow is prepare once, then start the
+returned prepared_execution_ref. The user's instruction to send or continue the
+task supplies approval; the caller should not ask for the same confirmation again.
+Use get_prepared_request to resolve a lost response or a concrete ambiguity, not
+as a routine step. The start receipt, not preparation, proves dispatch.
+
+There is one public execution backend, `CODEX_NATIVE`. CLINX sends no `sandbox`,
+`sandboxPolicy`, `writableRoots`, `networkAccess` or `approvalPolicy` overrides
+when starting or continuing Codex. Existing developer instructions are also
+preserved; completion reporting is carried in the task message. Native Codex
+configuration remains effective.
+The old network, surface, normal/fast, capability and operation-class selectors
+are removed from connector discovery. Historical stored policy/route fields
+remain for receipt integrity; they do not describe current native permissions.
+Legacy network arguments cannot change a conversation's policy or select a new
+Provider thread. Old Host capability and authority tools are no longer exposed
+by the public connector; internal history/reconciliation compatibility remains.
+
+An existing conversation is resumed directly for public native forwarding, even
+when legacy CLINX policy versions have no Provider migration lineage. Internal
+policy metadata does not require a new native thread. Forwarding does not create
+a policy successor or inject `CLINX HISTORY REFERENCES` into the task message.
+Existing lineage remains historical evidence; it is not rewritten or replayed.
+The legacy Host executor's dynamic-tool migrations remain internal compatibility.
+Active execution ownership,
+exact target identity, duplicate prevention and completion receipts are retained.
+They coordinate delivery and do not authorize Git operations or repository paths.
+
+An exact execution status read can resolve its sealed preparation before an
+execution record exists. An untouched `PREPARED` request without an owner claim
+is reported as `PREPARED_WITHOUT_EXECUTION`, with the exact request evidence and
+no inferred start failure. This observation does not identify a platform refusal
+or authorize replay. A claimed owner or a `RUNNING` preparation retains dispatch
+uncertainty; earlier task failures never supply the missing start error.
+
+Public tools explicitly declare `readOnlyHint`, `destructiveHint` and
+`openWorldHint`. Preparing a request is an additive write. Starting a native turn
+can modify files or deploy services, so its annotations are `false/true/true`.
+These declarations describe side effects; they do not grant runtime permissions
+or determine whether the client permits a particular call.
+
+Native Codex messages are forwarded without an added title or response template.
+CLINX imposes no headings, field list, machine footer, or success declaration on
+the reply. The final message is stored unchanged and exposed as
+`execution_result.response_text` with `response_format=markdown` in both exact
+execution and thread queries. Connectors should preserve this Markdown.
+
+Existing local chats with the old `CLINX MANAGED EXECUTION CONTRACT` receive a
+one-time native developer history item that retires only its reply template.
+Continuation recognizes the exact old developer block and a durable retirement
+record; user quotations and unrelated custom instructions do not trigger it.
+It preserves thread identity, all historical records, other instructions and
+the original user prompt. No configuration or sandbox override is involved.
+The native append occurs only after the ordinary idle-owner guard; an uncertain
+append is never retried automatically. Fresh native chats need no migration.
+
+The legacy Linear completion observer excludes executions with a dedicated
+Owner record. Each Owner observes its own executions. Deployment must update
+the resident Linear dispatcher too: an older global completion observer can
+otherwise race the Owner and still apply the retired report parser.
+
+For native replies `status=COMPLETED` and `status_scope=NATIVE_TURN` describe only
+the observed completed turn; `business_outcome=NOT_EVALUATED` does not assert
+engineering or production success. Definitive provider errors, uncertain owner
+identity, incomplete source and unresolved tool delivery retain their existing
+handling. Legacy Host receipts retain their strict parser. Historical records
+are not reinterpreted or rewritten.
+
+The existing result table accepts the additional lifecycle status `COMPLETED`.
+An atomic, repeatable SQLite CHECK migration preserves all old rows, indexes
+and triggers. Native reply text is not shortened to the legacy 16,000-character
+receipt limit; bounded audit excerpts remain separate from the original text.
+
+Deployment acceptance also covers completed threads that every configured
+Provider has unloaded. If all reachable configured Providers report the same
+exact thread/turn as `completed`, with no active claim or missing peer evidence,
+CLINX can finalize from that durable result and release the lease. Interrupted,
+missing, conflicting, and unreadable observations still retain ownership. This
+does not resume or replay the completed turn.
+
+`clinx_get_effective_authority` no longer evaluates operation requirements for
+task forwarding: `requirements_evaluated=false`, `requirements_covered=null`,
+and `missing_operations=[]`. These values do not claim that Codex has executed
+the requested operations. The legacy Host catalog and policy APIs remain for
+historical inspection and compatibility, not as prerequisites to forward work.
+
+The sections below describe the historical Host executor contract. They still
+apply to direct use of that executor, not to public task forwarding.
+
 CLINX owns Task/Execution identity, approved scope, workspace/resource ownership,
 lifecycle, evidence and reconciliation. Codex retains its native workspace tools.
 Production controller validation remains owned by the target application.

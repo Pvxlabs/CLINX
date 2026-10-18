@@ -41,6 +41,17 @@ except ImportError:  # pragma: no cover - exercised by the standalone bundle
 SCAN_BYTES = 512 * 1024
 SQL_STEPS = 250_000
 
+# One-time retirement of CLINX's former developer-level output template.
+# Stored by Codex in its own history; never rewrite old records or replace
+# the thread's developer configuration (which may contain user instructions).
+LEGACY_REPLY_RETIREMENT = (
+    'CLINX_LEGACY_REPLY_FORMAT_RETIRED_V1\n'
+    'The reply-format requirements in the earlier CLINX MANAGED EXECUTION CONTRACT are retired: '
+    'CLINX no longer owns or constrains the final response format. The CLINX_EXECUTION_RESULT marker '
+    'and STATUS, SUMMARY, CHANGED_FILES, VALIDATION, BLOCKERS, NEXT_STATE fields are no longer required. '
+    'This only retires that CLINX-generated output template; all other instructions remain in effect.'
+)
+
 # Native turn status is a provider fact.  Keep the original value in the
 # payload and derive a small, stable vocabulary for read-plane presentation.
 # This vocabulary never changes a managed execution_state.
@@ -208,6 +219,42 @@ class NativeHistory:
                 'status': {'type': 'UNKNOWN'}, 'cliVersion': metadata.get('cli_version') or meta.get('cli_version'),
                 'name': metadata.get('name') or metadata.get('title'),
                 'identity_source': 'CODEX_STATE_AND_SESSION_HEADER'}
+
+    def legacy_reply_format_pending(self, tid, metadata):
+        """Recognize only our old developer template and its durable retirement.
+
+        Stream the history with bounded memory so a later conversation cannot
+        evict the retirement marker from a tail window and cause reinjection.
+        User/assistant quotations never count as developer configuration.
+        """
+        self.identity(tid, metadata)
+        pending = False
+        with self._path(tid, metadata).open('rb') as stream:
+            while line := stream.readline(1024 * 1024):
+                if not line.endswith(b'\n'):
+                    # Skip oversized records rather than parsing fragments.
+                    while line and not line.endswith(b'\n'):
+                        line = stream.readline(1024 * 1024)
+                    continue
+                if b'CLINX' not in line or b'developer' not in line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                item = row.get('payload', {})
+                if row.get('type') != 'response_item' or item.get('role') != 'developer':
+                    continue
+                text = ''.join(p.get('text', '') for p in item.get('content', [])
+                               if isinstance(p, dict) and p.get('type') in ('input_text', 'text'))
+                if text == LEGACY_REPLY_RETIREMENT:
+                    pending = False
+                elif (text.startswith('CLINX MANAGED EXECUTION CONTRACT\n')
+                      and 'CLINX owns the final response format' in text
+                      and 'CLINX_EXECUTION_RESULT' in text
+                      and 'END CLINX MANAGED EXECUTION CONTRACT' in text):
+                    pending = True
+        return pending
 
     def status(self, tid, metadata):
         base = {

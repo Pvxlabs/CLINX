@@ -1055,7 +1055,7 @@ class TaskRegistry:
                     execution_ref TEXT PRIMARY KEY,
                     task_id TEXT NOT NULL REFERENCES tasks(task_id),
                     turn_id TEXT NOT NULL,
-                    status TEXT NOT NULL CHECK(status IN ('PASS','BLOCKED')),
+                    status TEXT NOT NULL CHECK(status IN ('PASS','BLOCKED','COMPLETED')),
                     summary TEXT NOT NULL,
                     changed_files TEXT NOT NULL,
                     validation TEXT NOT NULL,
@@ -1149,6 +1149,7 @@ class TaskRegistry:
                 );
                 """
             )
+            self._migrate_native_result_status(conn)
             columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(tasks)")
             }
@@ -3222,6 +3223,37 @@ class TaskRegistry:
             ).fetchone()
         return ExecutionResultRecord(**dict(row)) if row is not None else None
 
+    @staticmethod
+    def _migrate_native_result_status(conn: sqlite3.Connection) -> None:
+        """Extend the existing result table atomically, preserving every row.
+
+        SQLite cannot alter a CHECK constraint. No second result store is kept,
+        and existing PASS/BLOCKED rows retain their exact contents.
+        """
+        legacy_check = "CHECK(status IN ('PASS','BLOCKED'))"
+        sql = conn.execute("SELECT sql FROM sqlite_master WHERE name='execution_results'").fetchone()[0]
+        if legacy_check not in sql:
+            return
+        conn.execute('BEGIN IMMEDIATE')
+        try:
+            # Another startup may have completed the migration while waiting.
+            sql = conn.execute("SELECT sql FROM sqlite_master WHERE name='execution_results'").fetchone()[0]
+            if legacy_check in sql:
+                definitions = [row[0] for row in conn.execute(
+                    "SELECT sql FROM sqlite_master WHERE tbl_name='execution_results' AND type IN ('index','trigger') AND sql IS NOT NULL")]
+                updated = sql.replace('execution_results', 'execution_results_native_migration', 1).replace(
+                    legacy_check, "CHECK(status IN ('PASS','BLOCKED','COMPLETED'))", 1)
+                conn.execute(updated)
+                conn.execute('INSERT INTO execution_results_native_migration SELECT * FROM execution_results')
+                conn.execute('DROP TABLE execution_results')
+                conn.execute('ALTER TABLE execution_results_native_migration RENAME TO execution_results')
+                for definition in definitions:
+                    conn.execute(definition)
+            conn.execute('COMMIT')
+        except Exception:
+            conn.execute('ROLLBACK')
+            raise
+
     def record_execution_result(
         self,
         *,
@@ -3247,7 +3279,7 @@ class TaskRegistry:
             raise TaskRegistryError(
                 f"Execution turn {turn_id} does not own task {task_id}; expected {task.turn_id}"
             )
-        if status not in {"PASS", "BLOCKED"}:
+        if status not in {"PASS", "BLOCKED", "COMPLETED"}:
             raise TaskRegistryError(f"Unsupported execution result status: {status}")
         fields = {
             "summary": summary, "changed_files": changed_files,
@@ -3255,7 +3287,7 @@ class TaskRegistry:
             "next_state": next_state, "raw_result": raw_result,
         }
         for name, value in fields.items():
-            if not isinstance(value, str) or len(value) > 16000:
+            if not isinstance(value, str) or (name != 'raw_result' and len(value) > 16000):
                 raise TaskRegistryError(f"Execution result {name} must be a string <= 16000 characters")
         existing = self.get_execution_result(execution_ref)
         if existing is not None:

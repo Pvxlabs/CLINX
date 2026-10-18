@@ -39,6 +39,31 @@ def policy_difference(previous, proposed):
     return changes
 
 
+def unstarted_execution_status(registry, execution_ref, *, task_ref=None):
+    """Report exact preparation evidence without inferring why start is absent."""
+    if not isinstance(execution_ref, str) or not re.fullmatch(r'exec_[0-9a-f]{32}', execution_ref):
+        return None
+    request_ref = 'prepared_' + execution_ref.removeprefix('exec_')
+    if registry.get_prepared_execution(request_ref) is None:
+        return None
+    prepared = read_prepared_request(registry, request_ref)
+    if task_ref is not None and task_ref != prepared['task_ref']:
+        raise TaskRegistryError('execution_ref does not belong to task_ref')
+    # An owner claim or RUNNING request can precede the execution record. Keep
+    # that dispatch uncertainty; absence is not permission to replay a turn.
+    if (prepared['request_state'] != 'PREPARED' or prepared['execution_present']
+            or prepared['execution_owner_state'] is not None):
+        return None
+    return {'task_ref': prepared['task_ref'], 'execution_ref': execution_ref,
+            'lookup_status': 'PREPARED_WITHOUT_EXECUTION', 'status_source': 'PREPARED_REQUEST',
+            'prepared_request': prepared, 'execution_present': False,
+            'execution_state': None, 'execution_stage': None, 'execution_turn_ref': None,
+            'failure_source': 'NOT_OBSERVED', 'failure_code': None,
+            'failure_stage': None, 'failure_evidence': None,
+            'provider_running': 'NOT_OBSERVED', 'retry_allowed': False,
+            'recovery_action': 'READ_ORIGINAL_START_ERROR; DO_NOT_REPLAY', 'read_only': True}
+
+
 def read_prepared_request(registry, request_ref):
     if not isinstance(request_ref, str) or not re.fullmatch(r'(prepared|reauth)_[0-9a-f]{32}', request_ref):
         raise TaskRegistryError('PREPARED_REQUEST_INVALID_REF')

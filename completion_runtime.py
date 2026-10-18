@@ -265,8 +265,14 @@ class CompletionRuntime:
         if not 1 <= limit <= 100:
             raise ValueError('completion batch must be between 1 and 100')
         with self._connect() as conn:
-            scope = (" AND execution_ref IN (SELECT execution_ref FROM clinx_execution_owners WHERE owner_instance=?)"
-                     if self.owner_instance else '')
+            if self.owner_instance:
+                scope = " AND execution_ref IN (SELECT execution_ref FROM clinx_execution_owners WHERE owner_instance=?)"
+            elif conn.execute("SELECT 1 FROM sqlite_master WHERE name='clinx_execution_owners'").fetchone():
+                # The legacy Linear observer must not race a dedicated Owner's
+                # finalizer, including work owned by another/restarting version.
+                scope = " AND execution_ref NOT IN (SELECT execution_ref FROM clinx_execution_owners)"
+            else:
+                scope = ''
             arguments = (time.time(), self.owner_instance, limit) if self.owner_instance else (time.time(), limit)
             rows = conn.execute("SELECT execution_ref FROM clinx_completion_handoffs WHERE state='PENDING' AND next_attempt<=?"
                                 + scope + " ORDER BY next_attempt,execution_ref LIMIT ?", arguments).fetchall()

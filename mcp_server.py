@@ -29,7 +29,7 @@ from task_registry import TaskRegistry, TaskRegistryError
 MCP_PROTOCOL_VERSION = "2025-06-18"
 SERVER_DISCOVER_PROTOCOL_VERSION = "2026-07-28"
 SERVER_NAME = "clinx"
-SERVER_VERSION = "execution-authority-v1"
+SERVER_VERSION = "native-conversation-relay-v1"
 READ_ONLY_TOOL_NAMES = (
     "clinx_find_task",
     "clinx_get_context",
@@ -39,7 +39,17 @@ READ_ONLY_TOOL_NAMES = (
     "clinx_get_capabilities",
     "clinx_prepare_execution",
 )
-DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_effective_authority", "clinx_get_prepared_request", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization", "clinx_register_derived_git_target", "clinx_revoke_derived_git_target", "clinx_adopt_conversation")
+DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_prepared_request", "clinx_adopt_conversation")
+# Historical Host authority APIs remain internal for old receipt reconciliation.
+# They are not part of the conversation-forwarding connector.
+RELAY_METADATA_FIELDS = frozenset({
+    "execution_mode", "network_access", "NETWORK_ACCESS", "execution_policy",
+    "routing_identity", "linear_handoff", "description",
+})
+RELAY_INPUT_FIELDS = frozenset({
+    "execution_mode", "network_access", "execution_surface", "required_capabilities",
+    "operation_classes", "production_mutation_intent", "requested_operations", "reasoning",
+})
 
 
 class MCPServerError(RuntimeError):
@@ -142,7 +152,7 @@ def _authority_tools():
          'inputSchema': _json_schema({'task_ref': {'type': 'string'}, 'requested_operations': scope}, ['task_ref']),
          'annotations': {'readOnlyHint': True, 'destructiveHint': False}},
         {'name': 'clinx_get_prepared_request',
-         'description': 'Read one exact prepared execution or policy change, including immutable content hash, target, scope differences, validity, applied version and exact execution/thread/turn readback. Does not apply, consume or start. Read this before approval and after lost responses; raw prompts and credentials are not returned.',
+         'description': 'Read one exact prepared execution or policy change, including immutable content hash, target, scope differences, validity, applied version and exact execution/thread/turn readback. Does not apply, consume or start. Use after lost responses or to resolve a concrete target ambiguity; not a routine prerequisite to start; raw prompts and credentials are not returned.',
          'inputSchema': _json_schema({'request_ref': {'type': 'string', 'pattern': '^(prepared|reauth)_[0-9a-f]{32}$'}}, ['request_ref']),
          'outputSchema': _json_schema({
              **{k: {'type': 'string'} for k in ('request_ref', 'request_type', 'request_hash', 'request_state', 'created_at', 'task_action', 'expiry_semantics', 'prompt_sha256', 'provider_running')},
@@ -326,6 +336,10 @@ def _status_output_schema() -> dict[str, Any]:
         "next_state": {"type": "string"},
         "received_at": {"type": "string"},
         "writeback_state": {"type": "string"},
+        "response_text": {"type": "string", "description": "Original Codex final response. Preserve its Markdown verbatim."},
+        "response_format": {"type": "string"},
+        "status_scope": {"type": "string"},
+        "business_outcome": {"type": "string"},
     })
     return _json_schema({
         **_public_task_schema()["properties"],
@@ -341,6 +355,15 @@ def _status_output_schema() -> dict[str, Any]:
         "task_current_projection": {"type": "object", "additionalProperties": True},
         "selection_reason": {"type": "string"},
         "status_source": {"type": "string"},
+        "lookup_status": {"type": "string"},
+        "prepared_request": {"type": "object", "additionalProperties": True},
+        "execution_present": {"type": "boolean"},
+        "execution_state": {"type": ["string", "null"]},
+        "execution_stage": {"type": ["string", "null"]},
+        "provider_running": {"type": "string"},
+        "failure_source": {"type": "string"},
+        "retry_allowed": {"type": "boolean"},
+        "recovery_action": {"type": "string"},
         "execution_turn_ref": {"type": ["string", "null"]},
         "EXECUTION_STATE": {"type": "string"},
         "CODEX_RUNNING": {"type": "boolean"},
@@ -469,34 +492,27 @@ def _prepare_output_schema() -> dict[str, Any]:
 
 
 MCP_INSTRUCTIONS = (
-    "When a user supplies thread_id or codex://threads/..., call clinx_get_context or "
-    "clinx_get_status with the exact selector directly. Never call clinx_find_task first "
-    "or put the ID in query. Historical execution is separate from task_current_projection. "
-    "Preserve Desktop URI hostId. Native reads require no task/project registration. "
-    "Only an explicit adoption request calls clinx_adopt_conversation; adoption never starts a turn. "
-    "CLINX MCP is the authoritative read-only context and execution-preparation "
-    "plane. execution.available=true means the execution capability exists; "
-    "direct_mcp_execution=true is intentional. Execution uses CLINX as the "
-    "command plane and requires explicit user approval. Resolve the exact task "
-    "with CLINX, call clinx_prepare_execution, then call "
-    "Use pure UUID thread_id or full codex_uri; get_status has no max_bytes field. "
-    "Compare structured requested_operations with clinx_get_effective_authority: "
-    "reuse covered scopes; missing scopes require same-task reauthorization. "
-    "Read clinx_get_prepared_request before apply/start, then pass its request_hash "
-    "as expected_request_hash and task_ref as expected_task_ref when present. "
-    "clinx_start_execution accepts the prepared_execution_ref, approved=true and "
-    "these optional review assertions, never policy overrides. After lost responses "
-    "read the ORIGINAL prepared request and exact execution, never blindly retry. "
-    "QUEUED is not Provider running; report the observed failure layer or UNKNOWN, "
-    "not a presumed safety rejection. Linear role=AUDIT: it is the human-notification projection "
-    "only and never gates execution. CLINX "
-    "Use clinx_cancel_execution with an opaque managed execution_ref, or with "
-    "a canonical native task_ref, its observed native_turn_id and approved=true. "
-    "Native cancellation also requires the owning node's explicit execution scope; "
-    "an interrupt acknowledgement is pending until the native terminal event is observed. "
-    "It never accepts PID, shell, raw thread_id, turn_id, or cwd values. CLINX "
-    "does not expose arbitrary execution inputs, and humans do not need task, "
-    "thread, session, turn, or cwd IDs."
+    "CLINX forwards messages to native Codex conversations without a reply format contract. "
+    "Return execution_result.response_text as the original Markdown; do not rewrite it into summary fields. "
+    "Native COMPLETED records turn completion only; business_outcome=NOT_EVALUATED is not a business PASS. "
+    "There is one execution backend: native Codex, using its own runtime configuration. "
+    "When the user supplies codex://threads/... preserve the complete URI including hostId "
+    "and pass it directly as codex_uri to clinx_prepare_execution. Do not search first, "
+    "read status first, or call adopt separately. Reuse a known task_ref when no URI is supplied. "
+    "Only search if the destination is genuinely unknown. "
+    "The user's request to send or continue work supplies approval; use approved=true "
+    "without asking for the same approval again. Prepare once, then call clinx_start_execution "
+    "with the returned prepared_execution_ref and approved=true. "
+    "No separate executor, sandbox, network, operation catalog or authority selection is required. "
+    "Do not routinely call clinx_get_prepared_request between prepare and start. "
+    "After a lost response, inspect the ORIGINAL prepared request or exact execution before retrying; "
+    "never submit another preparation blindly. QUEUED is not Provider running: report execution_started "
+    "and the returned state accurately. Query status only for progress, results or a concrete conflict. "
+    "CLINX coordinates task identity and active execution ownership, not operation permissions. "
+    "Linear is optional audit history. Cancellation uses a managed execution_ref, or a canonical native "
+    "task_ref with its observed native_turn_id and approved=true. Native cancellation requires "
+    "the owning node execution scope and remains pending until the native terminal event. "
+    "For read requests use exact thread_id/codex_uri selectors; do not search the ID as query."
 )
 
 
@@ -614,7 +630,7 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
         },
         {
             "name": "clinx_prepare_execution",
-            "description": "Prepare, but do not execute, a canonical CLINX command for a user-approved Codex task. When supplied, codex_uri selects an exact native conversation for association/continuation; create without it starts a new thread. Active owners and sealed authority remain protected.",
+            "description": "Prepare, but do not execute, a canonical CLINX command for a user-approved Codex task. When supplied, codex_uri selects an exact native conversation for association/continuation; create without it starts a new thread. CLINX forwards operation intent without operation-name or repository-scope authorization. Active task ownership remains coordinated.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -668,8 +684,10 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
         {
             "name": "clinx_start_execution",
             "description": (
-                "Start exactly one previously prepared CLINX execution after explicit "
-                "approval. This does not accept arbitrary thread or repository identity."
+                "Send the prepared task message to its native Codex conversation and start one turn. "
+                "Codex may run tools, modify files or deploy services according to the task and its "
+                "native permissions. CLINX does not set sandbox configuration or grant operation permissions. "
+                "Use the user's request as approval; start directly after prepare without repeated confirmation."
             ),
             "inputSchema": _json_schema(
                 {
@@ -856,8 +874,16 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
         if tool['name'] == 'clinx_prepare_execution':
             tool['inputSchema']['properties']['requested_operations'] = {
                 'type': 'array', 'items': _operation_scope_schema(), 'maxItems': 128,
-                'description': 'Structured intent and authorized exact operation/target scope. Required for workflow dispatch; never infer production authority from prompt keywords.'}
+                'description': 'Optional legacy task context forwarded to native Codex. CLINX does not validate operation names or repository target scopes.'}
             tool['inputSchema']['properties']['network_access'].pop('default', None)
+            properties = tool['inputSchema']['properties']
+            for name in ('execution_surface', 'required_capabilities', 'operation_classes', 'production_mutation_intent'):
+                properties[name]['description'] = 'Legacy task context; does not select an executor or grant authority.'
+            context_scope = properties['requested_operations']['items']['properties']
+            context_scope['capability'].pop('enum', None)
+            context_scope['operation_class'].pop('enum', None)
+            tool['annotations']['readOnlyHint'] = False
+
     from thread_identity import ID_PATTERN
     uri_schema = {"type": "string", "maxLength": 2048, "pattern": "^codex://threads/" + ID_PATTERN + r"(?:\?[^\s#]*)?$"}
     for tool in tools:
@@ -910,6 +936,7 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
                 "last_provider_activity_at", "last_host_delivery_at", "last_live_owner_at", "liveness_observed_at")},
         })
         thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "native_thread", "native_status", "task_current_projection", "execution_result", "provenance", "provider_delivery", "execution_owner")})
+        thread_properties['execution_result'] = _status_output_schema()['properties']['execution_result']
         # Keep one strict root object for connector discovery and legacy clients.
         tool["outputSchema"]["properties"].update(thread_properties)
 
@@ -930,6 +957,30 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
     })
     if include_execute:
         tools.append(_execute_tool_definition())
+    tools = [tool for tool in tools if tool["name"] in DEFAULT_TOOL_NAMES or
+             (include_execute and tool["name"] == "clinx_execute")]
+    for tool in tools:
+        # Reads/preparation/cancellation address the connected private task
+        # registry. Starting native work can act on open-ended external targets.
+        tool['annotations']['openWorldHint'] = tool['name'] in {'clinx_start_execution', 'clinx_execute'}
+        if tool["name"] == "clinx_prepare_execution":
+            for field in RELAY_INPUT_FIELDS:
+                tool["inputSchema"]["properties"].pop(field, None)
+            for field in ("model", "reasoning_effort"):
+                tool["inputSchema"]["properties"][field]["description"] = "Optional explicit Codex parameter. Omit to inherit the conversation setting."
+        if tool["name"] in {"clinx_prepare_execution", "clinx_start_execution"}:
+            for field in RELAY_METADATA_FIELDS:
+                tool["outputSchema"]["properties"].pop(field, None)
+            if "reasoning" in tool["outputSchema"]["properties"]:
+                tool["outputSchema"]["properties"]["reasoning_effort"] = tool["outputSchema"]["properties"].pop("reasoning")
+            tool["outputSchema"]["properties"].update({
+                "execution_backend": {"type": "string", "const": "CODEX_NATIVE"},
+                "runtime_configuration": {"type": "string", "const": "INHERIT_CODEX"},
+            })
+        if tool["name"] == "clinx_get_capabilities":
+            for field in ("host_executor_available", "host_executor_default"):
+                tool["outputSchema"]["properties"].pop(field, None)
+            tool["outputSchema"]["properties"]["control_runtime"] = {"type": "object", "additionalProperties": True}
     return tools
 
 
@@ -1066,6 +1117,16 @@ class ClinxMCPServer:
                 result = self.executor(**arguments)
         else:
             raise MCPRequestError(-32602, f"unknown tool: {name}")
+        if name in {"clinx_prepare_execution", "clinx_start_execution"}:
+            # Persist legacy identities internally; never present them as active
+            # permission settings for the native conversation.
+            result = {key: value for key, value in result.items() if key not in RELAY_METADATA_FIELDS}
+            if "reasoning" in result:
+                result["reasoning_effort"] = result.pop("reasoning")
+            for field in ("model", "reasoning_effort"):
+                if result.get(field) == "inherit":
+                    result.pop(field)
+            result.update(execution_backend="CODEX_NATIVE", runtime_configuration="INHERIT_CODEX")
         return _public_json(result, native_identity=(name in {'clinx_adopt_conversation', 'clinx_get_prepared_request'} or
             (name in {'clinx_get_context', 'clinx_get_status'} and
              any(k in arguments for k in ('thread_id', 'codex_uri')))))

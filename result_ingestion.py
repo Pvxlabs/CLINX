@@ -67,10 +67,11 @@ def evidence_for(registry, execution_ref, task_id, turn_id, raw, source=None):
     binding = registry.get_binding(task_id)
     thread = route.conversation.binding if route else binding.thread_id if binding else None
     error = code = None
-    try:
-        parse_codex_result(raw or "")
-    except ResultParseError as exc:
-        code, error = exc.code, str(exc)
+    if source.get('format') != 'NATIVE_MARKDOWN':
+        try:
+            parse_codex_result(raw or "")
+        except ResultParseError as exc:
+            code, error = exc.code, str(exc)
     if source.get("source_incomplete"):
         code, error = "RESULT_TRUNCATED", "Result source is explicitly truncated"
     def scalar(key):

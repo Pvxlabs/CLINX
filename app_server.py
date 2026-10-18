@@ -1761,6 +1761,19 @@ class CodexAppServerClient:
     def thread_name_set(self, thread_id: str, name: str) -> None:
         self._request("thread/name/set", {"threadId": thread_id, "name": name})
 
+    def thread_inject_items(self, thread_id: str, items: list[dict[str, Any]]) -> None:
+        """Append native history items without replacing any configuration."""
+        params = {"threadId": thread_id, "items": items}
+        try:
+            self._request('thread/inject_items', params)
+        except AppServerRemoteError as exc:
+            # Desktop and CLI expose different spellings. Only an explicit
+            # unsupported-method response proves no append occurred.
+            if (exc.error.get('code') != -32600 or not str(exc.error.get('message', '')).startswith(
+                    'Invalid request: unknown variant `thread/inject_items`')):
+                raise
+            self._request('thread/injectItems', params)
+
     def model_list(self) -> dict[str, Any]:
         result = self._request("model/list", {})
         if not isinstance(result, dict):

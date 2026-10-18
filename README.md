@@ -1,12 +1,18 @@
 # CLINX
 
-CLINX is the coordination and state layer for AI software engineering: an
-engineering control plane for autonomous coding agents.
+CLINX forwards tasks and results between ChatGPT and native Codex conversations.
+It tracks conversation identity, delivery and execution receipts. Codex owns the
+execution environment; CLINX does not set sandbox, network or approval policy.
 
-Coding agents are responsible for reasoning and coding. CLINX is responsible
-for the durable engineering system around them:
+The only execution configuration is optional `model` and `reasoning_effort`.
+Use an exact Codex conversation URI directly: prepare once, then start, without
+repeated searches, policy reviews or approval questions.
 
-`Identity + State + Coordination + Execution + Evidence`
+Task preparation forwards user work to native Codex. Git operation names,
+capability lists, and repository targets are task context, not CLINX permission
+checks. Codex and the target environment own operation access; CLINX owns task
+routing, concurrent execution coordination, and execution records. See the
+[task forwarding contract](docs/EXECUTION_AUTHORITY.md#native-task-forwarding-2026-10-17).
 
 It turns a one-off coding-agent interaction into work that can be continued,
 recovered, coordinated, and audited without copying a long prompt between
@@ -147,7 +153,7 @@ Start the bounded MCP adapter locally:
 python3 mcp_server.py --config bridge.toml --stdio
 ```
 
-For the existing pilot configuration, first run the repository doctor:
+For the existing deployment configuration, first run the repository doctor:
 
 ```bash
 python3 bridge.py --config bridge.toml doctor
@@ -189,3 +195,7 @@ execution policy, capability, and approval checks.
 Status: actively developed, self-hosted, and dogfooded. Production deployment,
 provider interoperability beyond the current adapter, and broader autonomous
 operation remain qualification and roadmap work.
+
+P620 uses one canonical development repository. See
+[project convergence and historical recovery](docs/PROJECT_CONVERGENCE.md)
+for the workspace lifecycle and recovery evidence.

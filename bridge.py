@@ -89,11 +89,19 @@ LEGACY_CODEX_EXEC_DEFAULT = False
 
 def _resolve_dispatch_model(client: Any, model: str | None, reasoning_effort: str | None) -> tuple[str | None, str | None]:
     """Resolve logical model names only when the client exposes live capabilities."""
+    # The relay leaves an existing conversation's model/effort unchanged unless
+    # the caller explicitly requests a model or effort. No model/list round trip.
+    if model == "inherit":
+        return None, None if reasoning_effort == "inherit" else reasoning_effort
+    inherit_effort = reasoning_effort == "inherit"
+    if inherit_effort:
+        reasoning_effort = None
     resolver = getattr(client, "resolve_model", None)
     if not callable(resolver):
         return model, reasoning_effort
     requested = model or "gpt-5.6-luna"
-    return resolver(requested, reasoning_effort)
+    resolved_model, resolved_effort = resolver(requested, reasoning_effort)
+    return resolved_model, None if inherit_effort else resolved_effort
 
 
 def canonical_host(value: str) -> str:
@@ -2642,18 +2650,24 @@ class TaskDispatcher:
     @staticmethod
     def _managed_result_instructions() -> str:
         return (
-            "CLINX owns the final response format, including for no-tool and acceptance-only tasks. "
-            "Requests to only echo a token or output an acceptance identifier refer to the task payload: "
-            "put that exact payload in SUMMARY and VALIDATION within the result below, never return it alone. "
-            "Do not call tools or perform extra work just to produce this result. "
-            "At the end return exactly one multiline result with every field: "
-            "CLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<one concise paragraph>\n"
-            "CHANGED_FILES=<comma-separated paths or NONE>\nVALIDATION=<tests/checks and outcomes>\n"
-            "BLOCKERS=<NONE or exact blocker>\nNEXT_STATE=<IN_REVIEW|BLOCKED|COMPLETED>. "
-            "Each field must be on its own line. STATUS judges only the explicitly authorized execution scope. "
+            "Write the user-facing report in normal, readable Markdown, using paragraphs, lists, "
+            "tables and file links where useful. Put detailed results, evidence, scope and limitations "
+            "in that report. After the report, append one short machine receipt in a separate fenced "
+            "text code block. Do not replace the user-facing report with KEY=VALUE fields or put "
+            "the whole report into SUMMARY or VALIDATION. Keep those two receipt fields to one "
+            "short line each, referring to details in the report. Use this presentation including "
+            "for no-tool and acceptance-only tasks. When an exact marker is requested, "
+            "put that exact payload in SUMMARY and VALIDATION; never return it alone. "
+            "Do not call tools or perform extra work "
+            "just to produce the receipt. Use this receipt shape, with every field on its own line:\n"
+            "```text\nCLINX_EXECUTION_RESULT\nSTATUS=<PASS|BLOCKED>\nSUMMARY=<short summary>\n"
+            "CHANGED_FILES=<comma-separated paths or NONE>\nVALIDATION=<short validation summary>\n"
+            "BLOCKERS=<NONE or actual in-scope blocker>\nNEXT_STATE=<IN_REVIEW|BLOCKED|COMPLETED>\n```\n"
+            "STATUS judges only the explicitly authorized execution scope. "
             "PASS requires BLOCKERS=NONE exactly; use NEXT_STATE=COMPLETED when that scope is complete. "
-            "Keep scope, independent downstream TODOs and out-of-scope NOT_RUN/unverified work in SUMMARY/VALIDATION, "
-            "never in PASS BLOCKERS. Do not erase real in-scope blockers or independent failed qualification. "
+            "Keep independent downstream TODOs and out-of-scope NOT_RUN/unverified work in the report, "
+            "with a concise qualification in VALIDATION, never in PASS BLOCKERS. "
+            "Do not erase real in-scope blockers or independent failed qualification. "
             "Result format errors require same-execution result reconciliation, never task replay. "
             "A prerequisite authority blocker does not mark "
             "unperformed deployment, readback or observation BLOCKED: report NOT_RUN. "
@@ -2661,20 +2675,9 @@ class TaskDispatcher:
         )
 
     def _managed_host_instructions(self, policy: ExecutionPolicy) -> str:
-        result_contract = self._managed_result_instructions()
         if policy.execution_surface != HOST_EXECUTOR:
-            return (
-                "CLINX MANAGED EXECUTION CONTRACT\n"
-                f"Execution surface: {policy.execution_surface}. "
-                "Use Codex native workspace tools within the configured sandbox, approval "
-                "and network boundaries. CLINX task approval does not override those boundaries. "
-                "Do not call clinx_prepare_execution, clinx_start_execution, policy reauthorization, cancellation, "
-                "or reconciliation to create or operate another execution. "
-                "Report the closest actionable blocker. Downstream work not performed is NOT_RUN; "
-                "capacity without evidence is UNVERIFIED. Preserve independent qualification FAIL facts.\n"
-                + result_contract
-                + "END CLINX MANAGED EXECUTION CONTRACT\n"
-            )
+            return ''
+        result_contract = self._managed_result_instructions()
         contract = {
             "executable_contract": "Use the exact operation catalog in the dynamic tool description.",
             "role": "already-approved execution worker; not the CLINX operator",
@@ -2838,7 +2841,7 @@ class TaskDispatcher:
             )
             started = client.thread_start(
                 cwd=str(project.repo), model=executable_model,
-                sandbox=self.cfg.sandbox, ephemeral=False,
+                ephemeral=False,
                 thread_source="user",
                 dynamic_tools=[self._managed_host_spec(policy)],
             )
@@ -3071,10 +3074,6 @@ class TaskDispatcher:
             raise DispatchContractError(f"Unsupported execution mode: {execution_mode!r}")
         if not isinstance(network_access, bool):
             raise DispatchContractError("network_access must be a boolean")
-        if network_access and self.cfg.sandbox != "workspace-write":
-            raise DispatchContractError(
-                "NETWORK_ACCESS=ENABLED requires configured sandbox=workspace-write"
-            )
 
         if task_mode == "new":
             self.last_execution_ref = execution_ref or issue_id
@@ -3112,11 +3111,8 @@ class TaskDispatcher:
                 execution_policy=policy,
             )
             developer_instructions = self._managed_host_instructions(policy)
-            prompt = title + "\n\n" + prompt
-            if policy.execution_surface != HOST_EXECUTOR:
-                # Keep the current-turn contract visible for new native tasks,
-                # just as for continuation; an echo request must not hide it.
-                prompt += "\n\nCLINX TURN RESULT REQUIREMENTS\n" + self._managed_result_instructions()
+            if policy.execution_surface == HOST_EXECUTOR:
+                prompt = title + "\n\n" + prompt
             task = self.tasks.create_task(
                 host=host or workspace.alias,
                 workspace_alias=workspace.alias,
@@ -3162,10 +3158,10 @@ class TaskDispatcher:
                         started = client.thread_start(
                             cwd=str(project.repo),
                             model=executable_model,
-                            sandbox=self.cfg.sandbox,
                             ephemeral=False,
                             thread_source="user",
-                            developer_instructions=developer_instructions,
+                            **({"developer_instructions": developer_instructions}
+                               if policy.execution_surface == HOST_EXECUTOR else {}),
                             dynamic_tools=(
                                 [self._managed_host_spec(policy)]
                                 if policy.execution_surface == HOST_EXECUTOR
@@ -3230,28 +3226,13 @@ class TaskDispatcher:
                             project=project,
                             thread_id=new_thread_id,
                         )
-                        if network_access:
-                            turn = client.turn_start(
-                                new_thread_id,
-                                prompt,
-                                cwd=str(project.repo),
-                                model=executable_model,
-                                reasoning_effort=executable_reasoning,
-                                approval_policy=self.cfg.approval,
-                                network_access=True,
-                                writable_roots=[str(project.repo)],
-                            )
-                        else:
-                            turn = client.turn_start(
-                                new_thread_id,
-                                prompt,
-                                cwd=str(project.repo),
-                                model=executable_model,
-                                reasoning_effort=executable_reasoning,
-                                approval_policy=self.cfg.approval,
-                                network_access=False,
-                                writable_roots=[str(project.repo)],
-                            )
+                        turn = client.turn_start(
+                            new_thread_id,
+                            prompt,
+                            cwd=str(project.repo),
+                            model=executable_model,
+                            reasoning_effort=executable_reasoning,
+                        )
                         self._execution_state(
                             leased.task_id,
                             "CODEX_RUNNING",
@@ -3399,12 +3380,8 @@ class TaskDispatcher:
                 + prompt
             )
         developer_instructions = self._managed_host_instructions(policy)
-        managed_prompt = task.title + "\n\n" + managed_prompt
-        if policy.execution_surface != HOST_EXECUTOR:
-            # A resume can rejoin a loaded native thread and ignore developer
-            # overrides. Deliver the result requirements in this turn as well,
-            # without replacing the original thread or weakening the Finalizer.
-            managed_prompt += "\n\nCLINX TURN RESULT REQUIREMENTS\n" + self._managed_result_instructions()
+        if policy.execution_surface == HOST_EXECUTOR:
+            managed_prompt = task.title + "\n\n" + managed_prompt
         with self.tasks.execution(
             task.task_id, issue_id, execution_ref=execution_ref,
             retain=bool(execution_ref and execution_ref.startswith("exec_")),
@@ -3442,7 +3419,11 @@ class TaskDispatcher:
                     thread = self._read_and_guard(client, target, initialize_info)
                     if _status_type(thread) not in {"idle", "notLoaded", "unloaded"}:
                         turn_start_guard(thread)
-                    provider_rebound = not self.tasks.provider_policy_binding_current(task.task_id)
+                    # Native forwarding resumes the exact bound conversation.
+                    # Legacy CLINX policy versions do not change a native
+                    # thread's tool contract and must never create a successor.
+                    provider_rebound = (policy.execution_surface == HOST_EXECUTOR
+                        and not self.tasks.provider_policy_binding_current(task.task_id))
                     dynamic_schema_upgrade = (policy.execution_surface == HOST_EXECUTOR
                         and (getattr(client, 'host_successor_required', False)
                              or self.tasks.provider_dynamic_tool_upgrade_required(task.task_id)))
@@ -3458,9 +3439,10 @@ class TaskDispatcher:
                             'history_access': 'clinx_get_context with exact predecessor thread_id; read-only',
                         }
                         started = client.thread_start(cwd=str(project.repo), model=executable_model,
-                            sandbox=self.cfg.sandbox, ephemeral=False,
+                            ephemeral=False,
                             thread_source="user",
-                            developer_instructions=developer_instructions,
+                            **({"developer_instructions": developer_instructions}
+                               if policy.execution_surface == HOST_EXECUTOR else {}),
                             dynamic_tools=[self._managed_host_spec(policy)] if policy.execution_surface == HOST_EXECUTOR else None)
                         if not started.get('id') or not started.get('sessionId'):
                             raise IdentityGuardError('policy rebind returned incomplete provider identity')
@@ -3490,13 +3472,25 @@ class TaskDispatcher:
                             binding.thread_id,
                             dynamic_tools=([self._managed_host_spec(policy)]
                                            if policy.execution_surface == HOST_EXECUTOR else None),
-                            developer_instructions=developer_instructions,
+                            **({"developer_instructions": developer_instructions}
+                               if policy.execution_surface == HOST_EXECUTOR else {}),
                         )
                     client.thread_name_set(binding.thread_id, task.title)
                     if provider_rebound or dynamic_schema_upgrade:
                         self._publish_created_thread(target, task.title)
                     thread = self._read_and_guard(client, target, initialize_info)
                     turn_start_guard(thread)
+                    if (policy.execution_surface != HOST_EXECUTOR
+                            and canonical_host(target.target_host) == canonical_host(self.cfg.runtime_host)
+                            and thread.get('path')):
+                        from native_history import NativeHistory, LEGACY_REPLY_RETIREMENT
+                        history = NativeHistory(self.cfg.app_server.native_home or Path.home() / '.codex')
+                        metadata = {'rollout_path': thread['path'], 'cwd': thread['cwd']}
+                        if history.legacy_reply_format_pending(binding.thread_id, metadata):
+                            client.thread_inject_items(binding.thread_id, [{
+                                'type': 'message', 'role': 'developer',
+                                'content': [{'type': 'input_text', 'text': LEGACY_REPLY_RETIREMENT}],
+                            }])
                     self.tasks.mark_verified(
                         task.task_id,
                         app_server_version=self._initialize_version(
@@ -3512,28 +3506,13 @@ class TaskDispatcher:
                         project=project,
                         thread_id=binding.thread_id,
                     )
-                    if network_access:
-                        turn = client.turn_start(
-                            binding.thread_id,
-                            managed_prompt,
-                            cwd=str(project.repo),
-                            model=executable_model,
-                            reasoning_effort=executable_reasoning,
-                            approval_policy=self.cfg.approval,
-                            network_access=True,
-                            writable_roots=[str(project.repo)],
-                        )
-                    else:
-                        turn = client.turn_start(
-                            binding.thread_id,
-                            managed_prompt,
-                            cwd=str(project.repo),
-                            model=executable_model,
-                            reasoning_effort=executable_reasoning,
-                            approval_policy=self.cfg.approval,
-                            network_access=False,
-                            writable_roots=[str(project.repo)],
-                        )
+                    turn = client.turn_start(
+                        binding.thread_id,
+                        managed_prompt,
+                        cwd=str(project.repo),
+                        model=executable_model,
+                        reasoning_effort=executable_reasoning,
+                    )
                     if migration_context is not None and managed_prompt != prompt:
                         self.tasks.save_context_checkpoint(
                             task_id=task.task_id,
@@ -4105,6 +4084,16 @@ class TaskDispatcher:
         def finalize_provider(
             provider_outcome: str, provider_status: str, raw_result: str | None = None
         ) -> dict[str, Any]:
+            # Native forwarding records lifecycle facts and the original reply,
+            # without asking Codex to satisfy CLINX's legacy report parser.
+            policy = (self.tasks.get_execution_policy(execution_ref) if execution_ref else
+                      parse_execution_policy(task.execution_policy_json))
+            native_reply = policy is None or policy.execution_surface != HOST_EXECUTOR
+            if native_reply and _result_reconciliation is None:
+                nonlocal result_source
+                result_source = {**(result_source or {}), 'format': 'NATIVE_MARKDOWN'}
+            elif raw_result:
+                raw_result = self._exact_final_result(raw_result)
             if orphaned:
                 try:
                     parsed = parse_codex_result(raw_result) if raw_result else None
@@ -4114,6 +4103,8 @@ class TaskDispatcher:
                     final_state = "FAILED"
                 elif provider_outcome in {"PROVIDER_TIMEOUT", "PROVIDER_DISCONNECTED"}:
                     final_state = "BLOCKED"
+                elif native_reply:
+                    final_state = "COMPLETED"
                 elif parsed is not None:
                     final_state = "BLOCKED" if parsed.status == "BLOCKED" else "COMPLETED"
                 else:
@@ -4279,8 +4270,7 @@ class TaskDispatcher:
                                     created_at=item.get("createdAt", item.get("created_at_ms", entry.get("createdAt"))),
                                     source_incomplete=any(item.get(k) or entry.get(k)
                                         for k in ("truncated", "textTruncated", "isTruncated")))
-                                bounded_items = [{"type": "agentMessage", "text":
-                                    self._exact_final_result(text)}]
+                                bounded_items = [{"type": "agentMessage", "text": text}]
                                 break
                         if bounded_items:
                             break
@@ -4390,13 +4380,13 @@ class TaskDispatcher:
                 if len(finals) == 1:
                     item = finals[0]
                     text = item.get("text", item.get("aggregatedOutput"))
-                    raw_result = self._exact_final_result(text)
+                    raw_result = text
                     result_source = dict(source="provider_final", raw_text=text,
                                          message_id=item.get("id"), phase=item.get("phase"))
             if not raw_result and _result_reconciliation is None:
                 session_result = read_codex_completion_result(binding.thread_id, exact_turn_id)
                 if session_result:
-                    raw_result = self._exact_final_result(session_result)
+                    raw_result = session_result
                     result_source = dict(source="native_task_complete", raw_text=session_result)
 
             return finalize_provider(provider_outcome, status, raw_result)
@@ -6029,7 +6019,6 @@ class Dispatcher:
                     cwd=str(project.repo),
                     model=executable_model,
                     reasoning_effort=executable_reasoning,
-                    approval_policy=self.cfg.approval,
                 )
                 return DispatchResult(
                     target_alias=binding.qualified_alias,
@@ -6110,7 +6099,6 @@ class Dispatcher:
                 started = client.thread_start(
                     cwd=str(project.repo),
                     model=executable_model,
-                    sandbox=self.cfg.sandbox,
                     ephemeral=False,
                     thread_source="user",
                 )
@@ -6165,7 +6153,6 @@ class Dispatcher:
                     cwd=str(project.repo),
                     model=executable_model,
                     reasoning_effort=executable_reasoning,
-                    approval_policy=self.cfg.approval,
                 )
                 return DispatchResult(
                     target_alias=binding.qualified_alias,
@@ -6264,7 +6251,6 @@ class Dispatcher:
                     cwd=target.cwd,
                     model=executable_model,
                     reasoning_effort=executable_reasoning,
-                    approval_policy=self.cfg.approval,
                 )
                 return DispatchResult(
                     target_alias=target.alias,
