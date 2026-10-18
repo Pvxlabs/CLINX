@@ -1443,6 +1443,14 @@ class CodexAppServerClient:
         self._supervisor.start()
 
     def _request(self, method: str, params: dict[str, Any] | None = None) -> Any:
+        # Reject before resume/start can subscribe, claim or create a thread.
+        # A later turn/start refusal cannot undo those earlier mutations.
+        if getattr(self, "shared_native_writer", False) and method in {
+            "thread/start", "thread/resume", "turn/start",
+        }:
+            raise AppServerSharedWriterError(
+                f"Managed {method} on the shared Desktop daemon lacks atomic writer admission"
+            )
         if getattr(self, 'read_only_observer', False) and method not in {
             'initialize', 'thread/read', 'thread/turns/list', 'thread/items/list',
         } and not (method == 'thread/list' and (params or {}).get('useStateDbOnly') is True):
