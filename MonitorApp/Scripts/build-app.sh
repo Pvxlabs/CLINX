@@ -35,7 +35,7 @@ for canonical_module in \
     app_server.py bridge.py completion_runtime.py execution_liveness.py \
     execution_policy.py execution_semantics.py host_contract.py host_executor.py \
     m9_integration.py native_provider.py prepared_requests.py production_workflows.py result_ingestion.py \
-    task_registry.py thread_identity.py tool_delivery.py; do
+    task_registry.py thread_identity.py tool_delivery.py native_lifecycle.py; do
     cp "../$canonical_module" "$app_dir/Contents/Resources/"
 done
 cp Scripts/node_service_entrypoint.py "$app_dir/Contents/Resources/"

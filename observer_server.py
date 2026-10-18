@@ -234,6 +234,7 @@ class ObserverStore:
         self.path = Path(path).expanduser().resolve()
         self.activity_reader = ActivityReader(native_home or Path.home() / ".codex")
         self.codex_host_ids = dict(codex_host_ids or {})
+        self.observation_directory = None
 
     @contextlib.contextmanager
     def snapshot(self):
@@ -259,11 +260,29 @@ class ObserverStore:
                 "observed_at": now(), "authority_liveness": "UNKNOWN",
                 "auth_mode": "OBSERVER_BEARER", "events_transport": "POLLING"}
 
-    @staticmethod
-    def task_row(conn, task_ref):
+    def native_visible(self, conn, task_ref):
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='native_task_bindings'").fetchone():
+            return True
+        associations = conn.execute("SELECT * FROM native_task_bindings WHERE task_id=? AND origin='CODEX_NATIVE' LIMIT 2", (task_ref,)).fetchall()
+        if not associations or conn.execute("SELECT 1 FROM conversation_bindings WHERE task_id=?", (task_ref,)).fetchone():
+            return True
+        directory = self.observation_directory
+        if directory is None:
+            return False
+        for association in associations:
+            scope = directory._scope(association['node_id'])
+            record = directory.registry.get(association['node_id'])
+            fingerprint = json.loads(association['first_provenance_json']).get('node_fingerprint')
+            if (scope and record and record.public_key_fingerprint == fingerprint
+                    and association['user_scope'] == directory.user_scope
+                    and scope.allows('session.read',association['provider']) and scope.allows_project(association['project'])):
+                return True
+        return False
+
+    def task_row(self, conn, task_ref):
         row = conn.execute(f"SELECT {TASK_COLUMNS} FROM tasks WHERE task_id=?",
                            (task_ref,)).fetchone()
-        if row is None:
+        if row is None or not self.native_visible(conn, task_ref):
             raise APIError(404, "TASK_NOT_FOUND")
         return dict(row)
 
@@ -334,8 +353,16 @@ class ObserverStore:
         eref = execution.get("execution_ref")
         # Adoption is conversation metadata, never proof of a CLINX execution.
         binding=conn.execute("SELECT thread_id FROM conversation_bindings WHERE task_id=?",(ref,)).fetchone()
+        native_binding = None
+        if not binding and conn.execute("SELECT 1 FROM sqlite_master WHERE name='native_task_bindings'").fetchone():
+            native_rows = conn.execute("SELECT node_id,thread_id FROM native_task_bindings WHERE task_id=? LIMIT 2", (ref,)).fetchall()
+            if len(native_rows) == 1:
+                native_binding = native_rows[0]
+                binding = (native_binding["thread_id"],)
         native_conversation={"node_id":safe_text(task["host"]),"provider":"codex_app_server",
             "thread_id":safe_text(binding[0])} if binding else None
+        if native_binding and native_conversation:
+            native_conversation['node_id'] = safe_text(native_binding['node_id'])
         # Prefer the exact execution route over a later Task successor binding.
         captured = object_json(execution.get('routing_identity_json'))
         thread = captured.get('conversation', {}).get('binding') if execution else binding[0] if binding else None
@@ -450,7 +477,7 @@ class ObserverStore:
                 (*terminal, TASK_LIMIT + 1, offset)).fetchall()
             observed = now()
             return {"schema_version": VERSION, "observed_at": observed,
-                    "items": [self.project(conn, dict(r), observed) for r in rows[:TASK_LIMIT]],
+                    "items": [self.project(conn, dict(r), observed) for r in rows[:TASK_LIMIT] if self.native_visible(conn, r["task_id"])],
                     "next_offset": offset + TASK_LIMIT if len(rows) > TASK_LIMIT else None,
                     "has_more": len(rows) > TASK_LIMIT}
 
@@ -479,6 +506,7 @@ class ObserverAPI:
     def __init__(self, store, credential, observations=None):
         self.store, self.credential = store, credential
         self.observations = observations
+        self.store.observation_directory = observations
 
     def request(self, method, target, authorization):
         token = self.credential()

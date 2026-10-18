@@ -506,7 +506,7 @@ final class MonitorStore: ObservableObject {
 
     private func loadSelection(ref: String, expectedExecutionRef: String?, token: Int) async {
         // Synthetic presentation references must never reach the canonical v1 API.
-        if NetworkObservationAdapter.isPresentationRef(ref) { return }
+        if NetworkObservationAdapter.isPresentationRef(ref) || observationRows.contains(where: { $0.taskRef == ref && $0.executionRef == expectedExecutionRef }) { return }
         guard let service, token == selectionToken else { return }
         if selected?.taskRef != ref || selected?.executionRef != expectedExecutionRef {
             if let snapshot = allTasks.first(where: {
@@ -717,9 +717,9 @@ final class MonitorStore: ObservableObject {
             try validate(activePage)
             try validate(recentPage)
             let canonicalActive = Self.merge(activePage.items +
-                (activePage.hasMore ? Array(active.filter { !NetworkObservationAdapter.isPresentationRef($0.taskRef) }.dropFirst(50)) : []))
+                (activePage.hasMore ? Array(active.filter { $0.observationId == nil }.dropFirst(50)) : []))
             let canonicalRecent = Self.merge(recentPage.items +
-                (recentPage.hasMore ? Array(recent.filter { !NetworkObservationAdapter.isPresentationRef($0.taskRef) }.dropFirst(50)) : []))
+                (recentPage.hasMore ? Array(recent.filter { $0.observationId == nil }.dropFirst(50)) : []))
             if let networkService {
                 do {
                     let observations = try await Self.fetchObservations(using: networkService,
@@ -762,7 +762,7 @@ final class MonitorStore: ObservableObject {
             await select(row.taskRef)
             return
         }
-        if NetworkObservationAdapter.isPresentationRef(ref) {
+        if NetworkObservationAdapter.isPresentationRef(ref) || selected?.observationId != nil {
             if let row = observationRows.first(where: { $0.taskRef == ref }) { seedSelection(row) }
             else { clearSelection() }
             return
@@ -773,7 +773,7 @@ final class MonitorStore: ObservableObject {
 
     func loadMoreEvents() async {
         guard let service, let ref = selectedRef, eventHasMore || eventCursor != nil else { return }
-        guard !NetworkObservationAdapter.isPresentationRef(ref) else { return }
+        guard !NetworkObservationAdapter.isPresentationRef(ref), selected?.observationId == nil else { return }
         let token = sourceToken
         do {
             let page = try await service.events(ref, after: eventCursor)
@@ -853,8 +853,8 @@ final class MonitorStore: ObservableObject {
     }
 
     private func reprojectObservations() {
-        let canonicalActive = active.filter { !NetworkObservationAdapter.isPresentationRef($0.taskRef) }
-        let canonicalRecent = recent.filter { !NetworkObservationAdapter.isPresentationRef($0.taskRef) }
+        let canonicalActive = active.filter { $0.observationId == nil }
+        let canonicalRecent = recent.filter { $0.observationId == nil }
         observationRows = NetworkObservationAdapter.project(networkObservations,
             canonical: Self.merge(canonicalActive + canonicalRecent))
         active = Self.merge(canonicalActive + observationRows.filter { $0.monitorStatus == .running })
@@ -934,6 +934,11 @@ final class MonitorStore: ObservableObject {
 
     private static func isNewer(_ candidate: ObservedTask, than current: ObservedTask) -> Bool {
         guard candidate.executionIdentity == current.executionIdentity else { return false }
+        // A registered native row and its empty canonical snapshot share one Task ID.
+        // Keep the native history route rather than losing it to registry receipt time.
+        if candidate.executionRef == nil, (candidate.observationId != nil) != (current.observationId != nil) {
+            return candidate.observationId != nil
+        }
         // Request observation time is not execution progress. A later GET can still
         // contain an old RUNNING snapshot; an exact canonical terminal wins in either order.
         if candidate.executionRef != nil {

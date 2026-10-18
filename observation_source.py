@@ -62,7 +62,7 @@ class CodexObservationSource:
                     where.append("id>?" if audit else "(updated_at,id)>(?,?)")
                     args.extend([after] if audit else after)
                 fields=["id","cwd","rollout_path","updated_at"]+[("substr("+k+",1,256) AS "+k if k in ("title","name") else k)
-                    for k in ("history_mode","title","name","source","created_at") if k in columns]
+                    for k in ("history_mode","title","name","source","created_at","has_user_event","archived") if k in columns]
                 rows=[dict(r) for r in c.execute("SELECT "+",".join(fields)+" FROM threads"+
                     (" WHERE "+" AND ".join(where) if where else "")+
                     (" ORDER BY id" if audit else " ORDER BY updated_at,id")+" LIMIT ?",(*args,PAGE))]
@@ -112,7 +112,7 @@ class CodexObservationSource:
                     turns.append({"task_ref":row["task_id"],"turn_id":row["turn_id"],"execution_ref":row["execution_ref"],
                         "ordinal":order(row["acquired_at"]),"execution_state":row["execution_state"],
                         "native_state":"UNKNOWN","result_processing":row["failure_code"] or ("RECEIVED" if result else "PENDING"),
-                        "business_result":result["status"] if result else None,
+                        "business_result":result["status"] if result and result["status"] in ("PASS","BLOCKED") else None,
                         "summary":result["summary"] if result else None,
                         "artifacts":[v.strip() for v in result["changed_files"].split(",") if v.strip() and v.strip() != "NONE"][:16] if result and result["changed_files"] else [],
                         "started_at":row["acquired_at"],"completed_at":dict(row).get("released_at")})
@@ -141,6 +141,8 @@ class CodexObservationSource:
                 state["active_turns"]=[r["turn_id"] for r in selected.values() if normalize_native_status(r["status"])=="RUNNING"][:64]
                 for r in selected.values():
                     context=self.history.context(tid,self.node_id,metadata,1,4500,anchor=r["turn_id"])
+                    if context.get("last_user_intent"):
+                        state["user_message_observed"] = True
                     turns.append({"turn_id":r["turn_id"],"ordinal":order(r["started_at"],r["rollout_ordinal"]),
                         "native_state":normalize_native_status(r["status"]),"started_at":r["started_at"],
                         "completed_at":r["completed_at"],"summary":context.get("last_codex_result"),
@@ -175,8 +177,12 @@ class CodexObservationSource:
         return [dict(native_thread_id=tid,provider=self.provider,project=metadata["cwd"],
             title=metadata.get("name") or metadata.get("title") or tid,source_client=metadata.get("source","UNKNOWN"),
             source_generation=self.generation,source_updated_at=metadata.get("updated_at"),
+            native_admission={"has_user_event":bool(metadata.get("has_user_event")),
+                "user_message_observed":bool(state.get("user_message_observed")),
+                "created_at":metadata.get("created_at"),"archived":bool(metadata.get("archived"))},
             coverage=coverage,task_ref=task,binding_evidence="CANONICAL_ROUTE" if task else "THREAD_UNBOUND",
-            turn={k:v for k,v in turn.items() if k!="task_ref"}) for turn in turns],state
+            turn={**{k:v for k,v in turn.items() if k!="task_ref"},
+                "source":"CLINX_MANAGED" if turn.get("execution_ref") else "CODEX_NATIVE"}) for turn in turns],state
 
     def _observe_live(self,tid,project,turn_id):
         """Bounded reads of configured existing owners; no execution/lease writes."""
@@ -238,6 +244,8 @@ class CodexObservationSource:
                     current["summary"]=clean(payload["last_agent_message"],3000)
             if row.get("type")=="response_item":
                 parsed=message(payload)
+                if parsed and parsed[0]=="user":
+                    state["user_message_observed"] = True
                 if parsed and parsed[0]=="assistant":
                     current["summary"]=clean(parsed[1],3000)
                     current["progress"]=clean(parsed[1],1500)

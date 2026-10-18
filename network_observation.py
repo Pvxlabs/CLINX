@@ -124,7 +124,14 @@ def validate_event(event, node, scope):
     artifacts = turn.get("artifacts", [])
     if not isinstance(artifacts, list) or len(artifacts) > 16:
         raise NodeProtocolError("INVALID_OBSERVATION", "Artifact limit exceeded")
+    admission = event.get("native_admission") or {}
+    if not isinstance(admission, dict):
+        raise NodeProtocolError("INVALID_OBSERVATION", "Native admission metadata must be an object")
     return {
+        **({"native_admission": {"has_user_event": admission.get("has_user_event") is True,
+            "user_message_observed": admission.get("user_message_observed") is True,
+            "created_at": clean(str(admission.get("created_at") or ""), 64),
+            "archived": admission.get("archived") is True}} if "native_admission" in event else {}),
         "observation_id": observation_id(node, scope.user_scope, provider, thread),
         "node_id": node, "user_scope": scope.user_scope, "provider": provider,
         "native_thread_id": thread, "project": project,
@@ -138,6 +145,7 @@ def validate_event(event, node, scope):
         "turn": {
             **({"live_observation":proof} if proof is not None else {}),
             "turn_id": bounded_id(turn.get("turn_id"), True), "ordinal": ordinal,
+            **({"source": "CLINX_MANAGED" if eref else "CODEX_NATIVE"} if "source" in turn else {}),
             "native_state": native_state, "execution_ref": eref,
             "execution_state": canonical, "business_result": result,
             "result_processing": clean(turn.get("result_processing") or "UNKNOWN", 80),
@@ -151,7 +159,8 @@ def validate_event(event, node, scope):
 
 
 class ObservationWriter:
-    def __init__(self, path):
+    def __init__(self, path, lifecycle=None):
+        self.lifecycle = lifecycle
         self.path = Path(path).resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.path) as c:
@@ -167,6 +176,7 @@ class ObservationWriter:
                   provider TEXT NOT NULL,thread TEXT NOT NULL,task TEXT,received REAL NOT NULL,
                   ordinal INTEGER NOT NULL,payload TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS observation_list ON items(user,id);
+                CREATE INDEX IF NOT EXISTS observation_recent ON items(user,ordinal DESC,id);
                 CREATE INDEX IF NOT EXISTS observation_identity ON items(user,provider,thread);
                 CREATE TABLE IF NOT EXISTS turns(
                   observation TEXT NOT NULL,turn_key TEXT NOT NULL,ordinal INTEGER NOT NULL,
@@ -289,15 +299,21 @@ class ObservationWriter:
                     c.execute(f"DELETE FROM {table} WHERE rowid IN (SELECT rowid FROM {table} ORDER BY {order} LIMIT ?)", (extra,))
                     c.execute("UPDATE settings SET value=CAST(value AS INTEGER)+? WHERE key='retention_evicted'", (extra,))
             c.execute("DELETE FROM turns WHERE observation NOT IN (SELECT id FROM items)")
-        return {"accepted": True,"ack_seq": seq,"stream_id": stream,"received_at": received,"gap": gap}
+        result = {"accepted": True,"ack_seq": seq,"stream_id": stream,"received_at": received,"gap": gap}
+        # Cross-DB recovery: retries reconcile the committed projection again.
+        # Registration is idempotent even if a crash occurred after either commit.
+        if self.lifecycle:
+            result["canonical_registration"] = self.lifecycle.accepted(node, scope, events)
+        return result
 
 
 class ObservationDirectory:
     """Shared Observer/MCP service; no canonical status or migration calls."""
-    def __init__(self, path, registry, approvals, peers, user_scope, remote_factory=None, local_identity=None, native_home=None):
+    def __init__(self, path, registry, approvals, peers, user_scope, remote_factory=None, local_identity=None, native_home=None, canonical_path=None):
         self.path, self.registry, self.approvals, self.peers = Path(path), registry, approvals, peers
         self.user_scope, self.remote_factory = user_scope, remote_factory
         self.local_identity,self.native_home=local_identity,native_home
+        self.canonical_path = canonical_path
 
     def _scope(self, node):
         from node_runtime import intersect_scope
@@ -342,7 +358,17 @@ class ObservationDirectory:
         return base64.urlsafe_b64encode(data).decode().rstrip("=")+"."+hmac.new(secret,data,hashlib.sha256).hexdigest()
 
     def _project(self,payload,received):
+        payload = dict(payload, turn=dict(payload["turn"], source="CLINX_MANAGED" if payload["turn"]["execution_ref"] else "CODEX_NATIVE"))
         record=self.registry.get(payload["node_id"])
+        if self.canonical_path:
+            from native_lifecycle import binding
+            association = binding(self.canonical_path, node=payload["node_id"], provider=payload["provider"],
+                                  thread=payload["native_thread_id"], user=self.user_scope)
+            if association and record and json.loads(association["first_provenance_json"]).get("node_fingerprint") == record.public_key_fingerprint:
+                payload = dict(payload, task_ref=association["task_id"], source=association["origin"],
+                               binding_evidence="NATIVE_REGISTERED" if association["origin"] == "CODEX_NATIVE" else "CANONICAL_ROUTE")
+            elif payload["task_ref"]:
+                payload = dict(payload, task_ref=None, binding_evidence="CANONICAL_UNVERIFIED")
         scope=self._scope(payload["node_id"])
         available=bool(record and not record.stale and record.state=="ONLINE")
         turn=payload["turn"]
@@ -357,12 +383,18 @@ class ObservationDirectory:
             and proof.get("liveness")=="LIVE" and proof.get("thread_id")==payload["native_thread_id"]
             and proof.get("turn_id")==turn["turn_id"] and turn["turn_id"]
             and 0<=time.time()-proof.get("observed_at",0)<30)
-        enabled=bool(available and scope and scope.execute_tasks and payload["task_ref"]
+        enabled=bool(payload.get("binding_evidence") != "NATIVE_REGISTERED" and available and scope and scope.execute_tasks and payload["task_ref"]
                      and "execution.prepare" in record.capabilities and not identity_conflict)
-        reason=("THREAD_IDENTITY_CONFLICT" if identity_conflict else "NODE_OFFLINE" if not available else "READ_SESSIONS_ONLY" if not scope or not scope.execute_tasks
+        reason=("NATIVE_CONTROL_HANDOFF_REQUIRED" if payload.get("binding_evidence") == "NATIVE_REGISTERED" else "THREAD_IDENTITY_CONFLICT" if identity_conflict else "NODE_OFFLINE" if not available else "READ_SESSIONS_ONLY" if not scope or not scope.execute_tasks
                 else "PROVIDER_CONTROL_UNAVAILABLE" if "execution.prepare" not in record.capabilities
                 else "EXPLICIT_ADOPTION_REQUIRED" if not payload["task_ref"] else "CANONICAL_AUTHORIZATION_REQUIRED")
-        return dict(payload,schema_version=VERSION,received_at=received,device_name=record.display_name if record else payload["node_id"],
+        from urllib.parse import quote
+        display_state = ("ARCHIVED" if payload.get("native_admission", {}).get("archived") else
+            "RUNNING" if proven else "UNKNOWN" if turn["native_state"] == "RUNNING" else turn["native_state"])
+        return dict(payload,display_state=display_state,
+            codex_uri="codex://threads/"+payload["native_thread_id"]+(
+                "?hostId="+quote(record.route_ids[0],safe="") if record and record.route_ids else ""),
+            schema_version=VERSION,received_at=received,device_name=record.display_name if record else payload["node_id"],
             freshness="RECENT" if available and time.time()-received<30 else "STALE" if available else "OFFLINE",
             liveness="PROVEN" if proven else "NOT_PROVEN",progress_percent=None,
             control={"node_id":payload["node_id"],"native_thread_id":payload["native_thread_id"],
@@ -375,29 +407,30 @@ class ObservationDirectory:
     def list(self, *, node=None, project=None, state=None, kind=None, native_thread_id=None, cursor=None, limit=50):
         if type(limit) is not int or not 1<=limit<=100 or kind not in (None,"managed","external"):
             raise NodeProtocolError("INVALID_OBSERVATION_QUERY","Invalid pagination or kind")
-        filters=[node,project,state,kind]
+        filters=["recent-v1",node,project,state,kind]
         if native_thread_id is not None:
             bounded_id(native_thread_id)
             filters.append(native_thread_id)
         with database(self.path) as c:
-            after=self._cursor(c,filters,cursor=cursor) if cursor else ""
-            if not isinstance(after,str):
+            after=self._cursor(c,filters,cursor=cursor) if cursor else [9223372036854775807,"~"]
+            if not isinstance(after,list) or len(after)!=2:
                 raise NodeProtocolError("INVALID_OBSERVATION_CURSOR","Invalid position")
             result=[]; scanned=0; last=after
             # Work and response bounds remain explicit even with sparse authorized rows.
-            predicates=["user=?","id>?"];args=[self.user_scope,after]
+            predicates=["user=?","(ordinal < ? OR (ordinal = ? AND id > ?))"];args=[self.user_scope,after[0],after[0],after[1] if cursor else ""]
             if node: predicates.append("node=?");args.append(node)
             if native_thread_id: predicates.append("thread=?");args.append(native_thread_id)
-            rows=c.execute("SELECT * FROM items WHERE "+" AND ".join(predicates)+" ORDER BY id LIMIT 501",args).fetchall()
+            rows=c.execute("SELECT * FROM items WHERE "+" AND ".join(predicates)+" ORDER BY ordinal DESC,id LIMIT 501",args).fetchall()
             for row in rows[:500]:
                 if len(result)>=limit: break
-                scanned+=1;last=row["id"];payload=json.loads(row["payload"])
+                scanned+=1;last=[row["ordinal"],row["id"]];payload=json.loads(row["payload"])
                 if not self._allowed(payload): continue
                 if node and payload["node_id"]!=node: continue
                 if project and payload["project"]!=project: continue
-                if state and state not in (payload["turn"]["native_state"],payload["turn"]["execution_state"]): continue
-                if kind and bool(payload["task_ref"])!=(kind=="managed"): continue
-                result.append(self._project(payload,row["received"]))
+                projected = self._project(payload,row["received"])
+                if state and state not in (projected["display_state"],projected["freshness"]): continue
+                if kind and (payload["source"]=="CLINX_MANAGED")!=(kind=="managed"): continue
+                result.append(projected)
             more=len(rows)>scanned
             evicted=int(c.execute("SELECT value FROM settings WHERE key='retention_evicted'").fetchone()[0])
             streams={r["node"]:dict(r) for r in c.execute("SELECT * FROM streams WHERE user=?",(self.user_scope,))}
@@ -432,7 +465,7 @@ class ObservationDirectory:
             payload=json.loads(row["payload"])
             stream=c.execute("SELECT * FROM streams WHERE node=? AND user=?",(payload["node_id"],self.user_scope)).fetchone()
             return {"schema_version":VERSION,"item":self._project(payload,row["received"]),
-                "turns":[json.loads(t["payload"]) for t in page],"has_more":more,
+                "turns":[dict(json.loads(t["payload"]), source="CLINX_MANAGED" if json.loads(t["payload"])["execution_ref"] else "CODEX_NATIVE") for t in page],"has_more":more,
                 "next_cursor":self._cursor(c,context,[page[-1]["ordinal"],page[-1]["turn_key"]]) if more else None,
                 "gap":stream["gap"] if stream else "UNKNOWN","content_status":"CACHED_PUBLIC_SUMMARIES",
                 "read_only":True}
@@ -455,6 +488,8 @@ class ObservationDirectory:
                 items.append({"event_id":row["stream"]+":"+str(row["seq"]),
                     "turn_id":turn["turn_id"],"execution_ref":turn["execution_ref"],
                     "source_seq":row["seq"],"recorded_at":row["received"],
+                    "source":turn.get("source", "CLINX_MANAGED" if turn["execution_ref"] else "CODEX_NATIVE"),
+                    "provenance":{"node_id":row["node"],"stream_id":row["stream"],"seq":row["seq"],"digest":row["digest"]},
                     "source_updated_at":payload["source_updated_at"],
                     "native_state":turn["native_state"],"business_result":turn["business_result"],
                     "kind":"result" if turn["native_state"] in TERMINAL or turn["business_result"] else "progress",
@@ -523,7 +558,8 @@ def directory_from_env():
     local_identity=public_record(identity_raw) if identity_raw else None
     return ObservationDirectory(path,registry,approvals,peers,
         os.environ["CLINX_OBSERVATION_USER_SCOPE"],remote,local_identity,
-        os.environ.get("CLINX_OBSERVATION_NATIVE_HOME") or Path.home()/".codex")
+        os.environ.get("CLINX_OBSERVATION_NATIVE_HOME") or Path.home()/".codex",
+        canonical_path=os.environ.get("CLINX_CANONICAL_TASK_DB"))
 
 
 class NodeRegistryReadOnly:

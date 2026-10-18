@@ -88,8 +88,23 @@
         "ordinal": {
           "type": "integer",
           "minimum": 0
+        },
+        "source": {
+          "enum": [
+            "CODEX_NATIVE",
+            "CLINX_MANAGED"
+          ]
         }
       }
+    },
+    "display_state": {
+      "type": "string"
+    },
+    "codex_uri": {
+      "type": "string"
+    },
+    "binding_evidence": {
+      "type": "string"
     }
   },
   "additionalProperties": true

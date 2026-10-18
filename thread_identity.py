@@ -233,11 +233,21 @@ class ThreadIdentityReader:
             if has_policy_lineage:
                 facts['predecessors'] += rows(c, 'SELECT * FROM conversation_policy_lineage WHERE predecessor_thread=?', (tid,))
                 facts['successors'] += rows(c, 'SELECT * FROM conversation_policy_lineage WHERE successor_thread=?', (tid,))
+            if c.execute("SELECT 1 FROM sqlite_master WHERE name='native_task_bindings'").fetchone():
+                facts['native_registry'] = rows(c, "SELECT * FROM native_task_bindings WHERE host=? AND provider='codex_app_server' AND thread_id=?", (host, tid))
             ids = {r.get('task_id') or r.get('resulting_task_id') for group in facts.values() for r in group}
             ids.discard(None)
             if not ids:
                 return None
             tasks = [dict(c.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone() or {}) for task_id in ids]
+            if facts.get('native_registry'):
+                # A native UUID is namespaced by its paired node. Unrelated
+                # legacy managed relations on another host are not its owners.
+                from execution_semantics import normalize_host
+                tasks = [task for task in tasks if not task or normalize_host(task['host']).stable_identifier == host]
+                scoped_ids = {task['task_id'] for task in tasks if task}
+                facts = {name: [row for row in group if (row.get('task_id') or row.get('resulting_task_id')) in scoped_ids]
+                         for name, group in facts.items()}
             # Authorize before returning any identity or association facts.
             for task in tasks:
                 if not task:
@@ -247,7 +257,7 @@ class ThreadIdentityReader:
                 raise ThreadLookupError('THREAD_IDENTITY_CONFLICT', 'Exact thread has multiple authorized task owners')
             task = tasks[0]
             current = c.execute('SELECT * FROM conversation_bindings WHERE task_id=?', (task['task_id'],)).fetchone()
-            current = dict(current) if current else None
+            current = dict(current) if current else ({'thread_id': tid} if facts.get('native_registry') else None)
             lineage = c.execute('SELECT * FROM conversation_binding_lineage WHERE task_id=? ORDER BY migrated_at DESC LIMIT 1', (task['task_id'],)).fetchone()
             if has_policy_lineage:
                 policy_lineage = c.execute('SELECT * FROM conversation_policy_lineage WHERE task_id=? ORDER BY policy_version DESC LIMIT 1',
@@ -304,7 +314,7 @@ class ThreadIdentityReader:
                     'SELECT host_execution_ref,execution_ref,tool_call_id,operation,capability,'
                     'result_state,exit_code,started_at,completed_at FROM host_executions '
                     'WHERE execution_ref=? ORDER BY started_at', (selected['execution_ref'],))
-            snapshot = dict(deliveries=deliveries, hosts=hosts, task=task, current=current, lineage=lineage, facts=facts, executions=executions, selected=selected, reason=reason, result=result, provider=next(iter(providers), None))
+            snapshot = dict(deliveries=deliveries, hosts=hosts, task=task, current=current, lineage=lineage, facts=facts, executions=executions, selected=selected, reason=reason, result=result, provider=next(iter(providers), 'codex_app_server' if facts.get('native_registry') else None))
             snapshot['fingerprint'] = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
             return snapshot
 
@@ -376,6 +386,15 @@ class ThreadIdentityReader:
                     routed.setdefault('codex_uri', codex_uri or 'codex://threads/' + tid)
                     routed.setdefault('read_only', True)
                     routed.setdefault('observed_at', stamp())
+                    if routed.get('lookup_status') == 'THREAD_UNBOUND' and not routed.get('error_code'):
+                        from native_lifecycle import binding
+                        associated = binding(self.path, node=routed.get('source_node_id'), thread=tid,
+                                             user=getattr(node_router, 'user_scope', None))
+                        if associated:
+                            routed.update(lookup_status='RESOLVED', binding_status='NATIVE_REGISTERED',
+                                task_ref=associated['task_id'], source='CODEX_NATIVE',
+                                current_thread_id=tid, is_current_thread=True,
+                                execution_ref=None, status_source='NATIVE_OBSERVATION')
                     return routed
             tid, host, host_id = resolve_selector(self.cfg, host=host, thread_id=thread_id, codex_uri=codex_uri, task_ref=task_ref, query=query)
             if type(recent_turns) is not int or not 1 <= recent_turns <= 20 or type(max_bytes) is not int or not 1024 <= max_bytes <= 128000:
@@ -423,6 +442,10 @@ class ThreadIdentityReader:
                 if metadata and Path(metadata['cwd']).resolve() != Path(task['cwd']).resolve():
                     raise ThreadLookupError('THREAD_IDENTITY_CONFLICT', 'Native thread workspace disagrees with persisted owner')
                 output = dict(lookup_status='RESOLVED', task_ref=task['task_id'], task_key=task['task_key'], host=task['host'], project=task['project_alias'], workspace=task['workspace_alias'], provider=snapshot['provider'], binding_sources=[k for k, v in snapshot['facts'].items() if v], current_thread_id=current['thread_id'] if current else None, is_current_thread=bool(current and current['thread_id'] == tid), relationship='HISTORICAL' if not current or current['thread_id'] != tid else 'CURRENT', predecessor_thread_id=lineage['predecessor_thread'] if lineage else None, successor_thread_id=lineage['successor_thread'] if lineage else None, adoption_source=snapshot['facts']['adoptions'][0]['adoption_source'] if snapshot['facts']['adoptions'] else None, execution_ref=selected['execution_ref'] if selected else None, execution_state=(selected['execution_state'] or selected['stage']) if selected else 'UNKNOWN', selection_reason=snapshot['reason'], selection_scope='QUERIED_THREAD', other_execution_refs=[ref for ref in snapshot['executions'] if not selected or ref != selected['execution_ref']], execution_turn_ref=selected['turn_id'] if selected else None, status_source='PERSISTED_EXECUTION' if selected else 'UNAVAILABLE', provider_observation={'state': 'UNKNOWN', 'reason': 'No provider process probe on read plane'}, task_current_projection={'execution_state': task['execution_state'], 'updated_at': task['updated_at'], 'current_thread_id': current['thread_id'] if current else None}, execution_result={k: snapshot['result'][k] for k in ('status', 'received_at', 'writeback_state')} if snapshot['result'] else None)
+                if snapshot['facts'].get('native_registry') and not selected:
+                    output.update(source='CODEX_NATIVE', status_source='NATIVE_OBSERVATION',
+                        binding_status='NATIVE_REGISTERED', execution_state=task['execution_state'],
+                        observation_provenance=json.loads(snapshot['facts']['native_registry'][0]['latest_provenance_json']))
                 from tool_delivery import delivery_summary
                 output.update(dynamic_tool_deliveries=snapshot['deliveries'], host_executions=snapshot['hosts'],
                     provider_delivery=delivery_summary(snapshot['deliveries'],

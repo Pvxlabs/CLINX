@@ -3721,6 +3721,9 @@ class TaskDispatcher:
                     historical_route_evidence="UNKNOWN",
                     discovery_evidence=discovery_evidence,
                 )
+                from native_lifecycle import binding as native_binding
+                if native_binding(self.tasks.path, host=task.host, thread=thread_id, task=task.task_id):
+                    created = False
             except TaskRegistryError as exc:
                 # A concurrent adopter may have committed between the
                 # pre-check and this transaction.  Return its canonical task.

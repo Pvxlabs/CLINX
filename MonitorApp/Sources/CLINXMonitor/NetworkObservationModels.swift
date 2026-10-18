@@ -1,7 +1,7 @@
 import Foundation
 
 // v2 routes carry a versioned observation contract. Canonical v1 task models
-// remain compatible; an observation never fabricates a taskRef.
+// remain compatible; taskRef comes only from canonical registry admission.
 struct NetworkObservation: Codable, Identifiable, Sendable, Equatable {
     var id: String { observationId }
     let schemaVersion: String
@@ -25,19 +25,22 @@ struct NetworkObservation: Codable, Identifiable, Sendable, Equatable {
     let liveness: String
     let turn: ObservationTurn
     let control: ObservationControl
+    var codexUri: String? = nil
+    var displayState: String? = nil
 
     var shortTitle: String { String(title.split(separator: "\n").first.map(String.init)?.prefix(100) ?? title.prefix(100)) }
     var isRunning: Bool {
         // Native terminal evidence and missing result markers stop the spinner.
         if turn.isTerminal || turn.resultProcessing == "RESULT_MARKER_MISSING" { return false }
-        return turn.nativeState == "RUNNING" ||
-            ["CODEX_RUNNING", "TURN_STARTED", "FINALIZING"].contains(turn.executionState ?? "")
+        return freshness == "RECENT" && liveness == "PROVEN" &&
+            (0..<30).contains(Date().timeIntervalSince1970 - receivedAt) && turn.nativeState == "RUNNING"
     }
     var statusLabel: String {
         if turn.resultProcessing == "RESULT_MARKER_MISSING" { return "执行结束 · 结果待处理" }
+        if freshness == "OFFLINE" { return "离线 · " + (turn.isTerminal ? turn.nativeState : "UNKNOWN") }
         if let result = turn.businessResult { return result }
         if turn.isTerminal { return "执行结束 · \(turn.nativeState)" }
-        return turn.executionState ?? turn.nativeState
+        return displayState ?? (turn.nativeState == "RUNNING" && !isRunning ? "UNKNOWN" : turn.executionState ?? turn.nativeState)
     }
 }
 
@@ -55,6 +58,7 @@ struct ObservationTurn: Codable, Identifiable, Sendable, Equatable {
     let progress: String?
     let summary: String?
     let artifacts: [String]
+    var source: String? = nil
     var isTerminal: Bool {
         ["COMPLETED", "FAILED", "CANCELLED", "INTERRUPTED", "TIMED_OUT", "DISCONNECTED"].contains(nativeState)
         || ["COMPLETED", "IN_REVIEW", "FAILED", "CANCELLED"].contains(executionState ?? "")

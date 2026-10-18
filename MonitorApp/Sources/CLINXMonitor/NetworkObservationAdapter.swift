@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 
 /// Converts v2 read-only observations to rows for the existing Monitor projection.
-/// These references are presentation identities, never canonical task references.
+/// Registered sessions carry their real canonical ID; legacy observations keep a fallback presentation ID.
 enum NetworkObservationAdapter {
     static func isPresentationRef(_ ref: String) -> Bool { ref.hasPrefix("native_observation_") }
 
@@ -31,7 +31,9 @@ enum NetworkObservationAdapter {
     }
 
     static func supersedesAdoption(_ task: ObservedTask, observations: [NetworkObservation]) -> Bool {
-        guard task.executionRef == nil, let identity = task.nativeConversation else { return false }
+        guard task.executionRef == nil, task.observationId == nil else { return false }
+        if observations.contains(where: { $0.taskRef == task.taskRef }) { return true }
+        guard let identity = task.nativeConversation else { return false }
         return observations.contains { item in
             guard item.nodeId == identity.nodeId && item.provider == identity.provider &&
                 item.nativeThreadId == identity.threadId else { return false }
@@ -55,7 +57,7 @@ enum NetworkObservationAdapter {
 
     private static func row(_ item: NetworkObservation, key: String) -> ObservedTask {
         let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
-        let ref = "native_observation_" + digest
+        let ref = item.taskRef ?? ("native_observation_" + digest)
         let state: String
         switch item.turn.nativeState {
         case "RUNNING":
@@ -100,6 +102,8 @@ enum NetworkObservationAdapter {
                                     items: [], nextCursor: "", hasMore: false, coverage: item.coverage),
             hostOperations: [], hostOperationsHasMore: false, finalResult: nil,
             artifacts: [], artifactsStatus: "UNAVAILABLE", menuState: "READ_ONLY",
-            observationId: item.observationId)
+            observationId: item.observationId,
+            nativeConversation: NativeConversation(nodeId: item.nodeId, provider: item.provider, threadId: item.nativeThreadId),
+            codexUri: item.codexUri)
     }
 }

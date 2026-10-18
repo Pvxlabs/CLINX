@@ -50,6 +50,7 @@ _NATIVE_STATUS_ALIASES = {
     'active': 'RUNNING',
     'started': 'RUNNING',
     'processing': 'RUNNING',
+    'paused': 'PAUSED',
     'completed': 'COMPLETED',
     'succeeded': 'COMPLETED',
     'success': 'COMPLETED',

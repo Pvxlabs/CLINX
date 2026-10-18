@@ -894,6 +894,12 @@ class ClinxIntegration:
                     raise ThreadLookupError('IDENTITY_SELECTOR_CONFLICT', 'Use exactly one native selector')
                 tid, route_host, _ = resolve_selector(self.cfg, thread_id=thread_id, codex_uri=codex_uri,
                                                       host=host, query=query)
+                from execution_semantics import normalize_host
+                from native_lifecycle import binding as native_binding
+
+                associated = native_binding(self.registry.path, host=route_host, thread=tid)
+                if associated and associated['origin'] == 'CODEX_NATIVE' and route_host != normalize_host(self.cfg.runtime_host).stable_identifier:
+                    raise ThreadLookupError('NATIVE_REMOTE_HANDOFF_NOT_QUALIFIED', 'Shared canonical identity must be qualified on the execution owner first')
                 remote = self._remote_dispatch('execution.adopt', dict(project=project, host=route_host,
                     thread_id=tid, title=title, summary=summary), host=route_host)
                 if remote is not None:
@@ -1049,7 +1055,18 @@ class ClinxIntegration:
         execution_ref: str | None = None,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        remote = self._remote_dispatch('execution.context', locals(), reference=task_ref or execution_ref, host=host) if task_ref else None
+        request_arguments = dict(locals())
+        if task_ref and not thread_id and not codex_uri and not execution_ref and not query:
+            from native_lifecycle import binding
+            association = binding(self.registry.path, task=task_ref)
+            if association and self.registry.get_binding(task_ref) is None:
+                if host is not None and host != association['host']:
+                    raise M9IntegrationError('THREAD_SCOPE_MISMATCH: native task host differs')
+                from thread_identity import ThreadIdentityReader
+                return ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader).read(
+                    context=True, thread_id=association['thread_id'], host=association['host'],
+                    node_id=node_id, project=project, recent_turns=recent_turns if recent_turns is not None else 8, max_bytes=max_bytes if max_bytes is not None else 32000, cursor=cursor)
+        remote = self._remote_dispatch('execution.context', request_arguments, reference=task_ref or execution_ref, host=host) if task_ref else None
         if remote is not None:
             return remote
         if thread_id is not None or codex_uri is not None:
@@ -1207,8 +1224,19 @@ class ClinxIntegration:
         thread_id: str | None = None,
         codex_uri: str | None = None,
     ) -> dict[str, Any]:
+        request_arguments = dict(locals())
+        if task_ref and not thread_id and not codex_uri and not execution_ref and not query:
+            from native_lifecycle import binding
+            association = binding(self.registry.path, task=task_ref)
+            if association and self.registry.get_binding(task_ref) is None:
+                if host is not None and host != association['host']:
+                    raise M9IntegrationError('THREAD_SCOPE_MISMATCH: native task host differs')
+                from thread_identity import ThreadIdentityReader
+                return ThreadIdentityReader(self.cfg, self.registry.path, self.context_reader).read(
+                    context=False, thread_id=association['thread_id'], host=association['host'],
+                    node_id=node_id, project=project)
         if thread_id is None and codex_uri is None:
-            remote = self._remote_dispatch('execution.status', locals(), reference=execution_ref or task_ref, host=host)
+            remote = self._remote_dispatch('execution.status', request_arguments, reference=execution_ref or task_ref, host=host)
             if remote is not None:
                 return remote
         if thread_id is not None or codex_uri is not None:
@@ -1731,7 +1759,18 @@ class ClinxIntegration:
             from thread_identity import resolve_selector
             if query is not None:
                 raise M9IntegrationError('IDENTITY_SELECTOR_CONFLICT: codex_uri cannot use fuzzy query')
-            _, host, _ = resolve_selector(self.cfg, codex_uri=codex_uri, host=host)
+            tid, host, _ = resolve_selector(self.cfg, codex_uri=codex_uri, host=host)
+            from native_lifecycle import binding as native_binding
+            association = native_binding(self.registry.path, host=host, thread=tid)
+            from execution_semantics import normalize_host
+            if association and association['origin'] == 'CODEX_NATIVE' and host != normalize_host(self.cfg.runtime_host).stable_identifier:
+                raise M9IntegrationError('NATIVE_REMOTE_HANDOFF_NOT_QUALIFIED: canonical identity must reach the execution owner before preparation')
+        if task_ref:
+            from native_lifecycle import binding as native_binding
+            association = native_binding(self.registry.path, task=task_ref)
+            from execution_semantics import normalize_host
+            if association and association['origin'] == 'CODEX_NATIVE' and association['host'] != normalize_host(self.cfg.runtime_host).stable_identifier:
+                raise M9IntegrationError('NATIVE_REMOTE_HANDOFF_NOT_QUALIFIED: observation does not transfer canonical execution ownership')
         remote = self._remote_dispatch('execution.prepare', {**request_arguments, 'host': host}, reference=task_ref, host=host)
         if remote is not None:
             return remote
@@ -1769,7 +1808,7 @@ class ClinxIntegration:
                 raise M9IntegrationError('THREAD_SUCCESSOR_REQUIRED: supplied URI is historical', details={
                     'task_ref': observed.get('task_ref'), 'successor_thread_id': observed.get('current_thread_id')})
             binding = self.registry.get_binding_by_thread(tid)
-            if task_ref is not None and (binding is None or binding.task_id != task_ref):
+            if task_ref is not None and observed.get('task_ref') != task_ref:
                 raise M9IntegrationError('THREAD_IDENTITY_CONFLICT: URI does not belong to task_ref')
             evidence = observed.get('provider_observation') or {}
             if evidence.get('ownership_conflict') or any(
@@ -1859,7 +1898,7 @@ class ClinxIntegration:
             selected_title = self._validated_text("title", title, required=False) or task.title
             selected_summary = (
                 self._validated_text("summary", summary, required=False)
-                if summary is not None else (task.summary or "")
+                if summary is not None else (task.summary or None)
             )
             selected_ref = task.task_id
             prepared_route = task.routing_identity_json or "{}"
@@ -2620,13 +2659,17 @@ class ClinxIntegration:
         adoption = self.registry.get_adoption(task.task_id)
         from thread_identity import canonical_codex_uri
         binding = self.registry.get_binding(task.task_id)
+        from native_lifecycle import binding as native_binding
+        native = native_binding(self.registry.path, task=task.task_id) if binding is None else None
+        thread_id = binding.thread_id if binding else native["thread_id"] if native else None
         context_available = bool(
+            native or
             self.registry.get_binding(task.task_id)
             or self.registry.latest_context_checkpoint(task.task_id)
         )
         return {
             "task_ref": task.task_id,
-            "codex_uri": canonical_codex_uri(binding.thread_id, cfg=self.cfg, host=task.host) if binding else None,
+            "codex_uri": canonical_codex_uri(thread_id, cfg=self.cfg, host=task.host) if thread_id else None,
             "task_key": task.task_key,
             "host": task.host,
             "project": task.project_alias,

@@ -21,7 +21,7 @@ struct NetworkObservationView: View {
                 HStack {
                     Picker("来源", selection: $network.filters.kind) {
                         Text("全部来源").tag("")
-                        Text("外部观察").tag("external")
+                        Text("Codex 原生").tag("external")
                         Text("受管任务").tag("managed")
                     }
                     Picker("状态", selection: $network.filters.state) {
@@ -29,6 +29,12 @@ struct NetworkObservationView: View {
                         Text("运行中").tag("RUNNING")
                         Text("执行结束").tag("COMPLETED")
                         Text("失败").tag("FAILED")
+                        Text("已取消").tag("CANCELLED")
+                        Text("已中断").tag("INTERRUPTED")
+                        Text("暂停").tag("PAUSED")
+                        Text("已归档").tag("ARCHIVED")
+                        Text("未知").tag("UNKNOWN")
+                        Text("离线").tag("OFFLINE")
                     }
                 }
                 Button("应用筛选 / 刷新") { Task { await network.refresh() } }
@@ -97,6 +103,11 @@ private struct ObservationInspector: View {
                 Text("\(detail.item.deviceName) · \(detail.item.project)").foregroundStyle(.secondary)
                 Text(detail.item.statusLabel).font(DS.Font.bodyEmphasis)
                 Text("来源：\(detail.item.source) / \(detail.item.sourceClient)")
+                Text("Task ID：\(detail.item.taskRef ?? "待登记")").textSelection(.enabled)
+                Text("Thread ID：\(detail.item.nativeThreadId)").textSelection(.enabled)
+                if let uri = detail.item.codexUri, let url = URL(string: uri) {
+                    Link("在 Codex 打开原会话", destination: url)
+                }
                 Text("观测：\(detail.item.freshness) · 更新 \(Date(timeIntervalSince1970: detail.item.receivedAt).formatted())")
                 Text("覆盖：\(detail.item.coverage)" + (detail.gap.map { " · \($0)" } ?? ""))
                 Text("轮次：\(detail.item.turn.turnId ?? "未提供")").textSelection(.enabled)
@@ -137,6 +148,7 @@ private struct ObservationInspector: View {
                 ForEach(network.turns) { turn in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(turn.turnId ?? turn.executionRef ?? "会话元数据").font(.caption.monospaced())
+                        Text("SOURCE=\(turn.source ?? (turn.executionRef == nil ? "CODEX_NATIVE" : "CLINX_MANAGED"))").font(.caption)
                         Text("\(turn.nativeState) · \(turn.executionState ?? "未受管") · 业务结果 \(turn.businessResult ?? "未判定")")
                         if let progress = turn.progress, !turn.isTerminal { Text(progress).textSelection(.enabled) }
                         if let summary = turn.summary { Text(summary).textSelection(.enabled) }

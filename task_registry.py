@@ -831,6 +831,23 @@ class TaskRegistry:
                     routing_identity_json TEXT NOT NULL DEFAULT '{}',
                     execution_policy_json TEXT NOT NULL DEFAULT '{}'
                 );
+                CREATE TABLE IF NOT EXISTS native_task_bindings (
+                    node_id TEXT NOT NULL, provider TEXT NOT NULL, thread_id TEXT NOT NULL,
+                    user_scope TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    host TEXT NOT NULL, project TEXT NOT NULL, origin TEXT NOT NULL,
+                    first_provenance_json TEXT NOT NULL, latest_provenance_json TEXT NOT NULL,
+                    latest_ordinal INTEGER NOT NULL, observed_at REAL NOT NULL,
+                    PRIMARY KEY(node_id,provider,thread_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_native_task_owner ON native_task_bindings(task_id);
+                CREATE INDEX IF NOT EXISTS idx_native_thread_host ON native_task_bindings(host,provider,thread_id);
+                CREATE TABLE IF NOT EXISTS native_lifecycle_control (
+                    id INTEGER PRIMARY KEY CHECK(id=1), since REAL NOT NULL,
+                    paused INTEGER NOT NULL DEFAULT 0,
+                    backfill_remaining INTEGER NOT NULL DEFAULT 0,
+                    auto_remaining INTEGER NOT NULL DEFAULT 1000,
+                    backfill_cursor TEXT
+                );
                 CREATE TABLE IF NOT EXISTS policy_reauthorizations (
                     reauthorization_ref TEXT PRIMARY KEY,
                     task_id TEXT NOT NULL REFERENCES tasks(task_id),
@@ -1144,6 +1161,9 @@ class TaskRegistry:
                 conn.execute(
                     "ALTER TABLE tasks ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'normal'"
                 )
+            native_control_columns = {row[1] for row in conn.execute("PRAGMA table_info(native_lifecycle_control)")}
+            if "auto_remaining" not in native_control_columns:
+                conn.execute("ALTER TABLE native_lifecycle_control ADD COLUMN auto_remaining INTEGER NOT NULL DEFAULT 1000")
             host_columns = {row[1] for row in conn.execute("PRAGMA table_info(host_executions)")}
             if "tool_call_id" not in host_columns:
                 conn.execute("ALTER TABLE host_executions ADD COLUMN tool_call_id TEXT")
@@ -1693,6 +1713,8 @@ class TaskRegistry:
         needle = cls._normalize(query)
         if not needle:
             return 0
+        if needle == cls._normalize(task.task_id):
+            return 1100
         title = cls._normalize(task.title)
         summary = cls._normalize(task.summary)
         task_key = cls._normalize(task.task_key)
@@ -2027,8 +2049,18 @@ class TaskRegistry:
                 raise TaskRegistryError(
                     f"Thread {thread_id} is already bound to task {existing['task_id']}"
                 )
+            native = conn.execute("SELECT * FROM native_task_bindings WHERE host=? AND provider='codex_app_server' AND thread_id=? LIMIT 2", (host, thread_id)).fetchall()
+            if len(native) > 1:
+                raise TaskRegistryError("NATIVE_IDENTITY_AMBIGUOUS: explicit node required")
+            if native:
+                old_task = conn.execute("SELECT * FROM tasks WHERE task_id=?", (native[0]["task_id"],)).fetchone()
+                if old_task["cwd"] != cwd or old_task["workspace_alias"] != workspace_alias or old_task["project_alias"] != project_alias:
+                    raise TaskRegistryError("NATIVE_IDENTITY_CONFLICT: adoption project route differs")
+                task_id = old_task["task_id"]
+                # Explicit adopt reuses identity; it does not create an execution.
+                conn.execute("UPDATE tasks SET routing_identity_json=?,repository_origin=?,branch=? WHERE task_id=?", (route_json, repository_origin, branch, task_id))
             conn.execute(
-                """INSERT INTO tasks
+                """INSERT OR IGNORE INTO tasks
                 (task_id,host,workspace_alias,project_alias,project_name,cwd,
                  repository_origin,branch,title,summary,task_key,execution_mode,
                  status,created_at,updated_at,execution_state,current_stage,current_blocker,

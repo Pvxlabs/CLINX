@@ -36,7 +36,7 @@ struct InspectorView: View {
             }
             tabBar(task)
             if tab == .activity {
-                if NetworkObservationAdapter.isPresentationRef(task.taskRef), let id = task.observationId {
+                if let id = task.observationId {
                     ObservationActivityView(observationID: id, service: store.observationService)
                         .id(store.activitySource + id)
                 } else {
@@ -112,6 +112,8 @@ struct InspectorView: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionLabel(title: "Overview")
             MetadataGrid(rows: [
+                .init(label: "Task ID", value: task.taskRef, mono: true),
+                .init(label: "Thread ID", value: task.nativeConversation?.threadId ?? "UNKNOWN", mono: true),
                 .init(label: "State", value: store.status(of: task).label, mono: false),
                 .init(label: "Stage", value: task.stage, mono: true),
                 .init(label: "Activity", value: task.activityText, mono: true),

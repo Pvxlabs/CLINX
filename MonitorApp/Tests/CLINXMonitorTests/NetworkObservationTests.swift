@@ -215,6 +215,21 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         XCTAssertEqual(canonicalTaskCalls, 1)
     }
 
+    func testRegisteredNativeUsesCanonicalTaskIDAndObservationHistory() async throws {
+        let item = try projectedObservation(node: "p620", host: "P620", thread: "native-task",
+            state: "COMPLETED", taskRef: "task_canonical_native")
+        let service = UnifiedProjectionService(native: [item])
+        let store = MonitorStore(service: service, defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await store.refresh()
+        XCTAssertEqual(store.allTasks.map(\.taskRef), ["task_canonical_native"])
+        XCTAssertNil(store.allTasks.first?.executionRef)
+        XCTAssertEqual(store.allTasks.first?.nativeConversation?.threadId, "native-task")
+        await store.select("task_canonical_native")
+        XCTAssertEqual(store.selected?.observationId, item.observationId)
+        let calls = await service.taskCalls
+        XCTAssertEqual(calls, 0, "Native history stays on the observation route after canonical registration")
+    }
+
     func testPersistedRunningWithoutLivenessProofDoesNotEnterActive() throws {
         let stale = try projectedObservation(node: "p620", host: "P620", thread: "stale-running",
                                              state: "RUNNING", liveness: "NOT_PROVEN")
