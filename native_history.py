@@ -267,14 +267,17 @@ class NativeHistory:
             return dict(base, reason='NATIVE_HISTORY_MODE_UNSUPPORTED')
         try:
             with readonly(self.root / 'thread_history_1.sqlite') as conn:
+                history_tid = self.projection_thread_id(tid, metadata, conn)
                 row = conn.execute('SELECT turn_id,status,started_at,completed_at FROM thread_turns '
-                    'WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1', (tid,)).fetchone()
+                    'WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1', (history_tid,)).fetchone()
                 if row is None:
                     return dict(base, reason='NATIVE_TURN_UNAVAILABLE')
                 value = dict(row)
                 state = normalize_native_status(value.get('status'))
-                return dict(base, **value, state=state,
+                return dict(base, **value, state=state, history_thread_id=history_tid,
                             terminal=native_status_is_terminal(value.get('status')))
+        except ThreadLookupError as exc:
+            return dict(base, reason=exc.code)
         except (OSError, sqlite3.Error):
             return dict(base, reason='NATIVE_HISTORY_UNAVAILABLE')
 
@@ -288,7 +291,8 @@ class NativeHistory:
         try:
             with readonly(history_path) as c:
                 _budget_sql(c)
-                predicate, args = 'thread_id=?', [tid]
+                history_tid = self.projection_thread_id(tid, metadata, c)
+                predicate, args = 'thread_id=?', [history_tid]
                 if anchor:
                     predicate += ' AND turn_id=?'; args.append(anchor)
                 if before is not None:
@@ -315,15 +319,17 @@ class NativeHistory:
                             "FROM thread_items WHERE thread_id=? AND turn_id=? AND item_type=? "
                             "AND coalesce(json_extract(item_json,'$.phase'),'') NOT IN ('analysis','reasoning') "
                             "AND coalesce(json_extract(item_json,'$.channel'),'') NOT IN ('analysis','reasoning') "
-                            "ORDER BY rollout_ordinal DESC LIMIT 1", (max_bytes + 1, max_bytes + 1, max_bytes + 1, tid, turn['turn_id'], kind))
+                            "ORDER BY rollout_ordinal DESC LIMIT 1", (max_bytes + 1, max_bytes + 1, max_bytes + 1, history_tid, turn['turn_id'], kind))
                         for row in rows:
                             content_parts_truncated |= (row['content_parts'] or 0) > 32
                             entries.append({'item': {'type': kind, 'text': row['text'],
                                 'phase': row['phase'], 'channel': row['channel'],
                                 'content': [{'type': 'text', 'text': row['content'] or ''}]},
                                 'turn_id': turn['turn_id'], 'timestamp': row['created_at_ms']})
-                projection = c.execute('SELECT next_rollout_byte_offset FROM thread_history_projection_state WHERE thread_id=?', (tid,)).fetchone()
+                projection = c.execute('SELECT next_rollout_byte_offset FROM thread_history_projection_state WHERE thread_id=?', (history_tid,)).fetchone()
                 offset = projection[0] if projection else None
+        except ThreadLookupError:
+            raise
         except sqlite3.OperationalError as exc:
             code = 'NATIVE_HISTORY_BUDGET_EXHAUSTED' if 'interrupted' in str(exc) else 'NATIVE_SCHEMA_UNSUPPORTED'
             raise ThreadLookupError(code, 'Native history unavailable within the bounded read contract') from None
@@ -336,7 +342,8 @@ class NativeHistory:
             turns=[t['turn_id'] for t in reversed(turns)],
             next_cursor=cursor_encode(tid, host, 'paginated', turns[-1]['rollout_ordinal']) if more else None,
             incomplete=incomplete or content_parts_truncated, evidence={'indexed_source': 'CODEX_THREAD_HISTORY_PRIMARY_KEY',
-                'native_turns': turns, 'projection_byte_offset': offset, 'rollout_bytes': size,
+                'native_turns': turns, 'history_thread_id': history_tid,
+                'projection_byte_offset': offset, 'rollout_bytes': size,
                 'projection_incomplete': incomplete, 'sql_step_budget': SQL_STEPS,
                 'body_byte_budget': max_bytes, 'content_parts_limit': 32,
                 'content_parts_truncated': content_parts_truncated})
@@ -348,8 +355,8 @@ class NativeHistory:
         if not path.is_relative_to(self.root) or not (path.name.endswith('-' + tid + '.jsonl') or fork):
             raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Indexed rollout is outside the native history root')
         if fork:
-            # Desktop forks append a second UUID to the filename. The original
-            # session header, not that suffix, must match the indexed thread/project.
+            # The header identifies the original conversation. Its creation cwd
+            # may differ from the current workspace recorded by native Codex.
             try:
                 with path.open('rb') as stream:
                     header = json.loads(stream.readline(131072))
@@ -357,10 +364,62 @@ class NativeHistory:
                 raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Fork rollout header unavailable') from None
             meta = header.get('payload', {}) if isinstance(header, dict) else {}
             if (not isinstance(header, dict) or not isinstance(meta, dict) or header.get('type') != 'session_meta'
-                    or meta.get('id') != tid or not isinstance(meta.get('cwd'), str)
-                    or Path(meta['cwd']).resolve() != Path(metadata['cwd']).resolve()):
+                    or meta.get('id') != tid or not isinstance(meta.get('cwd'), str)):
                 raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Fork rollout session header disagrees with native index')
+            if (Path(meta['cwd']).resolve() != Path(metadata['cwd']).resolve()
+                    and not self._observed_workspace(path, metadata['cwd'])):
+                raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Indexed workspace lacks native turn context evidence')
         return path
+
+    @staticmethod
+    def _observed_workspace(path, cwd):
+        """Bounded evidence of a native workspace move, never a directory alias."""
+        with path.open('rb') as stream:
+            size = path.stat().st_size
+            for offset in dict.fromkeys((0, max(0, size - SCAN_BYTES))):
+                stream.seek(offset)
+                if offset:
+                    stream.readline(SCAN_BYTES)  # discard a partial record
+                for line in stream.read(SCAN_BYTES).splitlines():
+                    try:
+                        row = json.loads(line)
+                    except (ValueError, UnicodeError):
+                        continue
+                    if not isinstance(row, dict) or row.get('type') != 'turn_context':
+                        continue
+                    payload = row.get('payload', {})
+                    if (isinstance(payload, dict) and isinstance(payload.get('cwd'), str)
+                            and Path(payload['cwd']).resolve() == Path(cwd).resolve()):
+                        return True
+        return False
+
+    def projection_thread_id(self, tid, metadata, conn):
+        """Resolve only the indexed fork's projection; keep public identity intact."""
+        path = self._path(tid, metadata)
+        if path.name.endswith('-' + tid + '.jsonl'):
+            return tid
+        history_tid = path.stem.rsplit('_', 1)[1]
+        projection = conn.execute('SELECT next_rollout_byte_offset FROM thread_history_projection_state '
+                                  'WHERE thread_id=?', (history_tid,)).fetchone()
+        if projection is None:
+            return tid  # Older native versions project the fork under its original id.
+        turn = conn.execute('SELECT turn_id,rollout_byte_offset FROM thread_turns WHERE thread_id=? '
+                            'ORDER BY rollout_ordinal DESC LIMIT 1', (history_tid,)).fetchone()
+        if turn is not None:
+            try:
+                offset = turn['rollout_byte_offset']
+                if type(offset) is not int or not 0 <= offset < path.stat().st_size:
+                    raise ValueError()
+                with path.open('rb') as stream:
+                    stream.seek(offset)
+                    row = json.loads(stream.readline(131072))
+                payload = row.get('payload', {})
+                if (row.get('type') != 'event_msg' or payload.get('type') != 'task_started'
+                        or payload.get('turn_id') != turn['turn_id']):
+                    raise ValueError()
+            except (OSError, ValueError, AttributeError):
+                raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Fork projection does not match the indexed rollout') from None
+        return history_tid
 
     def _legacy(self, tid, host, metadata, recent_turns, max_bytes, anchor, cursor):
         before = cursor_decode(cursor, tid, host, 'legacy')

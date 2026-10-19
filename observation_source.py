@@ -126,15 +126,20 @@ class CodexObservationSource:
             try:
                 with readonly(self.history.root/"thread_history_1.sqlite") as c:
                     _budget_sql(c)
+                    history_tid=self.history.projection_thread_id(tid,metadata,c)
+                    if state.get("history_thread_id")!=history_tid:
+                        for key in ("history_before","history_complete","active_turns"):
+                            state.pop(key,None)
+                        state["history_thread_id"]=history_tid
                     fields="turn_id,rollout_ordinal,status,started_at,completed_at"
-                    recent=[dict(r) for r in c.execute("SELECT "+fields+" FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 4",(tid,))]
+                    recent=[dict(r) for r in c.execute("SELECT "+fields+" FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 4",(history_tid,))]
                     if state.get("history_complete"):
                         state["history_before"]=9223372036854775807
                     before=state.get("history_before",9223372036854775807)
-                    older=[dict(r) for r in c.execute("SELECT "+fields+" FROM thread_turns WHERE thread_id=? AND rollout_ordinal<? ORDER BY rollout_ordinal DESC LIMIT 4",(tid,before))]
+                    older=[dict(r) for r in c.execute("SELECT "+fields+" FROM thread_turns WHERE thread_id=? AND rollout_ordinal<? ORDER BY rollout_ordinal DESC LIMIT 4",(history_tid,before))]
                     pending=state.get("active_turns",[])[:64]
                     active=[dict(r) for r in c.execute("SELECT "+fields+" FROM thread_turns WHERE thread_id=? AND turn_id IN ("+
-                        ",".join("?" for _ in pending)+")",(tid,*pending))] if pending else []
+                        ",".join("?" for _ in pending)+")",(history_tid,*pending))] if pending else []
                 if older: state["history_before"]=older[-1]["rollout_ordinal"]
                 state["history_complete"]=len(older)<4
                 selected={r["turn_id"]:r for r in recent+older+active}
