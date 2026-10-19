@@ -1,0 +1,8 @@
+[Unit]
+Description=Read-only CLINX tunnel process and control-plane poll check
+After=clinx-tunnel.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/lib/clinx-control/launch-tunnel-health
+TimeoutStartSec=25s

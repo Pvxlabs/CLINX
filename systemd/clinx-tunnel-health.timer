@@ -1,0 +1,11 @@
+[Unit]
+Description=Check CLINX tunnel control-plane poll freshness
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=clinx-tunnel-health.service
+
+[Install]
+WantedBy=timers.target

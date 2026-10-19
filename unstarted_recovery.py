@@ -105,6 +105,7 @@ def validate(registry, rows, *, live_callsite=False):
                     'model', 'logical_model', 'resolved_executable_model', 'reasoning_effort',
                     'execution_mode', 'network_access', 'routing_identity_json', 'execution_policy_json')
     payload = {k: p[k] for k in payload_keys}
+    payload['workspace_contract_json'] = p.get('workspace_contract_json', '{}')
     payload['network_access'] = bool(payload['network_access'])
     if registry._prepared_hash(registry._prepared_payload(**payload)) != p['integrity_hash']:
         deny('UNSEALED_PREPARATION')

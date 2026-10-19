@@ -1895,7 +1895,7 @@ class CodexAppServerClient:
             }
         try:
             result = self._request("turn/start", params)
-        except AppServerError as exc:
+        except AppServerRemoteError as exc:
             if network_access:
                 raise AppServerSandboxPolicyError(
                     "NETWORK_ACCESS=ENABLED TURN_START=BLOCKED: "

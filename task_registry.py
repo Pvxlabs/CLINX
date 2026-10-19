@@ -403,6 +403,7 @@ class PreparedExecutionRecord:
     resulting_execution_ref: str | None
     routing_identity_json: str = "{}"
     execution_policy_json: str = "{}"
+    workspace_contract_json: str = "{}"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1251,6 +1252,8 @@ class TaskRegistry:
                 conn.execute("ALTER TABLE prepared_executions ADD COLUMN logical_model TEXT NOT NULL DEFAULT ''")
             if "resolved_executable_model" not in prepared_columns:
                 conn.execute("ALTER TABLE prepared_executions ADD COLUMN resolved_executable_model TEXT NOT NULL DEFAULT ''")
+            if "workspace_contract_json" not in prepared_columns:
+                conn.execute("ALTER TABLE prepared_executions ADD COLUMN workspace_contract_json TEXT NOT NULL DEFAULT '{}'")
             if "network_access" not in prepared_columns:
                 conn.execute(
                     "ALTER TABLE prepared_executions ADD COLUMN network_access INTEGER NOT NULL DEFAULT 0"
@@ -2293,8 +2296,9 @@ class TaskRegistry:
         network_access: bool = False,
         routing_identity_json: str = "{}",
         execution_policy_json: str = "{}",
+        workspace_contract_json: str = "{}",
     ) -> dict[str, Any]:
-        return {
+        payload = {
             "approval_state": "APPROVED",
             "task_action": task_action,
             "task_ref": task_ref,
@@ -2312,6 +2316,10 @@ class TaskRegistry:
             "routing_identity_json": routing_identity_json,
             "execution_policy_json": execution_policy_json,
         }
+
+        if workspace_contract_json != "{}":
+            payload["workspace_contract_json"] = workspace_contract_json
+        return payload
 
     @staticmethod
     def _prepared_hash(payload: dict[str, Any]) -> str:
@@ -2338,6 +2346,7 @@ class TaskRegistry:
         network_access: bool = False,
         routing_identity: RoutingIdentity | str | None = None,
         execution_policy: ExecutionPolicy | str | None = None,
+        workspace_contract_json: str = "{}",
     ) -> PreparedExecutionRecord:
         if task_action not in {"create", "continue", "reopen"}:
             raise TaskRegistryError(f"Unsupported prepared task action: {task_action}")
@@ -2366,6 +2375,7 @@ class TaskRegistry:
             network_access=network_access,
             routing_identity_json=route_json,
             execution_policy_json=policy_json,
+            workspace_contract_json=workspace_contract_json,
         )
         stamp = _now()
         record = PreparedExecutionRecord(
@@ -2379,6 +2389,7 @@ class TaskRegistry:
             resulting_thread_id=None,
             resulting_turn_id=None,
             resulting_execution_ref=None,
+            workspace_contract_json=workspace_contract_json,
             **{key: payload[key] for key in (
                 "task_action", "task_ref", "host", "project", "title", "summary",
                 "prompt", "model", "reasoning_effort", "execution_mode",
@@ -2394,8 +2405,8 @@ class TaskRegistry:
                  network_access,
                  status,created_at,updated_at,resulting_task_id,resulting_thread_id,
                  resulting_turn_id,resulting_execution_ref,routing_identity_json,
-                 execution_policy_json)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 execution_policy_json,workspace_contract_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 tuple(getattr(record, field.name) for field in dataclasses.fields(record)),
             )
         return record
@@ -2447,6 +2458,7 @@ class TaskRegistry:
             network_access=bool(record.network_access),
             routing_identity_json=record.routing_identity_json,
             execution_policy_json=record.execution_policy_json,
+            workspace_contract_json=record.workspace_contract_json,
         )
         valid_hash = self._prepared_hash(payload) == record.integrity_hash
         if not valid_hash and not bool(record.network_access):
@@ -2804,6 +2816,8 @@ class TaskRegistry:
                  effective_failure_stage, effective_failure_code, effective_failure_evidence,
                  _now() if changed else task.updated_at, task_id),
             )
+            if state == "COMPLETED" and _shadow_execution_ref is not _UNSET:
+                conn.execute("UPDATE tasks SET status='COMPLETED' WHERE task_id=? AND status='ACTIVE'", (task_id,))
             active_execution = conn.execute(
                 "SELECT execution_ref,execution_state AS execution_owned_state,"
                 "stage,turn_id FROM executions WHERE task_id=?",

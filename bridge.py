@@ -2521,6 +2521,15 @@ class TaskDispatcher:
         )
         return workspace, descriptor, mapping
 
+    def resolve_execution_workspace(self, project_ref, *, host, workspace_contract):
+        workspace, descriptor, mapping = self.resolve_project(project_ref, host=host, project_mode='existing')
+        if workspace_contract:
+            from workspace_contract import select_workspace
+            path, branch = select_workspace(descriptor, workspace_contract)
+            descriptor = dataclasses.replace(descriptor, cwd=path, branch=branch)
+            mapping = dataclasses.replace(mapping, repo=path, branch=branch)
+        return workspace, descriptor, mapping
+
     def _default_project_policy(
         self, project: ProjectMapping, *, network_access: bool
     ) -> ExecutionPolicy:
@@ -3086,6 +3095,7 @@ class TaskDispatcher:
         reasoning_effort: str | None,
         execution_mode: str = "normal",
         network_access: bool = False,
+        workspace_contract: dict[str, str] | None = None,
         issue_id: str | None = None,
         execution_ref: str | None = None,
         routing_identity: RoutingIdentity | str | None = None,
@@ -3103,6 +3113,9 @@ class TaskDispatcher:
             workspace, _descriptor, project = self.resolve_project(
                 project_ref, host=host, project_mode=project_mode
             )
+            if workspace_contract:
+                workspace, _descriptor, project = self.resolve_execution_workspace(
+                    project_ref, host=host, workspace_contract=workspace_contract)
             conflict = self.tasks.active_worktree_conflict(
                 host=host or workspace.alias, cwd=str(project.repo),
                 repository_origin=project.repository_origin,
@@ -3249,12 +3262,16 @@ class TaskDispatcher:
                             project=project,
                             thread_id=new_thread_id,
                         )
+                        if workspace_contract:
+                            from workspace_contract import seal_workspace
+                            seal_workspace(project.repo, project.branch, workspace_contract)
                         turn = client.turn_start(
                             new_thread_id,
                             prompt,
                             cwd=str(project.repo),
                             model=executable_model,
                             reasoning_effort=executable_reasoning,
+                            network_access=network_access,
                         )
                         self._execution_state(
                             leased.task_id,
@@ -3358,7 +3375,14 @@ class TaskDispatcher:
             raise TargetResolutionError(
                 f"Task project mismatch: expected {task.project_alias!r}, got {project_ref!r}"
             )
-        project_path = self.workspaces.validate_path(workspace, Path(task.cwd))
+        if workspace_contract:
+            workspace, _descriptor, selected = self.resolve_execution_workspace(
+                project_ref, host=host, workspace_contract=workspace_contract)
+            if str(selected.repo.resolve()) != str(Path(task.cwd).resolve()):
+                raise IdentityGuardError('WORKSPACE_CONTRACT_MISMATCH: continuation cwd differs')
+            project_path = selected.repo
+        else:
+            project_path = self.workspaces.validate_path(workspace, Path(task.cwd))
         project = ProjectMapping(
             linear_name=task.project_name,
             repo=project_path,
@@ -3532,12 +3556,16 @@ class TaskDispatcher:
                         project=project,
                         thread_id=binding.thread_id,
                     )
+                    if workspace_contract:
+                        from workspace_contract import seal_workspace
+                        seal_workspace(project.repo, project.branch, workspace_contract)
                     turn = client.turn_start(
                         binding.thread_id,
                         managed_prompt,
                         cwd=str(project.repo),
                         model=executable_model,
                         reasoning_effort=executable_reasoning,
+                        network_access=network_access,
                     )
                     if migration_context is not None and managed_prompt != prompt:
                         self.tasks.save_context_checkpoint(

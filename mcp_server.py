@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sqlite3
 import sys
 from typing import Any, Callable
 
@@ -43,11 +44,11 @@ DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_can
 # Historical Host authority APIs remain internal for old receipt reconciliation.
 # They are not part of the conversation-forwarding connector.
 RELAY_METADATA_FIELDS = frozenset({
-    "execution_mode", "network_access", "NETWORK_ACCESS", "execution_policy",
+    "execution_mode", "execution_policy",
     "routing_identity", "linear_handoff", "description",
 })
 RELAY_INPUT_FIELDS = frozenset({
-    "execution_mode", "network_access", "execution_surface", "required_capabilities",
+    "execution_mode", "execution_surface", "required_capabilities",
     "operation_classes", "production_mutation_intent", "requested_operations", "reasoning",
 })
 
@@ -503,7 +504,7 @@ MCP_INSTRUCTIONS = (
     "The user's request to send or continue work supplies approval; use approved=true "
     "without asking for the same approval again. Prepare once, then call clinx_start_execution "
     "with the returned prepared_execution_ref and approved=true. "
-    "No separate executor, sandbox, network, operation catalog or authority selection is required. "
+    "Execution stays native Codex. Supply workspace_contract with absolute cwd, branch and full head for an isolated worktree; do not put routing requirements only in prompt. Explicit network_access=true requires task authorization; create defaults false and continuation inherits its sealed policy. "
     "Do not routinely call clinx_get_prepared_request between prepare and start. "
     "After a lost response, inspect the ORIGINAL prepared request or exact execution before retrying; "
     "never submit another preparation blindly. QUEUED is not Provider running: report execution_started "
@@ -877,6 +878,13 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
                 'description': 'Optional legacy task context forwarded to native Codex. CLINX does not validate operation names or repository target scopes.'}
             tool['inputSchema']['properties']['network_access'].pop('default', None)
             properties = tool['inputSchema']['properties']
+            properties['workspace_contract'] = _json_schema({
+                'cwd': {'type': 'string', 'minLength': 1},
+                'branch': {'type': 'string', 'minLength': 1},
+                'head': {'type': 'string', 'pattern': '^[0-9a-f]{40}$'},
+            }, ['cwd', 'branch', 'head'])
+            properties['network_access']['description'] = 'Explicit task-authorized outbound network capability. Default false on create; continuation inherits sealed policy and rejects changes.'
+            tool['outputSchema']['properties']['workspace_contract'] = {'type': 'object'}
             for name in ('execution_surface', 'required_capabilities', 'operation_classes', 'production_mutation_intent'):
                 properties[name]['description'] = 'Legacy task context; does not select an executor or grant authority.'
             context_scope = properties['requested_operations']['items']['properties']
@@ -974,9 +982,12 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
             if "reasoning" in tool["outputSchema"]["properties"]:
                 tool["outputSchema"]["properties"]["reasoning_effort"] = tool["outputSchema"]["properties"].pop("reasoning")
             tool["outputSchema"]["properties"].update({
+                "workspace_contract": {"type": "object"},
                 "execution_backend": {"type": "string", "const": "CODEX_NATIVE"},
-                "runtime_configuration": {"type": "string", "const": "INHERIT_CODEX"},
+                "runtime_configuration": {"type": "string", "const": "SEALED_TASK_POLICY"},
             })
+        if tool["name"] == "clinx_get_status":
+            tool["outputSchema"]["properties"]["workspace_contract"] = {"type": "object"}
         if tool["name"] == "clinx_get_capabilities":
             for field in ("host_executor_available", "host_executor_default"):
                 tool["outputSchema"]["properties"].pop(field, None)
@@ -1126,7 +1137,7 @@ class ClinxMCPServer:
             for field in ("model", "reasoning_effort"):
                 if result.get(field) == "inherit":
                     result.pop(field)
-            result.update(execution_backend="CODEX_NATIVE", runtime_configuration="INHERIT_CODEX")
+            result.update(execution_backend="CODEX_NATIVE", runtime_configuration="SEALED_TASK_POLICY")
         return _public_json(result, native_identity=(name in {'clinx_adopt_conversation', 'clinx_get_prepared_request'} or
             (name in {'clinx_get_context', 'clinx_get_status'} and
              any(k in arguments for k in ('thread_id', 'codex_uri')))))
@@ -1220,7 +1231,7 @@ class ClinxMCPServer:
                 if payload['outcome_certainty'] == 'UNKNOWN':
                     payload.update(codex_running=None, retry_required=False)
                 result = self._tool_result(payload, is_error=True)
-            except (M9IntegrationError, TaskRegistryError, bridge.BridgeError, KeyError, TypeError, ValueError) as exc:
+            except (M9IntegrationError, TaskRegistryError, bridge.BridgeError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
                 from dispatch_errors import failure_details, safe_reason
                 payload = {"error": safe_reason(exc)}
                 if getattr(exc, "code", None):
@@ -1362,6 +1373,10 @@ def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None, *, recover_exis
     finally:
         if callable(stop_completion):
             stop_completion()
+        # No payload, credentials or exception text: distinguish EOF from an
+        # uncaught request failure in the service-owned stderr log.
+        if os.environ.get('CLINX_STDIO_DIAGNOSTICS') == '1':
+            print(f"MCP_STDIO_CLOSED pid={os.getpid()} reason={'ERROR' if sys.exc_info()[0] else 'EOF'}", file=sys.stderr, flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:

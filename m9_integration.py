@@ -657,6 +657,11 @@ class ExecutionFinalizer:
         )
 
     @serialized_execution
+    def reconcile_task_projection(self, execution_ref, *, check_only=False):
+        from task_projection import reconcile
+        return reconcile(self.registry, execution_ref, check_only=check_only)
+
+    @serialized_execution
     def reconcile_result(self, execution_ref: str, **kwargs: Any) -> dict[str, Any]:
         """Same-execution maintenance through the sole finalizer boundary."""
         from result_ingestion import repair_result
@@ -1376,6 +1381,7 @@ class ClinxIntegration:
             else self.registry.get_prepared_execution_for_task(task.task_id)
         )
         network_access = bool(prepared.network_access) if prepared is not None else False
+        status["workspace_contract"] = json.loads(prepared.workspace_contract_json) if prepared else {}
         status["network_access"] = network_access
         status["NETWORK_ACCESS"] = "ENABLED" if network_access else "DISABLED"
         audit = self.registry.get_linear_audit(task.task_id)
@@ -1429,6 +1435,7 @@ class ClinxIntegration:
         status["desktop_publication"] = inspect_publication(self.registry.path, task_id=task.task_id)
         status["selection_reason"] = selection_reason
         status["task_current_projection"] = {
+            "status": task.status,
             "execution_state": task.execution_state, "codex_running": bool(task.codex_running),
             "turn_id": task.turn_id, "current_stage": task.current_stage,
             "failure_stage": task.failure_stage, "failure_code": task.failure_code, "failure_evidence": task.failure_evidence,
@@ -1479,8 +1486,10 @@ class ClinxIntegration:
             },
             "execution_surfaces": {"CODEX_NATIVE": {
                 "available": True, "default": True,
-                "runtime_configuration": "INHERIT_CODEX",
-                "sandbox_overrides": False,
+                "runtime_configuration": "SEALED_TASK_POLICY",
+                "sandbox_overrides": True,
+                "network_default": False,
+                "workspace_contract_required_for_isolation": True,
             }},
             "control_runtime": {"process_id": os.getpid(), "source_root": str(Path(__file__).resolve().parent)},
             "status": {"available": True, "tool": "clinx_get_status"},
@@ -1492,7 +1501,7 @@ class ClinxIntegration:
                 "The user's instruction to send or continue the task supplies approval; do not ask again. "
                 "Do not search, read status, inspect authority or reread preparation as routine prerequisites. "
                 "Read the original preparation only to resolve ambiguity or a lost start response; never blindly repeat execution. "
-                "CLINX does not select an executor or override Codex sandbox, writable roots, network or approval settings. "
+                "CLINX seals the task workspace and explicit network authorization, then passes workspaceWrite policy and exact cwd to Codex. Model and reasoning inherit unless explicitly supplied; approval is never widened. "
                 "Task identity, duplicate prevention, execution ownership and receipts remain coordinated."
             ),
             "read_only": True,
@@ -1732,6 +1741,7 @@ class ClinxIntegration:
         reasoning: str | None = None,
         execution_mode: str = "normal",
         network_access: bool | None = None,
+        workspace_contract: dict[str, str] | None = None,
         execution_surface: str | None = None,
         required_capabilities: list[str] | None = None,
         operation_classes: list[str] | None = None,
@@ -1848,10 +1858,12 @@ class ClinxIntegration:
             prompt += ("\n\nREQUESTED OPERATION CONTEXT (user task data; CLINX does not "
                        "interpret operation names or restrict repository targets):\n"
                        + json.dumps(operation_context, ensure_ascii=False, sort_keys=True))
-        # Legacy network input is not execution configuration. Preserve the
-        # historical route on continuation and use a storage placeholder on create.
+        requested_network = network_access
         if task_mode == 'new':
-            network_access = False
+            network_access = False if network_access is None else network_access
+        from workspace_contract import reject_unstructured_workspace, seal_workspace
+        if workspace_contract is None:
+            reject_unstructured_workspace(prompt)
         prepared_route = "{}"
         prepared_route_public: dict[str, Any] | None = None
         prepared_policy = None
@@ -1888,6 +1900,14 @@ class ClinxIntegration:
                 )
                 if descriptor.alias.casefold() != task.project_alias.casefold():
                     raise M9IntegrationError("Resolved project does not match task project")
+                if workspace_contract is None and str(descriptor.cwd.resolve()) != str(Path(task.cwd).resolve()):
+                    previous = self.registry.get_prepared_execution_for_task(task.task_id)
+                    if previous and previous.workspace_contract_json != '{}':
+                        self.registry.verify_prepared_execution(previous.prepared_execution_ref)
+                        workspace_contract = json.loads(previous.workspace_contract_json)
+                if workspace_contract is not None:
+                    _workspace, descriptor, _mapping = self.dispatcher.resolve_execution_workspace(
+                        task.project_alias, host=task.host, workspace_contract=workspace_contract)
                 if str(descriptor.cwd.resolve()) != str(Path(task.cwd).resolve()):
                     raise M9IntegrationError("Resolved project cwd does not match task")
             if task.status not in {"ACTIVE", "COMPLETED", "ARCHIVED"}:
@@ -1911,6 +1931,8 @@ class ClinxIntegration:
             parsed_route = parse_routing_identity(prepared_route)
             prepared_route_public = parsed_route.public_dict() if parsed_route is not None else None
             network_access = bool(parsed_route and parsed_route.network_policy.network_access)
+            if requested_network is not None and requested_network != network_access:
+                raise M9IntegrationError('NETWORK_REAUTHORIZATION_REQUIRED: continuation cannot change sealed network policy')
             task, prepared_policy = self._native_forwarding_policy(task, network_access=network_access)
             prepared_route = task.routing_identity_json
             prepared_route_public = parse_routing_identity(prepared_route).public_dict()
@@ -1929,6 +1951,9 @@ class ClinxIntegration:
                 host=selected_host,
                 project_mode="existing",
             )
+            if workspace_contract is not None:
+                workspace, descriptor, project_mapping = self.dispatcher.resolve_execution_workspace(
+                    selected_project, host=selected_host, workspace_contract=workspace_contract)
             # Seal the builder's native default (or explicit Host request).
             # Host availability and project registration do not grant authority.
             route_builder = getattr(self.dispatcher, "_routing_identity", None)
@@ -1943,6 +1968,7 @@ class ClinxIntegration:
                 prepared_route = route.to_json()
                 prepared_route_public = route.public_dict()
 
+        sealed_workspace = seal_workspace(descriptor.cwd, descriptor.branch, workspace_contract) if hasattr(self.dispatcher, 'resolve_execution_workspace') else {}
         assert prepared_policy is not None
         linear_project = self._linear_project_name()
         description_lines = [
@@ -1985,6 +2011,7 @@ class ClinxIntegration:
             network_access=network_access,
             routing_identity=prepared_route,
             execution_policy=prepared_policy,
+            workspace_contract_json=json.dumps(sealed_workspace, sort_keys=True, separators=(',', ':')),
         )
         handoff = ExecutionHandoff(
             task_action=selected_action,
@@ -2008,7 +2035,7 @@ class ClinxIntegration:
             execution_policy=prepared_policy.as_dict(),
         ).as_dict()
         handoff['codex_uri'] = self._public(self.registry.get_task(selected_ref))['codex_uri'] if selected_ref else None
-        return handoff
+        return {**handoff, "workspace_contract": sealed_workspace}
 
     def _audit_task_index(self, task_id: str) -> str:
         """Best-effort 1:1 Linear mirror; never gates Codex dispatch."""
@@ -2130,6 +2157,7 @@ class ClinxIntegration:
             "model": prepared.model,
             "reasoning_effort": prepared.reasoning_effort,
             "execution_mode": prepared.execution_mode,
+            "workspace_contract": json.loads(prepared.workspace_contract_json),
             "network_access": bool(prepared.network_access),
             "NETWORK_ACCESS": "ENABLED" if prepared.network_access else "DISABLED",
             "routing_identity": routing_identity,
@@ -2209,8 +2237,11 @@ class ClinxIntegration:
                     ) is not None else None
                 ),
             )
+        if prepared.workspace_contract_json == '{}' and hasattr(self.dispatcher, 'resolve_execution_workspace'):
+            raise M9IntegrationError('WORKSPACE_CONTRACT_REQUIRED: legacy preparation must be prepared again; no dispatch')
         self.registry.mark_prepared_execution_running(prepared_execution_ref)
         execution_ref = "exec_" + prepared_execution_ref.removeprefix("prepared_")
+        dispatch_invoked = False
         try:
             task_id = prepared.task_ref
             dispatch_mode = "new" if prepared.task_action == "create" else "continue"
@@ -2218,9 +2249,13 @@ class ClinxIntegration:
             # Resolve the canonical worktree before dispatch so a second
             # mutating command cannot reach app-server turn/start.
             if hasattr(self.dispatcher, "resolve_project"):
-                _workspace, descriptor, _mapping = self.dispatcher.resolve_project(
-                    prepared.project, host=prepared.host, project_mode="existing"
-                )
+                if hasattr(self.dispatcher, 'resolve_execution_workspace'):
+                    _workspace, descriptor, _mapping = self.dispatcher.resolve_execution_workspace(
+                        prepared.project, host=prepared.host,
+                        workspace_contract=json.loads(prepared.workspace_contract_json))
+                else:
+                    _workspace, descriptor, _mapping = self.dispatcher.resolve_project(
+                        prepared.project, host=prepared.host, project_mode='existing')
                 conflict = self.registry.active_worktree_conflict(
                     host=prepared.host, cwd=str(descriptor.cwd),
                     repository_origin=descriptor.repository_origin,
@@ -2306,6 +2341,7 @@ class ClinxIntegration:
                     self.dispatcher.task_action(task_id, "reopen")
                 elif task.status != "ACTIVE":
                     raise M9IntegrationError(f"Unsupported task status: {task.status}")
+            dispatch_invoked = True
             result = self.dispatcher.dispatch(
                 project_ref=prepared.project,
                 host=prepared.host,
@@ -2322,6 +2358,8 @@ class ClinxIntegration:
                 execution_ref=execution_ref,
                 routing_identity=prepared.routing_identity_json,
                 execution_policy=prepared.execution_policy_json,
+                **({'workspace_contract': json.loads(prepared.workspace_contract_json)}
+                   if prepared.workspace_contract_json != '{}' else {}),
             )
             if not getattr(result, "task_id", None) or not getattr(result, "thread_id", None):
                 raise M9IntegrationError("dispatcher returned incomplete execution identity")
@@ -2387,6 +2425,8 @@ class ClinxIntegration:
                 self.registry.restore_prepared_execution(prepared_execution_ref)
             raise
         except Exception:
+            if not dispatch_invoked:
+                self.registry.fail_prepared_execution(prepared_execution_ref)
             if task_id:
                 self._linear_failure_writeback(
                     task_id, state="BLOCKED", detail="CLINX dispatch failure"
