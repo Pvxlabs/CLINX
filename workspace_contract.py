@@ -15,6 +15,40 @@ class WorkspaceContractError(TaskRegistryError):
         super().__init__(message)
 
 
+def workspace_contract_schema():
+    """The public request and the sealed value use the same closed contract."""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["cwd", "branch", "head"],
+        "properties": {
+            "cwd": {"type": "string", "pattern": r"^/[^\x00]*$"},
+            "branch": {"type": "string", "minLength": 1, "not": {"pattern": r"[\s\x00]"}},
+            "head": {"type": "string", "maxLength": 40, "pattern": "^[0-9a-f]{40}$"},
+        },
+        "description": (
+            "Optional exact Git workspace. Required when requesting a workspace in the prompt. "
+            "Supply all three strings: absolute cwd, attached branch, full lowercase 40-hex HEAD. "
+            "Only the registered project or its existing linked worktrees are accepted; "
+            "cwd/branch/HEAD must match Git. Omission seals the configured workspace, "
+            "or inherits the sealed linked workspace on continuation."
+        ),
+    }
+
+
+def validate_workspace_contract(requested):
+    """Validate shape before routing, adoption or policy writes, including direct calls."""
+    if (
+        not isinstance(requested, dict)
+        or set(requested) != {"cwd", "branch", "head"}
+        or not all(isinstance(v, str) and v for v in requested.values())
+        or not re.fullmatch(r"/[^\x00]*", requested["cwd"])
+        or not re.fullmatch(r"[^\s\x00]+", requested["branch"])
+        or not re.fullmatch(r"[0-9a-f]{40}", requested["head"])
+    ):
+        raise WorkspaceContractError("WORKSPACE_CONTRACT_INVALID")
+
+
 def git(path, *args):
     try:
         result = subprocess.run(
@@ -43,18 +77,12 @@ def reject_unstructured_workspace(prompt):
 
 
 def seal_workspace(path, branch, requested=None):
+    if requested is not None:
+        validate_workspace_contract(requested)
     try:
         path = Path(path).resolve(strict=True)
     except (OSError, TypeError, ValueError) as exc:
         raise WorkspaceContractError("WORKSPACE_IDENTITY_UNAVAILABLE") from exc
-    if requested is not None and (
-        not isinstance(requested, dict)
-        or set(requested) != {"cwd", "branch", "head"}
-        or not all(isinstance(v, str) and v for v in requested.values())
-        or not Path(requested["cwd"]).is_absolute()
-        or not re.fullmatch(r"[0-9a-f]{40}", requested["head"])
-    ):
-        raise WorkspaceContractError("WORKSPACE_CONTRACT_INVALID")
     actual = {
         "cwd": str(path),
         "branch": git(path, "branch", "--show-current"),
@@ -78,8 +106,7 @@ def seal_workspace(path, branch, requested=None):
 
 
 def select_workspace(descriptor, requested):
-    if not isinstance(requested, dict) or "cwd" not in requested:
-        raise WorkspaceContractError("WORKSPACE_CONTRACT_INVALID")
+    validate_workspace_contract(requested)
     actual = seal_workspace(requested["cwd"], None, requested)
     base = descriptor.cwd.resolve(strict=True)
     path = Path(actual["cwd"])

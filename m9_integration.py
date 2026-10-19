@@ -1753,6 +1753,16 @@ class ClinxIntegration:
         request_arguments = dict(locals())
         if approved is not True:
             raise M9IntegrationError("explicit approved=true is required for preparation")
+        from workspace_contract import (
+            reject_unstructured_workspace,
+            seal_workspace,
+            validate_workspace_contract,
+        )
+        prompt = self._validated_text("prompt", prompt)
+        if workspace_contract is not None:
+            validate_workspace_contract(workspace_contract)
+        else:
+            reject_unstructured_workspace(prompt)
         association = None
         if codex_uri is not None:
             from thread_identity import resolve_selector
@@ -1782,7 +1792,6 @@ class ClinxIntegration:
             codex_uri = codex_uri or 'codex://threads/' + association['thread_id']
             host = association['host']
             task_ref = association['task_id']
-        prompt = self._validated_text("prompt", prompt)
         if task_action is not None:
             if task_action not in {"create", "continue", "reopen"}:
                 raise M9IntegrationError("task_action must be create, continue, or reopen")
@@ -1830,6 +1839,19 @@ class ClinxIntegration:
                     raise M9IntegrationError('ACTIVE_EXECUTION_CONFLICT: existing owner must finish first')
                 task_ref = binding.task_id
             else:
+                # Validate Git routing before adoption can add a binding/audit.
+                native_cwd = Path(observed['native_thread']['cwd'])
+                candidates = [p for p in self.cfg.projects if Path(p.repo).resolve() == native_cwd.resolve()]
+                project_ref = candidates[0].project_alias if len(candidates) == 1 else native_cwd.name
+                _workspace, descriptor, _mapping = self.dispatcher.resolve_project(
+                    project_ref, host=route_host, project_mode='existing')
+                if workspace_contract is not None:
+                    _workspace, descriptor, _mapping = self.dispatcher.resolve_execution_workspace(
+                        project_ref, host=route_host, workspace_contract=workspace_contract)
+                seal_workspace(descriptor.cwd, descriptor.branch, workspace_contract)
+                if descriptor.cwd.resolve() != native_cwd.resolve():
+                    from workspace_contract import WorkspaceContractError
+                    raise WorkspaceContractError('WORKSPACE_CONTRACT_MISMATCH: native conversation cwd differs')
                 adopted = self.adopt_conversation(codex_uri=codex_uri, host=route_host,
                     project=project, title=title, summary=summary)
                 if adopted.get('adoption_status') not in {'ADOPTED', 'ALREADY_ADOPTED'}:
@@ -1861,9 +1883,6 @@ class ClinxIntegration:
         requested_network = network_access
         if task_mode == 'new':
             network_access = False if network_access is None else network_access
-        from workspace_contract import reject_unstructured_workspace, seal_workspace
-        if workspace_contract is None:
-            reject_unstructured_workspace(prompt)
         prepared_route = "{}"
         prepared_route_public: dict[str, Any] | None = None
         prepared_policy = None
@@ -1933,6 +1952,7 @@ class ClinxIntegration:
             network_access = bool(parsed_route and parsed_route.network_policy.network_access)
             if requested_network is not None and requested_network != network_access:
                 raise M9IntegrationError('NETWORK_REAUTHORIZATION_REQUIRED: continuation cannot change sealed network policy')
+            sealed_workspace = seal_workspace(descriptor.cwd, descriptor.branch, workspace_contract) if hasattr(self.dispatcher, 'resolve_execution_workspace') else {}
             task, prepared_policy = self._native_forwarding_policy(task, network_access=network_access)
             prepared_route = task.routing_identity_json
             prepared_route_public = parse_routing_identity(prepared_route).public_dict()
@@ -1968,7 +1988,8 @@ class ClinxIntegration:
                 prepared_route = route.to_json()
                 prepared_route_public = route.public_dict()
 
-        sealed_workspace = seal_workspace(descriptor.cwd, descriptor.branch, workspace_contract) if hasattr(self.dispatcher, 'resolve_execution_workspace') else {}
+        if task_mode == 'new':
+            sealed_workspace = seal_workspace(descriptor.cwd, descriptor.branch, workspace_contract) if hasattr(self.dispatcher, 'resolve_execution_workspace') else {}
         assert prepared_policy is not None
         linear_project = self._linear_project_name()
         description_lines = [

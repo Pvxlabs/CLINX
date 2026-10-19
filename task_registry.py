@@ -35,6 +35,11 @@ class TaskRegistryError(RuntimeError):
     pass
 
 
+class WorkItemFingerprintConflict(TaskRegistryError):
+    code = "WORK_ITEM_FINGERPRINT_CONFLICT"
+    side_effect = "NONE"
+
+
 class UnknownTaskError(TaskRegistryError):
     pass
 
@@ -1485,6 +1490,7 @@ class TaskRegistry:
             stamp, 0, None, 0, route_json, policy_json,
         )
         with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute(
                 """INSERT INTO tasks
                 (task_id,host,workspace_alias,project_alias,project_name,cwd,
@@ -1574,6 +1580,22 @@ class TaskRegistry:
                    VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET fingerprint=excluded.fingerprint""",
                 (task_id, fingerprint, _now()),
             )
+
+    @staticmethod
+    def _ensure_work_item_fingerprint(conn, task_id: str, fingerprint: str, stamp: str) -> None:
+        """Insert or compare under the caller's write transaction; never replace a conflict."""
+        existing = conn.execute(
+            "SELECT fingerprint FROM work_item_fingerprints WHERE task_id=?", (task_id,)
+        ).fetchone()
+        if existing is not None:
+            if existing['fingerprint'] != fingerprint:
+                raise WorkItemFingerprintConflict(
+                    "WORK_ITEM_FINGERPRINT_CONFLICT: canonical task identity differs")
+            return
+        conn.execute(
+            "INSERT INTO work_item_fingerprints(task_id,fingerprint,created_at) VALUES (?,?,?)",
+            (task_id, fingerprint, stamp),
+        )
 
     def find_active_work_item(
         self, *, fingerprint: str, exclude_task_id: str | None = None
@@ -2103,9 +2125,22 @@ class TaskRegistry:
                 (thread_id, host),
             ).fetchone()
             if existing is not None:
-                raise TaskRegistryError(
-                    f"Thread {thread_id} is already bound to task {existing['task_id']}"
-                )
+                task_id = existing['task_id']
+                task = conn.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+                binding = conn.execute("SELECT * FROM conversation_bindings WHERE task_id=?", (task_id,)).fetchone()
+                native = conn.execute("SELECT 1 FROM native_task_bindings WHERE task_id=? AND host=? AND thread_id=?",
+                                      (task_id, host, thread_id)).fetchone()
+                if (task['cwd'] != cwd or task['workspace_alias'] != workspace_alias
+                        or task['project_alias'] != project_alias or task['repository_origin'] != repository_origin
+                        or task['branch'] != branch or binding['session_id'] != session_id
+                        or binding['project_id'] != project_id):
+                    raise TaskRegistryError("ADOPTION_IDENTITY_CONFLICT: existing conversation identity differs")
+                fingerprint = self.canonical_work_item_fingerprint(
+                    host=task['host'], project_alias=task['project_alias'], cwd=task['cwd'],
+                    repository_origin=task['repository_origin'], title=task['title'] if native else title,
+                    summary=task['summary'] if native else summary, task_key=task_key)
+                self._ensure_work_item_fingerprint(conn, task_id, fingerprint, stamp)
+                return TaskRecord(**dict(task)), ConversationBinding(**dict(binding))
             native = conn.execute("SELECT * FROM native_task_bindings WHERE host=? AND provider='codex_app_server' AND thread_id=? LIMIT 2", (host, thread_id)).fetchall()
             if len(native) > 1:
                 raise TaskRegistryError("NATIVE_IDENTITY_AMBIGUOUS: explicit node required")
@@ -2113,9 +2148,32 @@ class TaskRegistry:
                 old_task = conn.execute("SELECT * FROM tasks WHERE task_id=?", (native[0]["task_id"],)).fetchone()
                 if old_task["cwd"] != cwd or old_task["workspace_alias"] != workspace_alias or old_task["project_alias"] != project_alias:
                     raise TaskRegistryError("NATIVE_IDENTITY_CONFLICT: adoption project route differs")
+                if (old_task['repository_origin'] not in (None, repository_origin)
+                        or old_task['branch'] not in (None, branch)):
+                    raise TaskRegistryError("NATIVE_IDENTITY_CONFLICT: adoption repository identity differs")
                 task_id = old_task["task_id"]
+                # Check the pre-enrichment identity first. Native admission may
+                # already have been fingerprinted by registry initialization.
+                old_fingerprint = self.canonical_work_item_fingerprint(
+                    host=old_task['host'], project_alias=old_task['project_alias'], cwd=old_task['cwd'],
+                    repository_origin=old_task['repository_origin'], title=old_task['title'],
+                    summary=old_task['summary'], task_key=old_task['task_key'])
+                self._ensure_work_item_fingerprint(conn, task_id, old_fingerprint, old_task['created_at'])
+                title, summary = old_task['title'], old_task['summary']
                 # Explicit adopt reuses identity; it does not create an execution.
                 conn.execute("UPDATE tasks SET routing_identity_json=?,repository_origin=?,branch=? WHERE task_id=?", (route_json, repository_origin, branch, task_id))
+                fingerprint = self.canonical_work_item_fingerprint(
+                    host=host, project_alias=project_alias, cwd=cwd,
+                    repository_origin=repository_origin, title=title, summary=summary, task_key=task_key)
+                # The only allowed change is the verified repository enrichment
+                # above, atomically with adoption. Preserve original created_at.
+                conn.execute("UPDATE work_item_fingerprints SET fingerprint=? WHERE task_id=?",
+                             (fingerprint, task_id))
+            if conn.execute("SELECT 1 FROM conversation_bindings WHERE task_id=? OR thread_id=?",
+                            (task_id, thread_id)).fetchone() or conn.execute(
+                    "SELECT 1 FROM conversation_adoptions WHERE task_id=? OR thread_id=?",
+                    (task_id, thread_id)).fetchone():
+                raise TaskRegistryError("ADOPTION_IDENTITY_CONFLICT: conversation already has an owner")
             conn.execute(
                 """INSERT OR IGNORE INTO tasks
                 (task_id,host,workspace_alias,project_alias,project_name,cwd,
@@ -2149,10 +2207,7 @@ class TaskRegistry:
                 repository_origin=repository_origin, title=title,
                 summary=summary, task_key=task_key,
             )
-            conn.execute(
-                "INSERT INTO work_item_fingerprints(task_id,fingerprint,created_at) VALUES (?,?,?)",
-                (task_id, fingerprint, stamp),
-            )
+            self._ensure_work_item_fingerprint(conn, task_id, fingerprint, stamp)
         task = self.get_task(task_id)
         binding = self.get_binding(task_id)
         assert binding is not None
@@ -2398,6 +2453,14 @@ class TaskRegistry:
             )},
         )
         with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT * FROM prepared_executions WHERE integrity_hash=? AND status='PREPARED' "
+                "ORDER BY created_at LIMIT 1", (record.integrity_hash,),
+            ).fetchone()
+            if existing is not None:
+                # Verify persisted content rather than trusting an index value.
+                return self.verify_prepared_execution(existing['prepared_execution_ref'])
             conn.execute(
                 """INSERT INTO prepared_executions
                 (prepared_execution_ref,integrity_hash,approval_state,task_action,task_ref,

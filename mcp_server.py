@@ -878,11 +878,8 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
                 'description': 'Optional legacy task context forwarded to native Codex. CLINX does not validate operation names or repository target scopes.'}
             tool['inputSchema']['properties']['network_access'].pop('default', None)
             properties = tool['inputSchema']['properties']
-            properties['workspace_contract'] = _json_schema({
-                'cwd': {'type': 'string', 'minLength': 1},
-                'branch': {'type': 'string', 'minLength': 1},
-                'head': {'type': 'string', 'pattern': '^[0-9a-f]{40}$'},
-            }, ['cwd', 'branch', 'head'])
+            from workspace_contract import workspace_contract_schema
+            properties['workspace_contract'] = workspace_contract_schema()
             properties['network_access']['description'] = 'Explicit task-authorized outbound network capability. Default false on create; continuation inherits sealed policy and rejects changes.'
             tool['outputSchema']['properties']['workspace_contract'] = {'type': 'object'}
             for name in ('execution_surface', 'required_capabilities', 'operation_classes', 'production_mutation_intent'):
@@ -974,6 +971,7 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
         if tool["name"] == "clinx_prepare_execution":
             for field in RELAY_INPUT_FIELDS:
                 tool["inputSchema"]["properties"].pop(field, None)
+            tool['outputSchema']['properties']['summary'] = {'type': ['string', 'null']}
             for field in ("model", "reasoning_effort"):
                 tool["inputSchema"]["properties"][field]["description"] = "Optional explicit Codex parameter. Omit to inherit the conversation setting."
         if tool["name"] in {"clinx_prepare_execution", "clinx_start_execution"}:
@@ -986,6 +984,8 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
                 "execution_backend": {"type": "string", "const": "CODEX_NATIVE"},
                 "runtime_configuration": {"type": "string", "const": "SEALED_TASK_POLICY"},
             })
+        if tool['name'] == 'clinx_prepare_execution':
+            tool['outputSchema']['properties']['workspace_contract'] = workspace_contract_schema()
         if tool["name"] == "clinx_get_status":
             tool["outputSchema"]["properties"]["workspace_contract"] = {"type": "object"}
         if tool["name"] == "clinx_get_capabilities":
@@ -1030,7 +1030,11 @@ def _public_json(value: Any, *, native_identity: bool = False) -> Any:
         forbidden -= {'thread_id', 'threadId', 'session_id', 'sessionId', 'turn_id', 'turnId', 'cwd'}
     if isinstance(value, dict):
         return {
-            key: _public_json(item, native_identity=native_identity)
+            # The exact three-field workspace seal is a public contract. Keep
+            # cwd/branch here while continuing to scrub internal routing fields.
+            key: (dict(item) if key == 'workspace_contract' and isinstance(item, dict)
+                  and set(item) == {'cwd', 'branch', 'head'}
+                  else _public_json(item, native_identity=native_identity))
             for key, item in value.items()
             if key not in forbidden
         }
@@ -1100,6 +1104,9 @@ class ClinxMCPServer:
         elif name == "clinx_revoke_derived_git_target":
             result = self.integration.revoke_derived_git_target(**arguments)
         elif name == "clinx_prepare_execution":
+            if 'workspace_contract' in arguments:
+                from workspace_contract import validate_workspace_contract
+                validate_workspace_contract(arguments['workspace_contract'])
             result = self.integration.prepare_execution(**arguments)
         elif name == "clinx_start_execution":
             unexpected = set(arguments) - {"prepared_execution_ref", "approved", "expected_request_hash", "expected_task_ref"}
