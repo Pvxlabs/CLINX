@@ -5,6 +5,9 @@ proxy startup, resume, unsubscribe or dynamic-tool response on the read plane.
 """
 import os
 from pathlib import Path
+import shlex
+import subprocess
+import sys
 
 from app_server import AppServerError, AppServerProtocolError, CodexAppServerClient, UnixSocketTransport
 
@@ -66,6 +69,68 @@ def observe_thread(cfg, tid):
             'owner_endpoint': loaded[0]['endpoint'] if len(loaded) == 1 else None,
             'ownership_conflict': len(loaded) > 1, 'observations': observations,
             'source': 'LIVE_PROVIDER_OBSERVATION', 'writer_claimed': False}
+
+
+def observe_native_writer(root, tid, turn_id, project):
+    """Observe a same-user macOS Desktop writer without connecting to its RPC.
+
+    Both the exact thread lock and its indexed rollout must be open for writing
+    by one Codex app-server. Recheck the exact unfinished native turn afterwards.
+    File existence or a living process alone never establishes running state.
+    """
+    from native_history import NativeHistory, ThreadLookupError
+    unknown = {'liveness': 'UNKNOWN', 'reason': 'NATIVE_WRITER_UNPROVEN'}
+    if sys.platform != 'darwin':
+        return unknown
+    history = NativeHistory(root)
+    try:
+        metadata = history.metadata(tid)
+        if not metadata or metadata['cwd'] != project:
+            return unknown
+        before = history.status(tid, metadata)
+        if before.get('turn_id') != turn_id or before['state'] != 'RUNNING' or before.get('completed_at') is not None:
+            return unknown
+        rollout = history._path(tid, metadata)
+        lock = history.root / 'thread-writer-locks' / (tid + '.lock')
+        if not lock.is_file() or lock.is_symlink():
+            return unknown
+        expected = {str(lock.resolve()), str(rollout)}
+        result = subprocess.run(['/usr/sbin/lsof', '-n', '-P', '-Fpcuftan', '--', str(lock), str(rollout)],
+                                capture_output=True, text=True, timeout=2)
+        if result.returncode or len(result.stdout) > 32768:
+            return unknown
+        processes = []; current = None; access = None
+        for line in result.stdout.splitlines():
+            key, value = line[:1], line[1:]
+            if key == 'p':
+                current = {'pid': int(value), 'files': set()}; processes.append(current)
+            elif current is not None:
+                if key in ('c', 'u'):
+                    current[key] = value
+                elif key == 'f':
+                    access = None
+                elif key == 'a':
+                    access = value
+                elif key == 'n' and access in ('u', 'w'):
+                    current['files'].add(value)
+        owners = [p for p in processes if p.get('u') == str(os.getuid())
+                  and p.get('c') == 'codex' and expected <= p['files']]
+        if len(owners) != 1:
+            return unknown
+        pid = owners[0]['pid']
+        command = subprocess.run(['/bin/ps', '-p', str(pid), '-o', 'command='],
+                                 capture_output=True, text=True, timeout=2)
+        args = shlex.split(command.stdout)
+        if command.returncode or not args or Path(args[0]).name != 'codex' or 'app-server' not in args:
+            return unknown
+        current_metadata = history.metadata(tid)
+        identity_fields = ('id', 'cwd', 'rollout_path', 'history_mode')
+        if (not current_metadata or any(current_metadata.get(k) != metadata.get(k) for k in identity_fields)
+                or history.status(tid, metadata) != before):
+            return unknown
+        return {'liveness': 'LIVE', 'reason': 'NATIVE_WRITER_PROCESS', 'writer_pid': pid}
+    except (OSError, ValueError, subprocess.SubprocessError, ThreadLookupError):
+        return unknown
 
 
 def select_writer_client(cfg, tid, *, host_tools=False):

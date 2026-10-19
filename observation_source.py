@@ -30,11 +30,13 @@ def order(value, fallback=0):
 
 class CodexObservationSource:
     provider = SUPPORTED_PROVIDER
-    def __init__(self, root, node_id, canonical_db=None, owner_host=None, provider_config=None):
+    def __init__(self, root, node_id, canonical_db=None, owner_host=None, provider_config=None,
+                 native_writer_observation=False):
         self.history=NativeHistory(root)
         self.node_id=node_id
         self.canonical_db=Path(canonical_db) if canonical_db else None
         self.provider_config=provider_config
+        self.native_writer_observation=native_writer_observation
         self.live_cache={}
         from execution_semantics import normalize_host
         self.owner_host=normalize_host(owner_host or node_id).stable_identifier
@@ -172,7 +174,7 @@ class CodexObservationSource:
             coverage="HISTORY_BACKFILL"
         if not turns: turns=[{"turn_id":None,"ordinal":0,"native_state":"UNKNOWN"}]
         latest=max(turns,key=lambda t:t["ordinal"])
-        if self.provider_config and latest.get("turn_id") and latest.get("native_state")=="RUNNING":
+        if (self.provider_config or self.native_writer_observation) and latest.get("turn_id") and latest.get("native_state")=="RUNNING":
             latest["live_observation"]=self._observe_live(tid,metadata["cwd"],latest["turn_id"])
         state["active"]=any(t.get("native_state")=="RUNNING" or t.get("execution_state") in ("CODEX_RUNNING","FINALIZING","TURN_STARTED") for t in turns)
         task_refs={t["task_ref"] for t in canonical}
@@ -197,6 +199,14 @@ class CodexObservationSource:
         cached=self.live_cache.get(tid)
         if cached and cached["turn_id"]==turn_id and 0<=stamp-cached["observed_at"]<10:
             return cached
+        if self.native_writer_observation:
+            from native_provider import observe_native_writer
+            evidence=observe_native_writer(self.history.root,tid,turn_id,project)
+            proof=dict(thread_id=tid,turn_id=turn_id,observed_at=stamp,
+                liveness=evidence["liveness"],reason=evidence["reason"])
+            self.live_cache[tid]=proof
+            if len(self.live_cache)>128: self.live_cache.pop(next(iter(self.live_cache)))
+            return proof
         rows=observe_thread(self.provider_config,tid)["observations"]
         evidence=classify(rows,tid,turn_id)
         owner=next((r for r in rows if r.get("endpoint")==evidence["owner_endpoint"]),{})

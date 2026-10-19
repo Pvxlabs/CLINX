@@ -29,6 +29,9 @@ def configured_observation_source(native_home, node_id, config):
     from observation_source import CodexObservationSource
     provider = None
     path = config.get("observation_provider_config")
+    native_writer = config.get("observation_native_writer", False)
+    if type(native_writer) is not bool or (native_writer and path is not None):
+        raise ValueError("Invalid native writer observation route")
     if path is not None:
         if not isinstance(path, str) or not path.strip():
             raise ValueError("Invalid observation_provider_config")
@@ -36,7 +39,7 @@ def configured_observation_source(native_home, node_id, config):
         provider = BridgeConfig.load(Path(path).expanduser())
     return CodexObservationSource(native_home, node_id,
         config.get("observation_canonical_db"), config.get("observation_owner_host"),
-        provider_config=provider)
+        provider_config=provider,native_writer_observation=native_writer)
 
 
 def main() -> int:
