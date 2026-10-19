@@ -475,10 +475,16 @@ class TaskRegistry:
         *,
         shadow_events: bool = False,
         shadow_fault_injector: Any = None,
+        initialize: bool = True,
     ):
         self.path = Path(path).expanduser()
         self.shadow_events_enabled = bool(shadow_events)
         self._shadow_store: Any = None
+        if not initialize:
+            # Exact maintenance must not run global migrations/reclaim on open.
+            if not self.path.is_file() or shadow_events:
+                raise TaskRegistryError('existing maintenance registry required')
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             self._initialize()
@@ -2463,6 +2469,12 @@ class TaskRegistry:
 
     def mark_prepared_execution_running(self, prepared_execution_ref: str) -> PreparedExecutionRecord:
         record = self.verify_prepared_execution(prepared_execution_ref)
+        with self._connect() as conn:
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE name='execution_recovery_audit'").fetchone():
+                audit = conn.execute('SELECT owner_evidence_json FROM execution_recovery_audit WHERE execution_ref=?',
+                                     ('exec_' + prepared_execution_ref.removeprefix('prepared_'),)).fetchone()
+                if audit and json.loads(audit[0]).get('kind') == 'MODEL_RESOLUTION_TURN_NOT_DISPATCHED_V1':
+                    raise TaskRegistryError('PREPARED_EXECUTION_CONSUMED: reconciled pre-turn failure; no replay')
         if record.status == "DISPATCHED":
             return record
         if record.status == "FAILED" and any(
@@ -2969,6 +2981,57 @@ class TaskRegistry:
         with self._connect() as conn:
             return conn.execute("SELECT 1 FROM worktree_leases WHERE execution_ref=? LIMIT 1",
                                 (execution_ref,)).fetchone() is not None
+
+    def reconcile_undispatched_model_failure(self, execution_ref, proof):
+        """Commit terminal/audit before exact lease release; restart-idempotent."""
+        from unstarted_recovery import KIND, deny, identity, snapshot, validate, validate_replay
+        if proof.get('kind') != KIND or proof.get('identity', {}).get('execution_ref') != execution_ref:
+            deny('INVALID_PROOF')
+        with self._shadow_write_connection(atomic=True) as conn:
+            rows = snapshot(self, execution_ref, conn)
+            expected = proof['identity']
+            if identity(rows) != expected:
+                deny('COMMIT_IDENTITY_CONFLICT')
+            if rows['audit']:
+                validate_replay(self, rows, expected)
+                idempotent = True
+            else:
+                if rows != proof['snapshot']:
+                    deny('SNAPSHOT_CHANGED')
+                import time
+                if not 0 <= time.time() - proof.get('observed_at', 0) <= 120:
+                    deny('PROOF_STALE')
+                validate(self, rows, live_callsite=proof.get('source') == 'LIVE_RESOLVER_CALLSITE')
+                stamp = _now()
+                conn.execute('''CREATE TABLE IF NOT EXISTS execution_recovery_audit (
+                    execution_ref TEXT PRIMARY KEY,recovered_at TEXT NOT NULL,
+                    previous_execution_json TEXT NOT NULL,previous_task_json TEXT NOT NULL,
+                    owner_evidence_json TEXT NOT NULL)''')
+                conn.execute('INSERT INTO execution_recovery_audit VALUES (?,?,?,?,?)',
+                    (execution_ref, stamp, json.dumps(rows['execution'], sort_keys=True),
+                     json.dumps(rows['task'], sort_keys=True), json.dumps(proof, sort_keys=True)))
+                conn.execute("""UPDATE executions SET stage='BLOCKED',execution_state='BLOCKED',
+                    failure_stage='MODEL_RESOLUTION',failure_code='TURN_NOT_DISPATCHED',failure_evidence=?
+                    WHERE execution_ref=? AND turn_id IS NULL""", (proof['original_error'], execution_ref))
+                conn.execute("""UPDATE tasks SET execution_state='BLOCKED',current_stage='BLOCKED',
+                    codex_running=0,retry_required=1,current_blocker=?,failure_stage='MODEL_RESOLUTION',
+                    failure_code='TURN_NOT_DISPATCHED',failure_evidence=?,updated_at=?,last_progress_at=?
+                    WHERE task_id=?""", (proof['original_error'], proof['original_error'], stamp, stamp, expected['task_id']))
+                conn.execute("UPDATE prepared_executions SET status='FAILED',updated_at=? WHERE prepared_execution_ref=?",
+                             (stamp, expected['prepared_execution_ref']))
+                self._append_shadow_observation(conn, task_id=expected['task_id'], execution_ref=execution_ref,
+                    event_type='V1TerminalStateObserved', observed_at=stamp,
+                    payload=dict(execution_state='BLOCKED', current_stage='BLOCKED', codex_running=False,
+                                 turn_id=None, failure_code='TURN_NOT_DISPATCHED', recovery_kind=KIND))
+                idempotent = False
+        # Deliberately a second commit: any interruption here leaves a durable
+        # terminal decision + original evidence and a safely retained lease.
+        if rows['execution'] is not None:
+            self.release_execution(expected['task_id'], execution_ref, retain_history=True,
+                                   _unstarted_reconciled=True)
+        return dict(execution_ref=execution_ref, task_id=expected['task_id'], thread_id=expected['thread_id'],
+                    state='BLOCKED', failure_code='TURN_NOT_DISPATCHED', reconciled=True,
+                    execution_started=False, replay_performed=False, idempotent=idempotent)
 
     def confirm_pre_turn_absence(self, execution_ref, proof):
         """Canonical maintenance barrier after fresh owning-Provider absence proof."""
@@ -4076,6 +4139,7 @@ class TaskRegistry:
         *,
         retain_history: bool = False,
         _delivery_reconciled: bool = False,
+        _unstarted_reconciled: bool = False,
     ) -> None:
         """Release the mutable lease, optionally archiving execution history.
 
@@ -4090,18 +4154,30 @@ class TaskRegistry:
         with self._shadow_write_connection(atomic=True) as conn:
             if execution_ref:
                 row = conn.execute(
-                    "SELECT worktree_key,execution_ref,execution_state,stage,turn_id FROM executions "
+                    "SELECT worktree_key,execution_ref,execution_state,stage,turn_id,failure_code FROM executions "
                     "WHERE task_id=? AND execution_ref=?",
                     (task_id, execution_ref),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "SELECT worktree_key,execution_ref,execution_state,stage,turn_id "
+                    "SELECT worktree_key,execution_ref,execution_state,stage,turn_id,failure_code "
                     "FROM executions WHERE task_id=?",
                     (task_id,),
                 ).fetchone()
             from execution_liveness import release_allowed
-            if row is not None and not _delivery_reconciled and (
+            if _unstarted_reconciled and row is not None:
+                from unstarted_recovery import KIND, deny
+                audit = conn.execute('SELECT owner_evidence_json FROM execution_recovery_audit WHERE execution_ref=?',
+                                     (execution_ref,)).fetchone()
+                proof = json.loads(audit[0]) if audit else {}
+                if (proof.get('kind') != KIND or proof.get('identity', {}).get('task_id') != task_id
+                        or proof.get('identity', {}).get('execution_ref') != execution_ref
+                        or proof.get('identity', {}).get('worktree_key') != row['worktree_key']
+                        or row['stage'] != 'BLOCKED' or row['execution_state'] != 'BLOCKED'
+                        or row['failure_code'] != 'TURN_NOT_DISPATCHED'
+                        or row['turn_id'] is not None):
+                    deny('RELEASE_WITHOUT_COMMITTED_AUDIT')
+            if row is not None and not (_delivery_reconciled or _unstarted_reconciled) and (
                     row["stage"] == "RECOVERY_REQUIRED" or
                     not release_allowed(conn, row["execution_ref"])):
                 raise TaskRegistryError("lease release requires fresh exact owner terminal evidence")

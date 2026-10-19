@@ -1,0 +1,77 @@
+{
+  "provenance": {
+    "source": "read-only selective export; no full database copy",
+    "source_execution": "exec_4eeeec1558de42a0b067e198a077998f",
+    "sanitization": "No prompt, title, user content, credentials or runtime configuration. Test factory replaces request identity and reseals sanitized preparation."
+  },
+  "execution": {
+    "stage": "CANCELLATION_PENDING",
+    "execution_state": "CANCELLATION_PENDING",
+    "turn_id": null,
+    "acquired_at": "2026-10-18T19:33:28.215711+00:00",
+    "failure_stage": "cancel",
+    "failure_code": "PROVIDER_UNAVAILABLE",
+    "failure_evidence": "turn/interrupt failed (code -32600): no active turn to interrupt"
+  },
+  "task": {
+    "execution_state": "CANCELLATION_PENDING",
+    "turn_id": "01a1505a-ac9c-7673-abf1-76072430f3fc",
+    "codex_running": 0
+  },
+  "prepared": {
+    "status": "PREPARED",
+    "model": "gpt-6",
+    "reasoning_effort": "high",
+    "created_at": "2026-10-18T19:33:21.971799+00:00",
+    "updated_at": "2026-10-18T19:33:28.978631+00:00"
+  },
+  "owner": {
+    "state": "UNKNOWN",
+    "registered_at": 1792352007.0320466,
+    "updated_at": 1792352008.9827182,
+    "response_json": {
+      "error": "model 'gpt-6' is unsupported or ambiguous",
+      "failure_details": {
+        "failure_code": "MODEL_CAPABILITY_UNAVAILABLE",
+        "failure_stage": "MODEL_RESOLUTION",
+        "failure_source": "PROVIDER",
+        "failure_reason": "model 'gpt-6' is unsupported or ambiguous",
+        "server_received": true,
+        "caller_approval": "NOT_OBSERVED",
+        "correlation": {
+          "request_ref": "prepared_4eeeec1558de42a0b067e198a077998f",
+          "tool": "clinx_start_execution",
+          "task_ref": "task_e7f16a8e7d604ba78200b07605ce3547",
+          "execution_ref": "exec_4eeeec1558de42a0b067e198a077998f",
+          "request_hash": "82a6b8afcb4531106ec8d5fc3484c341bd881525fe63dd7bba24ba0259097b9f"
+        },
+        "side_effect_certainty": "UNKNOWN",
+        "outcome_certainty": "UNKNOWN",
+        "retry_allowed": false,
+        "reconciliation_required": true,
+        "recovery_action": "READ_EXACT_REQUEST_AND_EXECUTION; DO_NOT_REPLAY"
+      }
+    }
+  },
+  "lease": {
+    "stage": "CLAIMED",
+    "acquired_at": "2026-10-18T19:33:28.215758+00:00"
+  },
+  "liveness": {
+    "execution_ref": "exec_4eeeec1558de42a0b067e198a077998f",
+    "thread_id": "01a15005-33d0-7490-a095-6ec136f21482",
+    "turn_id": "",
+    "provider_liveness": "UNKNOWN",
+    "transport_health": "UNAVAILABLE",
+    "liveness_reason": "RECOVERY_REQUIRES_OWNER_OBSERVATION",
+    "owner_endpoint": null,
+    "ownership_conflict": 0,
+    "last_provider_activity_at": null,
+    "last_live_owner_at": null,
+    "unknown_since": 1792352008.2364578,
+    "observed_at": 1792352008.2364578,
+    "release_safe": 0,
+    "observations_json": "[]"
+  },
+  "policy": "{\"business_action_authority\":false,\"contract\":\"CLINX_EXECUTION_POLICY_V1\",\"execution_surface\":\"SANDBOX_WORKSPACE\",\"host_executor_default\":false,\"operation_classes\":[],\"production_mutation_intent\":false,\"required_capabilities\":[]}"
+}

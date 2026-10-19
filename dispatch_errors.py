@@ -43,6 +43,9 @@ def failure_details(name, arguments, exc, registry=None):
             certainty = 'NOT_EXECUTED'
     if getattr(exc, 'side_effect', None) == 'NONE':
         certainty = 'NOT_EXECUTED'
+    proven_unstarted = getattr(exc, 'turn_not_dispatched', False)
+    if proven_unstarted:
+        code, stage, certainty = 'TURN_NOT_DISPATCHED', 'MODEL_RESOLUTION', 'NOT_EXECUTED'
     request_ref = arguments.get('prepared_reauthorization_ref') or arguments.get('prepared_execution_ref') or arguments.get('request_ref')
     correlation = {k: arguments[k] for k in ('task_ref', 'execution_ref') if k in arguments}
     correlation.update(request_ref=request_ref, tool=name)
@@ -55,7 +58,9 @@ def failure_details(name, arguments, exc, registry=None):
                                request_hash=evidence.get('request_hash'))
             if evidence.get('request_state') == 'APPLIED':
                 certainty = 'APPLIED'
-            elif evidence.get('request_state') in {'RUNNING', 'DISPATCHED'} or evidence.get('execution_present'):
+            elif (evidence.get('request_state') == 'DISPATCHED' or evidence.get('turn_id')
+                    or (not proven_unstarted and (evidence.get('request_state') == 'RUNNING'
+                                                 or evidence.get('execution_present')))):
                 # Persistence establishes association, not Provider running/completion.
                 certainty = 'UNKNOWN'
         except Exception:

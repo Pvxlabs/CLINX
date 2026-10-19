@@ -451,6 +451,9 @@ class ExecutionFinalizer:
             retry_required=retry_required,
         )
 
+    def finalize_undispatched_model_failure(self, execution_ref: str, proof: dict) -> Any:
+        return self.registry.reconcile_undispatched_model_failure(execution_ref, proof)
+
     def finalize_pre_turn(
         self,
         *,
@@ -2377,7 +2380,10 @@ class ClinxIntegration:
             # Only a proven pre-dispatch failure can restore an unconsumed request.
             # A lost turn/start response may have started the Provider; retain
             # RUNNING and the stable execution ref for exact reconciliation.
-            if getattr(exc, 'side_effect', None) == 'NONE' or isinstance(exc, ModelCapabilityError):
+            if getattr(exc, 'turn_not_dispatched', False):
+                # The sealed attempt is terminal and audited, never reusable.
+                self.registry.fail_prepared_execution(prepared_execution_ref)
+            elif getattr(exc, 'side_effect', None) == 'NONE' or isinstance(exc, ModelCapabilityError):
                 self.registry.restore_prepared_execution(prepared_execution_ref)
             raise
         except Exception:

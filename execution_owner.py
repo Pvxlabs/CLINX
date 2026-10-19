@@ -183,7 +183,10 @@ class ExecutionOwner:
                 from dispatch_errors import failure_details, safe_reason
                 response = {'error': safe_reason(exc), 'failure_details': failure_details(
                     'clinx_start_execution', {'prepared_execution_ref': prepared}, exc, self.registry)}
-                state = 'UNKNOWN' if self.registry.get_execution_record(reference) else 'REJECTED'
+                record = self.registry.get_execution_record(reference)
+                known_unstarted = (response['failure_details'].get('failure_code') == 'TURN_NOT_DISPATCHED'
+                    and record and record.get('stage') == 'BLOCKED' and not record.get('execution_owned_turn'))
+                state = 'REJECTED' if known_unstarted or not record else 'UNKNOWN'
             with self.registry._connect() as conn:
                 conn.execute('UPDATE clinx_execution_owners SET state=?,updated_at=?,response_json=? WHERE execution_ref=?',
                              (state, time.time(), json.dumps(response), reference))

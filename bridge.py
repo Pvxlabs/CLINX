@@ -34,6 +34,7 @@ from completion_runtime import CompletionIdentity, CompletionIdentityError, Comp
 
 from app_server import (
     AppServerError,
+    ModelCapabilityError,
     CodexAppServerClient,
     LocalStdioTransport,
     SSHStdioTransport,
@@ -100,7 +101,15 @@ def _resolve_dispatch_model(client: Any, model: str | None, reasoning_effort: st
     if not callable(resolver):
         return model, reasoning_effort
     requested = model or "gpt-5.6-luna"
-    resolved_model, resolved_effort = resolver(requested, reasoning_effort)
+    try:
+        resolved_model, resolved_effort = resolver(requested, reasoning_effort)
+    except ModelCapabilityError as exc:
+        # This call site precedes thread creation/resume and turn/start.
+        # Do not attach this assertion to transport failures or lost ACKs.
+        exc.turn_not_dispatched = True
+        exc.side_effect, exc.code, exc.method = 'NONE', 'TURN_NOT_DISPATCHED', 'MODEL_RESOLUTION'
+        exc.details = dict(original_failure_code='MODEL_CAPABILITY_UNAVAILABLE', dispatch_state='TURN_NOT_DISPATCHED')
+        raise
     return resolved_model, None if inherit_effort else resolved_effort
 
 
@@ -2450,6 +2459,20 @@ class TaskDispatcher:
             failure_code=failure_code,
         )
 
+    def _finalize_model_failure(self, task_id, execution_ref, error):
+        if execution_ref is None:
+            return self._finalize_pre_turn_failure(task_id=task_id, execution_ref=None,
+                evidence=str(error), failure_code='TURN_NOT_DISPATCHED')
+        from unstarted_recovery import current_proof
+        try:
+            proof = current_proof(self.tasks, execution_ref, error)
+            return ExecutionFinalizer(self.tasks).finalize_undispatched_model_failure(execution_ref, proof)
+        except TaskRegistryError as proof_error:
+            self._execution_state(task_id, 'RECOVERY_REQUIRED', current_stage='RECOVERY_REQUIRED',
+                codex_running=False, retry_required=True, failure_code='UNSTARTED_PROOF_REJECTED',
+                failure_evidence=str(error) + '; ' + str(proof_error))
+            raise error from proof_error
+
     def _workspace(self, host: str | None) -> WorkspaceConfig:
         if host:
             try:
@@ -3263,6 +3286,9 @@ class TaskDispatcher:
                     )
                     raise
                 except AppServerError as exc:
+                    if getattr(exc, 'turn_not_dispatched', False):
+                        self._finalize_model_failure(leased.task_id, execution_ref, exc)
+                        raise
                     self._execution_state(
                         leased.task_id, "RECOVERY_REQUIRED", current_stage="dispatch",
                         current_blocker="recoverable app-server failure", codex_running=False,
@@ -3560,7 +3586,9 @@ class TaskDispatcher:
                 )
                 raise
             except AppServerError as exc:
-                if getattr(exc, 'side_effect', None) == 'NONE':
+                if getattr(exc, 'turn_not_dispatched', False):
+                    self._finalize_model_failure(leased.task_id, execution_ref, exc)
+                elif getattr(exc, 'side_effect', None) == 'NONE':
                     self._finalize_pre_turn_failure(
                         task_id=leased.task_id, execution_ref=execution_ref,
                         evidence=_context_text(str(exc), 4000), failure_code=exc.code,
@@ -3895,13 +3923,18 @@ class TaskDispatcher:
         active = self.tasks.get_active_execution(execution_ref)
         if active is None:
             raise TaskRegistryError(f"Unknown or inactive execution: {execution_ref}")
+        turn_id = active.get('execution_owned_turn')
+        if not turn_id:
+            raise TaskRegistryError('EXECUTION_TURN_UNBOUND: no exact turn; no interrupt sent')
+        if self.tasks.get_task(active['task_id']).turn_id != turn_id:
+            raise TaskRegistryError('EXECUTION_TURN_IDENTITY_CONFLICT: no interrupt sent')
         self.tasks.request_cancellation(execution_ref)
         executor = getattr(self, "host_executor", None)
         if executor is not None:
             executor.cancel_execution(execution_ref)
         task = self.tasks.get_task(active["task_id"])
         binding = self.tasks.get_binding(task.task_id)
-        if binding is None or not task.turn_id:
+        if binding is None or not turn_id:
             raise TaskRegistryError("Active execution has no exact conversation turn")
         workspace = self.workspaces.resolve(task.workspace_alias)
         project_path = self.workspaces.validate_path(workspace, Path(task.cwd))
@@ -3914,14 +3947,14 @@ class TaskDispatcher:
         bounded_items: list[dict[str, Any]] = []
         try:
             route = self._execution_route(task, execution_ref)
-            client = self._lifecycle_client(self._target(workspace, project, binding, route), read_only=False, turn_id=task.turn_id)
+            client = self._lifecycle_client(self._target(workspace, project, binding, route), read_only=False, turn_id=turn_id)
             with client:
                 client.initialize(
                     client_name=self.cfg.app_server.client_name,
                     client_title=self.cfg.app_server.client_title,
                     client_version=self.cfg.app_server.client_version,
                 )
-                client.turn_interrupt(binding.thread_id, task.turn_id)
+                client.turn_interrupt(binding.thread_id, turn_id)
         except Exception as exc:
             pending = self.tasks.mark_cancellation_pending(
                 execution_ref, evidence=str(exc)
@@ -3938,8 +3971,8 @@ class TaskDispatcher:
         if getattr(client, "execution_route_evidence", None) is not None:
             from native_provider import observe_execution
             from execution_liveness import record as record_liveness
-            evidence = observe_execution(self.cfg, binding.thread_id, task.turn_id)
-            record_liveness(self.tasks, execution_ref, binding.thread_id, task.turn_id, evidence)
+            evidence = observe_execution(self.cfg, binding.thread_id, turn_id)
+            record_liveness(self.tasks, execution_ref, binding.thread_id, turn_id, evidence)
             if not evidence["release_safe"]:
                 return {"execution_ref": execution_ref, "task_ref": task.task_id,
                         "status": "CANCELLATION_PENDING", "cancel_requested": True,
@@ -7146,6 +7179,10 @@ def build_parser() -> argparse.ArgumentParser:
     recover = sub.add_parser("recover-execution", help="Recover one exact completion; never start a turn")
     recover.add_argument("execution_ref")
     recover.add_argument("--reconcile-unstarted", action="store_true")
+    recover.add_argument("--reconcile-model-failure", action="store_true",
+                         help="Reconcile a reviewed exact pre-turn model failure; no Provider mutation")
+    recover.add_argument("--model-failure-identity-file", help="Reviewed expected identity JSON; never a caller assertion of absence")
+    recover.add_argument("--check-only", action="store_true", help="Read-only qualification of --reconcile-model-failure")
     recover.add_argument("--restore-cancelled", action="store_true",
                          help="Restore a released cancellation only with a fresh exact active owner")
     recover.add_argument("--reconcile-result", action="store_true",
@@ -7177,6 +7214,20 @@ def main() -> int:
 
     if args.command == "recover-execution":
         try:
+            if args.reconcile_model_failure:
+                if (not args.model_failure_identity_file or args.reconcile_unstarted or args.restore_cancelled
+                        or args.reconcile_result or args.reconcile_delivery):
+                    raise TaskRegistryError('model failure recovery requires only its identity file')
+                from unstarted_recovery import recover as recover_model_failure
+                # Do not initialize/migrate/reclaim or construct HostExecutor,
+                # Linear, a dispatcher or a Provider on this maintenance path.
+                registry = TaskRegistry(cfg.task_db_path, initialize=False)
+                expected = json.loads(Path(args.model_failure_identity_file).read_text())
+                result = recover_model_failure(cfg, registry, args.execution_ref, expected, check_only=args.check_only)
+                print(json.dumps(result, sort_keys=True))
+                return 0
+            if args.check_only or args.model_failure_identity_file:
+                raise TaskRegistryError('--check-only/identity-file require --reconcile-model-failure')
             if args.reconcile_delivery and (not args.tool_call_id or not args.delivery_proof_json):
                 raise TaskRegistryError("--reconcile-delivery requires --tool-call-id and --delivery-proof-json")
             delivery_reconciliation = None
