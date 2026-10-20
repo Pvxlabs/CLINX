@@ -355,11 +355,20 @@ A policy change continues to use the existing prepare/apply reauthorization APIs
 
 ### Shared native writer constraint and uncertain recovery
 
+The ordinary native-input forwarding path was repaired on 2026-10-20. Desktop
+remains the native owner: CLINX forwards the authorized message to the same
+daemon and confirms its exact `clientUserMessageId` in a native `userMessage`
+event on the returned Turn. No exclusive Task handoff, successor Thread, or
+manual adoption is required. The shared-writer refusal described below applies
+to exclusive Host dynamic-tool execution, not ordinary native task messages.
+See [native task forwarding](NATIVE_TASK_FORWARDING.md).
+
 The official `turn/start` protocol has no compare-and-start admission token.
 Two clients of one daemon can receive the same Turn ID; a successful response
-alone does not prove a new exclusive execution. Known shared-daemon creation,
+alone does not prove a new exclusive execution. Exclusive shared-daemon creation,
 resume and start therefore fail before RPC with `side_effect=NONE`, including
-Host routes and configured socket aliases. Read-only observation and authorized
+Host routes and configured socket aliases. Ordinary messages use input-confirmed
+native forwarding instead. Read-only observation and authorized
 exact-Turn cancellation remain available through their existing interfaces.
 
 The dedicated Provider is an operational boundary, not proof against arbitrary

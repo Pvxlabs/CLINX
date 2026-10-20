@@ -87,9 +87,8 @@ dns_name = "example.com"
 url = "https://example.com"
 operation_classes = ["READ_ONLY_HOST"]
 
-# M5 dynamic project resolution is bounded to this workspace.  The initial
-# qualification target must be a disposable pilot project; real development
-# projects are not selected by M5 automatically.
+# Dynamic project resolution is bounded to this workspace. CLINX has one
+# canonical source repository; retired qualification fixtures are not targets.
 [workspaces.p620]
 host = "p620"
 codex_host_ids = ["remote-ssh-discovered:p620"]
@@ -97,14 +96,6 @@ root = "/home/pvxlabs/dev"
 allow_existing_projects = true
 allow_new_projects = false
 ssh_alias = "p620"
-
-[projects.pilot]
-linear_name = "ChatGPT × Linear × Codex Dispatcher V1"
-workspace = "p620"
-cwd = "/home/pvxlabs/dev/clinx-pilot"
-repository_origin = "git@github.com:Pvxlabs/clinx-disposable-pilot.git"
-branch = "main"
-read_only = false
 
 [projects.orion]
 linear_name = "ORION"
@@ -125,25 +116,6 @@ branch = "main"
 read_only = false
 unexpected_origin_policy = "FAIL"
 
-[threads.pilot.current]
-host = "p620"
-ssh_alias = "p620"
-thread_id = "01a07474-014b-7381-a271-db9782ca3e59"
-session_id = "01a07474-014b-7381-a271-db9782ca3e59"
-app_server_version = "codex-cli 0.152.1"
-
-# The thread binding intentionally contains no cwd, origin, or branch.
-# project_id is omitted because the disposable pilot is app-server-unassigned.
-
-# Add later, only after the pilot passes:
-#
-# [[project]]
-# linear_name = "ORION"
-# repo = "/Users/tinzleung/github/ORION"
-#
-# [[project]]
-# linear_name = "Terminal"
-# repo = "/Users/tinzleung/github/terminal"
 [threads.orion.current]
 # Identity only; cwd, origin, and branch remain authoritative in projects.orion.
 host = "p620"
@@ -159,15 +131,6 @@ argv = ["/home/pvxlabs/dev/ORION/scripts/deploy/orion-release-df0ae3e-stage", "d
 [host_executor.local_commands.orion_df0_stage_core]
 operation_classes = ["PRODUCTION_MUTATION"]
 argv = ["/home/pvxlabs/dev/ORION/scripts/deploy/orion-release-df0ae3e-stage", "core"]
-
-[projects.clinx-local-discovery]
-linear_name = "CLINX Local Discovery"
-workspace = "p620"
-cwd = "/home/pvxlabs/dev/CLINX-worktrees/local-discovery-v1"
-repository_origin = "git@github.com:Pvxlabs/CLINX.git"
-branch = "codex/local-discovery-v1"
-read_only = false
-unexpected_origin_policy = "FAIL"
 
 # Candidate-independent DATA controller boundary. Inputs are identities only;
 # artifact/plan content, migrations, scope and idempotency belong to ORION.

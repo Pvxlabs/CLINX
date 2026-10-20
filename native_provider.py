@@ -9,7 +9,7 @@ import shlex
 import subprocess
 import sys
 
-from app_server import AppServerError, AppServerProtocolError, CodexAppServerClient, UnixSocketTransport
+from app_server import AppServerError, AppServerProtocolError, AppServerRemoteError, CodexAppServerClient, UnixSocketTransport
 
 
 class NativeWriterError(AppServerProtocolError):
@@ -52,8 +52,14 @@ def observe_thread(cfg, tid):
                     raise AppServerProtocolError('exact thread identity mismatch')
                 status = thread.get('status', {})
                 state = status.get('type') if isinstance(status, dict) else status
-                page = client.thread_turns_list(tid, limit=1, items_view='notLoaded')
-                turns = page['data']
+                try:
+                    turns = client.thread_turns_list(tid, limit=1, items_view='notLoaded')['data']
+                except AppServerRemoteError as exc:
+                    # Legacy history has no paged-turn reader. Its exact live
+                    # thread state is still valid routing evidence.
+                    if exc.error.get('code') != -32601:
+                        raise
+                    turns = []
                 turn = turns[0] if turns else {}
                 observations.append({'endpoint': endpoint, 'state': state or 'UNKNOWN',
                     'thread_id': tid, 'session_id': thread.get('sessionId'), 'cwd': thread.get('cwd'),
@@ -134,9 +140,27 @@ def observe_native_writer(root, tid, turn_id, project):
 
 
 def select_writer_client(cfg, tid, *, host_tools=False):
-    """Select a proved idle owner before one authorized resume; never retry resume."""
+    """Route ordinary native input, or select an isolated Host tool writer."""
     evidence = observe_thread(cfg, tid)
     rows = evidence['observations']
+    native = getattr(cfg.app_server, 'native_socket', None)
+    native_endpoint = None
+    if native:
+        from types import SimpleNamespace
+        native_endpoint = endpoints(SimpleNamespace(app_server=SimpleNamespace(local_socket=None, native_socket=native)))[0]
+    if native_endpoint and not host_tools:
+        desktop = next((r for r in rows if Path(r['endpoint']).resolve() == Path(native_endpoint).resolve()
+                        and r['state'] in {'idle', 'active', 'notLoaded', 'unloaded'}), None)
+        # Desktop is the native input owner, not a competing CLINX writer.
+        # Other daemons' idle/unknown projections cannot veto this route.
+        if desktop and (desktop['state'] in {'idle', 'active'} or all(
+                r['state'] in {'notLoaded', 'unloaded', 'OFFLINE'} for r in rows)):
+            client = existing_client(desktop['endpoint'], cfg.app_server.request_timeout_seconds, read_only=False)
+            client.writer_route_evidence = evidence
+            client.host_successor_required = False
+            client.shared_native_writer = True
+            client.native_forwarding_thread_id = tid
+            return client
     # Persisted turn status can lag a live idle observation. Only live status
     # proves an active owner; notLoaded is never an execution failure.
     if any(r['state'] == 'active' for r in rows):
@@ -152,15 +176,11 @@ def select_writer_client(cfg, tid, *, host_tools=False):
         raise NativeWriterError('NATIVE_WRITER_ENDPOINT_UNAVAILABLE', 'no configured existing endpoint is available')
     # A second client on Desktop's daemon can receive the existing turn id
     # from turn/start (implicit steer). A CLINX lease cannot fence that writer.
-    native = getattr(cfg.app_server, 'native_socket', None)
-    native_endpoint = None
-    if native:
-        from types import SimpleNamespace
-        native_endpoint = endpoints(SimpleNamespace(app_server=SimpleNamespace(local_socket=None, native_socket=native)))[0]
     # HOST execution may use a successor thread, but that is still the same
     # Canonical Task. An idle Desktop owner has not handed off its authority;
     # switching daemons must not bypass the shared-writer refusal.
-    if native_endpoint and Path(endpoint).resolve() == Path(native_endpoint).resolve():
+    shared = bool(native_endpoint and Path(endpoint).resolve() == Path(native_endpoint).resolve())
+    if shared and host_tools:
         raise NativeWriterError('NATIVE_SHARED_WRITER_NOT_QUALIFIED',
             'Desktop owns this daemon; idle observation is not an exclusive Task handoff')
     successor_required = False
@@ -173,12 +193,17 @@ def select_writer_client(cfg, tid, *, host_tools=False):
             raise NativeWriterError('HOST_PROVIDER_UNAVAILABLE', 'configured dedicated Provider is unavailable')
         successor_required = endpoint != dedicated
         endpoint = dedicated
-    if native_endpoint and Path(endpoint).resolve() == Path(native_endpoint).resolve():
+    if host_tools and native_endpoint and Path(endpoint).resolve() == Path(native_endpoint).resolve():
         raise NativeWriterError('NATIVE_SHARED_WRITER_NOT_QUALIFIED',
             'Configured Provider aliases the shared Desktop daemon')
     client = existing_client(endpoint, cfg.app_server.request_timeout_seconds, read_only=False)
     client.writer_route_evidence = evidence
     client.host_successor_required = successor_required
+    if shared:
+        # Ordinary native forwarding sends an authorized user message through
+        # the existing Desktop owner. It does not acquire exclusive ownership.
+        client.shared_native_writer = True
+        client.native_forwarding_thread_id = tid
     return client
 
 

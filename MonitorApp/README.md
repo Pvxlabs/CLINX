@@ -77,8 +77,9 @@ Keychain service and application-support directories retain their established va
 The client calls the ADR-006 GET routes, including the Activity v1 addendum. It has **no** execution controls: the
 only verbs are Copy, Show, Filter and Refresh. Opening a task shows the current
 execution and its allowlisted event evidence; event history can be `PARTIAL` or
-`UNAVAILABLE`. Progress stays “Progress unavailable” unless the Observer persists a
-canonical denominator. A task result `PASS` means only an exact structured result for that
+`UNAVAILABLE`. The stat shows the known execution state when no canonical work denominator is
+persisted. A real phase count or canonical percentage is displayed as progress; a completed
+native turn is labelled “Turn completed” and does not imply business qualification. A task result `PASS` means only an exact structured result for that
 task/execution; it is not deployment acceptance.
 
 ### Synthetic acceptance

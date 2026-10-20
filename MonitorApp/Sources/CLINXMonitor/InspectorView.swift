@@ -117,7 +117,7 @@ struct InspectorView: View {
                 .init(label: "State", value: store.status(of: task).label, mono: false),
                 .init(label: "Stage", value: task.stage, mono: true),
                 .init(label: "Activity", value: task.activityText, mono: true),
-                .init(label: "Progress", value: progressText(task), mono: false),
+                .init(label: task.progressPresentation.fieldLabel, value: progressText(task), mono: false),
                 .init(label: "Started", value: task.startedText, mono: true),
                 .init(label: "Last progress", value: task.lastProgressText, mono: false),
                 .init(label: "Duration", value: task.durationText, mono: false),
@@ -152,7 +152,7 @@ struct InspectorView: View {
         switch task.progressPresentation {
         case .determinate(let label, let done, let total): return "\(label) · \(done) / \(total)"
         case .indeterminate(let label, _): return "\(label) · in progress"
-        case .unavailable: return "Progress unavailable"
+        case .lifecycle(let label): return label
         }
     }
 
@@ -299,7 +299,7 @@ struct ExecutionHeaderView: View {
     }
 
     private var progressStat: some View {
-        stat("Progress") {
+        stat(task.progressPresentation.fieldLabel) {
             ProgressIndicator(progress: task.progressPresentation)
         }
     }

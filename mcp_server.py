@@ -351,6 +351,7 @@ def _status_output_schema() -> dict[str, Any]:
         "host_executions": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "dynamic_tool_deliveries": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "desktop_publication": {"type": ["object", "null"], "additionalProperties": True},
+        "native_forwarding": {"type": "object", "additionalProperties": True},
         "provider_delivery": {"type": "object", "additionalProperties": True},
         "execution_owner": {"type": ["object", "null"], "additionalProperties": True},
         "task_current_projection": {"type": "object", "additionalProperties": True},
@@ -685,7 +686,9 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
         {
             "name": "clinx_start_execution",
             "description": (
-                "Send the prepared task message to its native Codex conversation and start one turn. "
+                "Send the prepared task message to its native Codex conversation. Desktop-owned "
+                "conversations accept native input without an exclusive Task handoff or a replacement chat. "
+                "The receipt identifies this exact input and the actual native Turn; it does not claim an exclusive writer. "
                 "Codex may run tools, modify files or deploy services according to the task and its "
                 "native permissions. CLINX does not set sandbox configuration or grant operation permissions. "
                 "Use the user's request as approval; start directly after prepare without repeated confirmation."
@@ -705,6 +708,8 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
             ),
             "outputSchema": _json_schema({
                 "execution_started": {"type": "boolean"},
+                "native_forwarding": {"type": "object", "additionalProperties": True},
+                "workspace_contract": {"type": "object", "additionalProperties": True},
                 "codex_uri": {"type": ["string", "null"]},
                 "execution_owner": {"type": "object", "additionalProperties": True},
                 "prepared_execution_ref": {"type": "string"},
@@ -1301,7 +1306,10 @@ def build_server(
         # The node index is separate from the task DB and stores identity/status
         # only; native history stays on its owner.
         from node_protocol import NodeRecord, NodeRegistry, NodeRouter, NodeService, SharingScope
-        node_db = Path(str(registry.path) + ".nodes.sqlite3")
+        shared_registry = os.environ.get("CLINX_OBSERVATION_REGISTRY")
+        node_db = Path(shared_registry).expanduser() if shared_registry else Path(str(registry.path) + ".nodes.sqlite3")
+        if shared_registry and not node_db.is_file():
+            raise ValueError("NODE_REGISTRY_UNAVAILABLE: configured centre registry is missing")
         node_registry = NodeRegistry(node_db)
         user_scope = os.environ.get("CLINX_USER_SCOPE", os.environ.get("USER", "default"))
         node_id = os.environ.get("CLINX_NODE_ID") or cfg.runtime_host or "local"
@@ -1314,13 +1322,21 @@ def build_server(
             state="ONLINE",
             last_seen=dt.datetime.now(dt.timezone.utc).isoformat(),
         )
+        if shared_registry:
+            node_record = node_registry.get(node_id)
+            if node_record is None or node_record.user_scope != user_scope:
+                raise ValueError("NODE_REGISTRY_IDENTITY_MISMATCH: local centre node is not registered for this user")
+        if shared_registry:
+            local_scope = node_registry.scope(node_id, user_scope) or SharingScope(user_scope=user_scope)
+        else:
+            local_scope = SharingScope(user_scope=user_scope, read_sessions=True, execute_tasks=False)
         local_cfg = dataclasses.replace(cfg, node_router=None)
         from thread_identity import ThreadIdentityReader
         native_reader = ThreadIdentityReader(local_cfg, registry.path, reader)
         local_service = NodeService(
             node_record,
             node_registry,
-            scope=SharingScope(user_scope=user_scope, read_sessions=True, execute_tasks=False),
+            scope=local_scope,
             read_thread=lambda thread_id, **kwargs: native_reader.read(context=True, thread_id=thread_id, **kwargs),
             context_execution=lambda **request: native_reader.read(context=True, **{
                 key: request[key] for key in ("thread_id", "host", "project", "execution_ref",
@@ -1334,9 +1350,24 @@ def build_server(
             remote_factory = remote_client_factory(Path(identity_root).expanduser(), node_id, node_registry)
         router = NodeRouter(node_registry, user_scope=user_scope, local_node_id=node_id,
                             remote_client_factory=remote_factory)
-        router.attach(node_record, reader=lambda request: local_service.handle(request),
-                      executor=lambda operation, request: local_service.handle(dict(request, operation=operation)),
-                      scope=local_service.scope)
+        def local_read(request):
+            if shared_registry:
+                # Centre approvals can change while this MCP process is alive.
+                current_scope = node_registry.scope(node_id, user_scope) or SharingScope(user_scope=user_scope)
+                local_service.set_scope(current_scope)
+            result = local_service.handle(request)
+            if shared_registry and "*" not in current_scope.projects:
+                cwd = (result.get("native_thread") or {}).get("cwd")
+                if not cwd or not current_scope.allows_project(cwd):
+                    return {"error_code": "PROJECT_SCOPE_DENIED", "read_only": True}
+            return result
+
+        if shared_registry:
+            router.attach_existing(node_id, reader=local_read,
+                executor=lambda operation, request: local_read(dict(request, operation=operation)))
+        else:
+            router.attach(node_record, reader=local_read,
+                executor=lambda operation, request: local_read(dict(request, operation=operation)), scope=local_scope)
         cfg = dataclasses.replace(cfg, node_router=router)
     integration = ClinxIntegration(
         cfg, registry, dispatcher, reader, linear=linear, topic_reader=topic_reader
