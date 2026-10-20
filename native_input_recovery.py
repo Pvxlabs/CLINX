@@ -139,7 +139,7 @@ def recover(dispatcher, execution_ref):
             (execution_ref, task.task_id, binding.thread_id, receipt['turn_id'], time.time()))
     # The ordinary completion observer/finalizer remains the only terminal authority.
     runtime.register(CompletionIdentity(execution_ref, task.task_id, binding.thread_id, receipt['turn_id']))
-    return {**result, 'completion': dispatcher.reconcile_execution(execution_ref)}
+    return {**result, 'completion': dispatcher.reconcile_execution(execution_ref, reclaim_stale=False)}
 
 
 def recover_pending(dispatcher):

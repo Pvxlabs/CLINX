@@ -7341,7 +7341,9 @@ def main() -> int:
                         or args.model_failure_identity_file):
                     raise TaskRegistryError('native input reconciliation cannot combine recovery modes')
                 from native_input_recovery import recover as recover_native_input
-                dispatcher = TaskDispatcher(cfg, initialize_host_executor=False)
+                dispatcher = TaskDispatcher(cfg,
+                    task_registry=TaskRegistry(cfg.task_db_path, initialize=False),
+                    initialize_host_executor=False)
                 try:
                     result = recover_native_input(dispatcher, args.execution_ref)
                     print(json.dumps(result, sort_keys=True))
