@@ -4041,6 +4041,38 @@ class TaskDispatcher:
             return "PROVIDER_DISCONNECTED"
         return None
 
+    def _completion_project_path(self, task, execution_ref, prepared, binding):
+        """Observe the exact admitted workspace; do not re-admit mutable Git HEAD.
+
+        A sealed linked worktree may be outside the configured discovery root.
+        Completion only reads its bound Provider thread. It grants no filesystem
+        execution and still requires fresh exact terminal evidence to release.
+        """
+        if prepared is not None:
+            prepared = self.tasks.verify_prepared_execution(prepared.prepared_execution_ref)
+            if prepared.workspace_contract_json != "{}":
+                from workspace_contract import validate_workspace_contract
+                sealed = json.loads(prepared.workspace_contract_json)
+                validate_workspace_contract(sealed)
+                route = self._execution_route(task, execution_ref)
+                expected_key = self.tasks.worktree_key(
+                    host=task.host, cwd=task.cwd, repository_origin=task.repository_origin)
+                if (
+                    prepared.resulting_execution_ref != execution_ref
+                    or prepared.resulting_task_id != task.task_id
+                    or prepared.resulting_thread_id != binding.thread_id
+                    or prepared.resulting_turn_id != task.turn_id
+                    or route.conversation.binding != binding.thread_id
+                    or route.workspace.worktree_key != expected_key
+                    or sealed["cwd"] != task.cwd
+                    or str(Path(task.cwd).resolve()) != sealed["cwd"]
+                    or sealed["branch"] != task.branch
+                ):
+                    raise CompletionIdentityError("completion workspace differs from sealed execution")
+                return Path(sealed["cwd"])
+        workspace = self.workspaces.resolve(task.workspace_alias)
+        return self.workspaces.validate_path(workspace, Path(task.cwd))
+
     @serialized_execution
     def reconcile_execution(
         self, execution_ref: str | None = None, *, task_id: str | None = None,
@@ -4135,7 +4167,7 @@ class TaskDispatcher:
         if not exact_turn_id and not (orphaned and self.tasks.get_adoption(task.task_id)):
             return unknown("EXACT_IDENTITY_UNAVAILABLE")
         workspace = self.workspaces.resolve(task.workspace_alias)
-        project_path = self.workspaces.validate_path(workspace, Path(task.cwd))
+        project_path = self._completion_project_path(task, execution_ref, prepared, binding)
         project = ProjectMapping(
             linear_name=task.project_name, repo=project_path, alias=task.project_alias,
             repository_origin=task.repository_origin, branch=task.branch,

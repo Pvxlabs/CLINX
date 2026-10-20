@@ -93,9 +93,28 @@ final class RedesignStatusTests: XCTestCase {
 
     func testProgressPresentationUsesCanonicalDenominatorOnly() throws {
         let running = try task(try example("running_detail"))
-        XCTAssertEqual(running.progressPresentation, .unavailable)
-        XCTAssertEqual(running.progressLabel, "Progress unavailable")
+        XCTAssertEqual(running.progressPresentation, .lifecycle(label: "Running"))
+        XCTAssertNil(running.progressPercent)
+        XCTAssertEqual(running.progressPresentation.fieldLabel, "Execution")
+        XCTAssertEqual(running.progressLabel, "Running")
         XCTAssertEqual(running.progressReason, "No canonical progress denominator is available.")
+    }
+
+    func testLifecycleWithoutDenominatorNeverInventsWorkCompletion() throws {
+        for (state, label) in [("COMPLETED", "Turn completed"), ("BLOCKED", "Blocked"),
+                               ("FAILED", "Failed"), ("CANCELLED", "Cancelled"),
+                               ("UNKNOWN", "Unknown")] {
+            var record = try example("running_detail")
+            record["state"] = state
+            record["codex_running"] = false
+            record["phases"] = []
+            record["progress_percent"] = NSNull()
+            record["progress_basis"] = "NO_PERSISTED_DENOMINATOR"
+            let observed = try task(record)
+            XCTAssertEqual(observed.progressPresentation, .lifecycle(label: label))
+            XCTAssertEqual(observed.progressLabel, label)
+            XCTAssertNil(observed.progressPercent)
+        }
     }
 
     func testIncompleteExecutionNeverPresentsCompletedPhaseAsProgress() throws {

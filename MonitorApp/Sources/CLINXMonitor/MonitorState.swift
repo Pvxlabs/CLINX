@@ -28,7 +28,7 @@ extension ObservedTask {
         switch progressPresentation {
         case .determinate(let label, let done, let total): return "\(label) · \(done) / \(total)"
         case .indeterminate(let label, _): return label
-        case .unavailable: return "Progress unavailable"
+        case .lifecycle(let label): return label
         }
     }
 

@@ -15,6 +15,9 @@ struct ActivityMarkdownView: View, Equatable {
             .markdownTheme(.activity(preferences.style))
             .markdownImageProvider(ActivityImagePlaceholder())
             .markdownInlineImageProvider(ActivityImagePlaceholder())
+            // The complete Markdown block owns its height in lazy transcript rows.
+            // Paragraphs can expand internally; the outer block must report that height.
+            .fixedSize(horizontal: false, vertical: true)
             .lineLimit(nil)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)

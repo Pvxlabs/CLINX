@@ -245,7 +245,12 @@ enum AuthorityState: String {
 enum ProgressPresentation: Equatable {
     case determinate(label: String, done: Int, total: Int)
     case indeterminate(label: String, done: Int?)
-    case unavailable
+    case lifecycle(label: String)
+
+    var fieldLabel: String {
+        if case .lifecycle = self { return "Execution" }
+        return "Progress"
+    }
 
     static let unavailableReason = "No canonical progress denominator is available."
 }
@@ -272,7 +277,10 @@ extension ObservedTask {
         if !phases.isEmpty {
             return .indeterminate(label: stage, done: completedUnits > 0 ? completedUnits : nil)
         }
-        return .unavailable
+        // Native turns expose lifecycle facts, not a measurable work denominator.
+        // Keep completion separate from the business outcome in the response.
+        let label = monitorStatus == .completed ? "Turn completed" : monitorStatus.label
+        return .lifecycle(label: label)
     }
 }
 

@@ -194,12 +194,11 @@ struct ProgressIndicator: View {
 
     var body: some View {
         switch progress {
-        case .unavailable:
-            Text("Progress unavailable")
+        case .lifecycle(let label):
+            Text(label)
                 .font(DS.Font.meta)
                 .foregroundStyle(DS.Palette.textTertiary)
-                .underline()
-                .help(ProgressPresentation.unavailableReason)
+                .help("Execution state; no measurable work total is available.")
         case .indeterminate(let label, let done):
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {

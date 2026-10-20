@@ -214,6 +214,7 @@ private struct ActivityMessageView: View, Equatable {
                 Text("Message shortened to 16 KB").font(DS.Font.micro).foregroundStyle(DS.Palette.textTertiary)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
