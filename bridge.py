@@ -2955,13 +2955,20 @@ class TaskDispatcher:
 
     def start_completion_runtime(self) -> CompletionRuntime:
         if getattr(self, "_completion_runtime", None) is None:
-            from desktop_publication import DesktopPublicationOutbox
             self._completion_runtime = CompletionRuntime(self.tasks, self.reconcile_execution,
                 owner_instance=getattr(self, 'completion_owner_instance', None),
-                maintenance=(DesktopPublicationOutbox(self.tasks, self.cfg).run_once
+                maintenance=(self._native_maintenance
                              if self.cfg.app_server.native_socket else None))
         self._completion_runtime.start()
         return self._completion_runtime
+
+    def _native_maintenance(self):
+        from native_input_recovery import recover_pending
+        from desktop_publication import DesktopPublicationOutbox
+        try:
+            recover_pending(self)
+        finally:
+            DesktopPublicationOutbox(self.tasks, self.cfg).run_once()
 
     def stop_completion_runtime(self) -> None:
         if self._completion_runtime is not None:
@@ -7292,6 +7299,7 @@ def build_parser() -> argparse.ArgumentParser:
     recover = sub.add_parser("recover-execution", help="Recover one exact completion; never start a turn")
     recover.add_argument("execution_ref")
     recover.add_argument("--reconcile-unstarted", action="store_true")
+    recover.add_argument("--reconcile-native-input", action="store_true")
     recover.add_argument("--reconcile-model-failure", action="store_true",
                          help="Reconcile a reviewed exact pre-turn model failure; no Provider mutation")
     recover.add_argument("--model-failure-identity-file", help="Reviewed expected identity JSON; never a caller assertion of absence")
@@ -7327,6 +7335,19 @@ def main() -> int:
 
     if args.command == "recover-execution":
         try:
+            if args.reconcile_native_input:
+                if (args.reconcile_unstarted or args.restore_cancelled or args.reconcile_result
+                        or args.reconcile_delivery or args.reconcile_model_failure or args.check_only
+                        or args.model_failure_identity_file):
+                    raise TaskRegistryError('native input reconciliation cannot combine recovery modes')
+                from native_input_recovery import recover as recover_native_input
+                dispatcher = TaskDispatcher(cfg, initialize_host_executor=False)
+                try:
+                    result = recover_native_input(dispatcher, args.execution_ref)
+                    print(json.dumps(result, sort_keys=True))
+                    return 0
+                finally:
+                    dispatcher.stop_completion_runtime()
             if args.reconcile_model_failure:
                 if (not args.model_failure_identity_file or args.reconcile_unstarted or args.restore_cancelled
                         or args.reconcile_result or args.reconcile_delivery):
