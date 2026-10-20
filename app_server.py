@@ -1047,6 +1047,7 @@ class CodexAppServerClient:
 
     def _send_server_response(self, request: dict[str, Any]) -> None:
         if (getattr(self, 'read_only_observer', False)
+                or getattr(self, 'shared_native_writer', False)
                 or getattr(self, 'native_forwarding_thread_id', None)):
             # Desktop continues to own approvals, user input and its dynamic
             # tools. A relay must not race it with an unsupported response.
@@ -1451,9 +1452,16 @@ class CodexAppServerClient:
         forwarding = (getattr(self, 'native_forwarding_thread_id', None)
                       == (params or {}).get('threadId')
                       and getattr(self, 'native_forwarding_thread_id', None) is not None)
+        creating = (method == 'thread/start'
+                    and getattr(self, 'native_creation_cwd', None) is not None
+                    and (params or {}).get('cwd') == self.native_creation_cwd
+                    and (params or {}).get('ephemeral') is False
+                    and (params or {}).get('threadSource') == 'user'
+                    and not (params or {}).get('dynamicTools')
+                    and not (params or {}).get('developerInstructions'))
         if getattr(self, "shared_native_writer", False) and method in {
             "thread/start", "thread/resume", "turn/start",
-        } and not (forwarding and method in {'thread/resume', 'turn/start'}):
+        } and not (creating or (forwarding and method in {'thread/resume', 'turn/start'})):
             raise AppServerSharedWriterError(
                 f"Managed {method} on the shared Desktop daemon lacks atomic writer admission"
             )
@@ -1461,6 +1469,10 @@ class CodexAppServerClient:
             'initialize', 'thread/read', 'thread/turns/list', 'thread/items/list',
         } and not (method == 'thread/list' and (params or {}).get('useStateDbOnly') is True):
             raise AppServerProtocolError('Read-only native observer cannot claim or mutate a thread')
+        if creating:
+            # Consume before sending: a lost creation response must never
+            # authorize a second thread/start on this connection.
+            self.native_creation_cwd = None
         request_id = str(uuid.uuid4())
         request: dict[str, Any] = {"id": request_id, "method": method}
         if params is not None:
@@ -1719,6 +1731,8 @@ class CodexAppServerClient:
         developer_instructions: str | None = None,
     ) -> dict[str, Any]:
         """Create a native thread with visible user content and separate policy."""
+        native_creation = (getattr(self, 'shared_native_writer', False)
+                           and getattr(self, 'native_creation_cwd', None) == cwd)
         params: dict[str, Any] = {"cwd": cwd, "ephemeral": ephemeral}
         if model is not None:
             params["model"] = model
@@ -1737,6 +1751,8 @@ class CodexAppServerClient:
         result = self._request("thread/start", params)
         thread = _thread_result(result, "thread/start")
         self._owned_thread_ids.add(thread['id'])
+        if native_creation:
+            self.native_forwarding_thread_id = thread['id']
         return thread
 
     def thread_resume(

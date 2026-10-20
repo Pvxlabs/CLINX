@@ -5,7 +5,7 @@ if [ -r "$home_dir/.config/clinx/node-centre.env" ]; then
   . "$home_dir/.config/clinx/node-centre.env"
 fi
 launcher_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repo_root=${CLINX_NODE_CENTRE_RELEASE:-$(CDPATH= cd -- "$launcher_dir/.." && pwd)}
+repo_root=${CLINX_EXECUTION_OWNER_RELEASE:-${CLINX_NODE_CENTRE_RELEASE:-$(CDPATH= cd -- "$launcher_dir/.." && pwd)}}
 python_bin=${CLINX_NODE_PYTHON:-$repo_root/.venv-node/bin/python}
 codex_path=$(command -v codex)
 node_path=$(command -v node)

@@ -2939,6 +2939,20 @@ class TaskDispatcher:
             logging.getLogger(__name__).error("Desktop publication worker unavailable for thread %s: %s", target.thread_id, type(exc).__name__)
         return result
 
+    def _record_native_input(self, client, task_id, execution_ref, thread_id, turn_id):
+        receipt = getattr(client, 'native_forwarding_receipt', None)
+        if isinstance(receipt, dict) and execution_ref:
+            self.tasks.save_context_checkpoint(
+                task_id=task_id, execution_id=execution_ref,
+                thread_id=thread_id, turn_id=turn_id,
+                prompt_summary='Authorized native input forwarded',
+                result_summary='Native user-message identity confirmed; no exclusive writer claim',
+                changed_files='', validation_summary='Exact native clientId and prompt confirmed',
+                blockers='', next_state='Await exact native Turn completion',
+                source='NATIVE_INPUT_FORWARDING', provenance=json.dumps(receipt, sort_keys=True),
+            )
+        return receipt if isinstance(receipt, dict) else None
+
     def start_completion_runtime(self) -> CompletionRuntime:
         if getattr(self, "_completion_runtime", None) is None:
             from desktop_publication import DesktopPublicationOutbox
@@ -3177,9 +3191,14 @@ class TaskDispatcher:
             ) as leased:
                 self._execution_state(leased.task_id, "CLAIMED", current_stage="claim")
                 target = self._new_target(workspace, project, route)
-                client = self.client_factory(target)
                 turn = None
                 try:
+                    if (self._uses_default_client_factory and policy.execution_surface != HOST_EXECUTOR
+                            and canonical_host(target.target_host) == canonical_host(self.cfg.runtime_host)):
+                        from native_provider import new_desktop_client
+                        client = new_desktop_client(self.cfg, str(project.repo))
+                    else:
+                        client = self.client_factory(target)
                     self._execution_state(leased.task_id, "DISPATCHING", current_stage="identity guard")
                     with client:
                         initialize_info = client.initialize(
@@ -3269,6 +3288,8 @@ class TaskDispatcher:
                         if workspace_contract:
                             from workspace_contract import seal_workspace
                             seal_workspace(project.repo, project.branch, workspace_contract)
+                        if getattr(client, 'native_forwarding_thread_id', None):
+                            client.native_forwarding_request_id = execution_ref
                         turn = client.turn_start(
                             new_thread_id,
                             prompt,
@@ -3278,6 +3299,8 @@ class TaskDispatcher:
                             **({"full_access": True} if policy.execution_surface == NATIVE_FULL_ACCESS
                                else {"network_access": network_access}),
                         )
+                        native_receipt = self._record_native_input(
+                            client, leased.task_id, execution_ref, new_thread_id, turn.turn_id)
                         self._execution_state(
                             leased.task_id,
                             "CODEX_RUNNING",
@@ -3310,6 +3333,12 @@ class TaskDispatcher:
                 except AppServerError as exc:
                     if getattr(exc, 'turn_not_dispatched', False):
                         self._finalize_model_failure(leased.task_id, execution_ref, exc)
+                        raise
+                    if getattr(exc, 'side_effect', None) == 'NONE':
+                        self._finalize_pre_turn_failure(
+                            task_id=leased.task_id, execution_ref=execution_ref,
+                            evidence=_context_text(str(exc), 4000), failure_code=exc.code,
+                        )
                         raise
                     self._execution_state(
                         leased.task_id, "RECOVERY_REQUIRED", current_stage="dispatch",
@@ -3358,6 +3387,7 @@ class TaskDispatcher:
                 execution_mode=execution_mode,
                 network_access=network_access,
                 routing_identity=route.public_dict(),
+                native_forwarding=native_receipt,
             )
 
         if not task_id:
@@ -3454,7 +3484,7 @@ class TaskDispatcher:
             client = None
             turn = None
             try:
-                if (getattr(self, '_uses_default_client_factory', False) and self.cfg.app_server.local_socket
+                if (getattr(self, '_uses_default_client_factory', False)
                         and canonical_host(target.target_host) == canonical_host(self.cfg.runtime_host)):
                     from native_provider import select_writer_client
                     client = select_writer_client(self.cfg, binding.thread_id,
@@ -3582,18 +3612,8 @@ class TaskDispatcher:
                         **({"full_access": True} if policy.execution_surface == NATIVE_FULL_ACCESS
                            else {"network_access": network_access}),
                     )
-                    native_receipt = getattr(client, 'native_forwarding_receipt', None)
-                    if isinstance(native_receipt, dict) and execution_ref:
-                        self.tasks.save_context_checkpoint(
-                            task_id=leased.task_id, execution_id=execution_ref,
-                            thread_id=binding.thread_id, turn_id=turn.turn_id,
-                            prompt_summary='Authorized native input forwarded',
-                            result_summary='Native user-message identity confirmed; no exclusive writer claim',
-                            changed_files='', validation_summary='Exact native clientId and prompt confirmed',
-                            blockers='', next_state='Await exact native Turn completion',
-                            source='NATIVE_INPUT_FORWARDING',
-                            provenance=json.dumps(native_receipt, sort_keys=True),
-                        )
+                    native_receipt = self._record_native_input(
+                        client, leased.task_id, execution_ref, binding.thread_id, turn.turn_id)
                     if migration_context is not None and managed_prompt != prompt:
                         self.tasks.save_context_checkpoint(
                             task_id=task.task_id,

@@ -40,6 +40,26 @@ def existing_client(endpoint, timeout=3, *, read_only=True):
     return client
 
 
+def new_desktop_client(cfg, cwd):
+    """Create one ordinary native chat on the configured Desktop daemon.
+
+    Admission is scoped to one thread/start in this exact workspace. Once
+    created, the connection relays input to that returned thread only.
+    """
+    native = getattr(cfg.app_server, 'native_socket', None)
+    if not native:
+        raise NativeWriterError('NATIVE_DESKTOP_NOT_CONFIGURED',
+                                'ordinary native tasks require the Desktop endpoint')
+    if not isinstance(cwd, str) or not Path(cwd).is_absolute():
+        raise NativeWriterError('NATIVE_DESKTOP_INVALID_WORKSPACE', 'absolute workspace required')
+    from types import SimpleNamespace
+    endpoint = endpoints(SimpleNamespace(app_server=SimpleNamespace(local_socket=None, native_socket=native)))[0]
+    client = existing_client(endpoint, cfg.app_server.request_timeout_seconds, read_only=False)
+    client.shared_native_writer = True
+    client.native_creation_cwd = cwd
+    return client
+
+
 def observe_thread(cfg, tid):
     observations = []
     for endpoint in endpoints(cfg):
@@ -148,7 +168,10 @@ def select_writer_client(cfg, tid, *, host_tools=False):
     if native:
         from types import SimpleNamespace
         native_endpoint = endpoints(SimpleNamespace(app_server=SimpleNamespace(local_socket=None, native_socket=native)))[0]
-    if native_endpoint and not host_tools:
+    if not host_tools:
+        if not native_endpoint:
+            raise NativeWriterError('NATIVE_DESKTOP_NOT_CONFIGURED',
+                                    'ordinary native tasks require the Desktop endpoint')
         desktop = next((r for r in rows if Path(r['endpoint']).resolve() == Path(native_endpoint).resolve()
                         and r['state'] in {'idle', 'active', 'notLoaded', 'unloaded'}), None)
         # Desktop is the native input owner, not a competing CLINX writer.
@@ -161,6 +184,16 @@ def select_writer_client(cfg, tid, *, host_tools=False):
             client.shared_native_writer = True
             client.native_forwarding_thread_id = tid
             return client
+        # Never continue an ordinary task on the old dedicated Provider.
+        # Its existing active/idle thread must finish and release naturally;
+        # routing to it would recreate the Desktop writer-lock conflict.
+        if any(r['state'] == 'active' for r in rows):
+            raise NativeWriterError('NATIVE_ACTIVE_OWNER', 'the existing native turn is still running')
+        if any(r['state'] == 'idle' for r in rows):
+            raise NativeWriterError('NATIVE_LEGACY_OWNER_NOT_RELEASED',
+                                    'the legacy Provider has not yet released this thread')
+        raise NativeWriterError('NATIVE_DESKTOP_UNAVAILABLE',
+                                'the configured Desktop endpoint could not be observed')
     # Persisted turn status can lag a live idle observation. Only live status
     # proves an active owner; notLoaded is never an execution failure.
     if any(r['state'] == 'active' for r in rows):
