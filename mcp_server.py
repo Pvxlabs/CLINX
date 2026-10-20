@@ -201,7 +201,7 @@ def _execution_policy_schema() -> dict[str, Any]:
         "contract": {"type": "string", "const": "CLINX_EXECUTION_POLICY_V1"},
         "execution_surface": {
             "type": "string",
-            "enum": ["SANDBOX_WORKSPACE", "NETWORKED_SANDBOX", "HOST_EXECUTOR"],
+            "enum": ["SANDBOX_WORKSPACE", "NETWORKED_SANDBOX", "NATIVE_FULL_ACCESS", "HOST_EXECUTOR"],
         },
         "required_capabilities": {"type": "array", "items": {"type": "string"}},
         "operation_classes": {"type": "array", "items": {"type": "string"}},
@@ -504,7 +504,7 @@ MCP_INSTRUCTIONS = (
     "The user's request to send or continue work supplies approval; use approved=true "
     "without asking for the same approval again. Prepare once, then call clinx_start_execution "
     "with the returned prepared_execution_ref and approved=true. "
-    "Execution stays native Codex. Supply workspace_contract with absolute cwd, branch and full head for an isolated worktree; do not put routing requirements only in prompt. Explicit network_access=true requires task authorization; create defaults false and continuation inherits its sealed policy. "
+    "Execution stays native Codex. Supply workspace_contract with absolute cwd, branch and full head for an isolated worktree; do not put routing requirements only in prompt. Native tasks use full access with no CLINX network gate or filesystem sandbox; legacy network_access flags do not restrict execution. "
     "Do not routinely call clinx_get_prepared_request between prepare and start. "
     "After a lost response, inspect the ORIGINAL prepared request or exact execution before retrying; "
     "never submit another preparation blindly. QUEUED is not Provider running: report execution_started "
@@ -880,7 +880,7 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
             properties = tool['inputSchema']['properties']
             from workspace_contract import workspace_contract_schema
             properties['workspace_contract'] = workspace_contract_schema()
-            properties['network_access']['description'] = 'Explicit task-authorized outbound network capability. Default false on create; continuation inherits sealed policy and rejects changes.'
+            properties['network_access']['description'] = 'Deprecated compatibility input. Native Codex tasks always have network access; this flag does not impose a CLINX network restriction.'
             tool['outputSchema']['properties']['workspace_contract'] = {'type': 'object'}
             for name in ('execution_surface', 'required_capabilities', 'operation_classes', 'production_mutation_intent'):
                 properties[name]['description'] = 'Legacy task context; does not select an executor or grant authority.'
@@ -982,7 +982,7 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
             tool["outputSchema"]["properties"].update({
                 "workspace_contract": {"type": "object"},
                 "execution_backend": {"type": "string", "const": "CODEX_NATIVE"},
-                "runtime_configuration": {"type": "string", "const": "SEALED_TASK_POLICY"},
+                "runtime_configuration": {"type": "string", "const": "NATIVE_FULL_ACCESS"},
             })
         if tool['name'] == 'clinx_prepare_execution':
             tool['outputSchema']['properties']['workspace_contract'] = workspace_contract_schema()
@@ -1144,7 +1144,7 @@ class ClinxMCPServer:
             for field in ("model", "reasoning_effort"):
                 if result.get(field) == "inherit":
                     result.pop(field)
-            result.update(execution_backend="CODEX_NATIVE", runtime_configuration="SEALED_TASK_POLICY")
+            result.update(execution_backend="CODEX_NATIVE", runtime_configuration="NATIVE_FULL_ACCESS")
         return _public_json(result, native_identity=(name in {'clinx_adopt_conversation', 'clinx_get_prepared_request'} or
             (name in {'clinx_get_context', 'clinx_get_status'} and
              any(k in arguments for k in ('thread_id', 'codex_uri')))))

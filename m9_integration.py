@@ -28,6 +28,7 @@ from execution_policy import (
     OPERATION_CLASSES,
     ExecutionPolicyError,
     build_execution_policy,
+    build_development_policy,
     legacy_policy_for_route,
     parse_execution_policy,
 )
@@ -1486,9 +1487,11 @@ class ClinxIntegration:
             },
             "execution_surfaces": {"CODEX_NATIVE": {
                 "available": True, "default": True,
-                "runtime_configuration": "SEALED_TASK_POLICY",
-                "sandbox_overrides": True,
-                "network_default": False,
+                "runtime_configuration": "NATIVE_FULL_ACCESS",
+                "sandbox_overrides": False,
+                "sandbox_mode": "danger-full-access",
+                "approval_policy": "never",
+                "network_default": True,
                 "workspace_contract_required_for_isolation": True,
             }},
             "control_runtime": {"process_id": os.getpid(), "source_root": str(Path(__file__).resolve().parent)},
@@ -1501,7 +1504,7 @@ class ClinxIntegration:
                 "The user's instruction to send or continue the task supplies approval; do not ask again. "
                 "Do not search, read status, inspect authority or reread preparation as routine prerequisites. "
                 "Read the original preparation only to resolve ambiguity or a lost start response; never blindly repeat execution. "
-                "CLINX seals the task workspace and explicit network authorization, then passes workspaceWrite policy and exact cwd to Codex. Model and reasoning inherit unless explicitly supplied; approval is never widened. "
+                "CLINX forwards tasks with full native access (dangerFullAccess, approvalPolicy=never); it adds no filesystem sandbox or outbound-network gate. Legacy network_access inputs do not restrict native tasks. Exact cwd is preserved. Model and reasoning inherit unless explicitly supplied. "
                 "Task identity, duplicate prevention, execution ownership and receipts remain coordinated."
             ),
             "read_only": True,
@@ -1700,7 +1703,8 @@ class ClinxIntegration:
         checks still prevent replacing an execution that may be running.
         """
         from execution_semantics import normalize_surface, normalize_authority, normalize_network_policy
-        policy = build_execution_policy(network_access=network_access)
+        policy = build_development_policy()
+        network_access = True
         route = parse_routing_identity(task.routing_identity_json)
         if route is None:
             raise M9IntegrationError("Task execution route is unavailable")
@@ -1880,9 +1884,8 @@ class ClinxIntegration:
             prompt += ("\n\nREQUESTED OPERATION CONTEXT (user task data; CLINX does not "
                        "interpret operation names or restrict repository targets):\n"
                        + json.dumps(operation_context, ensure_ascii=False, sort_keys=True))
-        requested_network = network_access
-        if task_mode == 'new':
-            network_access = False if network_access is None else network_access
+        # Compatibility input only: CLINX no longer gates native networking.
+        network_access = True
         prepared_route = "{}"
         prepared_route_public: dict[str, Any] | None = None
         prepared_policy = None
@@ -1949,9 +1952,7 @@ class ClinxIntegration:
             prepared_route = task.routing_identity_json or "{}"
             parsed_route = parse_routing_identity(prepared_route)
             prepared_route_public = parsed_route.public_dict() if parsed_route is not None else None
-            network_access = bool(parsed_route and parsed_route.network_policy.network_access)
-            if requested_network is not None and requested_network != network_access:
-                raise M9IntegrationError('NETWORK_REAUTHORIZATION_REQUIRED: continuation cannot change sealed network policy')
+            network_access = True
             sealed_workspace = seal_workspace(descriptor.cwd, descriptor.branch, workspace_contract) if hasattr(self.dispatcher, 'resolve_execution_workspace') else {}
             task, prepared_policy = self._native_forwarding_policy(task, network_access=network_access)
             prepared_route = task.routing_identity_json
@@ -1963,7 +1964,7 @@ class ClinxIntegration:
             selected_summary = self._validated_text("summary", summary, required=False) or None
             selected_action = "create"
             selected_ref = None
-            prepared_policy = build_execution_policy(network_access=network_access)
+            prepared_policy = build_development_policy()
             if not hasattr(self.dispatcher, "resolve_project"):
                 raise M9IntegrationError("project resolver is not configured")
             workspace, descriptor, project_mapping = self.dispatcher.resolve_project(

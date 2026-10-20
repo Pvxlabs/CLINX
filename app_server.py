@@ -1858,6 +1858,7 @@ class CodexAppServerClient:
         approval_policy: str | None = None,
         network_access: bool | None = None,
         writable_roots: list[str] | None = None,
+        full_access: bool = False,
     ) -> TurnStartInfo:
         if getattr(self, "shared_native_writer", False):
             raise AppServerSharedWriterError("Managed start on the shared Desktop daemon lacks atomic writer admission")
@@ -1874,7 +1875,12 @@ class CodexAppServerClient:
             params["effort"] = reasoning_effort
         if approval_policy is not None:
             params["approvalPolicy"] = approval_policy
-        if network_access is not None:
+        if full_access:
+            # Explicitly replace a previous workspaceWrite override on this
+            # same native thread. Omitting it would preserve the old sandbox.
+            params["sandboxPolicy"] = {"type": "dangerFullAccess"}
+            params["approvalPolicy"] = "never"
+        elif network_access is not None:
             roots = writable_roots if writable_roots is not None else [cwd]
             if not isinstance(cwd, str) or not os.path.isabs(cwd):
                 raise AppServerSandboxPolicyError(
@@ -1896,10 +1902,10 @@ class CodexAppServerClient:
         try:
             result = self._request("turn/start", params)
         except AppServerRemoteError as exc:
-            if network_access:
+            if network_access or full_access:
                 raise AppServerSandboxPolicyError(
-                    "NETWORK_ACCESS=ENABLED TURN_START=BLOCKED: "
-                    f"app-server rejected or could not apply workspaceWrite network policy: {exc}"
+                    "TURN_START=BLOCKED: app-server rejected the requested native permissions: "
+                    f"{exc}"
                 ) from exc
             raise
         if not isinstance(result, dict):

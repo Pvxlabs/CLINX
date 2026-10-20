@@ -129,9 +129,11 @@ Every new production Task requires these exact scopes, including legacy register
 commands: capability/class alone is rejected by both prepare and direct dispatch.
 Historical unscoped policies remain readable and retain their sealed continuation
 behavior; they never grant the new workflows without explicit reauthorization.
-Native development remains the default. `network_access=true` enables native
-network; omission on continuation preserves the current route's value. Every
-managed turn sends its explicit network policy, including false.
+Native execution now uses `NATIVE_FULL_ACCESS`: `dangerFullAccess` with
+`approvalPolicy=never`. CLINX adds no filesystem or network sandbox. Legacy
+`network_access` inputs remain compatible but do not restrict new native turns.
+Continuation upgrades old task policy through the existing versioned transition;
+historical execution snapshots retain their original policy.
 
 Preparation rejects an unsupported required operation, wrong class/target,
 unavailable workflow executable or insufficient Task authority before starting a

@@ -63,6 +63,7 @@ from execution_semantics import (
 )
 from execution_policy import (
     build_development_policy,
+    NATIVE_FULL_ACCESS,
     DEVELOPMENT_MUTATION,
     HOST_EXECUTOR,
     ExecutionPolicy,
@@ -3133,6 +3134,8 @@ class TaskDispatcher:
                 policy = parse_execution_policy(policy)
             if policy is None:
                 policy = self._default_project_policy(project, network_access=network_access)
+            if policy.execution_surface == NATIVE_FULL_ACCESS:
+                network_access = True
             try:
                 policy.validate_new_task_authority()
             except ExecutionPolicyError as exc:
@@ -3271,7 +3274,8 @@ class TaskDispatcher:
                             cwd=str(project.repo),
                             model=executable_model,
                             reasoning_effort=executable_reasoning,
-                            network_access=network_access,
+                            **({"full_access": True} if policy.execution_surface == NATIVE_FULL_ACCESS
+                               else {"network_access": network_access}),
                         )
                         self._execution_state(
                             leased.task_id,
@@ -3391,6 +3395,11 @@ class TaskDispatcher:
             branch=task.branch,
             workspace_alias=task.workspace_alias,
         )
+        selected_policy = execution_policy or task.execution_policy_json
+        if isinstance(selected_policy, str):
+            selected_policy = parse_execution_policy(selected_policy)
+        if selected_policy and selected_policy.execution_surface == NATIVE_FULL_ACCESS:
+            network_access = True
         route = self._routing_identity(
             workspace=workspace, project=project, conversation_bound=True,
             network_access=network_access,
@@ -3565,7 +3574,8 @@ class TaskDispatcher:
                         cwd=str(project.repo),
                         model=executable_model,
                         reasoning_effort=executable_reasoning,
-                        network_access=network_access,
+                        **({"full_access": True} if policy.execution_surface == NATIVE_FULL_ACCESS
+                           else {"network_access": network_access}),
                     )
                     if migration_context is not None and managed_prompt != prompt:
                         self.tasks.save_context_checkpoint(

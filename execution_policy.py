@@ -16,11 +16,13 @@ class ExecutionPolicyError(ValueError):
 
 SANDBOX_WORKSPACE = "SANDBOX_WORKSPACE"
 NETWORKED_SANDBOX = "NETWORKED_SANDBOX"
+NATIVE_FULL_ACCESS = "NATIVE_FULL_ACCESS"
 HOST_EXECUTOR = "HOST_EXECUTOR"
 
 EXECUTION_SURFACES = (
     SANDBOX_WORKSPACE,
     NETWORKED_SANDBOX,
+    NATIVE_FULL_ACCESS,
     HOST_EXECUTOR,
 )
 
@@ -198,7 +200,7 @@ class ExecutionPolicy:
     def validate_route(self, route: RoutingIdentity) -> None:
         if route.surface.stable_identifier != self.route_surface:
             raise ExecutionPolicyError("execution policy surface does not match routing identity")
-        expected_network = self.execution_surface == NETWORKED_SANDBOX
+        expected_network = self.execution_surface in {NETWORKED_SANDBOX, NATIVE_FULL_ACCESS}
         if self.execution_surface != HOST_EXECUTOR and route.network_policy.network_access != expected_network:
             raise ExecutionPolicyError("execution policy network mode does not match routing identity")
         if not set(self.authority_scopes).issubset(set(route.authority.scopes)):
@@ -238,6 +240,8 @@ def build_execution_policy(
         raise ExecutionPolicyError("SANDBOX_WORKSPACE cannot enable network_access")
     if surface == NETWORKED_SANDBOX and not network_access:
         raise ExecutionPolicyError("NETWORKED_SANDBOX requires network_access=true")
+    if surface == NATIVE_FULL_ACCESS and not network_access:
+        raise ExecutionPolicyError("NATIVE_FULL_ACCESS requires network_access=true")
     if surface != HOST_EXECUTOR:
         if capabilities or classes or production_mutation_intent:
             raise ExecutionPolicyError(
@@ -290,8 +294,12 @@ def policy_identity(policy_json: str, route_json: str, version: int = 0) -> str:
 
 
 def build_development_policy(*, network_access: bool = False) -> ExecutionPolicy:
-    """Return native workspace authority, with network only when requested."""
-    return build_execution_policy(network_access=network_access)
+    """Native tasks use the user's full-access runtime, without CLINX limits.
+
+    network_access is retained for older callers; it cannot reintroduce a
+    sandbox or outbound-network gate into ordinary native execution.
+    """
+    return build_execution_policy(execution_surface=NATIVE_FULL_ACCESS, network_access=True)
 
 
 def parse_execution_policy(value: str | None) -> ExecutionPolicy | None:
@@ -320,7 +328,7 @@ def parse_execution_policy(value: str | None) -> ExecutionPolicy | None:
         raise ExecutionPolicyError("HOST_EXECUTOR cannot be the default")
     if raw.get("business_action_authority") is not False:
         raise ExecutionPolicyError("business action authority cannot be implicit")
-    network_access = raw.get("execution_surface") == NETWORKED_SANDBOX
+    network_access = raw.get("execution_surface") in {NETWORKED_SANDBOX, NATIVE_FULL_ACCESS}
     return build_execution_policy(
         execution_surface=raw.get("execution_surface"),
         required_capabilities=raw.get("required_capabilities"),
