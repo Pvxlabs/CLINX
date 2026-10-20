@@ -1301,7 +1301,10 @@ def build_server(
         # The node index is separate from the task DB and stores identity/status
         # only; native history stays on its owner.
         from node_protocol import NodeRecord, NodeRegistry, NodeRouter, NodeService, SharingScope
-        node_db = Path(str(registry.path) + ".nodes.sqlite3")
+        shared_registry = os.environ.get("CLINX_OBSERVATION_REGISTRY")
+        node_db = Path(shared_registry).expanduser() if shared_registry else Path(str(registry.path) + ".nodes.sqlite3")
+        if shared_registry and not node_db.is_file():
+            raise ValueError("NODE_REGISTRY_UNAVAILABLE: configured centre registry is missing")
         node_registry = NodeRegistry(node_db)
         user_scope = os.environ.get("CLINX_USER_SCOPE", os.environ.get("USER", "default"))
         node_id = os.environ.get("CLINX_NODE_ID") or cfg.runtime_host or "local"
@@ -1314,13 +1317,21 @@ def build_server(
             state="ONLINE",
             last_seen=dt.datetime.now(dt.timezone.utc).isoformat(),
         )
+        if shared_registry:
+            node_record = node_registry.get(node_id)
+            if node_record is None or node_record.user_scope != user_scope:
+                raise ValueError("NODE_REGISTRY_IDENTITY_MISMATCH: local centre node is not registered for this user")
+        if shared_registry:
+            local_scope = node_registry.scope(node_id, user_scope) or SharingScope(user_scope=user_scope)
+        else:
+            local_scope = SharingScope(user_scope=user_scope, read_sessions=True, execute_tasks=False)
         local_cfg = dataclasses.replace(cfg, node_router=None)
         from thread_identity import ThreadIdentityReader
         native_reader = ThreadIdentityReader(local_cfg, registry.path, reader)
         local_service = NodeService(
             node_record,
             node_registry,
-            scope=SharingScope(user_scope=user_scope, read_sessions=True, execute_tasks=False),
+            scope=local_scope,
             read_thread=lambda thread_id, **kwargs: native_reader.read(context=True, thread_id=thread_id, **kwargs),
             context_execution=lambda **request: native_reader.read(context=True, **{
                 key: request[key] for key in ("thread_id", "host", "project", "execution_ref",
@@ -1334,9 +1345,24 @@ def build_server(
             remote_factory = remote_client_factory(Path(identity_root).expanduser(), node_id, node_registry)
         router = NodeRouter(node_registry, user_scope=user_scope, local_node_id=node_id,
                             remote_client_factory=remote_factory)
-        router.attach(node_record, reader=lambda request: local_service.handle(request),
-                      executor=lambda operation, request: local_service.handle(dict(request, operation=operation)),
-                      scope=local_service.scope)
+        def local_read(request):
+            if shared_registry:
+                # Centre approvals can change while this MCP process is alive.
+                current_scope = node_registry.scope(node_id, user_scope) or SharingScope(user_scope=user_scope)
+                local_service.set_scope(current_scope)
+            result = local_service.handle(request)
+            if shared_registry and "*" not in current_scope.projects:
+                cwd = (result.get("native_thread") or {}).get("cwd")
+                if not cwd or not current_scope.allows_project(cwd):
+                    return {"error_code": "PROJECT_SCOPE_DENIED", "read_only": True}
+            return result
+
+        if shared_registry:
+            router.attach_existing(node_id, reader=local_read,
+                executor=lambda operation, request: local_read(dict(request, operation=operation)))
+        else:
+            router.attach(node_record, reader=local_read,
+                executor=lambda operation, request: local_read(dict(request, operation=operation)), scope=local_scope)
         cfg = dataclasses.replace(cfg, node_router=router)
     integration = ClinxIntegration(
         cfg, registry, dispatcher, reader, linear=linear, topic_reader=topic_reader

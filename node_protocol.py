@@ -893,6 +893,14 @@ class NodeRouter:
         if executor is not None:
             self._executors[record.node_id] = executor
 
+    def attach_existing(self, node_id: str, *, reader: Callable[[Mapping[str, Any]], Mapping[str, Any]], executor: Callable[[str, Mapping[str, Any]], Mapping[str, Any]] | None = None) -> None:
+        """Bind callbacks without registering identity or changing centre grants."""
+        if self.registry.get(node_id) is None:
+            raise NodeProtocolError("UNKNOWN_NODE", "Reader requires an existing centre node")
+        self._readers[node_id] = reader
+        if executor is not None:
+            self._executors[node_id] = executor
+
     def set_remote_client_factory(self, factory: Callable[[NodeRecord], Any] | None) -> None:
         self._remote_client_factory = factory
 
@@ -917,7 +925,10 @@ class NodeRouter:
             return None
         if client is None:
             return None
-        self.attach_remote(record, client)
+        self._remote_clients[record.node_id] = client
+        self.attach_existing(record.node_id, reader=lambda request: client.call(request),
+            executor=lambda operation, request: client.execute(operation, **{
+                key: value for key, value in request.items() if key != "operation"}))
         return self._readers.get(record.node_id)
 
     def nodes(self) -> list[dict[str, Any]]:
@@ -948,6 +959,16 @@ class NodeRouter:
             and not result.get("error_code")
         )
 
+    @classmethod
+    def _answered(cls, result: Mapping[str, Any], thread_id: str) -> bool:
+        """Only exact positive or proven negative replies complete a search."""
+        return cls._found(result, thread_id) or (
+            result.get("queried_thread_id") == thread_id
+            and result.get("lookup_status") == "THREAD_NOT_FOUND"
+            and result.get("provider_existence") == "NOT_FOUND"
+            and result.get("error_code") in (None, "THREAD_NOT_FOUND")
+        )
+
     def _local_reader_attached(self, record: NodeRecord) -> bool:
         # An in-process reader has no network heartbeat. Let the real read
         # establish liveness after idle; remote nodes still need freshness.
@@ -971,10 +992,12 @@ class NodeRouter:
                 result = dict(reader(request))
             except (OSError, TimeoutError, socket.timeout):
                 return {"error_code": "NODE_UNAVAILABLE", "lookup_status": "NODE_UNAVAILABLE", "coverage": {"requested_node_id": record.node_id}}
-            self.registry.touch(record.node_id)
-            return result | {"source_node_id": record.node_id, "coverage": {"requested_node_id": record.node_id, "complete": True, "nodes_queried": [record.node_id]}}
+            complete = self._answered(result, thread_id)
+            if complete:
+                self.registry.touch(record.node_id)
+            return result | {"source_node_id": record.node_id, "coverage": {"requested_node_id": record.node_id, "complete": complete, "nodes_queried": [record.node_id]}}
 
-        records = [record for record in self.registry.list_nodes(user_scope=self.user_scope, authorized_only=True) if self._reader_for(record) is not None]
+        records = self.registry.list_nodes(user_scope=self.user_scope, authorized_only=True)
         if not records:
             return {"error_code": "THREAD_LOOKUP_UNAVAILABLE", "lookup_status": "THREAD_LOOKUP_UNAVAILABLE", "coverage": {"complete": False, "nodes_queried": [], "reason": "NO_AUTHORIZED_NODES"}}
         results: list[tuple[NodeRecord, Mapping[str, Any] | None, str]] = []
@@ -987,8 +1010,10 @@ class NodeRouter:
                 if reader is None:
                     return record, None, "UNAVAILABLE"
                 result = dict(reader(request))
-                self.registry.touch(record.node_id)
-                return record, result, "OK"
+                if self._answered(result, thread_id):
+                    self.registry.touch(record.node_id)
+                    return record, result, "OK"
+                return record, result, "UNAVAILABLE"
             except (OSError, TimeoutError, socket.timeout, concurrent.futures.TimeoutError):
                 return record, None, "TIMEOUT"
             except Exception:
