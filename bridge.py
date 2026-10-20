@@ -3275,7 +3275,12 @@ class TaskDispatcher:
                             execution_ref=execution_ref,
                         )
                         client.thread_name_set(new_thread_id, task.title)
-                        self._publish_created_thread(target, task.title)
+                        if not (getattr(client, 'shared_native_writer', False)
+                                and getattr(client, 'native_forwarding_thread_id', None) == new_thread_id):
+                            # The title was just applied by the Desktop owner.
+                            # Its daemon attribution can be Codex Desktop; the
+                            # cross-daemon outbox is only for dedicated creation.
+                            self._publish_created_thread(target, task.title)
                         self._configure_host_turn(
                             client=client,
                             task_id=leased.task_id,

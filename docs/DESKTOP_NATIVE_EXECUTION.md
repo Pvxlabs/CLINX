@@ -10,6 +10,8 @@ CLINX 转交用户输入并跟踪原生 thread/turn，不另建一个专用 Prov
 thread/start。成功后只向返回的精确 thread 转交输入，确认原生 userMessage 的
 clientId、正文、item ID 和实际 turn ID，并记录 NATIVE_INPUT_FORWARDING 回执。
 Desktop 继续处理自己的 approvals、用户交互和工具请求。
+标题通过同一 Desktop 原生连接设置，不重复投递给要求 CLINX originator 的旧跨服务
+元数据 outbox；该 outbox 的历史身份校验保持不变。
 
 Desktop 未配置或不可用时明确报错，不回退至专用 Provider。
 历史专用 Provider 仍持有的活动会话等待原执行完成；空闲但未释放的旧会话明确
