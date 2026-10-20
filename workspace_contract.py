@@ -27,7 +27,7 @@ def workspace_contract_schema():
             "head": {"type": "string", "maxLength": 40, "pattern": "^[0-9a-f]{40}$"},
         },
         "description": (
-            "Optional exact Git workspace. Required when requesting a workspace in the prompt. "
+            "Optional exact Git workspace override. Natural-language workspace mentions are task context. "
             "Supply all three strings: absolute cwd, attached branch, full lowercase 40-hex HEAD. "
             "Only the registered project or its existing linked worktrees are accepted; "
             "cwd/branch/HEAD must match Git. Omission seals the configured workspace, "
@@ -74,6 +74,20 @@ def reject_unstructured_workspace(prompt):
         raise WorkspaceContractError(
             "WORKSPACE_CONTRACT_REQUIRED: supply cwd, branch and full head separately"
         )
+
+
+def workspace_from_prompt(prompt):
+    """Resolve an explicit existing checkout without asking for Git metadata.
+
+    This recognizes a path instruction, not a title or fuzzy project name.
+    Normal routing still verifies its repository before preparing any work.
+    """
+    paths = set(re.findall(
+        r"(?:工作树|工作目录|执行目录|worktree|working.directory|cwd)\s*[:=：]?\s*[`\"']?(/[^\s`\"'，。；,;]+)",
+        prompt, re.I))
+    if len(paths) > 1:
+        raise WorkspaceContractError('WORKSPACE_TARGET_AMBIGUOUS: multiple explicit checkouts')
+    return seal_workspace(next(iter(paths)), None) if paths else None
 
 
 def seal_workspace(path, branch, requested=None):

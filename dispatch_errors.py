@@ -58,6 +58,14 @@ def failure_details(name, arguments, exc, registry=None):
                                request_hash=evidence.get('request_hash'))
             if evidence.get('request_state') == 'APPLIED':
                 certainty = 'APPLIED'
+            elif (getattr(exc, 'side_effect', None) == 'NONE'
+                    and evidence.get('request_state') == 'PREPARED'
+                    and evidence.get('execution_state') == 'BLOCKED'
+                    and not evidence.get('turn_id')):
+                # A retained pre-wire refusal is audit evidence, not evidence
+                # that a Provider request was transmitted.
+                certainty = 'NOT_EXECUTED'
+                recovery = 'RETRY_ORIGINAL_PREPARATION_AFTER_ROUTE_REPAIR'
             elif (evidence.get('request_state') == 'DISPATCHED' or evidence.get('turn_id')
                     or (not proven_unstarted and (evidence.get('request_state') == 'RUNNING'
                                                  or evidence.get('execution_present')))):
@@ -69,7 +77,8 @@ def failure_details(name, arguments, exc, registry=None):
               'failure_reason': reason, 'server_received': True, 'caller_approval': 'NOT_OBSERVED',
               'correlation': correlation, 'side_effect_certainty': certainty,
               'outcome_certainty': 'KNOWN' if certainty in {'NOT_EXECUTED', 'APPLIED'} else 'UNKNOWN',
-              'retry_allowed': False, 'reconciliation_required': certainty == 'UNKNOWN',
+              'retry_allowed': certainty == 'NOT_EXECUTED' and recovery == 'RETRY_ORIGINAL_PREPARATION_AFTER_ROUTE_REPAIR',
+              'reconciliation_required': certainty == 'UNKNOWN',
               'recovery_action': recovery}
     result.update(getattr(exc, 'details', {}) or {})
     return result

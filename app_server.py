@@ -1046,7 +1046,10 @@ class CodexAppServerClient:
             raise
 
     def _send_server_response(self, request: dict[str, Any]) -> None:
-        if getattr(self, 'read_only_observer', False):
+        if (getattr(self, 'read_only_observer', False)
+                or getattr(self, 'native_forwarding_thread_id', None)):
+            # Desktop continues to own approvals, user input and its dynamic
+            # tools. A relay must not race it with an unsupported response.
             return
         if request.get("method") == "item/tool/call":
             params = request.get("params", {})
@@ -1445,9 +1448,12 @@ class CodexAppServerClient:
     def _request(self, method: str, params: dict[str, Any] | None = None) -> Any:
         # Reject before resume/start can subscribe, claim or create a thread.
         # A later turn/start refusal cannot undo those earlier mutations.
+        forwarding = (getattr(self, 'native_forwarding_thread_id', None)
+                      == (params or {}).get('threadId')
+                      and getattr(self, 'native_forwarding_thread_id', None) is not None)
         if getattr(self, "shared_native_writer", False) and method in {
             "thread/start", "thread/resume", "turn/start",
-        }:
+        } and not (forwarding and method in {'thread/resume', 'turn/start'}):
             raise AppServerSharedWriterError(
                 f"Managed {method} on the shared Desktop daemon lacks atomic writer admission"
             )
@@ -1859,7 +1865,8 @@ class CodexAppServerClient:
         network_access: bool | None = None,
         writable_roots: list[str] | None = None,
     ) -> TurnStartInfo:
-        if getattr(self, "shared_native_writer", False):
+        forwarding = getattr(self, 'native_forwarding_thread_id', None) == thread_id
+        if getattr(self, "shared_native_writer", False) and not forwarding:
             raise AppServerSharedWriterError("Managed start on the shared Desktop daemon lacks atomic writer admission")
         if network_access is not None and not isinstance(network_access, bool):
             raise AppServerSandboxPolicyError("network_access must be a boolean")
@@ -1868,6 +1875,12 @@ class CodexAppServerClient:
             "input": [{"type": "text", "text": prompt}],
             "cwd": cwd,
         }
+        if forwarding:
+            # The request's input, rather than an exclusive daemon, is owned
+            # by CLINX. Retain the native client id across a sealed attempt.
+            request_key = getattr(self, 'native_forwarding_request_id', None) or str(uuid.uuid4())
+            client_id = str(uuid.uuid5(uuid.NAMESPACE_URL, 'clinx-native-input:' + thread_id + ':' + request_key))
+            params['clientUserMessageId'] = client_id
         if model is not None:
             params["model"] = model
         if reasoning_effort is not None:
@@ -1907,6 +1920,8 @@ class CodexAppServerClient:
         turn = result.get("turn")
         if not isinstance(turn, dict) or not isinstance(turn.get("id"), str):
             raise AppServerProtocolError("turn/start result is missing turn.id")
+        if forwarding:
+            self._confirm_native_input(thread_id, turn, client_id, prompt)
         self._owned_turns[thread_id] = turn['id']
         return TurnStartInfo(
             turn_id=turn["id"],
@@ -1915,6 +1930,43 @@ class CodexAppServerClient:
                 _optional_string(result.get("reasoningEffort")) or reasoning_effort
             ),
         )
+
+    def _confirm_native_input(self, thread_id, turn, client_id, prompt):
+        """Confirm this exact message in the returned native Turn; never retry.
+
+        turn/start may append to a Turn started by Desktop during the preflight
+        window. That is a native input delivery, not exclusive execution. Its
+        response alone cannot attribute the Turn to this CLINX request.
+        """
+        deadline = time.monotonic() + self.timeout_seconds
+        while True:
+            candidates = list(turn.get('items', []))
+            for event in self.received_events:
+                params = event.get('params', {})
+                if params.get('threadId') == thread_id and params.get('turnId') == turn['id']:
+                    candidates.append(params.get('item', {}))
+            for item in candidates:
+                content = item.get('content') if isinstance(item, dict) else None
+                if (isinstance(item, dict) and item.get('type') == 'userMessage'
+                        and item.get('clientId') == client_id and isinstance(item.get('id'), str)
+                        and isinstance(content, list) and len(content) == 1
+                        and isinstance(content[0], dict) and content[0].get('type') == 'text'
+                        and content[0].get('text') == prompt):
+                    self.native_forwarding_receipt = {
+                        'mode': 'NATIVE_INPUT_FORWARDING', 'exclusive_writer': False,
+                        'thread_id': thread_id, 'turn_id': turn['id'],
+                        'client_message_id': client_id, 'native_item_id': item['id'],
+                        'input_confirmed': True,
+                    }
+                    return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise AppServerProtocolError('NATIVE_INPUT_UNCONFIRMED: request may have been accepted; do not replay')
+            message = self._receive(remaining)
+            if 'method' in message and 'id' in message:
+                self._send_server_response(message)
+            elif isinstance(message.get('method'), str):
+                self._record_event(message)
 
     def turn_interrupt(self, thread_id: str, turn_id: str) -> bool:
         """Interrupt only the exact turn owned by a CLINX-managed binding."""

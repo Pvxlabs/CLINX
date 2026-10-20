@@ -1351,6 +1351,9 @@ class ClinxIntegration:
             "execution_result": execution_result,
             "read_only": True,
         }
+        native_input = self._native_input_receipt(execution_ref) if execution_ref else None
+        if native_input:
+            status['native_forwarding'] = native_input
         execution_route = (
             self.registry.get_execution_routing_identity(execution_ref)
             if execution_ref
@@ -1489,7 +1492,10 @@ class ClinxIntegration:
                 "runtime_configuration": "SEALED_TASK_POLICY",
                 "sandbox_overrides": True,
                 "network_default": False,
-                "workspace_contract_required_for_isolation": True,
+                "workspace_contract_required_for_isolation": False,
+                "workspace_resolution": "EXPLICIT_CONTRACT_OR_EXISTING_NATIVE_CHECKOUT",
+                "desktop_native_input_forwarding": True,
+                "exclusive_handoff_required": False,
             }},
             "control_runtime": {"process_id": os.getpid(), "source_root": str(Path(__file__).resolve().parent)},
             "status": {"available": True, "tool": "clinx_get_status"},
@@ -1498,6 +1504,8 @@ class ClinxIntegration:
                 "Forward user-approved tasks to native Codex conversations. "
                 "Use the supplied codex_uri directly, including hostId; otherwise reuse a known task_ref. "
                 "Prepare once, then start its prepared_execution_ref directly. "
+                "Desktop ownership and native activity do not require a manual exclusive handoff for ordinary task input. "
+                "Native input receipts identify the delivered message and actual Turn, without claiming an exclusive writer. "
                 "The user's instruction to send or continue the task supplies approval; do not ask again. "
                 "Do not search, read status, inspect authority or reread preparation as routine prerequisites. "
                 "Read the original preparation only to resolve ambiguity or a lost start response; never blindly repeat execution. "
@@ -1754,15 +1762,15 @@ class ClinxIntegration:
         if approved is not True:
             raise M9IntegrationError("explicit approved=true is required for preparation")
         from workspace_contract import (
-            reject_unstructured_workspace,
             seal_workspace,
             validate_workspace_contract,
+            workspace_from_prompt,
         )
         prompt = self._validated_text("prompt", prompt)
         if workspace_contract is not None:
             validate_workspace_contract(workspace_contract)
         else:
-            reject_unstructured_workspace(prompt)
+            workspace_contract = workspace_from_prompt(prompt)
         association = None
         if codex_uri is not None:
             from thread_identity import resolve_selector
@@ -1829,10 +1837,6 @@ class ClinxIntegration:
             binding = self.registry.get_binding_by_thread(tid, host=route_host)
             if task_ref is not None and observed.get('task_ref') != task_ref:
                 raise M9IntegrationError('THREAD_IDENTITY_CONFLICT: URI does not belong to task_ref')
-            evidence = observed.get('provider_observation') or {}
-            if evidence.get('ownership_conflict') or any(
-                    row.get('state') == 'active' for row in evidence.get('observations', [])) or evidence.get('state') == 'active':
-                raise M9IntegrationError('NATIVE_ACTIVE_OWNER: preparation cannot replace an active execution')
             if binding is not None:
                 active = self.registry.get_latest_execution_for_task(binding.task_id)
                 if active is not None and self.registry.get_active_execution(active['execution_ref']) is not None:
@@ -1920,10 +1924,9 @@ class ClinxIntegration:
                 if descriptor.alias.casefold() != task.project_alias.casefold():
                     raise M9IntegrationError("Resolved project does not match task project")
                 if workspace_contract is None and str(descriptor.cwd.resolve()) != str(Path(task.cwd).resolve()):
-                    previous = self.registry.get_prepared_execution_for_task(task.task_id)
-                    if previous and previous.workspace_contract_json != '{}':
-                        self.registry.verify_prepared_execution(previous.prepared_execution_ref)
-                        workspace_contract = json.loads(previous.workspace_contract_json)
+                    # A continuation inherits its actual checkout, not an old
+                    # commit seal that would block after the agent commits.
+                    workspace_contract = seal_workspace(task.cwd, None)
                 if workspace_contract is not None:
                     _workspace, descriptor, _mapping = self.dispatcher.resolve_execution_workspace(
                         task.project_alias, host=task.host, workspace_contract=workspace_contract)
@@ -1950,8 +1953,10 @@ class ClinxIntegration:
             parsed_route = parse_routing_identity(prepared_route)
             prepared_route_public = parsed_route.public_dict() if parsed_route is not None else None
             network_access = bool(parsed_route and parsed_route.network_policy.network_access)
-            if requested_network is not None and requested_network != network_access:
-                raise M9IntegrationError('NETWORK_REAUTHORIZATION_REQUIRED: continuation cannot change sealed network policy')
+            if requested_network is not None:
+                # This explicit user option is the authorization. Reuse the
+                # existing policy transition internally, without another round.
+                network_access = requested_network
             sealed_workspace = seal_workspace(descriptor.cwd, descriptor.branch, workspace_contract) if hasattr(self.dispatcher, 'resolve_execution_workspace') else {}
             task, prepared_policy = self._native_forwarding_policy(task, network_access=network_access)
             prepared_route = task.routing_identity_json
@@ -2156,6 +2161,14 @@ class ClinxIntegration:
             )
             return "DEGRADED"
 
+    def _native_input_receipt(self, execution_ref):
+        with self.registry._connect() as conn:
+            receipt = conn.execute(
+                "SELECT provenance FROM context_checkpoints WHERE execution_id=? AND source='NATIVE_INPUT_FORWARDING' ORDER BY timestamp DESC LIMIT 1",
+                (execution_ref,),
+            ).fetchone()
+        return json.loads(receipt[0]) if receipt else None
+
     def _execution_public(
         self,
         *,
@@ -2168,7 +2181,8 @@ class ClinxIntegration:
     ) -> dict[str, Any]:
         from thread_identity import canonical_codex_uri
         dispatched = self.registry.get_prepared_execution(prepared.prepared_execution_ref)
-        return {
+        native_forwarding = self._native_input_receipt(execution_ref)
+        result = {
             "execution_started": True,
             "codex_uri": canonical_codex_uri(dispatched.resulting_thread_id, cfg=self.cfg, host=prepared.host),
             "prepared_execution_ref": prepared.prepared_execution_ref,
@@ -2191,6 +2205,9 @@ class ClinxIntegration:
             "linear_audit": linear_audit,
             "read_only": False,
         }
+        if native_forwarding:
+            result['native_forwarding'] = native_forwarding
+        return result
 
     def start_execution(
         self, *, prepared_execution_ref: str, approved: bool = False,
@@ -2258,8 +2275,19 @@ class ClinxIntegration:
                     ) is not None else None
                 ),
             )
-        if prepared.workspace_contract_json == '{}' and hasattr(self.dispatcher, 'resolve_execution_workspace'):
-            raise M9IntegrationError('WORKSPACE_CONTRACT_REQUIRED: legacy preparation must be prepared again; no dispatch')
+        effective_workspace = json.loads(prepared.workspace_contract_json)
+        if not effective_workspace and hasattr(self.dispatcher, 'resolve_execution_workspace'):
+            # Old sealed requests omitted the optional workspace snapshot.
+            # Resolve their existing task checkout here, rather than requiring
+            # a replacement preparation or a duplicate task.
+            from workspace_contract import seal_workspace
+            if prepared.task_ref:
+                task = self.registry.get_task(prepared.task_ref)
+                effective_workspace = seal_workspace(task.cwd, None)
+            else:
+                _, descriptor, _ = self.dispatcher.resolve_project(
+                    prepared.project, host=prepared.host, project_mode='existing')
+                effective_workspace = seal_workspace(descriptor.cwd, descriptor.branch)
         self.registry.mark_prepared_execution_running(prepared_execution_ref)
         execution_ref = "exec_" + prepared_execution_ref.removeprefix("prepared_")
         dispatch_invoked = False
@@ -2273,7 +2301,7 @@ class ClinxIntegration:
                 if hasattr(self.dispatcher, 'resolve_execution_workspace'):
                     _workspace, descriptor, _mapping = self.dispatcher.resolve_execution_workspace(
                         prepared.project, host=prepared.host,
-                        workspace_contract=json.loads(prepared.workspace_contract_json))
+                        workspace_contract=effective_workspace)
                 else:
                     _workspace, descriptor, _mapping = self.dispatcher.resolve_project(
                         prepared.project, host=prepared.host, project_mode='existing')
@@ -2379,8 +2407,7 @@ class ClinxIntegration:
                 execution_ref=execution_ref,
                 routing_identity=prepared.routing_identity_json,
                 execution_policy=prepared.execution_policy_json,
-                **({'workspace_contract': json.loads(prepared.workspace_contract_json)}
-                   if prepared.workspace_contract_json != '{}' else {}),
+                **({'workspace_contract': effective_workspace} if effective_workspace else {}),
             )
             if not getattr(result, "task_id", None) or not getattr(result, "thread_id", None):
                 raise M9IntegrationError("dispatcher returned incomplete execution identity")

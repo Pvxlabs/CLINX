@@ -351,6 +351,7 @@ def _status_output_schema() -> dict[str, Any]:
         "host_executions": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "dynamic_tool_deliveries": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
         "desktop_publication": {"type": ["object", "null"], "additionalProperties": True},
+        "native_forwarding": {"type": "object", "additionalProperties": True},
         "provider_delivery": {"type": "object", "additionalProperties": True},
         "execution_owner": {"type": ["object", "null"], "additionalProperties": True},
         "task_current_projection": {"type": "object", "additionalProperties": True},
@@ -685,7 +686,9 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
         {
             "name": "clinx_start_execution",
             "description": (
-                "Send the prepared task message to its native Codex conversation and start one turn. "
+                "Send the prepared task message to its native Codex conversation. Desktop-owned "
+                "conversations accept native input without an exclusive Task handoff or a replacement chat. "
+                "The receipt identifies this exact input and the actual native Turn; it does not claim an exclusive writer. "
                 "Codex may run tools, modify files or deploy services according to the task and its "
                 "native permissions. CLINX does not set sandbox configuration or grant operation permissions. "
                 "Use the user's request as approval; start directly after prepare without repeated confirmation."
@@ -705,6 +708,8 @@ def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str
             ),
             "outputSchema": _json_schema({
                 "execution_started": {"type": "boolean"},
+                "native_forwarding": {"type": "object", "additionalProperties": True},
+                "workspace_contract": {"type": "object", "additionalProperties": True},
                 "codex_uri": {"type": ["string", "null"]},
                 "execution_owner": {"type": "object", "additionalProperties": True},
                 "prepared_execution_ref": {"type": "string"},

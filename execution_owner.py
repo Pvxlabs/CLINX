@@ -141,6 +141,69 @@ class ExecutionOwner:
         # requester-local executor cannot terminate this owner's Host process.
         return {'result': self.integration.cancel_execution(execution_ref=request['execution_ref'])}
 
+    def _rearm_native_rejection(self, conn, prior, prepared):
+        """Reevaluate a proved pre-RPC refusal, preserving its attempt evidence.
+
+        This is not recovery of a lost start ACK. The old immutable preparation
+        must be back in PREPARED, with no Turn, effect, completion or live lease.
+        """
+        if (getattr(prepared, 'status', None) != 'PREPARED'
+                or not prior['response_json']):
+            return False
+        response = json.loads(prior['response_json'])
+        if response.get('failure_details', {}).get('failure_code') != 'NATIVE_SHARED_WRITER_NOT_QUALIFIED':
+            return False
+        ref = prior['execution_ref']
+        old = conn.execute('SELECT * FROM execution_history WHERE execution_ref=?', (ref,)).fetchone()
+        if old is None:
+            return False
+        from execution_policy import legacy_policy_for_route, parse_execution_policy
+        from execution_semantics import parse_routing_identity
+        old_policy = parse_execution_policy(old['execution_policy_json']) or legacy_policy_for_route(
+            parse_routing_identity(old['routing_identity_json']))
+        sealed_policy = parse_execution_policy(prepared.execution_policy_json)
+        if (old is None or old['task_id'] != prepared.task_ref or old['stage'] != 'BLOCKED'
+                or old['execution_state'] != 'BLOCKED' or old['turn_id'] is not None
+                or old['failure_code'] != 'NATIVE_SHARED_WRITER_NOT_QUALIFIED'
+                or old['routing_identity_json'] != prepared.routing_identity_json
+                or old_policy != sealed_policy):
+            return False
+        for table, column, value in (
+                ('executions', 'task_id', old['task_id']),
+                ('worktree_leases', 'task_id', old['task_id']),
+                ('execution_results', 'execution_ref', ref),
+                ('host_executions', 'execution_ref', ref),
+                ('host_tool_deliveries', 'execution_ref', ref),
+                ('clinx_completion_handoffs', 'execution_ref', ref)):
+            if (table in {'host_tool_deliveries', 'clinx_completion_handoffs'} and not conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()):
+                continue
+            if conn.execute(f'SELECT 1 FROM {table} WHERE {column}=? LIMIT 1', (value,)).fetchone():
+                return False
+        binding = conn.execute('SELECT thread_id FROM conversation_bindings WHERE task_id=?',
+                               (old['task_id'],)).fetchone()
+        if binding is None:
+            return False
+        from task_registry import _now
+        evidence = {k: old[k] for k in ('execution_ref', 'task_id', 'stage', 'execution_state',
+            'turn_id', 'failure_stage', 'failure_code', 'failure_evidence', 'acquired_at', 'released_at')}
+        evidence.update(prior_owner_instance=prior['owner_instance'],
+            prior_response_sha256=hashlib.sha256(prior['response_json'].encode()).hexdigest(),
+            disposition='RETRY_PROVEN_PRE_RPC_REFUSAL_SAME_SEALED_REQUEST')
+        conn.execute('''INSERT INTO context_checkpoints
+            (checkpoint_id,task_id,execution_id,thread_id,turn_id,timestamp,prompt_summary,
+             result_summary,changed_files,validation_summary,blockers,next_state,source,provenance)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            ('checkpoint_' + uuid.uuid4().hex, old['task_id'], ref, binding[0], None, _now(),
+             'Original native input request', 'Prior refusal occurred before Provider RPC', '',
+             'PREPARED; no Turn, lease, result, Host effect or completion', old['failure_code'],
+             'Reevaluate the same sealed preparation', 'NATIVE_PREWIRE_REJECTION', json.dumps(evidence)))
+        conn.execute('DELETE FROM execution_history WHERE execution_ref=?', (ref,))
+        conn.execute('''UPDATE clinx_execution_owners SET owner_instance=?,owner_pid=?,source_path=?,
+            state='CLAIMED',updated_at=?,response_json=NULL WHERE execution_ref=?''',
+            (self.instance, os.getpid(), self.source, time.time(), ref))
+        return True
+
     def start(self, request):
         if (not isinstance(request, dict)
                 or set(request) != {'prepared_execution_ref', 'approved', 'database'}
@@ -154,7 +217,7 @@ class ExecutionOwner:
         with self.lock:
             if self.stopping.is_set():
                 raise ExecutionOwnerError('EXECUTION_OWNER_DRAINING')
-            self.registry.verify_prepared_execution(prepared)
+            sealed = self.registry.verify_prepared_execution(prepared)
             with self.registry._connect() as conn:
                 conn.execute('BEGIN IMMEDIATE')
                 prior = conn.execute('SELECT * FROM clinx_execution_owners WHERE execution_ref=?',
@@ -164,11 +227,14 @@ class ExecutionOwner:
                     if (prior['owner_instance'] != self.instance and execution
                             and execution.get('stage') not in {'COMPLETED', 'FAILED', 'CANCELLED', 'BLOCKED'}):
                         raise ExecutionOwnerError('EXECUTION_OWNER_RECOVERY_REQUIRED: prior owner lost; no replay')
-                    if prior['response_json']:
+                    rearmed = self._rearm_native_rejection(conn, prior, sealed)
+                    if prior['response_json'] and not rearmed:
                         return json.loads(prior['response_json'])
-                    raise ExecutionOwnerError('EXECUTION_OWNER_RECOVERY_REQUIRED: start outcome is unknown; no replay')
-                now = time.time()
-                conn.execute('INSERT INTO clinx_execution_owners VALUES (?,?,?,?,?,?,?,?,NULL)',
+                    if not rearmed:
+                        raise ExecutionOwnerError('EXECUTION_OWNER_RECOVERY_REQUIRED: start outcome is unknown; no replay')
+                else:
+                    now = time.time()
+                    conn.execute('INSERT INTO clinx_execution_owners VALUES (?,?,?,?,?,?,?,?,NULL)',
                              (reference, prepared, self.instance, os.getpid(), self.source,
                               'CLAIMED', now, now))
             # From this point neither socket EOF nor requester death cancels
@@ -184,7 +250,7 @@ class ExecutionOwner:
                 response = {'error': safe_reason(exc), 'failure_details': failure_details(
                     'clinx_start_execution', {'prepared_execution_ref': prepared}, exc, self.registry)}
                 record = self.registry.get_execution_record(reference)
-                known_unstarted = (response['failure_details'].get('failure_code') == 'TURN_NOT_DISPATCHED'
+                known_unstarted = (response['failure_details'].get('side_effect_certainty') == 'NOT_EXECUTED'
                     and record and record.get('stage') == 'BLOCKED' and not record.get('execution_owned_turn'))
                 state = 'REJECTED' if known_unstarted or not record else 'UNKNOWN'
             with self.registry._connect() as conn:

@@ -1491,6 +1491,7 @@ class DispatchResult:
     execution_mode: str = "normal"
     network_access: bool = False
     routing_identity: dict[str, Any] | None = None
+    native_forwarding: dict[str, Any] | None = None
 
 
 def write_dispatch_record(
@@ -3467,7 +3468,8 @@ class TaskDispatcher:
                             resolved_model=executable_model,
                         )
                     thread = self._read_and_guard(client, target, initialize_info)
-                    if _status_type(thread) not in {"idle", "notLoaded", "unloaded"}:
+                    if (not getattr(client, 'native_forwarding_thread_id', None)
+                            and _status_type(thread) not in {"idle", "notLoaded", "unloaded"}):
                         turn_start_guard(thread)
                     # Native forwarding resumes the exact bound conversation.
                     # Legacy CLINX policy versions do not change a native
@@ -3529,7 +3531,8 @@ class TaskDispatcher:
                     if provider_rebound or dynamic_schema_upgrade:
                         self._publish_created_thread(target, task.title)
                     thread = self._read_and_guard(client, target, initialize_info)
-                    turn_start_guard(thread)
+                    if not getattr(client, 'native_forwarding_thread_id', None):
+                        turn_start_guard(thread)
                     if (policy.execution_surface != HOST_EXECUTOR
                             and canonical_host(target.target_host) == canonical_host(self.cfg.runtime_host)
                             and thread.get('path')):
@@ -3559,6 +3562,8 @@ class TaskDispatcher:
                     if workspace_contract:
                         from workspace_contract import seal_workspace
                         seal_workspace(project.repo, project.branch, workspace_contract)
+                    if getattr(client, 'native_forwarding_thread_id', None):
+                        client.native_forwarding_request_id = execution_ref
                     turn = client.turn_start(
                         binding.thread_id,
                         managed_prompt,
@@ -3567,6 +3572,18 @@ class TaskDispatcher:
                         reasoning_effort=executable_reasoning,
                         network_access=network_access,
                     )
+                    native_receipt = getattr(client, 'native_forwarding_receipt', None)
+                    if isinstance(native_receipt, dict) and execution_ref:
+                        self.tasks.save_context_checkpoint(
+                            task_id=leased.task_id, execution_id=execution_ref,
+                            thread_id=binding.thread_id, turn_id=turn.turn_id,
+                            prompt_summary='Authorized native input forwarded',
+                            result_summary='Native user-message identity confirmed; no exclusive writer claim',
+                            changed_files='', validation_summary='Exact native clientId and prompt confirmed',
+                            blockers='', next_state='Await exact native Turn completion',
+                            source='NATIVE_INPUT_FORWARDING',
+                            provenance=json.dumps(native_receipt, sort_keys=True),
+                        )
                     if migration_context is not None and managed_prompt != prompt:
                         self.tasks.save_context_checkpoint(
                             task_id=task.task_id,
@@ -3664,6 +3681,7 @@ class TaskDispatcher:
             execution_mode=execution_mode,
             network_access=network_access,
             routing_identity=route.public_dict(),
+            native_forwarding=native_receipt if isinstance(native_receipt, dict) else None,
         )
 
     def adopt_existing_conversation(
