@@ -25,12 +25,13 @@ import bridge
 from execution_policy import EXECUTION_SURFACES, HOST_CAPABILITIES, OPERATION_CLASSES
 from m9_integration import ClinxIntegration, M9IntegrationError
 from task_registry import TaskRegistry, TaskRegistryError
+from consultations import NAMES as CONSULTATION_TOOL_NAMES
 
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 SERVER_DISCOVER_PROTOCOL_VERSION = "2026-07-28"
 SERVER_NAME = "clinx"
-SERVER_VERSION = "native-conversation-relay-v1"
+SERVER_VERSION = "native-conversation-relay-consultations-v1"
 READ_ONLY_TOOL_NAMES = (
     "clinx_find_task",
     "clinx_get_context",
@@ -40,7 +41,7 @@ READ_ONLY_TOOL_NAMES = (
     "clinx_get_capabilities",
     "clinx_prepare_execution",
 )
-DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_prepared_request", "clinx_adopt_conversation")
+DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_prepared_request", "clinx_adopt_conversation") + CONSULTATION_TOOL_NAMES
 # Historical Host authority APIs remain internal for old receipt reconciliation.
 # They are not part of the conversation-forwarding connector.
 RELAY_METADATA_FIELDS = frozenset({
@@ -967,6 +968,8 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
     })
     if include_execute:
         tools.append(_execute_tool_definition())
+    from consultations import tools as consultation_tools
+    tools.extend(consultation_tools())
     tools = [tool for tool in tools if tool["name"] in DEFAULT_TOOL_NAMES or
              (include_execute and tool["name"] == "clinx_execute")]
     for tool in tools:
@@ -1005,7 +1008,7 @@ def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any
     names = tuple(tool["name"] for tool in public_tools)
     node_names = ("clinx_list_nodes", "clinx_get_node_status", "clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context", "clinx_get_observation_activity")
     canonical_names = tuple(name for name in names if name not in node_names)
-    if canonical_names not in {(), DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}:
+    if canonical_names not in {(), CONSULTATION_TOOL_NAMES, DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}:
         raise MCPServerError("server/discover requires the canonical tool registry")
     return {
         "resultType": "complete",
@@ -1075,6 +1078,9 @@ class ClinxMCPServer:
     def _call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(arguments, dict):
             raise MCPRequestError(-32602, "tool arguments must be an object")
+        if name in CONSULTATION_TOOL_NAMES:
+            from consultations import call
+            return call(getattr(self, 'consultation_registry', None) or self.integration.registry, name, arguments)
         if name in {"clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context", "clinx_get_observation_activity"}:
             from observation_mcp import call_observation
             return call_observation(self.observations, name, arguments)
@@ -1421,11 +1427,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CLINX M12 MCP stdio server")
     parser.add_argument("--config", default="bridge.toml")
     parser.add_argument("--observations-only", action="store_true", help="Read-only network directory; no canonical runtime construction")
+    parser.add_argument("--consultations-only", action="store_true", help="Private stdio consultation ledger only; no execution runtime or credentials")
+    parser.add_argument("--task-db", help="Existing CLINX task database for --consultations-only")
     parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
     parser.add_argument("--execution-owner", action="store_true", help="serve persistent canonical execution ownership on a private local socket")
     parser.add_argument("--no-recover-existing", action="store_true", help="parallel maintenance: existing executions remain with their running completion owner")
     parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")
     args = parser.parse_args(argv)
+    if args.consultations_only and (args.execution_owner or args.allow_execute):
+        parser.error('--consultations-only cannot construct execution ownership or enable execution')
     if args.execution_owner:
         if args.stdio:
             parser.error('--execution-owner cannot combine with --stdio')
@@ -1438,7 +1448,13 @@ def main(argv: list[str] | None = None) -> int:
         print("MCP_TRANSPORT=BLOCKED: only authenticated external transport may expose CLINX", file=sys.stderr)
         return 2
     try:
-        if args.observations_only:
+        if args.consultations_only:
+            if args.observations_only or not args.task_db:
+                parser.error('--consultations-only requires --task-db and excludes --observations-only')
+            path = Path(args.task_db).expanduser().resolve(strict=True)
+            from consultations import standalone_server
+            serve_stdio(standalone_server(TaskRegistry(path)), recover_existing=False)
+        elif args.observations_only:
             from observation_mcp import standalone_server
             from network_observation import directory_from_env
             directory = directory_from_env()
