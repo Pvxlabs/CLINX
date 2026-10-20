@@ -59,6 +59,24 @@ def owner_record(registry, execution_ref):
     return result
 
 
+def native_rejection_recovery(registry, execution_ref):
+    """Expose the original retry path without modifying historical evidence."""
+    with registry._connect() as conn:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='clinx_execution_owners'").fetchone():
+            return {}
+        prior = conn.execute('SELECT * FROM clinx_execution_owners WHERE execution_ref=?',
+                             (execution_ref,)).fetchone()
+        if prior is None:
+            return {}
+        prepared = registry.verify_prepared_execution(prior['prepared_execution_ref'])
+        if not ExecutionOwner._native_rejection_retryable(conn, prior, prepared):
+            return {}
+    return {'retry_allowed': True, 'retry_required': True,
+            'recovery_action': 'RETRY_ORIGINAL_PREPARATION_AFTER_ROUTE_REPAIR',
+            'prepared_request': {'prepared_execution_ref': prepared.prepared_execution_ref,
+                'recovery_instructions': 'Start this original prepared request directly. No exclusive Desktop handoff, new task or new chat is required. The prior refusal sent no native input.'}}
+
+
 class ExecutionOwnerClient:
     def __init__(self, registry, *, timeout=90):
         self.registry, self.timeout = registry, timeout
@@ -141,13 +159,14 @@ class ExecutionOwner:
         # requester-local executor cannot terminate this owner's Host process.
         return {'result': self.integration.cancel_execution(execution_ref=request['execution_ref'])}
 
-    def _rearm_native_rejection(self, conn, prior, prepared):
+    @staticmethod
+    def _native_rejection_retryable(conn, prior, prepared):
         """Reevaluate a proved pre-RPC refusal, preserving its attempt evidence.
 
         This is not recovery of a lost start ACK. The old immutable preparation
         must be back in PREPARED, with no Turn, effect, completion or live lease.
         """
-        if (getattr(prepared, 'status', None) != 'PREPARED'
+        if (prior is None or getattr(prepared, 'status', None) != 'PREPARED'
                 or not prior['response_json']):
             return False
         response = json.loads(prior['response_json'])
@@ -184,6 +203,15 @@ class ExecutionOwner:
                                (old['task_id'],)).fetchone()
         if binding is None:
             return False
+        return True
+
+    def _rearm_native_rejection(self, conn, prior, prepared):
+        if not self._native_rejection_retryable(conn, prior, prepared):
+            return False
+        ref = prior['execution_ref']
+        old = conn.execute('SELECT * FROM execution_history WHERE execution_ref=?', (ref,)).fetchone()
+        binding = conn.execute('SELECT thread_id FROM conversation_bindings WHERE task_id=?',
+                               (old['task_id'],)).fetchone()
         from task_registry import _now
         evidence = {k: old[k] for k in ('execution_ref', 'task_id', 'stage', 'execution_state',
             'turn_id', 'failure_stage', 'failure_code', 'failure_evidence', 'acquired_at', 'released_at')}

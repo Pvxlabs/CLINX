@@ -35,7 +35,8 @@ CLINX 接收用户已授权的任务，路由到指定主机和原生 Codex 对�
 保留已消耗请求和当前执行用于准确对账。未发送 RPC 的旧拒绝可自动重新评估，
 条件由 canonical preparation、原拒绝记录及没有 Turn、活动 lease、结果、Host effect
 或 completion handoff 共同确定；旧失败证据保存在原有 context_checkpoints，
-不建立第二套任务或数据库。
+不建立第二套任务或数据库。状态查询保留旧 BLOCKED 历史，同时给出可直接重试的
+原 prepared reference 和恢复说明，不再让旧回执引导用户手工交接。
 
 Host 动态工具需要专用响应处理器，沿用既有专用 Provider。普通原生任务不先调用
 Host operation catalog、权限审查或模型探测；默认继承模型和 reasoning。

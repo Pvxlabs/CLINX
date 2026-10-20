@@ -1385,6 +1385,9 @@ class ClinxIntegration:
         )
         network_access = bool(prepared.network_access) if prepared is not None else False
         status["workspace_contract"] = json.loads(prepared.workspace_contract_json) if prepared else {}
+        if record and record.get('failure_code') == 'NATIVE_SHARED_WRITER_NOT_QUALIFIED':
+            from execution_owner import native_rejection_recovery
+            status.update(native_rejection_recovery(self.registry, execution_ref))
         status["network_access"] = network_access
         status["NETWORK_ACCESS"] = "ENABLED" if network_access else "DISABLED"
         audit = self.registry.get_linear_audit(task.task_id)
