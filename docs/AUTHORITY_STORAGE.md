@@ -19,10 +19,10 @@ SQLite 约束和同 UID 的只读 worker 连接不提供 OS 级物理写隔离�
 的进程仍可能绕过 SQL，生产隔离能力必须独立验证。旧版本源码或切换前备份不能
 覆盖已经提交的新 authority 事实。
 
-对应回归是 `test_execution_owner.py`、`test_owner_callers.py`、
-`test_owner_authority_transport.py`、`test_owner_business_commit.py`、
-`test_canonical_authority.py`、`test_authority_closure.py`、
-`test_runtime_authority_transport.py` 和 `test_prepare_contract_idempotency.py`。
+对应回归是 `tests/test_execution_owner.py`、`tests/test_owner_callers.py`、
+`tests/test_owner_authority_transport.py`、`tests/test_owner_business_commit.py`、
+`tests/test_canonical_authority.py`、`tests/test_authority_closure.py`、
+`tests/test_runtime_authority_transport.py` 和 `tests/test_prepare_contract_idempotency.py`。
 用[测试指南](TESTING.md)中的 `owner` 入口运行；测试使用隔离 SQLite/socket、
 真实 Rust client 和脚本化 Provider。原 schema 兼容性另需 schema-only JSON，
 不得将生产数据库当作测试输入。

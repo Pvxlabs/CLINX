@@ -64,10 +64,10 @@ python3 scripts/build_tunnel_release.py \
 python3 scripts/tunnel_release_cas.py check \
   --capsule /data/artifacts/<task>/candidate/rollback-capsule \
   --root / --direction forward
-python3 -m pytest -q test_tunnel_release.py \
+python3 -m pytest -q tests/test_tunnel_release.py \
   --basetemp=/data/artifacts/<task>/cas-unit-fixtures
 ruff check --config ruff-discovery.toml \
-  scripts/build_tunnel_release.py scripts/tunnel_release_cas.py test_tunnel_release.py
+  scripts/build_tunnel_release.py scripts/tunnel_release_cas.py tests/test_tunnel_release.py
 ```
 
 本轮17项新测试验证精确往返、过期/权限/guard/新增drop-in/缺失文件拒绝、

@@ -84,7 +84,7 @@ session/process group。没有 systemctl 操作、数据库依赖、任务 RPC�
 
 ## 隔离资格与回归
 
-`test_tunnel_reliability_wire.py` 使用机器上已安装的真实 tunnel-client（二进制 SHA
+`tests/test_tunnel_reliability_wire.py` 使用机器上已安装的真实 tunnel-client（二进制 SHA
 写入回执），本地 HTTP control-plane 与实际 HTTP fault proxy、独立 Tunnel ID、
 假凭据、stdio requester、真实 ExecutionOwner/SQLite ledger/socket。原生 Provider
 使用现有 deterministic fake，不调用模型、真实 Host 或生产业务。
@@ -111,17 +111,17 @@ unit 验证 exit 78 与 `RestartPreventExitStatus`，不操作任何生产 unit�
 
 ```sh
 CLINX_P1_EVIDENCE=/data/artifacts/<task> python3 -m pytest -q \
-  test_tunnel_reliability.py test_tunnel_reliability_wire.py \
-  test_execution_owner.py test_execution_owner_routing.py \
-  test_native_input_recovery.py test_native_input_forwarding.py \
-  test_desktop_native_creation.py test_lifecycle_routing_tunnel.py \
+  tests/test_tunnel_reliability.py tests/test_tunnel_reliability_wire.py \
+  tests/test_execution_owner.py tests/test_execution_owner_routing.py \
+  tests/test_native_input_recovery.py tests/test_native_input_forwarding.py \
+  tests/test_desktop_native_creation.py tests/test_lifecycle_routing_tunnel.py \
   --basetemp=/data/artifacts/<task>/fixtures
 ruff check --config ruff-discovery.toml tunnel_reliability.py \
-  scripts/check_tunnel_health.py test_tunnel_reliability.py \
-  test_tunnel_reliability_wire.py fixtures/tunnel_reliability_mcp.py
+  scripts/check_tunnel_health.py tests/test_tunnel_reliability.py \
+  tests/test_tunnel_reliability_wire.py fixtures/tunnel_reliability_mcp.py
 ```
 
-既有 `test_tunnel_child.py::...::test_multiple_requests_keep_child_alive_and_stdout_is_protocol_only`
+既有 `tests/test_tunnel_child.py::...::test_multiple_requests_keep_child_alive_and_stdout_is_protocol_only`
 对 tools/list 的旧静态期望在干净 HEAD 和携带既有 dirty 的候选快照均失败。
 已用同一运行依赖、隔离任务数据库与 node 状态目录复现；保留日志，不修改断言。
 该基线失败不能被算成 PASS，具体计数以本轮 FINAL_REPORT 为准。

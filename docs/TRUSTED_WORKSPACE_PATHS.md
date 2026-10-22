@@ -33,6 +33,6 @@ cannot constrain a Python program's computed paths or prevent concurrent filesys
 changes after validation. Do not run untrusted programs through this surface.
 No root privilege or new credentials are provisioned by this contract.
 
-Validation: `python3 -m pytest -q test_trusted_workspace_paths.py
-test_host_contract_v2.py test_tool_delivery.py test_m13b.py` plus the independent
+Validation: `python3 -m pytest -q tests/test_trusted_workspace_paths.py
+tests/test_host_contract_v2.py tests/test_tool_delivery.py tests/test_m13b.py` plus the independent
 formal connector smoke after the outer operator switches runtime source.

@@ -57,7 +57,7 @@ native result PASS，无工具调用；两个端点的只读 thread/list 均实�
 真实隔离 native qualification：初次原生 thread + adoption + 两次带 URI 的 create-intent preparation，
 均沿用原 thread，并完成两个 PASS Execution。首次运行发现版本校验缺陷的失败日志保留，修复后的真实重跑 PASS。
 fixture 定向测试 16 passed。扩展回归 375 passed / 62 subtests，1 项基线已有失败：
-`test_m13b.py::DynamicToolProtocolTests::test_public_catalog_includes_adoption_without_shell_tools`
+`tests/test_m13b.py::DynamicToolProtocolTests::test_public_catalog_includes_adoption_without_shell_tools`
 固定期望 15，但当前 catalog 已有 16；在未改主工作区复现，未改断言。
 
 Air 对本次 57 文件源码快照执行 `swift test --filter NativeURITests`，完整构建成功，1 test PASS。

@@ -26,10 +26,10 @@ STATUS_API: task/execution selector 与 exact thread selector 均新增 provider
 
 COMPLETION_RUNTIME: process 先检查 authoritative，非 authoritative 保持 PENDING 并退避重试，不能因旧 terminal/result 行而标 DONE。recover 只重试 exact enrolled identity；部分 finalizer commit 且 lease 仍在时，重新观察 provider 后才完成释放。notify 校验 exact thread/turn，并独立记录 completion activity；不会直接 terminalize。transport exceptions 保留 handoff 和 lease。身份不匹配继续 HOLD，沿用原有隔离规则。
 
-TEST_RESULTS: 最终定向命令如下，243 passed、24 subtests passed。新增 test_execution_liveness.py 共 20 项，直接调用真实 reconciler、TaskRegistry SQLite、CompletionRuntime、ExecutionFinalizer；provider 协议由确定性 fixtures 提供，不把 fixture 当实时部署证据。
+TEST_RESULTS: 最终定向命令如下，243 passed、24 subtests passed。新增 tests/test_execution_liveness.py 共 20 项，直接调用真实 reconciler、TaskRegistry SQLite、CompletionRuntime、ExecutionFinalizer；provider 协议由确定性 fixtures 提供，不把 fixture 当实时部署证据。
 
 ```text
-python3 -m pytest -q --tb=short test_execution_liveness.py test_execution_owner_routing.py test_native_interop.py test_m13.py test_pvx1812_completion.py test_m5.py test_m9.py test_m12.py test_thread_identity.py test_tool_delivery.py test_worker_continuation.py
+python3 -m pytest -q --tb=short tests/test_execution_liveness.py tests/test_execution_owner_routing.py tests/test_native_interop.py tests/test_m13.py tests/test_pvx1812_completion.py tests/test_m5.py tests/test_m9.py tests/test_m12.py tests/test_thread_identity.py tests/test_tool_delivery.py tests/test_worker_continuation.py
 ```
 
 | 必须场景 | 自动化结果 |
@@ -57,7 +57,7 @@ CANONICAL_WORKTREE_PRESERVED: PASS。/home/pvxlabs/dev/clinx 的 HEAD、git stat
 
 LOCAL_DISCOVERY_PRESERVED: PASS。仅 mode=ro/query_only 的数据库查询和 read_only_observer 的 thread/read、thread/turns/list；没有 Local Discovery execution mutation，没有修改其 worktree、PAKE 或产品逻辑。
 
-KNOWN_BASELINE_FAILURES: 下列 5 个 test_monitor_finalized_ui.py 测试在本分支与从基线 38631af 原始 git archive 提取的 MonitorApp/test 文件中同样失败。基线独立运行结果为 5 failed、13 passed；没有用 UI 改动掩盖失败。
+KNOWN_BASELINE_FAILURES: 下列 5 个 tests/test_monitor_finalized_ui.py 测试在本分支与从基线 38631af 原始 git archive 提取的 MonitorApp/test 文件中同样失败。基线独立运行结果为 5 failed、13 passed；没有用 UI 改动掩盖失败。
 
 - test_search_field_is_out_of_the_toolbar
 - test_search_field_width_matches_the_compact_pages

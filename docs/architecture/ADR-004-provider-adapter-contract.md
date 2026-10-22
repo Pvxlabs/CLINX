@@ -40,7 +40,7 @@ runtime-control ownership, or update Linear.
 
 | Existing caller or side effect | Existing method | Adapter operation | State owner and compatibility evidence |
 | --- | --- | --- | --- |
-| V1 bridge initialization | `CodexAppServerClient.initialize` | Adapter connection initialization | Codex client/transport; `test_bridge.py` and adapter scripted trace |
+| V1 bridge initialization | `CodexAppServerClient.initialize` | Adapter connection initialization | Codex client/transport; `tests/test_bridge.py` and adapter scripted trace |
 | New durable provider thread | `thread_start` | `create_session` | ProviderSessionRef only; no CLINX execution mutation |
 | Existing thread attachment | `thread_resume` | `resume_session` | Exact opaque handle and session generation; bridge migration/resume tests remain unchanged |
 | Managed prompt | `turn_start` | `start_turn` / `continue_turn` | Attempt/Execution owner remains the caller; adapter returns accepted provider reference |
@@ -162,7 +162,7 @@ The residual contracts are implemented as follows:
 | `PA-04` | Dynamic-tool configuration retires the prior turn, rejects late requests for that turn, provisionally binds one new pre-response turn, validates the returned turn, and suppresses duplicate server request ids. Namespace, name, provider thread, operation closure, and generation remain bound. |
 | `PA-05` | Operation and session identity histories use bounded admission with explicit `AdapterBusy` capacity rejection rather than unsafe eviction. Client method history, received-event buffer, native ids, request records, and server-response ids are bounded. `drain_events` attaches already consumed events to a hard-EOF exception so evidence is retained. |
 
-Formal repository coverage is in `test_pvx1807_remediation.py`. It uses the
+Formal repository coverage is in `tests/test_pvx1807_remediation.py`. It uses the
 real `CodexAppServerClient` with a strict scripted transport and records wire
 request ids, handler calls, responses, terminal evidence, and lifecycle
 transitions. It does not claim live-provider or external exactly-once
@@ -212,7 +212,7 @@ handler. These controls cover one live client and binding only. They do not
 claim network or cross-process exactly-once delivery and do not add a durable
 queue, database, daemon, or service.
 
-The repository regression is `test_pvx1807_remediation.py`. The 44effc05
+The repository regression is `tests/test_pvx1807_remediation.py`. The 44effc05
 candidate red run was `4 failed, 1 passed` before the change and `5 passed`
 after it, using the real client and adapter with only a strict scripted
 transport. The formal suite includes pre-response mismatch, delayed retired
@@ -255,8 +255,8 @@ normal batches, three-request batches interrupted at the first, middle, and
 last response, mismatched-turn failure delivery, repeated attach and response
 redelivery, and retirement/close fencing. The pre-fix reconstructed candidate
 was `1 failed`; the fixed candidate is `1 passed`. The formal tests are
-resident in `test_pvx1807_remediation.py` and are discoverable from a fresh
-checkout.
+retained locally in `tests/test_pvx1807_remediation.py`. The suite is no longer
+distributed in Git; a fresh clone does not contain it.
 
 ## Wrapped transport lifecycle evidence: BASE e2dbb9a0
 
@@ -286,7 +286,7 @@ The supplied real-package candidate was run against the isolated checkout. At
 BASE it produced `2 failed, 2 passed`: both direct-client controls passed, while
 the wrapped adapter called a handler after the inner transport had closed. The
 same candidate produced `4 passed` after lifecycle propagation. Repository
-tests in `test_pvx1807_remediation.py` cover both closed positions through the
+tests in `tests/test_pvx1807_remediation.py` cover both closed positions through the
 real adapter/wrapper, equivalent direct-client controls, cached response and
 tail state, same-client recovery, one `turn/start`, and unknown-state
 admission. The formal file passed `29 passed`; the complete suite passed `510

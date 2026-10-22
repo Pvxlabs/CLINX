@@ -166,13 +166,13 @@ P620 Codex Provider → dynamic tool → HostExecutor → Provider ACK → compl
 的隔离验收可保留 PENDING；本地 result persistence、terminal convergence 和 lease release
 必须分别断言。没有为获得 WRITTEN 而伪造审计或发送外部消息。
 
-`test_host_contract_v2_live.py` 的正常组精确验证九次 invocation：unsupported operation
+`tests/test_host_contract_v2_live.py` 的正常组精确验证九次 invocation：unsupported operation
 无 Host 行，随后 working_directory/status/head/fetch_origin/remote_main_head/ahead_behind/
 service_is_active/service_status 共八条 exit 0 + DELIVERED。多失败组验证三次拒绝、一个
 working_directory Host success。每组只有一个 prepared execution、一个 terminal result，
 没有活动 execution 或遗留 lease。持久化记录分别用于核对调用数与零 reconciliation。
 
-`test_tool_delivery_live.py` 在唯一一次 counter mutation exit 0 后注入结果交付失败，
+`tests/test_tool_delivery_live.py` 在唯一一次 counter mutation exit 0 后注入结果交付失败，
 验证 BLOCKED、retry_required=false、counter=1、HOST_EXECUTION_COUNT=1。再打开真实
 Provider connection 读取同一 thread；在新 listener 上通过 app-server admission path
 注入同 call、新 request ID、新 call ID 的 replay frames，证明 handler 从未再次进入。

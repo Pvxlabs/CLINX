@@ -199,19 +199,19 @@ PYO3_PYTHON="$PWD/.venv/bin/python" LD_LIBRARY_PATH=/home/pvxlabs/.local/share/u
 cargo fmt --manifest-path native/opaque_pairing/Cargo.toml -- --check
 PYO3_PYTHON="$PWD/.venv/bin/python" cargo clippy --locked --manifest-path native/opaque_pairing/Cargo.toml --all-targets -- -D warnings
 
-python3 -m pytest -q test_local_discovery.py
-python3 -m pytest -q test_local_discovery_production.py
+python3 -m pytest -q tests/test_local_discovery.py
+python3 -m pytest -q tests/test_local_discovery_production.py
 CLINX_LAN_SELFTEST=1 python3 -m pytest -q
 python3 scripts/local_discovery_smoke.py
-python3 -m ruff check --config ruff-discovery.toml local_discovery test_local_discovery.py test_local_discovery_production.py scripts/local_discovery_smoke.py
-python3 -m ruff format --check --config ruff-discovery.toml local_discovery test_local_discovery.py test_local_discovery_production.py scripts/local_discovery_smoke.py
+python3 -m ruff check --config ruff-discovery.toml local_discovery tests/test_local_discovery.py tests/test_local_discovery_production.py scripts/local_discovery_smoke.py
+python3 -m ruff format --check --config ruff-discovery.toml local_discovery tests/test_local_discovery.py tests/test_local_discovery_production.py scripts/local_discovery_smoke.py
 python3 -m mypy --config-file mypy-discovery.ini
 git diff --check
 ```
 
 针对本次新模块执行 Rust 检查；kernel 未修改，不重复建立无关 kernel 门槛。专项覆盖正确/错误 PIN、精确 60 秒失效、空闲秘密引用撤销、全窗口预算、新身份/新连接预算、限速、并发成功只一次、重放、反射、身份/角色/协议绑定、持久化、DEV 不自动提升、依赖缺失、免 PIN 重连及零权限提升。
 
-全仓既有五项失败仍属于 `test_monitor_finalized_ui.py`：
+全仓既有五项失败仍属于 `tests/test_monitor_finalized_ui.py`：
 
 - test_search_field_is_out_of_the_toolbar
 - test_search_field_width_matches_the_compact_pages

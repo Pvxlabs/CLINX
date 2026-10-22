@@ -70,10 +70,10 @@ controller adoption 完成不能当作 application deploy 完成。
 回归入口：
 
 ```sh
-python3 -m pytest -q test_native_workspace_policy.py test_bridge.py test_m6.py \
-  test_m9.py test_m12.py test_m13.py test_m13b.py test_m13c.py \
-  test_pvx1812_completion.py test_tool_delivery.py test_pvx1807_remediation.py test_provider_adapters.py
-python3 -m pytest -q test_m5.py test_m7.py test_m8.py test_m10.py test_m11.py
+python3 -m pytest -q tests/test_native_workspace_policy.py tests/test_bridge.py tests/test_m6.py \
+  tests/test_m9.py tests/test_m12.py tests/test_m13.py tests/test_m13b.py tests/test_m13c.py \
+  tests/test_pvx1812_completion.py tests/test_tool_delivery.py tests/test_pvx1807_remediation.py tests/test_provider_adapters.py
+python3 -m pytest -q tests/test_m5.py tests/test_m7.py tests/test_m8.py tests/test_m10.py tests/test_m11.py
 CLINX_LIVE_DELIVERY_ACCEPTANCE=0 python3 -m pytest -q
 git diff --check
 ```

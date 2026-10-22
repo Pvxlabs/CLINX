@@ -11,10 +11,11 @@ From the repository root, build into a fresh directory:
 ```sh
 CLINX_TEST_BUILD=$(mktemp -d)
 cargo build --locked --manifest-path kernel/Cargo.toml --bin clinx-owner-client --target-dir "$CLINX_TEST_BUILD"
-CLINX_OWNER_CLIENT_BINARY="$CLINX_TEST_BUILD/debug/clinx-owner-client" python scripts/run_tests.py owner
+CLINX_OWNER_CLIENT_BINARY="$CLINX_TEST_BUILD/debug/clinx-owner-client" python tests/run_tests.py owner
 ```
 
-See [testing](../docs/TESTING.md) for optional schema migration input and isolated
+The pytest command above requires the local ignored `tests/` suite; a fresh
+Git clone does not include it. See [testing](../docs/TESTING.md) for optional schema migration input and isolated
 Owner fixtures. `cargo test` alone does not exercise the socket protocol; the
 Python Owner/authority profile runs the real binary against temporary Owners.
 The package name is retained for Cargo compatibility. The non-authoritative

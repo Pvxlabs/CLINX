@@ -1,15 +1,16 @@
 # 脚本与启动器
 
+pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它；运行器也位于该目录。
 从仓库根目录运行。开发安装见[贡献指南](../CONTRIBUTING.md)，常用验证命令见
 [测试指南](../docs/TESTING.md)。
 
 | 入口 | 用途与副作用 |
 | --- | --- |
-| `python scripts/run_tests.py basic` | 无需生产服务的基础测试，隔离 HOME、SQLite 和临时目录 |
-| `python scripts/run_tests.py collect` | 全仓库 pytest 收集，不执行测试 |
-| `python scripts/run_tests.py owner` | 真实隔离 Owner/socket/SQLite；需显式构建 Owner client |
-| `python scripts/run_tests.py transport --temp-parent <task-artifact-dir>` | 隔离发布/传输回归；要求 `/data/artifacts` 下临时目录及精确外部制品 |
-| `python scripts/run_tests.py recovery` | 恢复与故障回归；其中 transient systemd 用例需要隔离 user manager |
+| `python tests/run_tests.py basic` | 无需生产服务的基础测试，隔离 HOME、SQLite 和临时目录 |
+| `python tests/run_tests.py collect` | 全仓库 pytest 收集，不执行测试 |
+| `python tests/run_tests.py owner` | 真实隔离 Owner/socket/SQLite；需显式构建 Owner client |
+| `python tests/run_tests.py transport --temp-parent <task-artifact-dir>` | 隔离发布/传输回归；要求 `/data/artifacts` 下临时目录及精确外部制品 |
+| `python tests/run_tests.py recovery` | 恢复与故障回归；其中 transient systemd 用例需要隔离 user manager |
 | [check_tunnel_health.py](check_tunnel_health.py) | `--url-file`、可选 `--max-age`；只读核对 PID 和 poll 新鲜度 |
 | [check_embedded_bridge_idle.py](check_embedded_bridge_idle.py) | `--base-url --tunnel-pid --bridge-pid`；只读，不 Warmup、回收或接管 |
 | [reconcile_task_projection.py](reconcile_task_projection.py) | `--database --execution-ref --check-only` 为检查；省略 `--check-only` 会应用精确维护 |

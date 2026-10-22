@@ -44,7 +44,7 @@ Linear 仅作审计，不决定 Codex 能否执行。
 
 ## 验证
 
-`test_native_input_forwarding.py` 覆盖共享连接、并发原生 Turn 的输入关联、错误
+`tests/test_native_input_forwarding.py` 覆盖共享连接、并发原生 Turn 的输入关联、错误
 Thread/Turn/clientId/正文、Desktop server request、不确定回执不重放，以及旧错误缓存
 在 Owner 重启后的精确重评估。工作目录、网络和请求幂等测试保留在现有测试中。
 

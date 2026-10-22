@@ -322,13 +322,13 @@ reauthorization nor runtime activation changes those facts to PASS.
 
 ## Validation
 
-`test_execution_authority.py` covers CAS/concurrent apply, immutable history,
+`tests/test_execution_authority.py` covers CAS/concurrent apply, immutable history,
 expiry, explicit approval, unresolved delivery across executions, exact scopes,
 real safe controller processes, two candidates and target/resource fencing.
-`CLINX_LIVE_AUTHORITY=1 ... test_execution_authority_live.py` compares direct and
+`CLINX_LIVE_AUTHORITY=1 ... tests/test_execution_authority_live.py` compares direct and
 CLINX native filesystem/Git/HTTPS on the same user/workspace/profile, then uses the
 same Task for DEV → reauthorization → production-like Host execution and history
-readback. `test_tool_delivery_live.py` injects a real Provider delivery failure
+readback. `tests/test_tool_delivery_live.py` injects a real Provider delivery failure
 after a safe local mutation and verifies the counter stays one under replay.
 All live tests use disposable registries, Provider endpoints and local targets.
 Final counts, exact source/release and production limitations belong in the

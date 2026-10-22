@@ -66,7 +66,7 @@ conversation_bindings/adoptions/lineage 的全局 UUID UNIQUE 改为按既有 ta
 | 离线/重连 | PASS（隔离注入）：各物理设备 helper 将任务自有 NodeRegistry 标为 OFFLINE 后恢复，Task ID 不变；未实际断开网络 |
 | 两个官方 AppServer writer lock | PASS（有限）：writer-fence-v4/receipt.json，第二 daemon resume 拒绝 already has an active writer；不能证明同 daemon 多客户端竞态 |
 | Air/iMac Mac 构建 | PASS：两台实际 Mac 上 swift test --filter 'NetworkObservation\|TaskPresentation'，各 8 tests；未安装/替换正式 App |
-| 上阶段 Air 可见性代码回归 | PASS（API/单测）：threadSource=user、真实 originator、官方 name/set publication 保留；见 test_thread_source.py |
+| 上阶段 Air 可见性代码回归 | PASS（API/单测）：threadSource=user、真实 originator、官方 name/set publication 保留；见 tests/test_thread_source.py |
 | 本轮 GUI open | 未验证：Air 旧测试 Thread 的深链只读 AX 检查在 12 秒内未读到预期正文；不能推导 Thread 消失或 UI 成功 |
 | 新能力三设备 GUI 闭环 | 未验证：provider 用私有 CODEX_HOME，新线程不在安装版 Desktop 默认 store；没有新 binary 的 live CLINX UI 验收 |
 | daemon 离线通知补偿 | 未实现：既有新线程 metadata publication 失败仅记录 UNAVAILABLE，无 durable retry/outbox |

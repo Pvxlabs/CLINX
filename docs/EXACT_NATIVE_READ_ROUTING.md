@@ -23,7 +23,7 @@ match can include partial coverage; its source node remains explicit.
 without a managed CLINX execution association. No adoption, provider start,
 replay, task creation or lease acquisition is needed to read it.
 
-Regression: `test_shared_read_registry.py` exercises the public MCP boundary,
+Regression: `tests/test_shared_read_registry.py` exercises the public MCP boundary,
 shared identity/grant preservation, live registration/revocation, unavailable
 transport, and uncertain node responses. Runtime acceptance also requires an
 exact URI read through the deployed external connector; a local unit pass alone

@@ -23,3 +23,6 @@ native/opaque_pairing/target/
 /.coverage
 /.coverage.*
 /htmlcov/
+
+# Local-only pytest suite; do not force-add test sources to version control.
+/tests/

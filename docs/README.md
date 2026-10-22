@@ -1,7 +1,7 @@
 # CLINX 文档
 
 使用入口是[项目 README](../README.md)，开发环境见[贡献指南](../CONTRIBUTING.md)，
-测试命令与前置条件见[测试指南](TESTING.md)和[测试目录索引](../tests/README.md)。
+测试命令与前置条件见[测试指南](TESTING.md)；测试目录索引为本地 `tests/README.md`。
 
 ## 运行契约
 
@@ -53,4 +53,5 @@ Owner 候选标识为 `owner-shared-07da5fe20c4119dee1b4`；安装/切换证据�
 
 实验性 Decision Kernel、Runtime Lab、维护授权原型及专属测试已退出源码树；
 核心 Owner、authority、SQLite、transport、幂等与恢复回归继续保留。
-外部开发者无需这些本机历史归档即可安装依赖和运行基础测试。
+开发依赖仍可按贡献指南安装。pytest 套件集中保留在本机被忽略的 `tests/`，
+不随 Git 分发；新 clone 不包含测试源码。

@@ -92,4 +92,4 @@ conflict observations never turn that terminal projection back into running.
 ## 验收与激活
 
 常规全量命令为 `python3 -m pytest -q`。受管沙箱可为测试设置临时 HOME，避免 tunnel child 启动迁移写正式用户数据库。
-真实 opt-in 为 test_native_interop_live.py、test_worker_continuation_live.py、test_tool_delivery_live.py。这些测试含新执行，只能由外层独立入口启用。正式合并、服务激活、connector metadata refresh 和原带 hostId URI 的真实 tools/call 均需另行核实；源码 handler 验收不代表正式 connector 已更新。
+真实 opt-in 为 tests/test_native_interop_live.py、tests/test_worker_continuation_live.py、tests/test_tool_delivery_live.py。这些测试含新执行，只能由外层独立入口启用。正式合并、服务激活、connector metadata refresh 和原带 hostId URI 的真实 tools/call 均需另行核实；源码 handler 验收不代表正式 connector 已更新。

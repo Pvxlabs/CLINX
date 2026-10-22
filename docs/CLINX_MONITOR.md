@@ -261,7 +261,7 @@ actual authorization state; never alter any P620 service.
 | Gate | Evidence / current boundary |
 | --- | --- |
 | Phase 0 canonical contract and authority audit | This spec, ADR-006, schema, examples, Swift references and handoff |
-| Four GET routes / auth / non-GET denial | test_observer_server.py API + actual loopback HTTP fixture tests |
+| Four GET routes / auth / non-GET denial | tests/test_observer_server.py API + actual loopback HTTP fixture tests |
 | No authority mutation or reconciliation | mode=ro/query_only write rejection, unchanged DB bytes/logical dump; observer imports no live dispatcher/TaskRegistry |
 | Exact task/execution/turn isolation | Old execution PASS and mismatched turn excluded, future state never PASS |
 | Unknown/progress/units | No denominator => null, empty phases; missing artifacts => explicit empty status |
@@ -280,7 +280,7 @@ actual authorization state; never alter any P620 service.
 Run `python3 -m unittest -q test_observer_server` for dependency-free backend tests.
 Run `python3 -m unittest -q test_observer_schema` when jsonschema is installed for
 Draft 2020-12 schema + synthetic examples validation. The portable core profile uses
-`python scripts/run_tests.py basic`; full collection and environment-dependent
+`python tests/run_tests.py basic`; full collection and environment-dependent
 suites are documented in [Testing](TESTING.md). Tests create disposable local fixture registries
 and a random loopback port; they do not read the configured live registry.
 

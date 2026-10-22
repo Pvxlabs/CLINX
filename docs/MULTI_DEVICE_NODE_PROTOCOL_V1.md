@@ -44,4 +44,4 @@
 
 ## 验证边界
 
-`test_node_protocol.py` 覆盖身份冲突、撤销、cursor 隔离、有界未知来源查找、重复归属、离线覆盖、读路径零执行副作用、单 writer、请求幂等及真实独立进程 RPC。P620 的通过只表示协议和隔离多进程闭环；Air/iMac 的安装、mTLS 注册、重连、原生 SwiftUI 窄窗口截图及真实 Codex thread 读回在设备可达前保持 `BLOCKED`／`NOT_RUN`。
+`tests/test_node_protocol.py` 覆盖身份冲突、撤销、cursor 隔离、有界未知来源查找、重复归属、离线覆盖、读路径零执行副作用、单 writer、请求幂等及真实独立进程 RPC。P620 的通过只表示协议和隔离多进程闭环；Air/iMac 的安装、mTLS 注册、重连、原生 SwiftUI 窄窗口截图及真实 Codex thread 读回在设备可达前保持 `BLOCKED`／`NOT_RUN`。

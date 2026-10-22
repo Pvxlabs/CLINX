@@ -31,7 +31,7 @@ The review covered the implementation and tests for:
 - `app_server.py`, including local/SSH stdio transports, JSON-RPC handling, server requests, dynamic host tools, and turn supervision.
 - `m9_integration.py`, including the finalizer, result service, status projection, MCP-facing handoffs, and Linear projection.
 - `mcp_server.py`, including the public catalog, approval boundary, identity scrubbing, and stdio lifecycle.
-- All checked-in test modules: `test_bridge.py`, `test_m5.py`, `test_m6.py`, `test_m7.py`, `test_m8.py`, `test_m9.py`, `test_m10.py`, `test_m11.py`, `test_m12.py`, `test_m13.py`, `test_m13b.py`, `test_m13c.py`, `test_runtime_wiring.py`, and `test_tunnel_child.py`.
+- The test modules reviewed at that time (now retained locally under `tests/`): `tests/test_bridge.py`, `tests/test_m5.py`, `tests/test_m6.py`, `tests/test_m7.py`, `tests/test_m8.py`, `tests/test_m9.py`, `tests/test_m10.py`, `tests/test_m11.py`, `tests/test_m12.py`, `tests/test_m13.py`, `tests/test_m13b.py`, `tests/test_m13c.py`, `tests/test_runtime_wiring.py`, and `tests/test_tunnel_child.py`.
 
 Verification completed during this review:
 

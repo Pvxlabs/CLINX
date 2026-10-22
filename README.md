@@ -151,20 +151,23 @@ acceptance.
 
 ## Development and tests
 
-Use Python 3.12 for the pinned development environment. No production service,
-API key or Codex daemon is needed for the basic profile:
+The pytest suite is kept locally in the ignored `tests/` directory and is not
+distributed through Git. A fresh GitHub clone contains runtime sources and the
+development dependency declarations, but not this local suite. If the retained
+local `tests/` directory is available, use Python 3.12 and the commands below.
+No production service, API key or Codex daemon is needed for the basic profile:
 
 ```sh
 python3.12 -m venv .venv-test
 .venv-test/bin/python -m pip install -r requirements-dev.txt
-.venv-test/bin/python scripts/run_tests.py basic
-.venv-test/bin/python scripts/run_tests.py collect
+.venv-test/bin/python tests/run_tests.py basic
+.venv-test/bin/python tests/run_tests.py collect
 ```
 
 If your distribution omits ensurepip, use `uv venv --python 3.12 --seed .venv-test`
 for the first command. See [CONTRIBUTING](CONTRIBUTING.md) for workflow and layout,
 [Testing](docs/TESTING.md) for isolated Owner/Rust, SQLite, native pairing and
-platform prerequisites, and [the test index](tests/README.md) for retained suites.
+platform prerequisites, and the local `tests/README.md` index for retained suites.
 On P620 put developer environments and build outputs in your task-owned LAB path.
 
 ## Getting started
