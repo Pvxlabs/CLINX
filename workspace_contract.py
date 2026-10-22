@@ -63,28 +63,26 @@ def git(path, *args):
     return result.stdout.strip()
 
 
+# Require an instruction delimiter. A bare slash after a category label is
+# ordinary prose ("工作树/Owner/Provider"), not execution authority.
+_WORKSPACE_PATH = re.compile(
+    r"(?:工作树|工作目录|执行目录|(?<![\w])(?:worktree|working[ .]directory|cwd)(?![\w]))"
+    r"(?:\s*[:=：]\s*[`\"']?|\s+[`\"']?|[`\"'])(/[^\s`\"'，。；,;]+)",
+    re.I,
+)
+
+
 def reject_unstructured_workspace(prompt):
-    # Never infer authority/identity from prose. An explicit workspace instruction
-    # needs the structured contract; keep ordinary mentions of worktrees usable.
-    if re.search(
-        r"(?:工作树|工作目录|执行目录|worktree|working.directory|cwd)\s*[:=：]?\s*[/`]",
-        prompt,
-        re.I,
-    ):
+    # Keep detection identical to legacy explicit-path routing.
+    if _WORKSPACE_PATH.search(prompt):
         raise WorkspaceContractError(
             "WORKSPACE_CONTRACT_REQUIRED: supply cwd, branch and full head separately"
         )
 
 
 def workspace_from_prompt(prompt):
-    """Resolve an explicit existing checkout without asking for Git metadata.
-
-    This recognizes a path instruction, not a title or fuzzy project name.
-    Normal routing still verifies its repository before preparing any work.
-    """
-    paths = set(re.findall(
-        r"(?:工作树|工作目录|执行目录|worktree|working.directory|cwd)\s*[:=：]?\s*[`\"']?(/[^\s`\"'，。；,;]+)",
-        prompt, re.I))
+    """Resolve only a delimited explicit checkout; ordinary prose is context."""
+    paths = set(_WORKSPACE_PATH.findall(prompt))
     if len(paths) > 1:
         raise WorkspaceContractError('WORKSPACE_TARGET_AMBIGUOUS: multiple explicit checkouts')
     return seal_workspace(next(iter(paths)), None) if paths else None

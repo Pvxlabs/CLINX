@@ -1,0 +1,2 @@
+# Unified-patch context prefixes are syntax, including blank lines and Go tabs.
+fixtures/bridge_transport_control.patch -whitespace

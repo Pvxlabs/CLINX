@@ -16,11 +16,13 @@ task supplies approval; the caller should not ask for the same confirmation agai
 Use get_prepared_request to resolve a lost response or a concrete ambiguity, not
 as a routine step. The start receipt, not preparation, proves dispatch.
 
-There is one public execution backend, `CODEX_NATIVE`. CLINX sends no `sandbox`,
-`sandboxPolicy`, `writableRoots`, `networkAccess` or `approvalPolicy` overrides
-when starting or continuing Codex. Existing developer instructions are also
-preserved; completion reporting is carried in the task message. Native Codex
-configuration remains effective.
+There is one public execution backend, `CODEX_NATIVE`. Ordinary new and continued
+tasks use `NATIVE_FULL_ACCESS`: `sandboxPolicy={"type":"dangerFullAccess"}` and
+`approvalPolicy="never"`, without `writableRoots` or network-disable settings.
+This runtime behavior supersedes the initial 2026-10-17 no-override description;
+see [native full access](NATIVE_FULL_ACCESS.md) and
+[Desktop execution](DESKTOP_NATIVE_EXECUTION.md). Existing developer instructions
+are preserved; CLINX does not impose a reply template.
 The old network, surface, normal/fast, capability and operation-class selectors
 are removed from connector discovery. Historical stored policy/route fields
 remain for receipt integrity; they do not describe current native permissions.
@@ -208,7 +210,7 @@ threads do not require automatic adoption. The public readback tool adds no
 App pages or interaction flows, and existing write-operation annotations remain.
 
 本次源码、P620 制品及 A/B/C 验收证据见
-[授权派发真实闭环验收](AUTHORITY_DISPATCH_ACCEPTANCE_20261007.md)。
+[历史验收归档](README.md#历史资料恢复)中的 `AUTHORITY_DISPATCH_ACCEPTANCE_20261007.md`。
 其中 B 和复用既有授权的 ChatGPT 实际入口 C 均已通过。
 本轮 C 没有重新验证新增权限 apply，不保证所有未来权限申请都会获准。
 

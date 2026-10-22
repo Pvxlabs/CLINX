@@ -1287,7 +1287,8 @@ def build_server(
     registry = TaskRegistry(
         task_db_path
         or cfg.task_db_path
-        or (Path.home() / ".local" / "state" / "clinx" / "tasks.sqlite3")
+        or (Path.home() / ".local" / "state" / "clinx" / "tasks.sqlite3"),
+        read_only=not own_executions,
     )
     # The stdio launcher deliberately starts with a minimal environment.  The
     # service-owned runtime.env remains the configured secret source; it is
@@ -1431,9 +1432,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--task-db", help="Existing CLINX task database for --consultations-only")
     parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
     parser.add_argument("--execution-owner", action="store_true", help="serve persistent canonical execution ownership on a private local socket")
+    parser.add_argument("--authority-transport", action="store_true", help="Owner only: expose existing migrated shared authority; never migrate or enroll history")
     parser.add_argument("--no-recover-existing", action="store_true", help="parallel maintenance: existing executions remain with their running completion owner")
     parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")
     args = parser.parse_args(argv)
+    if args.authority_transport and not args.execution_owner:
+        parser.error('--authority-transport requires --execution-owner')
     if args.consultations_only and (args.execution_owner or args.allow_execute):
         parser.error('--consultations-only cannot construct execution ownership or enable execution')
     if args.execution_owner:
@@ -1441,8 +1445,18 @@ def main(argv: list[str] | None = None) -> int:
             parser.error('--execution-owner cannot combine with --stdio')
         from execution_owner import serve
         server = build_server(args.config, own_executions=True)
+        lifecycle_config = os.environ.get('CLINX_CANONICAL_LIFECYCLE_CONFIG')
+        if lifecycle_config:
+            from native_lifecycle import configure_owner
+            configure_owner(server.integration, lifecycle_config)
+        authority = None
+        if args.authority_transport:
+            from execution_owner import configured_authority
+            # Deployment must explicitly migrate and hand off writable handles
+            # before enabling this option. No schema creation or fallback here.
+            authority = configured_authority(server.integration.registry)
         # Never recover unrelated existing executions at service startup.
-        serve(server.integration)
+        serve(server.integration, authority=authority)
         return 0
     if not args.stdio:
         print("MCP_TRANSPORT=BLOCKED: only authenticated external transport may expose CLINX", file=sys.stderr)
@@ -1453,7 +1467,7 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error('--consultations-only requires --task-db and excludes --observations-only')
             path = Path(args.task_db).expanduser().resolve(strict=True)
             from consultations import standalone_server
-            serve_stdio(standalone_server(TaskRegistry(path)), recover_existing=False)
+            serve_stdio(standalone_server(TaskRegistry(path, read_only=True)), recover_existing=False)
         elif args.observations_only:
             from observation_mcp import standalone_server
             from network_observation import directory_from_env

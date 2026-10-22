@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import math
 import re
 import subprocess
 import time
@@ -11,12 +12,20 @@ import urllib.request
 
 def evaluate(metrics, *, now, max_age):
     pattern = r"^commands_poll_last_successful_timestamp_seconds(?:\{[^}]*\})?\s+(\S+)$"
-    values = [
-        float(m.group(1))
-        for line in metrics.splitlines()
-        if (m := re.fullmatch(pattern, line))
-    ]
-    return len(values) == 1 and 0 <= now - values[0] <= max_age
+    try:
+        values = [
+            float(m.group(1))
+            for line in metrics.splitlines()
+            if (m := re.fullmatch(pattern, line))
+        ]
+    except ValueError:
+        return False
+    return (
+        len(values) == 1
+        and math.isfinite(values[0])
+        and values[0] > 0
+        and 0 <= now - values[0] <= max_age
+    )
 
 
 def main():

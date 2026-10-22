@@ -16,3 +16,10 @@ MonitorApp/.build/
 .discovery-deps312/
 
 native/opaque_pairing/target/
+
+# Disposable developer environments and test output, never release/evidence data.
+/.venv-test/
+/.test-results/
+/.coverage
+/.coverage.*
+/htmlcov/

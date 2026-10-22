@@ -1,0 +1,9 @@
+# Companion to the full P1 Tunnel unit; read-only supervisor status, no PID assumption.
+[Unit]
+Description=Read-only CLINX P1 supervisor identity and advancing poll status
+After=clinx-tunnel.service
+
+[Service]
+Type=oneshot
+ExecStart=@PYTHON@ @RELEASE@/tunnel_reliability.py status --state-dir @HOME@/.local/state/clinx/tunnel-reliability
+TimeoutStartSec=10s

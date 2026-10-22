@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from execution_owner import owner_caller
 from completion_runtime import serialized_execution, serialized_prepared_start
 from app_server import AppServerError, ModelCapabilityError
 from execution_semantics import parse_routing_identity
@@ -319,6 +320,13 @@ class ExecutionResultService:
         blocked_state_id: str | None = None,
     ) -> ExecutionResult:
         """Compatibility facade: finalization owns truth, this service projects it."""
+        if getattr(self.registry, 'read_only', False):
+            from execution_owner import ExecutionOwnerClient
+            arguments = dict(execution_ref=execution_ref, task_id=task_id, turn_id=turn_id,
+                raw_result=raw_result, issue_id=issue_id, review_state_id=review_state_id,
+                blocked_state_id=blocked_state_id)
+            return ExecutionResult(**ExecutionOwnerClient(self.registry).control(
+                'result', 'receive_and_writeback', arguments))
         return ExecutionFinalizer(self.registry, self.linear).finalize(
             execution_ref=execution_ref,
             task_id=task_id,
@@ -658,6 +666,12 @@ class ExecutionFinalizer:
         )
 
     @serialized_execution
+    def reconcile_historical_handoff(self, execution_ref, *, expected_sha256=None, check_only=False):
+        from historical_handoff import reconcile
+        return reconcile(self.registry, execution_ref,
+                         expected_sha256=expected_sha256, check_only=check_only)
+
+    @serialized_execution
     def reconcile_task_projection(self, execution_ref, *, check_only=False):
         from task_projection import reconcile
         return reconcile(self.registry, execution_ref, check_only=check_only)
@@ -689,6 +703,18 @@ class ExecutionFinalizer:
         result_source: dict[str, Any] | None = None,
     ) -> ExecutionResult:
         """Persist result, terminate/release, then update the external projection."""
+        from authority_transactions import borrowed
+        owner = getattr(self.registry, '_execution_owner', None)
+        if owner is not None and borrowed(self.registry.path) is None:
+            committed = owner.finalize(self, dict(
+                execution_ref=execution_ref, task_id=task_id, turn_id=turn_id,
+                raw_result=raw_result, issue_id=issue_id, review_state_id=review_state_id,
+                blocked_state_id=blocked_state_id, team_id=team_id,
+                review_state=review_state, blocked_state=blocked_state,
+                provider_outcome=provider_outcome, provider_status=provider_status,
+                result_source=result_source))
+            if committed is not NotImplemented:
+                return committed
         if provider_outcome not in {
             "PROVIDER_TERMINAL", "PROVIDER_FAILED", "PROVIDER_TIMEOUT",
             "PROVIDER_DISCONNECTED",
@@ -919,6 +945,7 @@ class ClinxIntegration:
             "read_only": True,
         }
 
+    @owner_caller('integration')
     def adopt_conversation(
         self,
         *,
@@ -1076,6 +1103,7 @@ class ClinxIntegration:
             "read_only": False,
         }
 
+    @owner_caller('integration')
     def reconcile_host_delivery(self, *, execution_ref: str, tool_call_id: str,
                                 proof: dict[str, Any]) -> dict[str, Any]:
         """Outer maintenance entry for one exact persisted delivery failure."""
@@ -1612,6 +1640,7 @@ class ClinxIntegration:
                 'backend_implemented': True, 'mcp_exposed': True, 'client_exposure': 'NOT_OBSERVED',
                 'runtime_health': 'NOT_PROBED', 'read_only': True}
 
+    @owner_caller('integration')
     def register_derived_git_target(self, *, approved=False, task_ref, path,
                                     ownership_evidence, creation_host_execution_ref=None):
         if approved is not True:
@@ -1623,12 +1652,14 @@ class ClinxIntegration:
             provenance=ownership_evidence,
             creation_host_execution_ref=creation_host_execution_ref)
 
+    @owner_caller('integration')
     def revoke_derived_git_target(self, *, approved=False, task_ref, target):
         if approved is not True:
             raise M9IntegrationError('explicit approved=true is required for derived Git target revocation')
         self.registry.revoke_derived_git_target(task_id=task_ref, target_id=target)
         return {'task_ref': task_ref, 'target': target, 'revoked': True}
 
+    @owner_caller('integration')
     def prepare_policy_reauthorization(self, *, approved=False, task_ref, expected_policy_hash,
                                        target_policy, reason, network_access=None):
         from execution_semantics import normalize_surface, normalize_authority, normalize_network_policy
@@ -1661,6 +1692,7 @@ class ClinxIntegration:
             new_policy=policy, new_route=updated, requested_scope={'policy': policy.as_dict(),
                 'network_access': network, 'derived_git_targets': derived_audit}, reason=reason)
 
+    @owner_caller('integration')
     def apply_policy_reauthorization(self, *, prepared_reauthorization_ref, approved=False,
                                     expected_request_hash=None, expected_task_ref=None):
         if approved is not True:
@@ -1738,6 +1770,7 @@ class ClinxIntegration:
             prepared_reauthorization_ref=prepared['prepared_reauthorization_ref'])
         return self.registry.get_task(task.task_id), policy
 
+    @owner_caller('integration')
     def prepare_execution(
         self,
         *,
@@ -2503,6 +2536,7 @@ class ClinxIntegration:
             ),
         )
 
+    @owner_caller('integration')
     def cancel_execution(self, *, execution_ref: str | None = None, task_ref: str | None = None,
                          native_turn_id: str | None = None, approved: bool = False) -> dict[str, Any]:
         """Cancel a managed execution or an explicitly approved canonical native turn."""
@@ -2629,6 +2663,7 @@ class ClinxIntegration:
             "read_only": False,
         }
 
+    @owner_caller('integration')
     def execute(
         self,
         *,

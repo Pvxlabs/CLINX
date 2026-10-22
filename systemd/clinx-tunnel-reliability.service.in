@@ -1,0 +1,21 @@
+# Full replacement unit, not a dependency-reset drop-in. NOT INSTALLED.
+[Unit]
+Description=CLINX P1 bounded Tunnel supervisor
+After=network-online.target clinx-provider.service
+Wants=network-online.target clinx-provider.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@HOME@/dev/clinx
+EnvironmentFile=@HOME@/.config/tunnel-client/runtime.env
+Environment=PATH=@CODEX_PATH@
+ExecStart=@PYTHON@ @RELEASE@/tunnel_reliability.py run --state-dir @HOME@/.local/state/clinx/tunnel-reliability @POLICY_ARGS@ -- @TUNNEL@ run --profile-dir @HOME@/.config/tunnel-client --profile clinx-p620
+Restart=on-failure
+RestartSec=10s
+RestartPreventExitStatus=78
+KillMode=control-group
+TimeoutStopSec=15s
+
+[Install]
+WantedBy=default.target

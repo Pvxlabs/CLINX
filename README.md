@@ -2,7 +2,9 @@
 
 CLINX forwards tasks and results between ChatGPT and native Codex conversations.
 It tracks conversation identity, delivery and execution receipts. Codex owns the
-execution environment; CLINX does not set sandbox, network or approval policy.
+execution environment. Ordinary native tasks use `NATIVE_FULL_ACCESS`
+(`dangerFullAccess`, `approvalPolicy=never`), without writable-root lists or
+network restrictions. See [native runtime configuration](docs/NATIVE_FULL_ACCESS.md).
 
 The only execution configuration is optional `model` and `reasoning_effort`.
 Use an exact Codex conversation URI directly: prepare once, then start, without
@@ -13,6 +15,10 @@ capability lists, and repository targets are task context, not CLINX permission
 checks. Codex and the target environment own operation access; CLINX owns task
 routing, concurrent execution coordination, and execution records. See the
 [task forwarding contract](docs/EXECUTION_AUTHORITY.md#native-task-forwarding-2026-10-17).
+
+Start with the [documentation index](docs/README.md) for repository layout,
+current contracts, dated release evidence and recovery boundaries, or the
+[script and launcher index](scripts/README.md) for entrypoints and their effects.
 
 It turns a one-off coding-agent interaction into work that can be continued,
 recovered, coordinated, and audited without copying a long prompt between
@@ -55,24 +61,26 @@ that work coherent while allowing the execution carrier to change.
 
 The checked-in implementation and test suite currently cover:
 
-- Direct managed Codex app-server execution through the CLINX dispatcher.
+- Native Codex task creation and continuation through the configured Desktop
+  daemon, with exact input receipts; see [Desktop execution](docs/DESKTOP_NATIVE_EXECUTION.md).
 - Durable Task and opaque Execution identities with exact task, turn, route,
   and lease ownership.
 - ConversationBinding, bounded historical conversation adoption, and
   provider-thread migration with predecessor/successor lineage.
 - Worktree single-writer leases, stale-lease reclamation, cancellation, and
   fail-closed routing checks.
-- A bounded host executor for approved development operations, including the
-  `clinx` dynamic namespace and `clinx_host_operation` tool.
+- Internal legacy Host execution and receipt reconciliation. Host capability
+  tools are not part of the public native-forwarding catalog.
 - Provider terminal/failure reconciliation, exact host evidence, strict
   result parsing, and finalization that releases the execution lease.
 - Idempotent result attribution and Linear audit binding without allowing
   Linear to own execution state.
-- A safe MCP command plane with explicit approval and opaque execution
-  references; the normal public catalog does not expose a generic `clinx_execute`.
-- An explicitly initialized, default-off V2 `runtime_control` foundation for
-  durable worker ownership and a qualification-only, non-authoritative Rust
-  decision/replay prototype. V1 remains the live authority.
+- An MCP prepare/start flow with opaque execution references. The user's task
+  instruction supplies authorization; the normal public catalog does not expose
+  a generic `clinx_execute`.
+- Versioned execution contracts, runtime ownership and Rust qualification work.
+  Source, isolated qualification and installed releases have separate evidence;
+  see the [release record index](docs/README.md#发布与回退记录).
 
 These are self-hosted and dogfooded capabilities, not a claim of production
 readiness. Runtime/provider behavior must still be qualified in the deployment
@@ -134,18 +142,42 @@ The optional `bin/clinx` launcher opens `devices` by default. It browses private
 LAN nodes, shows persistent device trust, and authenticates known peers with
 mutual TLS. Existing local/SSH provider and manual host paths remain available.
 
-**Security status: BLOCKED for production pairing.** The current SPAKE2 backend
-is explicitly `DEV_ONLY` because it is not constant-time. Pairing and using
-development trust require `--allow-dev-pairing`; no execution authority is
-granted by device trust. See [Local Discovery v1](docs/LOCAL_DISCOVERY_V1.md) for
-isolated setup, the two-device flow, architecture, test evidence, and blockers.
+Production pairing requires the native RFC 9807 OPAQUE adapter; it fails closed
+when that adapter is unavailable. The separate SPAKE2 backend is explicitly
+`DEV_ONLY` and requires `--allow-dev-pairing`; device trust grants no execution
+authority. See [Local Discovery v1](docs/LOCAL_DISCOVERY_V1.md) for native build
+instructions, isolated setup, the two-device flow and the limits of recorded
+acceptance.
+
+## Development and tests
+
+Use Python 3.12 for the pinned development environment. No production service,
+API key or Codex daemon is needed for the basic profile:
+
+```sh
+python3.12 -m venv .venv-test
+.venv-test/bin/python -m pip install -r requirements-dev.txt
+.venv-test/bin/python scripts/run_tests.py basic
+.venv-test/bin/python scripts/run_tests.py collect
+```
+
+If your distribution omits ensurepip, use `uv venv --python 3.12 --seed .venv-test`
+for the first command. See [CONTRIBUTING](CONTRIBUTING.md) for workflow and layout,
+[Testing](docs/TESTING.md) for isolated Owner/Rust, SQLite, native pairing and
+platform prerequisites, and [the test index](tests/README.md) for retained suites.
+On P620 put developer environments and build outputs in your task-owned LAB path.
 
 ## Getting started
 
-Requirements: macOS or Linux, Python 3.11+, Git, a configured Codex
+
+Runtime requirements: macOS or Linux, Python 3.11+, Git, a configured Codex
 app-server/proxy transport, Linear MCP for the bridge workflow, and a Linear
 personal API key. The legacy bridge has no required Python packages; optional device discovery uses
 `requirements-discovery.txt`.
+
+`bridge.toml` records the existing operator deployment. Configure your own local
+paths, project identities, Provider transport and private registry before running
+these service commands. Offline development tests above supply their own state.
 
 Start the bounded MCP adapter locally:
 
@@ -177,7 +209,8 @@ python3 bridge.py --config bridge.toml run
 ```
 
 Task discovery and context reads are bounded and do not start a provider turn.
-Execution requires an explicit approved preparation/start flow; private thread,
+Execution uses the preparation/start flow authorized by the user's task request;
+private thread,
 session, turn, cwd, repository-origin, and credential values remain internal
 registry data.
 
@@ -188,9 +221,10 @@ transport. This repository does not publish an unauthenticated HTTP/MCP endpoint
 LAN listener only enrolls and authenticates device identities; remote MCP execution
 still requires the existing authenticated deployment boundary and authorization.
 
-CLINX does not push, merge, deploy, grant Linear `Done`, or expose arbitrary
-shell access. Host operations are bounded by registered project identity,
-execution policy, capability, and approval checks.
+CLINX routes the user's authorized task to Codex and records its receipts.
+That task may include Git or deployment work; the target execution environment
+owns those operations. Legacy Host executor checks apply to that separate
+internal path, not as extra admission checks for ordinary native forwarding.
 
 Status: actively developed, self-hosted, and dogfooded. Production deployment,
 provider interoperability beyond the current adapter, and broader autonomous

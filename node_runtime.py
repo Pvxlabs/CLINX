@@ -176,7 +176,7 @@ class CentreService:
             allowed = {"session.read", "session.status", "execution.context", "execution.status"} if effective.read_sessions else set()
             if effective.execute_tasks:
                 from node_protocol import NATIVE_HANDOFF_CAPABILITY
-                allowed |= {"execution.adopt", "execution.prepare", "execution.start", "execution.status", "execution.context", "execution.cancel", NATIVE_HANDOFF_CAPABILITY}
+                allowed |= {"execution.adopt", "execution.prepare", "execution.start", "execution.status", "execution.context", "execution.cancel", "execution.reconcile", NATIVE_HANDOFF_CAPABILITY}
             capabilities = tuple(sorted(set(supplied) & allowed))
             record = NodeRecord(
                 node_id=node_id, user_scope=effective.user_scope,

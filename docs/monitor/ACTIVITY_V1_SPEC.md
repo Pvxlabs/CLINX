@@ -67,7 +67,7 @@ Commit/push and activation outcomes reported independently.
   screenshot execution has 10 public agent messages. Read-only source inspection only.
 - M1: passed; Activity + existing Observer + JSON schema: 27 tests, 9 subtests passed.
 - M2: passed; 57 Swift tests/build/sign passed. First real screenshot + scroll/task-switch validation passed. Authorization completed; corrected Release screenshots confirm Connected, feedback rendering and Jump to latest. User confirmed final-build manual scrolling is smooth and the reading position remains unchanged across refreshes.
-- M3: Observer activated/read back with rollback retained. Real generation-to-display latency still unmeasured; see ACTIVITY_V1_ACCEPTANCE.md.
+- M3: Observer activated/read back with rollback retained. Real generation-to-display latency still unmeasured; see the [historical acceptance archive](../README.md#历史资料恢复).
 - Performance follow-up: user reported residual stutter after initial manual acceptance;
   M2 reopened for bounded client-only correction. Move Markdown preparation to decode on
   ObserverClient's actor, isolate sync-label observation, suppress empty-poll transcript

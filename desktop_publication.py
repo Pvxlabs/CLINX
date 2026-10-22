@@ -75,6 +75,11 @@ class DesktopPublicationOutbox:
         self.store = EventStore(registry.path)
 
     def enqueue(self, target, title):
+        if getattr(self.registry, 'read_only', False):
+            import dataclasses
+            from execution_owner import ExecutionOwnerClient
+            return ExecutionOwnerClient(self.registry).control('publication', 'enqueue',
+                dict(target=dataclasses.asdict(target), title=title))
         from bridge import canonical_host
         native = self.cfg.app_server.native_socket
         if (not native or not target.target_host or not self.cfg.runtime_host
@@ -130,6 +135,9 @@ class DesktopPublicationOutbox:
         return None
 
     def process(self, key):
+        if getattr(self.registry, 'read_only', False):
+            from execution_owner import ExecutionOwnerClient
+            return ExecutionOwnerClient(self.registry).control('publication', 'process', dict(key=key))
         # Existing cross-process flock is a delivery lock, not a Codex writer lock.
         with finalization_lock(self.registry, 'desktop-publication:' + key):
             with self.registry._connect() as c:
@@ -155,6 +163,9 @@ class DesktopPublicationOutbox:
             return inspect_publication(self.registry.path, key=key)
 
     def run_once(self, *, limit=8):
+        if getattr(self.registry, 'read_only', False):
+            from execution_owner import ExecutionOwnerClient
+            return ExecutionOwnerClient(self.registry).control('publication', 'run_once', dict(limit=limit))
         if not 1 <= limit <= 16:
             raise ValueError('publication batch must be 1..16')
         with self.registry._connect() as c:

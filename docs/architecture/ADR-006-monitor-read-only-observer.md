@@ -81,4 +81,4 @@ observation_id 绑定节点、用户、Provider、native thread；canonical 引�
 
 Observer v2 与 MCP 共享 ObservationDirectory 和当前授权检查；只读存储视图不初始化身份、数据库或锁文件，不调用 get_status/reconciliation。v1 API 保持兼容；Mac 默认全部设备，使用独立 Observation 模型；控制仍走既有授权与单写者。
 
-本决策只交付源码与隔离资格证据，不授予运行时激活或控制权限。详见 docs/NETWORK_OBSERVATION_V1_REPORT_20261004.md 与 docs/NETWORK_OBSERVATION_V1_ACCEPTANCE_20261004.md。
+本决策只交付源码与隔离资格证据，不授予运行时激活或控制权限。历史报告 `NETWORK_OBSERVATION_V1_REPORT_20261004.md` 与 `NETWORK_OBSERVATION_V1_ACCEPTANCE_20261004.md` 见[归档入口](../README.md#历史资料恢复)。

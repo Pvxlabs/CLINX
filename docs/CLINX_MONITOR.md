@@ -64,8 +64,8 @@ export/snapshot guarantee across multiple requests.
 
 Machine contract: [observer-v1.schema.json](monitor/observer-v1.schema.json).
 Wire examples: [api-examples.json](monitor/api-examples.json), explicitly synthetic.
-Swift: [ObserverModels.swift](monitor/ObserverModels.swift) and
-[ObserverClient.swift](monitor/ObserverClient.swift).
+Swift: [ObserverModels.swift](../MonitorApp/Sources/CLINXMonitor/ObserverModels.swift) and
+[ObserverClient.swift](../MonitorApp/Sources/CLINXMonitor/ObserverClient.swift).
 
 | Field | Source / interpretation |
 | --- | --- |
@@ -279,12 +279,11 @@ actual authorization state; never alter any P620 service.
 
 Run `python3 -m unittest -q test_observer_server` for dependency-free backend tests.
 Run `python3 -m unittest -q test_observer_schema` when jsonschema is installed for
-Draft 2020-12 schema + synthetic examples validation. Full regression uses
-`python3 -m unittest discover -q`. Tests create disposable local fixture registries
+Draft 2020-12 schema + synthetic examples validation. The portable core profile uses
+`python scripts/run_tests.py basic`; full collection and environment-dependent
+suites are documented in [Testing](TESTING.md). Tests create disposable local fixture registries
 and a random loopback port; they do not read the configured live registry.
 
-Repository reports:
-[FINAL_REPORT.md](monitor/FINAL_REPORT.md),
-[CLAUDE_CODE_HANDOFF.md](monitor/CLAUDE_CODE_HANDOFF.md).
+Historical reports and handoff snapshots: [recovery index](README.md#历史资料恢复).
 Requested export location is /data/artifacts/clinx-monitor-spec-20261001/ with those
 same filenames; export failure is explicit and must not be recorded as PASS.

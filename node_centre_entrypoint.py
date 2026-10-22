@@ -127,14 +127,14 @@ def main(argv=None) -> int:
     from network_observation import ObservationWriter
     observations = ObservationWriter(args.observations) if args.observations else None
     if args.canonical_lifecycle_config:
-        from native_lifecycle import NativeTaskLifecycle
+        from native_lifecycle import NativeLifecycleClient
         from network_observation import ObservationDirectory
         from task_registry import TaskRegistry
         config = json.loads(args.canonical_lifecycle_config.read_text())
-        canonical = TaskRegistry(config["canonical_db"])
+        canonical = TaskRegistry(config["canonical_db"], read_only=True)
         directory = ObservationDirectory(args.observations, registry, NodeAuthorizationStore(args.state), peers,
             config["user_scope"], local_identity=identity.public, canonical_path=canonical.path)
-        observations.lifecycle = NativeTaskLifecycle(canonical, directory, config["routes"], since=config["since"], auto_budget=config.get("auto_budget",1000))
+        observations.lifecycle = NativeLifecycleClient(canonical)
         if args.command == "reconcile-native":
             control = observations.lifecycle.control(
                 paused=None if args.paused is None else args.paused == "yes", backfill_remaining=args.backfill_budget, auto_remaining=args.auto_budget)

@@ -504,3 +504,40 @@ class NativeTaskLifecycle:
             "items": results,
             "next_cursor": page["next_cursor"],
         }
+
+
+class NativeLifecycleClient:
+    """Centre sends references; Owner rereads sharing and stored provenance."""
+
+    def __init__(self, registry):
+        from execution_owner import ExecutionOwnerClient
+        self.owner = ExecutionOwnerClient(registry)
+
+    def control(self, **arguments):
+        return self.owner.control('native', 'control', arguments)
+
+    def reconcile(self, observation, *, backfill=False):
+        return self.owner.control('native', 'reconcile', dict(observation=observation, backfill=backfill))
+
+    def backfill(self, *, limit=16):
+        return self.owner.control('native', 'backfill', dict(limit=limit))
+
+    accepted = NativeTaskLifecycle.accepted
+
+
+def configure_owner(integration, config_path):
+    """Use only service configuration, never a caller-supplied route or proof."""
+    import os
+    from network_observation import directory_from_env
+    from node_protocol import NodeRegistry
+
+    config = json.loads(Path(config_path).read_text())
+    if Path(config['canonical_db']).resolve() != integration.registry.path.resolve():
+        raise ValueError('NATIVE_LIFECYCLE_DATABASE_MISMATCH')
+    directory = directory_from_env()
+    if directory is None or directory.user_scope != config['user_scope']:
+        raise ValueError('NATIVE_LIFECYCLE_DIRECTORY_REQUIRED')
+    # This existing node index is a projection, not another canonical task DB.
+    directory.registry = NodeRegistry(os.environ['CLINX_OBSERVATION_REGISTRY'])
+    integration.native_lifecycle = NativeTaskLifecycle(integration.registry, directory,
+        config['routes'], since=config['since'], auto_budget=config.get('auto_budget', 1000))

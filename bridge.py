@@ -30,6 +30,7 @@ import urllib.request
 import uuid
 from typing import Any
 
+from execution_owner import owner_caller
 from completion_runtime import CompletionIdentity, CompletionIdentityError, CompletionRuntime, serialized_execution
 
 from app_server import (
@@ -1369,6 +1370,10 @@ class LinearTaskIndex:
         return f"[CLINX Task] {task.title}"
 
     def sync(self, task_id: str, *, project_id: str | None = None) -> TaskIndexRecord:
+        if getattr(self.registry, 'read_only', False):
+            from execution_owner import ExecutionOwnerClient
+            return TaskIndexRecord(**ExecutionOwnerClient(self.registry).control('task_index', 'sync',
+                dict(task_id=task_id, project_id=project_id)))
         task = self.registry.get_task(task_id)
         existing = self.registry.get_task_index(task_id)
         title = self._title(task)
@@ -2325,7 +2330,7 @@ def _publish_created_thread(cfg: BridgeConfig, target: TargetConfig, title: str,
             path = getattr(cfg, 'task_db_path', None)
             if path is None:
                 return "OUTBOX_NOT_CONFIGURED"
-            registry = TaskRegistry(path)
+            registry = TaskRegistry(path, read_only=os.environ.get("CLINX_OWNER_WORKER") == "1")
         outbox = DesktopPublicationOutbox(registry, cfg)
         key = outbox.enqueue(target, title)
         if key is None:
@@ -2353,13 +2358,14 @@ class TaskDispatcher:
         self.workspaces = WorkspaceRegistry(cfg.workspaces)
         self.tasks = task_registry or TaskRegistry(
             cfg.task_db_path
-            or (Path.home() / ".local" / "state" / "clinx" / "tasks.sqlite3")
+            or (Path.home() / ".local" / "state" / "clinx" / "tasks.sqlite3"),
+            read_only=os.environ.get("CLINX_OWNER_WORKER") == "1",
         )
         self.client_factory = client_factory or (
             lambda target: _default_app_server_client(cfg, target)
         )
         self._uses_default_client_factory = client_factory is None
-        self.host_executor = HostExecutor(cfg.host_executor, self.tasks) if initialize_host_executor else None
+        self.host_executor = HostExecutor(cfg.host_executor, self.tasks) if initialize_host_executor and not self.tasks.read_only else None
         self.linear = linear
         self.projects = DynamicProjectResolver(self.workspaces, cfg.projects)
         self.last_task_id: str | None = None
@@ -2831,6 +2837,7 @@ class TaskDispatcher:
         )
         return [spec]
 
+    @owner_caller('dispatcher')
     def migrate_provider_thread(
         self,
         *,
@@ -2954,6 +2961,8 @@ class TaskDispatcher:
         return receipt if isinstance(receipt, dict) else None
 
     def start_completion_runtime(self) -> CompletionRuntime:
+        if self.tasks.read_only:
+            return None  # Only the existing Owner runs completion/publication.
         if getattr(self, "_completion_runtime", None) is None:
             self._completion_runtime = CompletionRuntime(self.tasks, self.reconcile_execution,
                 owner_instance=getattr(self, 'completion_owner_instance', None),
@@ -2989,6 +2998,7 @@ class TaskDispatcher:
         runtime.register(identity)
         configure(thread_id, turn_id, lambda message: runtime.notify(identity, message))
 
+    @owner_caller('dispatcher')
     @serialized_execution
     def recover_execution_completion(self, execution_ref: str, *, restore_cancelled: bool = False,
                                      reconcile_unstarted: bool = False,
@@ -3101,6 +3111,7 @@ class TaskDispatcher:
         )
         return thread
 
+    @owner_caller('dispatcher')
     def dispatch(
         self,
         *,
@@ -3726,6 +3737,7 @@ class TaskDispatcher:
             native_forwarding=native_receipt if isinstance(native_receipt, dict) else None,
         )
 
+    @owner_caller('dispatcher')
     def adopt_existing_conversation(
         self,
         *,
@@ -3889,6 +3901,7 @@ class TaskDispatcher:
             index = task_index.sync(task.task_id, project_id=task_index_project_id)
         return (task, binding, index, created) if include_created else (task, binding, index)
 
+    @owner_caller('dispatcher')
     def adopt_or_reuse_existing_conversation(
         self,
         *,
@@ -3959,6 +3972,7 @@ class TaskDispatcher:
             discovery_evidence=discovery_evidence,
         )
 
+    @owner_caller('dispatcher')
     def task_action(self, task_id: str, action: str) -> str:
         if action == "complete":
             return self.tasks.set_status(task_id, "COMPLETED").status
@@ -4006,6 +4020,7 @@ class TaskDispatcher:
             )
         return route
 
+    @owner_caller('dispatcher')
     def cancel_execution(self, execution_ref: str) -> dict[str, Any]:
         """Durably request cancellation, then confirm it with the provider."""
         active = self.tasks.get_active_execution(execution_ref)
@@ -4133,10 +4148,13 @@ class TaskDispatcher:
         workspace = self.workspaces.resolve(task.workspace_alias)
         return self.workspaces.validate_path(workspace, Path(task.cwd))
 
+    @owner_caller('dispatcher')
     @serialized_execution
     def reconcile_execution(
         self, execution_ref: str | None = None, *, task_id: str | None = None,
         reclaim_stale: bool = True,
+        expected_turn_id: str | None = None,
+        native_archive_path: str | None = None,
         _result_reconciliation: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Perform one bounded provider read and converge durable execution truth.
@@ -4145,7 +4163,19 @@ class TaskDispatcher:
         execution and lease have no opaque execution identity.  It is never a
         substitute for an identity when a live execution exists.
         """
-        if reclaim_stale:
+        if native_archive_path is not None and (expected_turn_id is None or _result_reconciliation is not None):
+            raise TaskRegistryError('ARCHIVE_REQUIRES_EXACT_TURN: no reconciliation performed')
+        if expected_turn_id is not None:
+            # Repeat the node selector check inside the existing Owner before
+            # any liveness write, sweep or idempotent terminal result readback.
+            record = self.tasks.get_execution_record(execution_ref or '')
+            prepared = self.tasks.get_prepared_execution_for_execution(execution_ref or '')
+            if (not isinstance(expected_turn_id, str) or not expected_turn_id or len(expected_turn_id) > 256
+                    or record is None or record.get('execution_owned_turn') != expected_turn_id
+                    or self.tasks.get_task(record['task_id']).turn_id != expected_turn_id
+                    or (prepared is not None and prepared.resulting_turn_id != expected_turn_id)):
+                raise TaskRegistryError('EXECUTION_TURN_IDENTITY_CONFLICT: no reconciliation performed')
+        if reclaim_stale and getattr(self.tasks, '_execution_owner', None) is None:
             self.tasks.reclaim_stale_worktree_leases()
         active = self.tasks.get_active_execution(execution_ref) if execution_ref else None
         orphaned = False
@@ -4166,6 +4196,18 @@ class TaskDispatcher:
             retained = self.tasks.get_execution_record(execution_ref or "")
             persisted = self.tasks.get_execution_result(execution_ref or "")
             held = self.tasks.has_execution_lease(execution_ref or "")
+            if (expected_turn_id is not None and _result_reconciliation is None
+                    and retained is not None and retained.get('stage') == 'CANCELLED' and not held):
+                from execution_liveness import read_row
+                with self.tasks._connect() as conn:
+                    terminal = read_row(conn, execution_ref)
+                route = self.tasks.get_execution_routing_identity(execution_ref)
+                if (terminal and terminal['provider_liveness'] == 'TERMINAL' and terminal['release_safe']
+                        and terminal['turn_id'] == retained.get('execution_owned_turn')
+                        and route is not None and terminal['thread_id'] == route.conversation.binding):
+                    # Read the previous exact confirmation, without replaying
+                    # cancellation or finalizing an already released execution.
+                    return {'state': 'CANCELLED', 'authoritative': True, 'idempotent': True}
             if retained is not None and persisted is not None and not held and _result_reconciliation is None:
                 recovered = ExecutionFinalizer(self.tasks, getattr(self, "linear", None)).finalize(
                     execution_ref=execution_ref, task_id=persisted.task_id,
@@ -4321,6 +4363,61 @@ class TaskDispatcher:
         result_source: dict[str, Any] | None = None
         native_observer_state: str | None = None
         native_evidence = None
+        if native_archive_path is not None:
+            # Maintenance supplies one original archive, not a latest-turn
+            # projection. The Owner reads it and re-observes configured peers;
+            # an archive alone cannot grant release permission.
+            from execution_liveness import normalized
+            from native_provider import archived_upstream_failure, observe_execution
+            from tool_delivery import ToolDeliveryLedger
+            if prepared is None:
+                return unknown('ARCHIVE_PREPARED_IDENTITY_UNAVAILABLE')
+            prepared = self.tasks.verify_prepared_execution(prepared.prepared_execution_ref)
+            if (prepared.resulting_execution_ref != execution_ref
+                    or prepared.resulting_task_id != task.task_id
+                    or prepared.resulting_thread_id != binding.thread_id
+                    or prepared.resulting_turn_id != exact_turn_id):
+                return unknown('ARCHIVE_PREPARED_IDENTITY_CONFLICT')
+            self._execution_route(task, execution_ref)
+            key = self.tasks.worktree_key(host=task.host, cwd=task.cwd,
+                                          repository_origin=task.repository_origin)
+            with self.tasks._connect() as conn:
+                lease = conn.execute('SELECT task_id,worktree_key FROM worktree_leases WHERE execution_ref=?',
+                                     (execution_ref,)).fetchone()
+            current = self.tasks.get_latest_execution_for_task(task.task_id)
+            if (lease is None or (lease['task_id'], lease['worktree_key']) != (task.task_id, key)
+                    or current is None or current['execution_ref'] != execution_ref):
+                return unknown('ARCHIVE_EXECUTION_OWNERSHIP_CONFLICT')
+            try:
+                source = archived_upstream_failure(
+                    self.cfg.app_server.native_home or Path.home() / '.codex',
+                    native_archive_path, binding.thread_id, exact_turn_id, str(project_path))
+            except (OSError, ValueError, KeyError, TypeError):
+                return unknown('ARCHIVE_EXACT_TERMINAL_UNCONFIRMED')
+            # This narrow recovery applies only to an upstream failure before
+            # any Host/tool call. Other cases keep their existing reconciler.
+            if (ToolDeliveryLedger.records(self.tasks, execution_ref)
+                    or self.tasks.list_host_executions(execution_ref=execution_ref)):
+                return unknown('ARCHIVE_HOST_ACTIVITY_CONFLICT')
+            observed = observe_execution(self.cfg, binding.thread_id, exact_turn_id)
+            peers = observed['observations']
+            if (not peers or observed['ownership_conflict'] or any(
+                    row.get('transport_error') or row.get('state') not in {'idle', 'notLoaded', 'unloaded'}
+                    or (row.get('turn_id') == exact_turn_id and normalized(row.get('turn_status')) not in
+                        {'failed', 'error', 'systemerror', 'errored'}) for row in peers)):
+                return unknown('ARCHIVE_OWNER_UNCONFIRMED', {
+                    **observed, 'provider_liveness': 'UNKNOWN', 'release_safe': False,
+                    'owner_endpoint': None, 'liveness_reason': 'ARCHIVE_OWNER_UNCONFIRMED'})
+            # Source identity/hash and peer ownership are read inside the same
+            # exact-execution serialization used by the existing Finalizer.
+            terminal = dict(provider_liveness='TERMINAL', transport_health=observed['transport_health'],
+                liveness_reason='EXACT_ARCHIVED_UPSTREAM_FAILURE', owner_endpoint=source['path'],
+                ownership_conflict=False, release_safe=True, observations=[*peers, source])
+            record_liveness(self.tasks, execution_ref, binding.thread_id, exact_turn_id, terminal)
+            raw = json.dumps(source, sort_keys=True)
+            result_source = dict(source=source['source'], raw_text=raw,
+                message_id=source['archive_sha256'], phase='task_complete', created_at=source['completed_at'])
+            return finalize_provider('PROVIDER_FAILED', source['error'], raw)
         try:
             # An adopted conversation without a turn has no execution route yet.
             # Its sealed task route is sufficient for this read-only lookup.

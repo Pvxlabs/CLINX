@@ -220,4 +220,4 @@ ahead_behind 4、service_is_active 8、service_status 16。Provider delivery（H
 后续路径扩展见 [TRUSTED_WORKSPACE_PATHS.md](TRUSTED_WORKSPACE_PATHS.md)。
 registered cwd 继续作为 task identity / lease anchor；path_read 和 development_command
 路径参数按配置 trusted roots 判断。上述历史资格快照保持不变；新的 canonical/runtime
-收敛证据见 [CANONICAL_CLOSURE_20261001.md](CANONICAL_CLOSURE_20261001.md)。
+收敛证据见 [历史归档](README.md#历史资料恢复)中的 `CANONICAL_CLOSURE_20261001.md`。

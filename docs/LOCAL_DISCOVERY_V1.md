@@ -7,7 +7,7 @@
 配置。原有 identity session 仍无执行权限，默认 listener 不分享 Monitor 配置。
 CLI 的 TTY-only 输入保持；GUI 的一次性 PIN 使用父子进程私有管道单独一行，
 不使用 argv/env/文件/JSON 字段。最新 macOS 验证范围见
-[LAN Pairing acceptance](monitor/LAN_PAIRING_ACCEPTANCE.md)，不覆盖或扩大下文旧证据。
+[LAN Pairing 历史验收归档](README.md#历史资料恢复)，不覆盖或扩大下文旧证据。
 
 ## 结论与精确范围
 

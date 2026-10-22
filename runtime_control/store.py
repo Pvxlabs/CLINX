@@ -127,6 +127,8 @@ class RuntimeControlStore:
             **kwargs,
         )
         conn.row_factory = sqlite3.Row
+        from authority_transactions import configure
+        configure(conn)
         conn.execute(f"PRAGMA busy_timeout={self.busy_timeout_ms}")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -256,7 +258,10 @@ class RuntimeControlStore:
             # transaction owns the protected write lock.
             fresh_at = encode_time(self.clock.now())
             now = self._coordinator_now(conn, fresh_at)
+            from runtime_control.transport import begin_delivery, finish_delivery
+            begin_delivery(conn, self.path)
             yield conn, now, handoff_token
+            finish_delivery(conn, self.path)
             if handoff_token is not None:
                 self._clear_safety_handoff_in_transaction(conn, safety_key, handoff_token)
             self._fault("before_commit")
@@ -1337,20 +1342,25 @@ class RuntimeControlStore:
             ).fetchone()["count"]
             if int(count) >= int(worker["capacity"]):
                 raise CapacityExceeded(f"worker capacity exhausted: {worker_id}")
+            shared_epoch = None
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE name='authority_resources'").fetchone():
+                from authority_mapping import allocation_epoch
+                shared_epoch = allocation_epoch(conn, self.path, resource_key, attempt_id, worker_id, incarnation_id)
             held_resource = conn.execute(
                 "SELECT allocation_id FROM runtime_allocations WHERE resource_key=? AND lifecycle IN ('ACTIVE','QUARANTINED')",
                 (resource_key,),
             ).fetchone()
             if held_resource is not None:
                 raise ResourceBusy(f"resource is held or quarantined: {resource_key}")
-            conn.execute(
-                "INSERT INTO runtime_resource_counters(resource_key,current_epoch) VALUES(?,0) ON CONFLICT(resource_key) DO NOTHING",
-                (resource_key,),
-            )
-            conn.execute(
-                "UPDATE runtime_resource_counters SET current_epoch=current_epoch+1 WHERE resource_key=?",
-                (resource_key,),
-            )
+            if shared_epoch is None:
+                conn.execute(
+                    "INSERT INTO runtime_resource_counters(resource_key,current_epoch) VALUES(?,0) ON CONFLICT(resource_key) DO NOTHING",
+                    (resource_key,),
+                )
+                conn.execute(
+                    "UPDATE runtime_resource_counters SET current_epoch=current_epoch+1 WHERE resource_key=?",
+                    (resource_key,),
+                )
             epoch = int(conn.execute(
                 "SELECT current_epoch FROM runtime_resource_counters WHERE resource_key=?", (resource_key,)
             ).fetchone()["current_epoch"])
@@ -1439,6 +1449,8 @@ class RuntimeControlStore:
         )
         if not exact or row["lifecycle"] != "ACTIVE":
             raise StaleMutation("assignment ownership tuple is no longer current")
+        from authority_mapping import check_shared_owner
+        check_shared_owner(conn, resource_key, resource_epoch, assignment_id, now)
         if decode_time(now) >= decode_time(row["lease_expires_at"]):
             raise LeaseExpired("assignment lease is expired")
         allocation = conn.execute(

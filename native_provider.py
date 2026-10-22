@@ -345,6 +345,89 @@ def observe_execution(cfg, tid, turn_id):
     return classify(observations, tid, turn_id)
 
 
+def archived_upstream_failure(root, path, tid, turn_id, cwd):
+    """Read one explicitly selected native archive; never use its latest turn.
+
+    This narrow recovery source proves a provider error with no tool items. It
+    does not establish release permission or replace live owner observation.
+    """
+    import datetime as dt
+    import hashlib
+    import json
+    import stat
+
+    path = Path(path)
+    archive = (Path(root).expanduser() / 'archived_sessions').resolve()
+    if (path.is_symlink() or path.resolve().parent != archive
+            or not path.name.endswith('-' + tid + '.jsonl')):
+        raise ValueError('ARCHIVE_IDENTITY_CONFLICT')
+    before = path.stat()
+    if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
+            or before.st_size > 64 * 1024 * 1024):
+        raise ValueError('ARCHIVE_SOURCE_UNAVAILABLE')
+    data = path.read_bytes()
+    after = path.stat()
+    if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+        raise ValueError('ARCHIVE_CHANGED_DURING_READ')
+    rows = [json.loads(line) for line in data.splitlines() if line.strip()]
+    meta = rows[0] if rows else {}
+    if (meta.get('type') != 'session_meta' or meta['payload'].get('id') != tid
+            or meta['payload'].get('cwd') != cwd):
+        raise ValueError('ARCHIVE_IDENTITY_CONFLICT')
+    selected = False
+    started = completed = context = None
+    for row in rows[1:]:
+        payload = row.get('payload', {})
+        kind = payload.get('type')
+        ref = payload.get('turn_id')
+        if row.get('type') == 'event_msg' and kind == 'task_started':
+            selected = ref == turn_id
+            if selected:
+                if started is not None:
+                    raise ValueError('ARCHIVE_DUPLICATE_TURN')
+                started = row['timestamp']
+        if not selected:
+            if ref == turn_id:
+                raise ValueError('ARCHIVE_TURN_BOUNDARY_CONFLICT')
+            continue
+        if ref is not None and ref != turn_id:
+            raise ValueError('ARCHIVE_TURN_BOUNDARY_CONFLICT')
+        if completed is not None:
+            raise ValueError('ARCHIVE_POST_TERMINAL_ACTIVITY')
+        if row.get('type') == 'turn_context':
+            if payload.get('cwd') != cwd or ref != turn_id:
+                raise ValueError('ARCHIVE_WORKSPACE_CONFLICT')
+            context = True
+        elif row.get('type') == 'response_item':
+            if kind != 'message' or payload.get('role') != 'user':
+                raise ValueError('ARCHIVE_TOOL_OR_PROVIDER_ACTIVITY')
+        elif row.get('type') == 'event_msg':
+            if kind == 'task_complete':
+                error = payload.get('error', {})
+                upstream = json.loads(error.get('message', '{}')).get('error', {})
+                if (ref != turn_id or upstream.get('type') != 'upstream_error'
+                        or upstream.get('message') != 'Upstream request failed'
+                        or payload.get('last_agent_message')):
+                    raise ValueError('ARCHIVE_NOT_UPSTREAM_FAILURE')
+                completed = row['timestamp']
+            elif kind == 'item_completed':
+                if payload.get('item', {}).get('type') != 'UserMessage':
+                    raise ValueError('ARCHIVE_TOOL_OR_PROVIDER_ACTIVITY')
+            elif kind != 'task_started':
+                raise ValueError('ARCHIVE_UNCONFIRMED_ACTIVITY')
+        else:
+            raise ValueError('ARCHIVE_UNCONFIRMED_ACTIVITY')
+    if not started or not completed or not context:
+        raise ValueError('ARCHIVE_EXACT_TERMINAL_MISSING')
+    if dt.datetime.fromisoformat(completed) < dt.datetime.fromisoformat(started):
+        raise ValueError('ARCHIVE_TIMESTAMP_CONFLICT')
+    return dict(source='native_archive_task_complete', path=str(path.resolve()),
+                archive_sha256=hashlib.sha256(data).hexdigest(), thread_id=tid,
+                turn_id=turn_id, cwd=cwd, started_at=started, completed_at=completed,
+                error='Upstream request failed', provider_outcome='PROVIDER_FAILED')
+
+
 def confirm_unstarted_execution(cfg, registry, execution_ref):
     """Negative reconciliation of a failed pre-turn attempt; never resume."""
     import datetime as dt

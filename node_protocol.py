@@ -660,6 +660,7 @@ class NodeService:
         start_execution: Callable[..., Mapping[str, Any]] | None = None,
         status_execution: Callable[..., Mapping[str, Any]] | None = None,
         cancel_execution: Callable[..., Mapping[str, Any]] | None = None,
+        reconcile_execution: Callable[..., Mapping[str, Any]] | None = None,
     ):
         self.record, self.registry, self.scope = record, registry, scope
         self.read_thread = read_thread
@@ -670,6 +671,7 @@ class NodeService:
         self.start_execution = start_execution
         self.status_execution = status_execution
         self.cancel_execution = cancel_execution
+        self.reconcile_execution = reconcile_execution
         self._scope_lock = threading.RLock()
 
     def set_scope(self, scope: SharingScope) -> None:
@@ -828,10 +830,14 @@ class NodeService:
         return self._idempotent("execution.start", request, self.start_execution, claimed=True)
 
     def execution_status(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        self._authorize("session.status", request)
+        self._authorize("execution.status" if request.get('native_turn_id') is not None else "session.status", request)
         if self.status_execution is None:
             raise NodeProtocolError("OPERATION_NOT_IMPLEMENTED", "execution.status is not available on this node")
         return dict(self.status_execution(**dict(request)), node_id=self.record.node_id, read_only=True)
+
+    def reconcile(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        self._authorize('execution.reconcile', request)
+        return self._idempotent('execution.reconcile', request, self.reconcile_execution)
 
     def cancel(self, request: Mapping[str, Any]) -> dict[str, Any]:
         self._authorize("execution.cancel", request)
@@ -870,6 +876,8 @@ class NodeService:
             if operation == "execution.prepare": return self.prepare(request)
             if operation == "execution.start": return self.start(request)
             if operation == "execution.status": return self.execution_status(request)
+            if operation == "execution.reconcile":
+                return self.reconcile(request)
             if operation == "execution.cancel": return self.cancel(request)
             raise NodeProtocolError("UNKNOWN_NODE_OPERATION", "Operation is not part of the node protocol")
         except NodeProtocolError as exc:

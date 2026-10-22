@@ -139,7 +139,54 @@ class CanonicalNodeExecutionAdapter:
         return dict(result, node_id=self.node_id, operation_state="STARTED")
 
     def status(self, **request: Any) -> dict[str, Any]:
+        if request.get('native_turn_id') is not None:
+            from native_provider import observe_execution
+            record, thread_id, turn_id = self._managed_native_execution(request)
+            return dict(execution_ref=record['execution_ref'], task_ref=record['task_id'],
+                        thread_id=thread_id, native_turn_id=turn_id, node_id=self.node_id,
+                        provider_observation=observe_execution(self.integration.cfg, thread_id, turn_id),
+                        read_only=True)
         return dict(self.integration.get_status(execution_ref=request.get("execution_ref"), task_ref=request.get("task_ref")), node_id=self.node_id)
+
+    def _managed_native_execution(self, request):
+        """Resolve only the immutable managed execution, never the latest turn."""
+        registry = self.integration.registry
+        record = registry.get_execution_record(request.get('execution_ref'))
+        if record is None:
+            raise NodeProtocolError('UNKNOWN_EXECUTION', 'Exact managed execution is required')
+        turn_id = request.get('native_turn_id')
+        if (not isinstance(turn_id, str) or not turn_id or len(turn_id) > 256
+                or turn_id != record.get('execution_owned_turn')):
+            raise NodeProtocolError('EXECUTION_TURN_IDENTITY_CONFLICT', 'Turn must match the managed execution')
+        if request.get('task_ref') not in (None, record['task_id']):
+            raise NodeProtocolError('EXECUTION_TURN_IDENTITY_CONFLICT', 'Task must match the managed execution')
+        self._target(dict(request, task_ref=record['task_id']))
+        task = registry.get_task(record['task_id'])
+        route = registry.get_execution_routing_identity(record['execution_ref'])
+        binding = registry.get_binding(record['task_id'])
+        if (task.turn_id != turn_id or route is None or binding is None
+                or route.host.stable_identifier != self.node_id
+                or route.conversation.binding != binding.thread_id
+                or request.get('thread_id') not in (None, binding.thread_id)):
+            raise NodeProtocolError('EXECUTION_TURN_IDENTITY_CONFLICT', 'Exact task/thread/turn binding is required')
+        prepared = registry.get_prepared_execution_for_execution(record['execution_ref'])
+        if prepared is not None:
+            prepared = registry.verify_prepared_execution(prepared.prepared_execution_ref)
+            if (prepared.host != self.node_id or prepared.resulting_execution_ref != record['execution_ref']
+                    or prepared.resulting_task_id != record['task_id']
+                    or prepared.resulting_thread_id != binding.thread_id
+                    or prepared.resulting_turn_id != turn_id):
+                raise NodeProtocolError('EXECUTION_TURN_IDENTITY_CONFLICT', 'Sealed preparation differs from execution')
+        return record, binding.thread_id, turn_id
+
+    def reconcile(self, **request: Any) -> dict[str, Any]:
+        """Read back through the existing Owner/Finalizer; never send an interrupt."""
+        record, thread_id, turn_id = self._managed_native_execution(request)
+        result = self.integration.dispatcher.reconcile_execution(
+            record['execution_ref'], reclaim_stale=False, expected_turn_id=turn_id)
+        return dict(result, execution_ref=record['execution_ref'], task_ref=record['task_id'],
+                    thread_id=thread_id, native_turn_id=turn_id, node_id=self.node_id,
+                    operation_state=result['state'], read_only=False)
 
     def cancel(self, **request: Any) -> dict[str, Any]:
         if request.get('native_turn_id') is not None:

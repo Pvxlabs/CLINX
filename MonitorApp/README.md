@@ -21,7 +21,7 @@ and notarization have not been performed.
 ## UI/UX (Phase 2 redesign)
 
 The window is a three-pane desktop shell — **Sidebar · Execution list · Inspector** — under
-one compact toolbar. `docs/monitor/UI_REDESIGN.md` maps every screen back to its Figma
+one compact toolbar. The archived UI design report maps the screens to their Figma
 source (`CLINX Monitor UI/UX Redesign`, Figma Make file key `gjtQIi4778Yoh5cvRv5gwS`),
 including tokens, metrics and the seven-state status system.
 
@@ -106,8 +106,8 @@ feedback. A missing native source/turn or old Observer version is explicitly sho
 Synthetic sources do not claim native feedback. Synced means last successful read,
 not provider liveness or the generation time of the last message.
 
-See ../docs/monitor/ACTIVITY_V1_SPEC.md and ACTIVITY_V1_ACCEPTANCE.md for contract and
-validation. The Observer unit exposes only the native state/history DB and WAL/SHM
+See [the Activity contract](../docs/monitor/ACTIVITY_V1_SPEC.md) and
+[historical validation archive](../docs/README.md#历史资料恢复). The Observer unit exposes only the native state/history DB and WAL/SHM
 companions as read-only mounts. The companion `clinx-observer-history-guard.timer`
 checks their identities every five seconds and refreshes only an active standalone
 Observer when Codex replaces a file. Observer restart invalidates Activity cursors
@@ -167,4 +167,4 @@ Discovery and initial pairing use LAN multicast/TLS. The Observer retains its
 configured private HTTPS route (currently Tailnet HTTPS on P620), which must also
 be reachable. Discovery does not cross routed VPN subnets. See
 [the implementation contract](../docs/monitor/LAN_PAIRING_SPEC.md) and
-[acceptance evidence](../docs/monitor/LAN_PAIRING_ACCEPTANCE.md).
+[historical acceptance archive](../docs/README.md#历史资料恢复).

@@ -30,7 +30,10 @@ python3 /absolute/path/to/CLINX/mcp_server.py --stdio \
   --consultations-only --task-db /absolute/path/to/existing/tasks.sqlite3
 ```
 
-The database must already exist. This reuses `serve_stdio` and its JSON-RPC
+The database must already exist and its corresponding Execution Owner must be
+running; the stdio caller does not acquire write authority or start an Owner.
+For a disposable integration example see `tests/integration/test_consultation_owner.py`.
+This reuses `serve_stdio` and its JSON-RPC
 framing; no HTTP listener or public exposure is added. The outer MCP transport
 and local OS permissions remain the access boundary. `client_id` is routing
 identity, not an authentication secret. In a deployed runtime, point both OP

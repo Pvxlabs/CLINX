@@ -1,0 +1,34 @@
+{
+  "policy": {
+    "stale_after": 120,
+    "startup_grace": 45,
+    "interval": 5,
+    "probe_timeout": 3,
+    "stop_timeout": 5,
+    "cooldown": 10,
+    "failure_grace": 15,
+    "max_restarts": 3,
+    "stable_for": 300
+  },
+  "budget": {
+    "max_generations_per_incident": 4,
+    "reset_requires_advancing_fresh_poll_seconds": 300,
+    "exhaustion_exit": 78,
+    "exhaustion_state": "HOLD",
+    "restart_does_not_reset_budget": true
+  },
+  "slo": {
+    "approval": "OPEN",
+    "production_qualification": "NOT_PROVEN",
+    "poll_recovery_logic_bound_seconds": 224,
+    "permanent_failure_hold_logic_bound_seconds": 390,
+    "assumptions": [
+      "Path is available when the next generation starts for recovery bound",
+      "OS scheduling, process creation and storage operations remain bounded",
+      "All previously owned transport processes are confirmed terminated"
+    ],
+    "dispatch_acceptance": "Separate authorized production acceptance required; no task replay",
+    "health_timer_seconds": 60,
+    "health_timer_accuracy_seconds": 5
+  }
+}

@@ -69,4 +69,4 @@ REMAINING_RISKS: 公共 daemon 尚未激活此提交，生产行为仍以当前�
 
 NEXT_STEP: 审阅本地提交及证据。如后续要激活公共控制面，单独评估主 worktree dirty 与目标文件冲突，再执行受控激活及只读 acceptance；本轮不激活。
 
-证据目录：docs/evidence/execution-liveness-v2/，包含 targeted.log、full-regression.log、baseline-ui.log、build.log、两份真实只读 observation JSON 和 preservation/syntax/import/diff-check 验证记录。
+原 `docs/evidence/execution-liveness-v2/` 已迁入[历史证据归档](README.md#历史资料恢复)，包含 targeted.log、full-regression.log、baseline-ui.log、build.log、两份真实只读 observation JSON 和 preservation/syntax/import/diff-check 验证记录。

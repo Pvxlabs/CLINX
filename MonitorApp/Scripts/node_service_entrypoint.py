@@ -145,7 +145,7 @@ def main() -> int:
         capabilities = ["session.read", "session.status"] if local_scope.read_sessions else []
         if execution is not None and local_scope.execute_tasks:
             from node_protocol import NATIVE_HANDOFF_CAPABILITY
-            capabilities.extend(["execution.adopt", "execution.prepare", "execution.start", "execution.status", "execution.context", "execution.cancel"])
+            capabilities.extend(["execution.adopt", "execution.prepare", "execution.start", "execution.status", "execution.context", "execution.cancel", "execution.reconcile"])
             capabilities.append(NATIVE_HANDOFF_CAPABILITY)
         service = NodeService(
             record, registry, scope=local_scope, read_thread=read_thread,
@@ -155,6 +155,7 @@ def main() -> int:
             start_execution=execution.start if execution else None,
             status_execution=execution.status if execution else None,
             cancel_execution=execution.cancel if execution else None,
+            reconcile_execution=execution.reconcile if execution else None,
         )
         active_scope: list[SharingScope | None] = [None]
         bind_address = str(config.get("bind_address") or os.environ.get("CLINX_NODE_BIND_ADDRESS", "0.0.0.0"))

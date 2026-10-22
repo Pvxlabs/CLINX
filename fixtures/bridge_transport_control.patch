@@ -1,0 +1,192 @@
+--- a/pkg/codexappserver/bridge.go
++++ b/pkg/codexappserver/bridge.go
+@@ -169,7 +169,8 @@
+ }
+ 
+ type Bridge struct {
+-	logger *slog.Logger
++	transport *transportControl
++	logger    *slog.Logger
+ 
+ 	mu sync.RWMutex
+ 
+@@ -209,6 +210,7 @@
+ 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+ 	}
+ 	b := &Bridge{
++		transport:    newTransportControl(),
+ 		logger:       logger.With(slog.String("component", "codexappserver")),
+ 		cfg:          cfg,
+ 		eventHistory: make([]Event, defaultEventCapacity),
+@@ -285,6 +287,9 @@
+ }
+ 
+ func (b *Bridge) EnsureStarted(ctx context.Context) error {
++	if err := b.transport.open(); err != nil {
++		return err
++	}
+ 	for {
+ 		b.mu.Lock()
+ 		if b.ready {
+@@ -736,11 +741,15 @@
+ 	b.mu.Lock()
+ 	b.starting = false
+ 	b.ready = true
++	b.transport.process(b.pid, true)
+ 	b.lastError = ""
+ 	b.mu.Unlock()
+ }
+ 
+ func (b *Bridge) startProcessLocked() error {
++	if err := b.transport.starting(); err != nil {
++		return err
++	}
+ 	cmd := exec.Command(b.cfg.command, b.cfg.args...)
+ 	cmd.Dir = b.cfg.cwd
+ 	cmd.Env = os.Environ()
+@@ -767,6 +776,7 @@
+ 		return fmt.Errorf("start process: %w", err)
+ 	}
+ 
++	b.transport.process(cmd.Process.Pid, false)
+ 	waitDone := make(chan struct{})
+ 	b.mu.Lock()
+ 	b.cmd = cmd
+@@ -893,15 +903,29 @@
+ 	if err != nil {
+ 		return nil, fmt.Errorf("marshal request: %w", err)
+ 	}
++	if err := b.transport.begin(payloadID, method, params, data); err != nil {
++		return nil, err
++	}
+ 	respCh := make(chan rpcEnvelope, 1)
+ 
+ 	b.mu.Lock()
+ 	if b.stdin == nil {
+ 		b.mu.Unlock()
++		b.transport.written(payloadID, "NOT_SENT")
+ 		return nil, errors.New("codex app-server stdin unavailable")
+ 	}
+ 	b.pending[payloadID] = pendingRequest{ch: respCh}
+-	_, err = b.stdin.Write(append(data, '\n'))
++	n, writeErr := b.stdin.Write(append(data, '\n'))
++	err = writeErr
++	if err == nil && n != len(data)+1 {
++		err = io.ErrShortWrite
++	}
++	if err != nil {
++		b.transport.fault()
++		b.transport.written(payloadID, "UNCERTAIN")
++	} else {
++		b.transport.written(payloadID, "WAITING_ACK")
++	}
+ 	b.mu.Unlock()
+ 	if err != nil {
+ 		b.mu.Lock()
+@@ -915,6 +939,7 @@
+ 
+ 	select {
+ 	case <-requestCtx.Done():
++		b.transport.written(payloadID, "UNCERTAIN")
+ 		b.mu.Lock()
+ 		delete(b.pending, payloadID)
+ 		b.mu.Unlock()
+@@ -928,9 +953,7 @@
+ }
+ 
+ func (b *Bridge) notify(ctx context.Context, method string, params map[string]any) error {
+-	payload := map[string]any{
+-		"method": method,
+-	}
++	payload := map[string]any{"method": method}
+ 	if params != nil {
+ 		payload["params"] = params
+ 	}
+@@ -938,15 +961,32 @@
+ 	if err != nil {
+ 		return err
+ 	}
+-	b.mu.RLock()
+-	stdin := b.stdin
+-	b.mu.RUnlock()
+-	if stdin == nil {
+-		return errors.New("codex app-server stdin unavailable")
++	id := b.requestSeq.Add(1) // audit ID only; notification has no wire ID
++	if err := b.transport.begin(id, method, params, data); err != nil {
++		return err
+ 	}
+ 	done := make(chan error, 1)
+ 	go func() {
+-		_, err := stdin.Write(append(data, '\n'))
++		b.mu.Lock()
++		defer b.mu.Unlock()
++		if b.stdin == nil {
++			b.transport.written(id, "NOT_SENT")
++			done <- errors.New("codex app-server stdin unavailable")
++			return
++		}
++		n, err := b.stdin.Write(append(data, '\n'))
++		if err == nil && n != len(data)+1 {
++			err = io.ErrShortWrite
++		}
++		if err != nil {
++			b.transport.fault()
++			b.transport.written(id, "UNCERTAIN")
++		} else if method == "initialized" {
++			b.transport.written(id, "NOTIFICATION_WRITTEN")
++		} else {
++			b.transport.fault()
++			b.transport.written(id, "UNCERTAIN")
++		}
+ 		done <- err
+ 	}()
+ 	select {
+@@ -976,6 +1016,7 @@
+ 		}
+ 		var envelope rpcEnvelope
+ 		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
++			b.transport.fault()
+ 			b.publish(Event{
+ 				Time:    time.Now().UTC(),
+ 				Source:  "stdout",
+@@ -985,7 +1026,11 @@
+ 			})
+ 			continue
+ 		}
+-		if id, ok := parseRequestID(envelope.ID); ok {
++		if envelope.Method == "" {
++			id, ok := b.transport.response(envelope, []byte(line))
++			if !ok {
++				continue
++			}
+ 			b.mu.Lock()
+ 			pending, found := b.pending[id]
+ 			if found {
+@@ -995,9 +1040,11 @@
+ 				continue
+ 			}
+ 			b.mu.Unlock()
++			continue // late/unknown ACK is retained in the audit ledger
+ 		}
+ 		b.handleEnvelope(envelope, []byte(line))
+ 	}
++	b.transport.process(0, false) // EOF cannot prove idle or authorize recycling
+ 	if err := scanner.Err(); err != nil {
+ 		b.mu.Lock()
+ 		b.lastError = fmt.Sprintf("stdout read failed: %v", err)
+@@ -1081,6 +1128,7 @@
+ func (b *Bridge) waitForExit(cmd *exec.Cmd, done chan struct{}) {
+ 	defer close(done)
+ 	err := cmd.Wait()
++	b.transport.process(0, false)
+ 
+ 	b.mu.Lock()
+ 	for id, pending := range b.pending {
+@@ -1112,6 +1160,7 @@
+ }
+ 
+ func (b *Bridge) handleEnvelope(envelope rpcEnvelope, raw json.RawMessage) {
++	b.transport.notice(envelope, raw)
+ 	event := Event{
+ 		Time:    time.Now().UTC(),
+ 		Source:  "notification",

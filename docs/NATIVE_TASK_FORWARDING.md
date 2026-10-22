@@ -12,8 +12,8 @@ CLINX 接收用户已授权的任务，路由到指定主机和原生 Codex 对�
   `exclusive_writer=false`，不宣称新建或独占该 Turn。
 - 共享连接收到 Desktop 的审批、用户输入或动态工具请求：CLINX 不发送抢答的
   unsupported 错误，交给原生客户端处理。
-- 明确修改续派网络选项：用户这一请求就是授权，复用现有内部策略转换，不再要求
-  第二轮手工 reauthorization；省略选项时延续已有网络选择。
+- 普通新建与续派使用 `NATIVE_FULL_ACCESS`；旧 `network_access` 参数仅为调用兼容，
+  不再限制网络。续派沿用版本化策略转换，历史执行记录保持原样，详见下文。
 - 指定既有工作目录：自动读取 branch 和 HEAD，再使用既有目录解析；不要求用户
   手填 Git 元数据。路径不存在或不是选定项目的 checkout 时返回真实路由错误，
   不静默落到另一个目录。显式提供的完整 workspace contract 仍按用户要求匹配。

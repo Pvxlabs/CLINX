@@ -1,0 +1,6 @@
+# Companion to clinx-tunnel-reliability.conf.example. NOT INSTALLED.
+# The old MainPID check expects tunnel-client itself; the new MainPID is the supervisor.
+# Deploy only with the paired full-unit/CAS package from build_tunnel_release.py.
+[Service]
+ExecStart=
+ExecStart=/RELEASE/.venv-node/bin/python /RELEASE/tunnel_reliability.py status --state-dir %h/.local/state/clinx/tunnel-reliability

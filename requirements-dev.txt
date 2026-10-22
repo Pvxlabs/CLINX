@@ -1,0 +1,2 @@
+# One source of version pins; includes discovery dependencies needed at collection.
+-r requirements-discovery-dev.txt

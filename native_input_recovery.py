@@ -1,4 +1,5 @@
 """Recover a lost native input ACK by exact readback, never by replay."""
+import dataclasses
 import json
 import time
 import uuid
@@ -87,9 +88,51 @@ def recover(dispatcher, execution_ref):
     runtime = getattr(dispatcher, '_completion_runtime', None) or CompletionRuntime(
         registry, dispatcher.reconcile_execution,
         owner_instance=getattr(dispatcher, 'completion_owner_instance', None))
+    arguments = dict(execution_ref=execution_ref, prepared_ref=prepared_ref,
+        task_snapshot=dataclasses.asdict(task), binding_snapshot=dataclasses.asdict(binding),
+        integrity_hash=prepared.integrity_hash, receipt=receipt)
+    owner = getattr(registry, '_execution_owner', None)
+    token = owner._execution_token(dict(execution_ref=execution_ref)) if owner else None
+    if token is not None:
+        _, (resource, epoch, _) = token
+        operation_id = 'native-input-readback:' + execution_ref + ':' + receipt['native_item_id']
+        result = owner._submit(resource, epoch, 'native_input',
+            operation_id=operation_id, args=arguments)
+    else:
+        result = commit_receipt(registry, **arguments)
+    # The ordinary completion observer/finalizer remains the only terminal authority.
+    runtime.register(CompletionIdentity(execution_ref, task.task_id, binding.thread_id, receipt['turn_id']))
+    return {**result, 'completion': dispatcher.reconcile_execution(execution_ref, reclaim_stale=False)}
+
+
+def recover_pending(dispatcher):
+    instance = getattr(dispatcher, 'completion_owner_instance', None)
+    if not instance:
+        return
+    after = getattr(dispatcher, '_native_recovery_after', '')
+    with dispatcher.tasks._connect() as conn:
+        query = '''SELECT e.execution_ref FROM executions e
+            JOIN clinx_execution_owners o USING(execution_ref)
+            WHERE o.owner_instance=? AND o.state='UNKNOWN' AND e.turn_id IS NULL
+              AND e.execution_state IN ('RECOVERY_REQUIRED','TRANSPORT_UNCERTAIN')
+              AND e.execution_ref>? ORDER BY e.execution_ref LIMIT 1'''
+        rows = conn.execute(query, (instance, after)).fetchall()
+        if not rows and after:
+            rows = conn.execute(query, (instance, '')).fetchall()
+    for row in rows:
+        # Rotate even after an unproved input; one stale attempt cannot starve others.
+        dispatcher._native_recovery_after = row['execution_ref']
+        recover(dispatcher, row['execution_ref'])
+
+
+def commit_receipt(registry, *, execution_ref, prepared_ref, task_snapshot,
+                   binding_snapshot, integrity_hash, receipt):
+    """SQLite part only: borrow the existing canonical commit when enrolled."""
+    from task_registry import ConversationBinding, TaskRecord
+    task = TaskRecord(**task_snapshot)
+    binding = ConversationBinding(**binding_snapshot)
     stamp = _now()
-    with registry._connect() as conn:
-        conn.execute('BEGIN IMMEDIATE')
+    with registry._shadow_write_connection(atomic=True) as conn:
         current = conn.execute('SELECT * FROM executions WHERE task_id=?', (task.task_id,)).fetchone()
         current_task = conn.execute('SELECT * FROM tasks WHERE task_id=?', (task.task_id,)).fetchone()
         sealed = conn.execute('SELECT * FROM prepared_executions WHERE prepared_execution_ref=?', (prepared_ref,)).fetchone()
@@ -104,9 +147,9 @@ def recover(dispatcher, execution_ref):
                 or current_task['routing_identity_json'] != task.routing_identity_json
                 or current_task['execution_policy_json'] != task.execution_policy_json
                 or bound['thread_id'] != binding.thread_id or sealed['status'] != 'RUNNING'
-                or sealed['integrity_hash'] != prepared.integrity_hash
-                or current['routing_identity_json'] != prepared.routing_identity_json
-                or current['execution_policy_json'] != prepared.execution_policy_json
+                or sealed['integrity_hash'] != integrity_hash
+                or current['routing_identity_json'] != sealed['routing_identity_json']
+                or current['execution_policy_json'] != sealed['execution_policy_json']
                 or lease['worktree_key'] != current['worktree_key']
                 or owner['prepared_execution_ref'] != prepared_ref or owner['state'] != 'UNKNOWN'):
             raise TaskRegistryError('NATIVE_INPUT_RECOVERY_OWNER_CHANGED')
@@ -137,26 +180,4 @@ def recover(dispatcher, execution_ref):
         conn.execute('''INSERT INTO clinx_completion_handoffs
             (execution_ref,task_id,thread_id,turn_id,state,updated_at) VALUES (?,?,?,?,'PENDING',?)''',
             (execution_ref, task.task_id, binding.thread_id, receipt['turn_id'], time.time()))
-    # The ordinary completion observer/finalizer remains the only terminal authority.
-    runtime.register(CompletionIdentity(execution_ref, task.task_id, binding.thread_id, receipt['turn_id']))
-    return {**result, 'completion': dispatcher.reconcile_execution(execution_ref, reclaim_stale=False)}
-
-
-def recover_pending(dispatcher):
-    instance = getattr(dispatcher, 'completion_owner_instance', None)
-    if not instance:
-        return
-    after = getattr(dispatcher, '_native_recovery_after', '')
-    with dispatcher.tasks._connect() as conn:
-        query = '''SELECT e.execution_ref FROM executions e
-            JOIN clinx_execution_owners o USING(execution_ref)
-            WHERE o.owner_instance=? AND o.state='UNKNOWN' AND e.turn_id IS NULL
-              AND e.execution_state IN ('RECOVERY_REQUIRED','TRANSPORT_UNCERTAIN')
-              AND e.execution_ref>? ORDER BY e.execution_ref LIMIT 1'''
-        rows = conn.execute(query, (instance, after)).fetchall()
-        if not rows and after:
-            rows = conn.execute(query, (instance, '')).fetchall()
-    for row in rows:
-        # Rotate even after an unproved input; one stale attempt cannot starve others.
-        dispatcher._native_recovery_after = row['execution_ref']
-        recover(dispatcher, row['execution_ref'])
+    return result
