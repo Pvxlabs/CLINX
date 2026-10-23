@@ -5,10 +5,25 @@ edition = "2024"
 rust-version = "1.98"
 publish = false
 
+[lib]
+name = "clinx_decision_kernel"
+path = "src/lib.rs"
+
 [[bin]]
-name = "clinx-owner-client"
-path = "src/bin/clinx-owner-client.rs"
+name = "clinx-kernel-eval"
+path = "src/bin/clinx-kernel-eval.rs"
+
+[[bin]]
+name = "clinx-kernel-bench"
+path = "src/bin/clinx-kernel-bench.rs"
 
 [dependencies]
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["float_roundtrip"] }
-rustix = { version = "=1.1.5", features = ["net", "process"] }
+sha2 = "0.10.9"
+sha1 = "=0.10.7"
+rustix = { version = "=1.1.5", features = ["net", "process", "time"] }
+rusqlite = { version = "=0.37.0", features = ["bundled"] }
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

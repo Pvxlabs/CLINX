@@ -1892,10 +1892,11 @@ class CodexAppServerClient:
             "input": [{"type": "text", "text": prompt}],
             "cwd": cwd,
         }
-        if forwarding:
+        if forwarding or getattr(self, 'rust_authority_request_id', None):
             # The request's input, rather than an exclusive daemon, is owned
             # by CLINX. Retain the native client id across a sealed attempt.
-            request_key = getattr(self, 'native_forwarding_request_id', None) or str(uuid.uuid4())
+            request_key = (getattr(self, 'rust_authority_request_id', None)
+                           or getattr(self, 'native_forwarding_request_id', None) or str(uuid.uuid4()))
             client_id = str(uuid.uuid5(uuid.NAMESPACE_URL, 'clinx-native-input:' + thread_id + ':' + request_key))
             params['clientUserMessageId'] = client_id
         if model is not None:

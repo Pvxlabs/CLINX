@@ -1,0 +1,1686 @@
+{
+  "family": "CLINX_EXECUTION_CORE_V1",
+  "contract_version": "1.0.0",
+  "schema_version": 1,
+  "objects": {
+    "Task": {
+      "initial": "OPEN",
+      "states": [
+        "OPEN",
+        "ACTIVE",
+        "BLOCKED",
+        "COMPLETED",
+        "CANCELLED",
+        "ARCHIVED"
+      ],
+      "terminal": [
+        "ARCHIVED"
+      ],
+      "transitions": [
+        {
+          "from": "OPEN",
+          "action": "activate",
+          "to": "ACTIVE",
+          "actor": "task_command",
+          "guards": []
+        },
+        {
+          "from": "ACTIVE",
+          "action": "block",
+          "to": "BLOCKED",
+          "actor": "task_command",
+          "guards": []
+        },
+        {
+          "from": "BLOCKED",
+          "action": "resume",
+          "to": "ACTIVE",
+          "actor": "task_command",
+          "guards": []
+        },
+        {
+          "from": "ACTIVE",
+          "action": "complete",
+          "to": "COMPLETED",
+          "actor": "task_command",
+          "guards": [
+            "children_resolved"
+          ]
+        },
+        {
+          "from": "OPEN",
+          "action": "cancel",
+          "to": "CANCELLED",
+          "actor": "task_command",
+          "guards": [
+            "children_resolved"
+          ]
+        },
+        {
+          "from": "ACTIVE",
+          "action": "cancel",
+          "to": "CANCELLED",
+          "actor": "task_command",
+          "guards": [
+            "children_resolved"
+          ]
+        },
+        {
+          "from": "BLOCKED",
+          "action": "cancel",
+          "to": "CANCELLED",
+          "actor": "task_command",
+          "guards": [
+            "children_resolved"
+          ]
+        },
+        {
+          "from": "COMPLETED",
+          "action": "archive",
+          "to": "ARCHIVED",
+          "actor": "task_command",
+          "guards": []
+        },
+        {
+          "from": "CANCELLED",
+          "action": "archive",
+          "to": "ARCHIVED",
+          "actor": "task_command",
+          "guards": []
+        }
+      ]
+    },
+    "Execution": {
+      "initial": "REQUESTED",
+      "states": [
+        "REQUESTED",
+        "ADMITTED",
+        "RUNNING",
+        "FINALIZING",
+        "RECOVERY_REQUIRED",
+        "SUCCEEDED",
+        "BLOCKED",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "terminal": [
+        "SUCCEEDED",
+        "BLOCKED",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "transitions": [
+        {
+          "from": "REQUESTED",
+          "action": "admit",
+          "to": "ADMITTED",
+          "actor": "command",
+          "guards": [
+            "admission"
+          ]
+        },
+        {
+          "from": "ADMITTED",
+          "action": "dispatch",
+          "to": "RUNNING",
+          "actor": "worker",
+          "guards": [
+            "fence",
+            "binding",
+            "not_dispatched"
+          ]
+        },
+        {
+          "from": "ADMITTED",
+          "action": "uncertain",
+          "to": "RECOVERY_REQUIRED",
+          "actor": "owner",
+          "guards": []
+        },
+        {
+          "from": "RUNNING",
+          "action": "uncertain",
+          "to": "RECOVERY_REQUIRED",
+          "actor": "owner",
+          "guards": []
+        },
+        {
+          "from": "FINALIZING",
+          "action": "uncertain",
+          "to": "RECOVERY_REQUIRED",
+          "actor": "finalizer",
+          "guards": []
+        },
+        {
+          "from": "RECOVERY_REQUIRED",
+          "action": "observe_live",
+          "to": "RUNNING",
+          "actor": "reconciler",
+          "guards": [
+            "provider_live"
+          ]
+        },
+        {
+          "from": "RECOVERY_REQUIRED",
+          "action": "resume_finalizer",
+          "to": "FINALIZING",
+          "actor": "finalizer",
+          "guards": [
+            "provider_terminal"
+          ]
+        },
+        {
+          "from": "RUNNING",
+          "action": "begin_finalizer",
+          "to": "FINALIZING",
+          "actor": "finalizer",
+          "guards": [
+            "provider_terminal"
+          ]
+        },
+        {
+          "from": "ADMITTED",
+          "action": "reject_before_dispatch",
+          "to": "FINALIZING",
+          "actor": "finalizer",
+          "guards": [
+            "not_dispatched"
+          ]
+        },
+        {
+          "from": "FINALIZING",
+          "action": "commit_succeeded",
+          "to": "SUCCEEDED",
+          "actor": "finalizer",
+          "guards": [
+            "finalizer"
+          ]
+        },
+        {
+          "from": "FINALIZING",
+          "action": "commit_blocked",
+          "to": "BLOCKED",
+          "actor": "finalizer",
+          "guards": [
+            "finalizer"
+          ]
+        },
+        {
+          "from": "FINALIZING",
+          "action": "commit_failed",
+          "to": "FAILED",
+          "actor": "finalizer",
+          "guards": [
+            "finalizer"
+          ]
+        },
+        {
+          "from": "FINALIZING",
+          "action": "commit_cancelled",
+          "to": "CANCELLED",
+          "actor": "finalizer",
+          "guards": [
+            "finalizer"
+          ]
+        }
+      ]
+    },
+    "Attempt": {
+      "initial": "PENDING",
+      "states": [
+        "PENDING",
+        "ASSIGNED",
+        "PROVIDER_STARTED",
+        "TURN_RUNNING",
+        "OBSERVING",
+        "LOST",
+        "TERMINAL"
+      ],
+      "terminal": [
+        "TERMINAL"
+      ],
+      "transitions": [
+        {
+          "from": "PENDING",
+          "action": "assign",
+          "to": "ASSIGNED",
+          "actor": "coordinator",
+          "guards": [
+            "fence"
+          ]
+        },
+        {
+          "from": "ASSIGNED",
+          "action": "start",
+          "to": "PROVIDER_STARTED",
+          "actor": "worker",
+          "guards": [
+            "fence",
+            "binding",
+            "not_dispatched"
+          ]
+        },
+        {
+          "from": "PROVIDER_STARTED",
+          "action": "observe_live",
+          "to": "TURN_RUNNING",
+          "actor": "worker",
+          "guards": [
+            "fence",
+            "provider_live"
+          ]
+        },
+        {
+          "from": "TURN_RUNNING",
+          "action": "observe",
+          "to": "OBSERVING",
+          "actor": "worker",
+          "guards": [
+            "fence",
+            "binding"
+          ]
+        },
+        {
+          "from": "OBSERVING",
+          "action": "finish",
+          "to": "TERMINAL",
+          "actor": "finalizer",
+          "guards": [
+            "provider_terminal",
+            "deliveries"
+          ]
+        },
+        {
+          "from": "PENDING",
+          "action": "reject",
+          "to": "TERMINAL",
+          "actor": "finalizer",
+          "guards": [
+            "not_dispatched"
+          ]
+        },
+        {
+          "from": "ASSIGNED",
+          "action": "lost",
+          "to": "LOST",
+          "actor": "coordinator",
+          "guards": []
+        },
+        {
+          "from": "PROVIDER_STARTED",
+          "action": "lost",
+          "to": "LOST",
+          "actor": "coordinator",
+          "guards": []
+        },
+        {
+          "from": "TURN_RUNNING",
+          "action": "lost",
+          "to": "LOST",
+          "actor": "coordinator",
+          "guards": []
+        },
+        {
+          "from": "OBSERVING",
+          "action": "lost",
+          "to": "LOST",
+          "actor": "coordinator",
+          "guards": []
+        },
+        {
+          "from": "LOST",
+          "action": "observe_same",
+          "to": "OBSERVING",
+          "actor": "reconciler",
+          "guards": [
+            "binding"
+          ]
+        },
+        {
+          "from": "LOST",
+          "action": "retry_unstarted",
+          "to": "PENDING",
+          "actor": "coordinator",
+          "guards": [
+            "retry"
+          ]
+        }
+      ]
+    },
+    "ProviderSession": {
+      "initial": "DISCOVERED",
+      "states": [
+        "DISCOVERED",
+        "BOUND",
+        "ACTIVE",
+        "PAUSED",
+        "UNAVAILABLE",
+        "CLOSED"
+      ],
+      "terminal": [
+        "CLOSED"
+      ],
+      "transitions": [
+        {
+          "from": "DISCOVERED",
+          "action": "bind",
+          "to": "BOUND",
+          "actor": "adapter",
+          "guards": [
+            "binding"
+          ]
+        },
+        {
+          "from": "BOUND",
+          "action": "start",
+          "to": "ACTIVE",
+          "actor": "adapter",
+          "guards": [
+            "binding"
+          ]
+        },
+        {
+          "from": "ACTIVE",
+          "action": "pause",
+          "to": "PAUSED",
+          "actor": "adapter",
+          "guards": []
+        },
+        {
+          "from": "ACTIVE",
+          "action": "disconnect",
+          "to": "UNAVAILABLE",
+          "actor": "adapter",
+          "guards": []
+        },
+        {
+          "from": "BOUND",
+          "action": "disconnect",
+          "to": "UNAVAILABLE",
+          "actor": "adapter",
+          "guards": []
+        },
+        {
+          "from": "PAUSED",
+          "action": "disconnect",
+          "to": "UNAVAILABLE",
+          "actor": "adapter",
+          "guards": []
+        },
+        {
+          "from": "PAUSED",
+          "action": "resume",
+          "to": "ACTIVE",
+          "actor": "adapter",
+          "guards": [
+            "binding"
+          ]
+        },
+        {
+          "from": "UNAVAILABLE",
+          "action": "reobserve",
+          "to": "ACTIVE",
+          "actor": "adapter",
+          "guards": [
+            "provider_live"
+          ]
+        },
+        {
+          "from": "DISCOVERED",
+          "action": "close",
+          "to": "CLOSED",
+          "actor": "adapter",
+          "guards": []
+        },
+        {
+          "from": "BOUND",
+          "action": "close",
+          "to": "CLOSED",
+          "actor": "adapter",
+          "guards": []
+        },
+        {
+          "from": "ACTIVE",
+          "action": "close",
+          "to": "CLOSED",
+          "actor": "adapter",
+          "guards": []
+        },
+        {
+          "from": "PAUSED",
+          "action": "close",
+          "to": "CLOSED",
+          "actor": "adapter",
+          "guards": []
+        },
+        {
+          "from": "UNAVAILABLE",
+          "action": "close",
+          "to": "CLOSED",
+          "actor": "adapter",
+          "guards": []
+        }
+      ]
+    },
+    "RuntimeWorker": {
+      "initial": "REGISTERED",
+      "states": [
+        "REGISTERED",
+        "HEALTHY",
+        "DRAINING",
+        "OFFLINE"
+      ],
+      "terminal": [],
+      "transitions": [
+        {
+          "from": "REGISTERED",
+          "action": "heartbeat",
+          "to": "HEALTHY",
+          "actor": "registry",
+          "guards": [
+            "incarnation"
+          ]
+        },
+        {
+          "from": "HEALTHY",
+          "action": "heartbeat",
+          "to": "HEALTHY",
+          "actor": "registry",
+          "guards": [
+            "incarnation"
+          ]
+        },
+        {
+          "from": "HEALTHY",
+          "action": "drain",
+          "to": "DRAINING",
+          "actor": "registry",
+          "guards": []
+        },
+        {
+          "from": "REGISTERED",
+          "action": "offline",
+          "to": "OFFLINE",
+          "actor": "registry",
+          "guards": []
+        },
+        {
+          "from": "HEALTHY",
+          "action": "offline",
+          "to": "OFFLINE",
+          "actor": "registry",
+          "guards": []
+        },
+        {
+          "from": "DRAINING",
+          "action": "offline",
+          "to": "OFFLINE",
+          "actor": "registry",
+          "guards": []
+        },
+        {
+          "from": "OFFLINE",
+          "action": "register_new_incarnation",
+          "to": "REGISTERED",
+          "actor": "registry",
+          "guards": [
+            "new_incarnation"
+          ]
+        }
+      ]
+    },
+    "ResourceAllocation": {
+      "initial": "REQUESTED",
+      "states": [
+        "REQUESTED",
+        "HELD",
+        "ACTIVE",
+        "QUARANTINED",
+        "RELEASE_PENDING",
+        "RELEASED"
+      ],
+      "terminal": [
+        "RELEASED"
+      ],
+      "transitions": [
+        {
+          "from": "REQUESTED",
+          "action": "grant",
+          "to": "HELD",
+          "actor": "coordinator",
+          "guards": [
+            "grant"
+          ]
+        },
+        {
+          "from": "HELD",
+          "action": "activate",
+          "to": "ACTIVE",
+          "actor": "coordinator",
+          "guards": [
+            "fence"
+          ]
+        },
+        {
+          "from": "ACTIVE",
+          "action": "renew",
+          "to": "ACTIVE",
+          "actor": "worker",
+          "guards": [
+            "fence"
+          ]
+        },
+        {
+          "from": "HELD",
+          "action": "expire",
+          "to": "QUARANTINED",
+          "actor": "coordinator",
+          "guards": [
+            "expired"
+          ]
+        },
+        {
+          "from": "ACTIVE",
+          "action": "expire",
+          "to": "QUARANTINED",
+          "actor": "coordinator",
+          "guards": [
+            "expired"
+          ]
+        },
+        {
+          "from": "ACTIVE",
+          "action": "orphan",
+          "to": "QUARANTINED",
+          "actor": "coordinator",
+          "guards": []
+        },
+        {
+          "from": "HELD",
+          "action": "orphan",
+          "to": "QUARANTINED",
+          "actor": "coordinator",
+          "guards": []
+        },
+        {
+          "from": "QUARANTINED",
+          "action": "recover",
+          "to": "RELEASE_PENDING",
+          "actor": "coordinator",
+          "guards": [
+            "stopped"
+          ]
+        },
+        {
+          "from": "HELD",
+          "action": "release",
+          "to": "RELEASE_PENDING",
+          "actor": "finalizer",
+          "guards": [
+            "release"
+          ]
+        },
+        {
+          "from": "ACTIVE",
+          "action": "release",
+          "to": "RELEASE_PENDING",
+          "actor": "finalizer",
+          "guards": [
+            "release"
+          ]
+        },
+        {
+          "from": "RELEASE_PENDING",
+          "action": "commit_release",
+          "to": "RELEASED",
+          "actor": "coordinator",
+          "guards": [
+            "release"
+          ]
+        },
+        {
+          "from": "RELEASE_PENDING",
+          "action": "commit_unstarted_recovery",
+          "to": "RELEASED",
+          "actor": "coordinator",
+          "guards": [
+            "stopped",
+            "not_dispatched"
+          ]
+        }
+      ]
+    },
+    "Event": {
+      "initial": "COMMITTED",
+      "states": [
+        "COMMITTED"
+      ],
+      "terminal": [
+        "COMMITTED"
+      ],
+      "transitions": [
+        {
+          "from": "ABSENT",
+          "action": "append",
+          "to": "COMMITTED",
+          "actor": "event_store",
+          "guards": [
+            "event_bundle"
+          ]
+        }
+      ]
+    }
+  },
+  "contexts": {
+    "fenced": {
+      "stored_owner": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "assignment_id": "as1",
+        "worker_id": "w1",
+        "incarnation_id": "i1",
+        "resource_key": "r1",
+        "resource_epoch": 2
+      },
+      "presented_owner": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "assignment_id": "as1",
+        "worker_id": "w1",
+        "incarnation_id": "i1",
+        "resource_key": "r1",
+        "resource_epoch": 2
+      },
+      "now": 100,
+      "expires_at": 110,
+      "allocation_state": "ACTIVE",
+      "assignment_state": "ACTIVE",
+      "safety_pending": false,
+      "expected_versions": {
+        "assignment": 2,
+        "allocation": 2,
+        "resource": 2
+      },
+      "stored_versions": {
+        "assignment": 2,
+        "allocation": 2,
+        "resource": 2
+      }
+    },
+    "bound": {
+      "binding": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "provider_session_id": "s1",
+        "thread_id": "t1",
+        "turn_id": "turn1",
+        "operation_id": "op1",
+        "generation": 3
+      }
+    },
+    "live": {
+      "binding": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "provider_session_id": "s1",
+        "thread_id": "t1",
+        "turn_id": "turn1",
+        "operation_id": "op1",
+        "generation": 3
+      },
+      "observation": {
+        "binding": {
+          "execution_id": "e1",
+          "attempt_id": "a1",
+          "provider_session_id": "s1",
+          "thread_id": "t1",
+          "turn_id": "turn1",
+          "operation_id": "op1",
+          "generation": 3
+        },
+        "liveness": "LIVE",
+        "observed_at": 99,
+        "complete": true,
+        "active_claims": 1
+      },
+      "now": 100
+    },
+    "terminal": {
+      "binding": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "provider_session_id": "s1",
+        "thread_id": "t1",
+        "turn_id": "turn1",
+        "operation_id": "op1",
+        "generation": 3
+      },
+      "observation": {
+        "binding": {
+          "execution_id": "e1",
+          "attempt_id": "a1",
+          "provider_session_id": "s1",
+          "thread_id": "t1",
+          "turn_id": "turn1",
+          "operation_id": "op1",
+          "generation": 3
+        },
+        "liveness": "TERMINAL",
+        "observed_at": 99,
+        "complete": true,
+        "active_claims": 0
+      },
+      "now": 100
+    },
+    "not_sent": {
+      "binding": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "provider_session_id": "s1",
+        "thread_id": "t1",
+        "turn_id": "turn1",
+        "operation_id": "op1",
+        "generation": 3
+      },
+      "dispatch_certainty": "NOT_DISPATCHED",
+      "non_dispatch_proof": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "source": "dispatch_boundary",
+        "boundary": "PRE_SEND",
+        "evidence_ref": "proof1"
+      }
+    },
+    "stopped": {
+      "old_writer_stopped_ref": "stop1",
+      "side_effect_fenced_ref": "fence1"
+    },
+    "delivered": {
+      "delivery_ledger_complete": true,
+      "deliveries": [
+        {
+          "call_id": "c1",
+          "execution_id": "e1",
+          "attempt_id": "a1",
+          "host_ref": "h1",
+          "host_completion": "KNOWN",
+          "delivery_state": "DELIVERED",
+          "ack_host_ref": "h1",
+          "response_sent": true
+        }
+      ]
+    },
+    "final": {
+      "binding": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "provider_session_id": "s1",
+        "thread_id": "t1",
+        "turn_id": "turn1",
+        "operation_id": "op1",
+        "generation": 3
+      },
+      "observation": {
+        "binding": {
+          "execution_id": "e1",
+          "attempt_id": "a1",
+          "provider_session_id": "s1",
+          "thread_id": "t1",
+          "turn_id": "turn1",
+          "operation_id": "op1",
+          "generation": 3
+        },
+        "liveness": "TERMINAL",
+        "observed_at": 99,
+        "complete": true,
+        "active_claims": 0
+      },
+      "now": 100,
+      "delivery_ledger_complete": true,
+      "deliveries": [
+        {
+          "call_id": "c1",
+          "execution_id": "e1",
+          "attempt_id": "a1",
+          "host_ref": "h1",
+          "host_completion": "KNOWN",
+          "delivery_state": "DELIVERED",
+          "ack_host_ref": "h1",
+          "response_sent": true
+        }
+      ],
+      "result": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "result_ref": "result1",
+        "outcome": "SUCCEEDED"
+      },
+      "commit_bundle": [
+        "result",
+        "terminal",
+        "event",
+        "receipt",
+        "outbox"
+      ],
+      "finalization_phase": "TERMINAL_COMMITTED"
+    },
+    "release": {
+      "binding": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "provider_session_id": "s1",
+        "thread_id": "t1",
+        "turn_id": "turn1",
+        "operation_id": "op1",
+        "generation": 3
+      },
+      "observation": {
+        "binding": {
+          "execution_id": "e1",
+          "attempt_id": "a1",
+          "provider_session_id": "s1",
+          "thread_id": "t1",
+          "turn_id": "turn1",
+          "operation_id": "op1",
+          "generation": 3
+        },
+        "liveness": "TERMINAL",
+        "observed_at": 99,
+        "complete": true,
+        "active_claims": 0
+      },
+      "now": 100,
+      "delivery_ledger_complete": true,
+      "deliveries": [
+        {
+          "call_id": "c1",
+          "execution_id": "e1",
+          "attempt_id": "a1",
+          "host_ref": "h1",
+          "host_completion": "KNOWN",
+          "delivery_state": "DELIVERED",
+          "ack_host_ref": "h1",
+          "response_sent": true
+        }
+      ],
+      "result": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "result_ref": "result1",
+        "outcome": "SUCCEEDED"
+      },
+      "commit_bundle": [
+        "result",
+        "terminal",
+        "event",
+        "receipt",
+        "outbox"
+      ],
+      "finalization_phase": "TERMINAL_COMMITTED",
+      "old_writer_stopped_ref": "stop1",
+      "side_effect_fenced_ref": "fence1",
+      "committed_outcome": "SUCCEEDED",
+      "lease_execution_id": "e1",
+      "lease_attempt_id": "a1"
+    },
+    "retry": {
+      "binding": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "provider_session_id": "s1",
+        "thread_id": "t1",
+        "turn_id": "turn1",
+        "operation_id": "op1",
+        "generation": 3
+      },
+      "dispatch_certainty": "NOT_DISPATCHED",
+      "non_dispatch_proof": {
+        "execution_id": "e1",
+        "attempt_id": "a1",
+        "source": "dispatch_boundary",
+        "boundary": "PRE_SEND",
+        "evidence_ref": "proof1"
+      },
+      "old_writer_stopped_ref": "stop1",
+      "side_effect_fenced_ref": "fence1",
+      "retry_policy": {
+        "allowed": true,
+        "remaining": 1,
+        "deadline_at": 200,
+        "cancel_requested": false
+      },
+      "now": 100
+    }
+  },
+  "cases": [
+    {
+      "name": "safe_fenced_dispatch",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "ADMITTED",
+        "action": "dispatch",
+        "to": "RUNNING",
+        "actor": "worker",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "fenced",
+          "bound",
+          "not_sent"
+        ],
+        "facts": {}
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "lease_equal_expiry",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "ADMITTED",
+        "action": "dispatch",
+        "to": "RUNNING",
+        "actor": "worker",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "fenced",
+          "bound",
+          "not_sent"
+        ],
+        "facts": {
+          "now": 110
+        }
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "stale_epoch",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "ADMITTED",
+        "action": "dispatch",
+        "to": "RUNNING",
+        "actor": "worker",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "fenced",
+          "bound",
+          "not_sent"
+        ],
+        "facts": {
+          "presented_owner": {
+            "execution_id": "e1",
+            "attempt_id": "a1",
+            "assignment_id": "as1",
+            "worker_id": "w1",
+            "incarnation_id": "i1",
+            "resource_key": "r1",
+            "resource_epoch": 1
+          }
+        }
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "owner_loss_retains_execution",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "RUNNING",
+        "action": "uncertain",
+        "to": "RECOVERY_REQUIRED",
+        "actor": "owner",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [],
+        "facts": {}
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "owner_loss_no_blind_restart",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "RECOVERY_REQUIRED",
+        "action": "dispatch",
+        "to": "RUNNING",
+        "actor": "worker",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "fenced",
+          "bound",
+          "not_sent"
+        ],
+        "facts": {}
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "exact_owner_observation_recovers",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "RECOVERY_REQUIRED",
+        "action": "observe_live",
+        "to": "RUNNING",
+        "actor": "reconciler",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "live"
+        ],
+        "facts": {}
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "unknown_owner_is_not_live",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "RECOVERY_REQUIRED",
+        "action": "observe_live",
+        "to": "RUNNING",
+        "actor": "reconciler",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "bound"
+        ],
+        "facts": {}
+      },
+      "expected": "HOLD_UNKNOWN"
+    },
+    {
+      "name": "partial_endpoints_not_terminal",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "RUNNING",
+        "action": "begin_finalizer",
+        "to": "FINALIZING",
+        "actor": "finalizer",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "terminal"
+        ],
+        "facts": {
+          "observation": {
+            "binding": {
+              "execution_id": "e1",
+              "attempt_id": "a1",
+              "provider_session_id": "s1",
+              "thread_id": "t1",
+              "turn_id": "turn1",
+              "operation_id": "op1",
+              "generation": 3
+            },
+            "liveness": "TERMINAL",
+            "observed_at": 99,
+            "complete": false,
+            "active_claims": 0
+          }
+        }
+      },
+      "expected": "HOLD_UNKNOWN"
+    },
+    {
+      "name": "provider_terminal_pending_ack",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "FINALIZING",
+        "action": "commit_succeeded",
+        "to": "SUCCEEDED",
+        "actor": "finalizer",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "final"
+        ],
+        "facts": {
+          "deliveries": [
+            {
+              "call_id": "c1",
+              "execution_id": "e1",
+              "attempt_id": "a1",
+              "host_ref": "h1",
+              "host_completion": "KNOWN",
+              "delivery_state": "PENDING",
+              "ack_host_ref": "h1",
+              "response_sent": true
+            }
+          ]
+        }
+      },
+      "expected": "HOLD_UNKNOWN"
+    },
+    {
+      "name": "provider_terminal_wrong_receipt",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "FINALIZING",
+        "action": "commit_succeeded",
+        "to": "SUCCEEDED",
+        "actor": "finalizer",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "final"
+        ],
+        "facts": {
+          "deliveries": [
+            {
+              "call_id": "c1",
+              "execution_id": "e1",
+              "attempt_id": "a1",
+              "host_ref": "h1",
+              "host_completion": "KNOWN",
+              "delivery_state": "DELIVERED",
+              "ack_host_ref": "foreign",
+              "response_sent": true
+            }
+          ]
+        }
+      },
+      "expected": "HOLD_UNKNOWN"
+    },
+    {
+      "name": "valid_terminal_commit",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "FINALIZING",
+        "action": "commit_succeeded",
+        "to": "SUCCEEDED",
+        "actor": "finalizer",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "final"
+        ],
+        "facts": {}
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "partial_terminal_bundle",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "FINALIZING",
+        "action": "commit_succeeded",
+        "to": "SUCCEEDED",
+        "actor": "finalizer",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "final"
+        ],
+        "facts": {
+          "commit_bundle": [
+            "result",
+            "terminal",
+            "event"
+          ]
+        }
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "result_only_not_terminal",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "FINALIZING",
+        "action": "commit_succeeded",
+        "to": "SUCCEEDED",
+        "actor": "finalizer",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "final"
+        ],
+        "facts": {
+          "finalization_phase": "RESULT_COMMITTED"
+        }
+      },
+      "expected": "HOLD_UNKNOWN"
+    },
+    {
+      "name": "committed_terminal_release_recovery",
+      "record": {
+        "object": "ResourceAllocation",
+        "id": "obj1",
+        "from": "ACTIVE",
+        "action": "release",
+        "to": "RELEASE_PENDING",
+        "actor": "finalizer",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "release"
+        ],
+        "facts": {}
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "release_with_unknown_provider",
+      "record": {
+        "object": "ResourceAllocation",
+        "id": "obj1",
+        "from": "ACTIVE",
+        "action": "release",
+        "to": "RELEASE_PENDING",
+        "actor": "finalizer",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "release"
+        ],
+        "facts": {
+          "observation": null
+        }
+      },
+      "expected": "HOLD_UNKNOWN"
+    },
+    {
+      "name": "foreign_lease_not_released",
+      "record": {
+        "object": "ResourceAllocation",
+        "id": "obj1",
+        "from": "ACTIVE",
+        "action": "release",
+        "to": "RELEASE_PENDING",
+        "actor": "finalizer",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "release"
+        ],
+        "facts": {
+          "lease_execution_id": "foreign"
+        }
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "known_unstarted_retry",
+      "record": {
+        "object": "Attempt",
+        "id": "a1",
+        "from": "LOST",
+        "action": "retry_unstarted",
+        "to": "PENDING",
+        "actor": "coordinator",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "retry"
+        ],
+        "facts": {}
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "ack_unknown_no_retry",
+      "record": {
+        "object": "Attempt",
+        "id": "a1",
+        "from": "LOST",
+        "action": "retry_unstarted",
+        "to": "PENDING",
+        "actor": "coordinator",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "retry"
+        ],
+        "facts": {
+          "dispatch_certainty": "UNKNOWN"
+        }
+      },
+      "expected": "HOLD_UNKNOWN"
+    },
+    {
+      "name": "cancel_intent_no_retry",
+      "record": {
+        "object": "Attempt",
+        "id": "a1",
+        "from": "LOST",
+        "action": "retry_unstarted",
+        "to": "PENDING",
+        "actor": "coordinator",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "retry"
+        ],
+        "facts": {
+          "retry_policy": {
+            "allowed": true,
+            "remaining": 1,
+            "deadline_at": 200,
+            "cancel_requested": true
+          }
+        }
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "expired_retry_deadline",
+      "record": {
+        "object": "Attempt",
+        "id": "a1",
+        "from": "LOST",
+        "action": "retry_unstarted",
+        "to": "PENDING",
+        "actor": "coordinator",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "retry"
+        ],
+        "facts": {
+          "now": 200
+        }
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "lost_observation_preserves_attempt",
+      "record": {
+        "object": "Attempt",
+        "id": "a1",
+        "from": "LOST",
+        "action": "observe_same",
+        "to": "OBSERVING",
+        "actor": "reconciler",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "bound"
+        ],
+        "facts": {}
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "expiry_quarantines",
+      "record": {
+        "object": "ResourceAllocation",
+        "id": "obj1",
+        "from": "ACTIVE",
+        "action": "expire",
+        "to": "QUARANTINED",
+        "actor": "coordinator",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "fenced"
+        ],
+        "facts": {
+          "now": 110
+        }
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "no_automatic_quarantine_release",
+      "record": {
+        "object": "ResourceAllocation",
+        "id": "obj1",
+        "from": "QUARANTINED",
+        "action": "recover",
+        "to": "RELEASE_PENDING",
+        "actor": "coordinator",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [],
+        "facts": {}
+      },
+      "expected": "HOLD_UNKNOWN"
+    },
+    {
+      "name": "explicit_stopped_writer_recovery",
+      "record": {
+        "object": "ResourceAllocation",
+        "id": "obj1",
+        "from": "QUARANTINED",
+        "action": "recover",
+        "to": "RELEASE_PENDING",
+        "actor": "coordinator",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "stopped"
+        ],
+        "facts": {}
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "pending_safety_guard",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "ADMITTED",
+        "action": "dispatch",
+        "to": "RUNNING",
+        "actor": "worker",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "fenced",
+          "bound",
+          "not_sent"
+        ],
+        "facts": {
+          "safety_pending": true
+        }
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "terminal_is_immutable",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "SUCCEEDED",
+        "action": "uncertain",
+        "to": "RECOVERY_REQUIRED",
+        "actor": "owner",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [],
+        "facts": {}
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "provider_cannot_finalize",
+      "record": {
+        "object": "Execution",
+        "id": "e1",
+        "from": "FINALIZING",
+        "action": "commit_succeeded",
+        "to": "SUCCEEDED",
+        "actor": "adapter",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "final"
+        ],
+        "facts": {}
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "task_cancel_waits_for_children",
+      "record": {
+        "object": "Task",
+        "id": "obj1",
+        "from": "ACTIVE",
+        "action": "cancel",
+        "to": "CANCELLED",
+        "actor": "task_command",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [],
+        "facts": {
+          "unresolved_execution_ids": [
+            "e1"
+          ]
+        }
+      },
+      "expected": "HOLD_UNKNOWN"
+    },
+    {
+      "name": "task_cancel_resolved",
+      "record": {
+        "object": "Task",
+        "id": "obj1",
+        "from": "ACTIVE",
+        "action": "cancel",
+        "to": "CANCELLED",
+        "actor": "task_command",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [],
+        "facts": {
+          "unresolved_execution_ids": []
+        }
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "event_append_complete_bundle",
+      "record": {
+        "object": "Event",
+        "id": "obj1",
+        "from": "ABSENT",
+        "action": "append",
+        "to": "COMMITTED",
+        "actor": "event_store",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [],
+        "facts": {
+          "commit_bundle": [
+            "state",
+            "event",
+            "receipt",
+            "outbox"
+          ]
+        }
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "event_edit_illegal",
+      "record": {
+        "object": "Event",
+        "id": "obj1",
+        "from": "COMMITTED",
+        "action": "append",
+        "to": "COMMITTED",
+        "actor": "event_store",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [],
+        "facts": {}
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "worker_incarnation_cannot_revive",
+      "record": {
+        "object": "RuntimeWorker",
+        "id": "obj1",
+        "from": "HEALTHY",
+        "action": "heartbeat",
+        "to": "HEALTHY",
+        "actor": "registry",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [],
+        "facts": {
+          "current_incarnation": "i2",
+          "presented_incarnation": "i1"
+        }
+      },
+      "expected": "REJECT"
+    },
+    {
+      "name": "session_reconnect_not_new_attempt",
+      "record": {
+        "object": "ProviderSession",
+        "id": "s1",
+        "from": "UNAVAILABLE",
+        "action": "reobserve",
+        "to": "ACTIVE",
+        "actor": "adapter",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [
+          "live"
+        ],
+        "facts": {}
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "worker_new_incarnation",
+      "record": {
+        "object": "RuntimeWorker",
+        "id": "w1",
+        "from": "OFFLINE",
+        "to": "REGISTERED",
+        "action": "register_new_incarnation",
+        "actor": "registry",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [],
+        "facts": {
+          "previous_incarnation": "i1",
+          "presented_incarnation": "i2",
+          "previous_generation": 1,
+          "next_generation": 2,
+          "old_assignments_quarantined": true
+        }
+      },
+      "expected": "APPLY"
+    },
+    {
+      "name": "worker_same_generation",
+      "record": {
+        "object": "RuntimeWorker",
+        "id": "w1",
+        "from": "OFFLINE",
+        "to": "REGISTERED",
+        "action": "register_new_incarnation",
+        "actor": "registry",
+        "version": 1,
+        "next_version": 2,
+        "facts_refs": [],
+        "facts": {
+          "previous_incarnation": "i1",
+          "presented_incarnation": "i2",
+          "previous_generation": 1,
+          "next_generation": 1,
+          "old_assignments_quarantined": true
+        }
+      },
+      "expected": "REJECT"
+    }
+  ]
+}

@@ -19,7 +19,9 @@
 
 根目录 Python 模块实现 MCP、任务、Owner、Provider 和节点协调；`domain/`、
 `runtime_control/`、`provider_adapters/`、`shadow_ledger/` 提供领域、事务和事件原语。
-`kernel/` 只保留 Rust Owner client，`local_discovery/` 与 `native/opaque_pairing/`
+`kernel/` 包含 Rust Owner client，以及迁移分支恢复的冻结 core、历史 Runtime 和
+[原生 authority candidate](RUST_AUTHORITY.md)；candidate 尚未接管生产。
+`local_discovery/` 与 `native/opaque_pairing/`
 实现发现配对，`MonitorApp/` 是 macOS 产品源码。`fixtures/` 保留现行契约和传输测试输入。
 `bin/`、`systemd/` 是启动器与部署模板，存在于源码中不表示已经安装。
 

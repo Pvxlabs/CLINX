@@ -32,6 +32,7 @@ def parser():
     serve.add_argument("--stale-after", type=int, default=45)
     serve.add_argument("--canonical-lifecycle-config", type=Path, help="Explicit observation-only canonical registry and exact node/project mapping")
     serve.add_argument("--local-native-home", type=Path)
+    serve.add_argument("--rust-projection", action="store_true", help="Publish Rust managed tasks without opening a legacy native or canonical database")
     serve.add_argument("--local-canonical-db", type=Path)
     serve.add_argument("--local-owner-host")
     serve.add_argument("--local-provider-config", type=Path, help="Existing native owner configuration for read-only liveness observations")
@@ -78,6 +79,11 @@ def parser():
 
 def main(argv=None) -> int:
     args = parser().parse_args(argv)
+    from rust_integration import enabled as rust_authority_enabled
+    if rust_authority_enabled() and (getattr(args, 'canonical_lifecycle_config', None)
+                                     or getattr(args, 'local_canonical_db', None)
+                                     or getattr(args, 'observation_canonical_db', None)):
+        raise ValueError('RUST_AUTHORITY_REQUIRES_REMOVAL_OF_LEGACY_CANONICAL_DB_ARGUMENTS')
     private = PrivateStore(args.state)
     if args.command != "bootstrap" and private.read("identity.json") is None:
         raise ValueError("IDENTITY_BOOTSTRAP_REQUIRED")
@@ -144,7 +150,9 @@ def main(argv=None) -> int:
     service = CentreService(PairedTLS(identity, peers), registry, NodeAuthorizationStore(args.state), stale_after=args.stale_after, observations=observations)
     server = service.server(address=args.bind, port=args.port)
     collector = None
-    if args.local_native_home:
+    if args.local_native_home or args.rust_projection:
+        if args.rust_projection and not rust_authority_enabled():
+            raise ValueError('RUST_PROJECTION_REQUIRES_RUST_AUTHORITY')
         if observations is None:
             raise ValueError("LOCAL_OBSERVATION_REQUIRES_PROJECTION")
         from observation_source import CodexObservationSource,ObservationCollector,LocalObservationRegistration
@@ -153,8 +161,12 @@ def main(argv=None) -> int:
             from bridge import BridgeConfig
             provider_config=BridgeConfig.load(args.local_provider_config)
         approvals=NodeAuthorizationStore(args.state)
-        collector=ObservationCollector(args.state / "local-observation-outbox.sqlite3",
-            CodexObservationSource(args.local_native_home,identity.public["node_id"],args.local_canonical_db,args.local_owner_host,provider_config),
+        if rust_authority_enabled():
+            from rust_observation import RustObservationSource
+            source = RustObservationSource(args.local_native_home, identity.public["node_id"], args.local_owner_host, provider_config)
+        else:
+            source = CodexObservationSource(args.local_native_home, identity.public["node_id"], args.local_canonical_db, args.local_owner_host, provider_config)
+        collector=ObservationCollector(args.state / "local-observation-outbox.sqlite3", source,
             identity,LocalObservationRegistration(identity,registry,approvals,observations,args.stale_after),
             lambda: approvals.get(identity.public["node_id"]),server.address[1],("session.read",))
     next_collection=0.0

@@ -25,6 +25,7 @@ import bridge
 from execution_policy import EXECUTION_SURFACES, HOST_CAPABILITIES, OPERATION_CLASSES
 from m9_integration import ClinxIntegration, M9IntegrationError
 from task_registry import TaskRegistry, TaskRegistryError
+from rust_authority import RustAuthorityError
 from consultations import NAMES as CONSULTATION_TOOL_NAMES
 
 
@@ -42,6 +43,11 @@ READ_ONLY_TOOL_NAMES = (
     "clinx_prepare_execution",
 )
 DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_prepared_request", "clinx_adopt_conversation") + CONSULTATION_TOOL_NAMES
+RUST_TOOL_NAMES = ("clinx_prepare_execution", "clinx_start_execution", "clinx_cancel_execution",
+    "clinx_get_prepared_request", "clinx_get_status", "clinx_find_task", "clinx_list_projects",
+    "clinx_get_context", "clinx_get_capabilities", "clinx_get_effective_authority",
+    "clinx_adopt_conversation", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization",
+    "clinx_register_derived_git_target", "clinx_revoke_derived_git_target")
 # Historical Host authority APIs remain internal for old receipt reconciliation.
 # They are not part of the conversation-forwarding connector.
 RELAY_METADATA_FIELDS = frozenset({
@@ -841,7 +847,8 @@ def _execute_tool_definition() -> dict[str, Any]:
     }
 
 
-def tool_definitions(*, include_execute: bool = False, include_nodes: bool = False) -> list[dict[str, Any]]:
+def tool_definitions(*, include_execute: bool = False, include_nodes: bool = False,
+                     rust_authority: bool = False) -> list[dict[str, Any]]:
     """Return the public catalog, with execution opt-in for internal use only."""
     tools = _read_only_tool_definitions(include_nodes=include_nodes) + _authority_tools()
     authority_outputs = {
@@ -860,6 +867,8 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
         'requirements_evaluated': {'type': 'boolean'},
         'requirements_covered': {'type': ['boolean', 'null']},
         'missing_operations': {'type': 'array'},
+        'request_hash': {'type': 'string'}, 'operation_id': {'type': 'string'},
+        'status': {'type': 'string'},
     }
     for tool in tools:
         if tool['name'] in {'clinx_get_effective_authority', 'clinx_prepare_policy_reauthorization', 'clinx_apply_policy_reauthorization'}:
@@ -970,12 +979,17 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
         tools.append(_execute_tool_definition())
     from consultations import tools as consultation_tools
     tools.extend(consultation_tools())
-    tools = [tool for tool in tools if tool["name"] in DEFAULT_TOOL_NAMES or
+    tools = [tool for tool in tools if tool["name"] in (RUST_TOOL_NAMES if rust_authority else DEFAULT_TOOL_NAMES) or
              (include_execute and tool["name"] == "clinx_execute")]
     for tool in tools:
         # Reads/preparation/cancellation address the connected private task
         # registry. Starting native work can act on open-ended external targets.
         tool['annotations']['openWorldHint'] = tool['name'] in {'clinx_start_execution', 'clinx_execute'}
+        if rust_authority:
+            if tool['name'] == 'clinx_prepare_execution':
+                tool['annotations']['readOnlyHint'] = False
+                tool['inputSchema']['properties']['execution_surface']['enum'] = ['CODEX_NATIVE', 'HOST_EXECUTOR']
+            continue
         if tool["name"] == "clinx_prepare_execution":
             for field in RELAY_INPUT_FIELDS:
                 tool["inputSchema"]["properties"].pop(field, None)
@@ -1000,6 +1014,9 @@ def tool_definitions(*, include_execute: bool = False, include_nodes: bool = Fal
             for field in ("host_executor_available", "host_executor_default"):
                 tool["outputSchema"]["properties"].pop(field, None)
             tool["outputSchema"]["properties"]["control_runtime"] = {"type": "object", "additionalProperties": True}
+    if rust_authority:
+        from rust_mcp import configure
+        configure(tools)
     return tools
 
 
@@ -1008,7 +1025,8 @@ def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any
     names = tuple(tool["name"] for tool in public_tools)
     node_names = ("clinx_list_nodes", "clinx_get_node_status", "clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context", "clinx_get_observation_activity")
     canonical_names = tuple(name for name in names if name not in node_names)
-    if canonical_names not in {(), CONSULTATION_TOOL_NAMES, DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}:
+    if (canonical_names not in {(), CONSULTATION_TOOL_NAMES, DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}
+            and set(canonical_names) != set(RUST_TOOL_NAMES)):
         raise MCPServerError("server/discover requires the canonical tool registry")
     return {
         "resultType": "complete",
@@ -1067,6 +1085,7 @@ class ClinxMCPServer:
         self.public_tools = tool_definitions(
             include_execute=allow_execute,
             include_nodes=getattr(getattr(integration, "cfg", None), "node_router", None) is not None,
+            rust_authority=getattr(integration, 'rust_authority', False),
         )
         if observations is not None:
             from observation_mcp import observation_tools
@@ -1146,7 +1165,7 @@ class ClinxMCPServer:
                 result = self.executor(**arguments)
         else:
             raise MCPRequestError(-32602, f"unknown tool: {name}")
-        if name in {"clinx_prepare_execution", "clinx_start_execution"}:
+        if name in {"clinx_prepare_execution", "clinx_start_execution"} and not getattr(self.integration, 'rust_authority', False):
             # Persist legacy identities internally; never present them as active
             # permission settings for the native conversation.
             result = {key: value for key, value in result.items() if key not in RELAY_METADATA_FIELDS}
@@ -1156,7 +1175,7 @@ class ClinxMCPServer:
                 if result.get(field) == "inherit":
                     result.pop(field)
             result.update(execution_backend="CODEX_NATIVE", runtime_configuration="NATIVE_FULL_ACCESS")
-        return _public_json(result, native_identity=(name in {'clinx_adopt_conversation', 'clinx_get_prepared_request'} or
+        return _public_json(result, native_identity=(getattr(self.integration, 'rust_authority', False) or name in {'clinx_adopt_conversation', 'clinx_get_prepared_request'} or
             (name in {'clinx_get_context', 'clinx_get_status'} and
              any(k in arguments for k in ('thread_id', 'codex_uri')))))
 
@@ -1242,6 +1261,11 @@ class ClinxMCPServer:
             arguments = params.get("arguments", {})
             try:
                 result = self._tool_result(self._call_tool(name, arguments))
+            except RustAuthorityError as exc:
+                result = self._tool_result({"error_code": str(exc).split(':', 1)[0],
+                    "operation_id": getattr(exc, 'operation_id', None), "authority": "RUST",
+                    "retry_required": False,
+                    "reconciliation_required": str(exc) == 'DELIVERY_UNKNOWN'}, is_error=True)
             except app_server.AppServerError as exc:
                 from dispatch_errors import failure_details
                 payload = self._app_server_error_result(exc)
@@ -1284,6 +1308,12 @@ def build_server(
     own_executions: bool = False,
 ) -> ClinxMCPServer:
     cfg = bridge.BridgeConfig.load(Path(config_path).expanduser().resolve())
+    from rust_integration import RustIntegration, enabled
+    if enabled():
+        if own_executions:
+            raise ValueError("PYTHON_OWNER_DISABLED_FOR_RUST_AUTHORITY")
+        server = ClinxMCPServer(RustIntegration(cfg), allow_execute=False)
+        return server
     registry = TaskRegistry(
         task_db_path
         or cfg.task_db_path

@@ -4,6 +4,11 @@
 发送操作。Owner 缺失时拒绝本地写入，不自行建立第二个 authority。
 `kernel/src/bin/clinx-owner-client.rs` 是传输客户端，不持有 DB/WAL/SHM。
 
+Rust 迁移分支另有原生 SQLite candidate，见 [Rust authority](RUST_AUTHORITY.md)。
+它已在源码中恢复冻结 core 并直接提交 SQLite；当前生产调用方仍使用上述 Python
+Owner。迁移分支已新增 Rust 业务事务和可选 MCP／Dispatcher／Node 执行适配；
+原生转发以外的能力、物理隔离和实际部署仍未完成，不能把隔离验收当作生产切换。
+
 `canonical_authority.py` 的 resource/epoch/operation identity、`authority_mapping.py`
 的 canonical/runtime 映射与 `authority_transactions.py` 的同连接事务共同约束写入。
 业务 mutation、commit receipt、outbox 在同一 SQLite 事务提交；delivery 与 commit

@@ -488,6 +488,8 @@ class TaskRegistry:
         self.path = Path(path).expanduser()
         self.read_only = (os.environ.get('CLINX_OWNER_WORKER') == '1'
                           if read_only is None else read_only)
+        if os.environ.get('CLINX_AUTHORITY') == 'rust' and not self.read_only:
+            raise TaskRegistryError('PYTHON_REGISTRY_WRITER_DISABLED_FOR_RUST_AUTHORITY')
         self.shadow_events_enabled = bool(shadow_events)
         self._shadow_store: Any = None
         if not initialize or self.read_only:

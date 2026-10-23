@@ -1,0 +1,379 @@
+"""Existing native transport driven only by durable Rust send permits.
+
+This process has the dedicated evidence UID. It owns no business database and
+makes no admission, outcome, lease-release or finalization decisions.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import signal
+import threading
+
+from app_server import AppServerError, AppServerRemoteError
+from native_provider import (
+    cancel_native_turn,
+    endpoints,
+    existing_client,
+    new_desktop_client,
+    select_writer_client,
+)
+from rust_authority import RustAuthorityError
+from rust_integration import Commands, stable_key
+
+
+class RustDispatcher:
+    def __init__(self, cfg, commands=None):
+        self.cfg = cfg
+        self.commands = commands or Commands.from_env()
+        self.host_runners = {}
+
+    def initialize(self, client):
+        client.initialize(client_name=self.cfg.app_server.client_name,
+                          client_title=self.cfg.app_server.client_title,
+                          client_version=self.cfg.app_server.client_version)
+
+    def dispatch(self, execution_ref, *, resume=False):
+        take = (self.commands.call('resume_dispatch', dict(execution_ref=execution_ref)) if resume else
+                self.commands.call('take_dispatch', dict(execution_ref=execution_ref),
+                                   key=stable_key('take', execution_ref)))
+        if 'ticket' not in take:
+            return take
+        scope = {k: take[k] for k in ('execution_ref', 'epoch', 'ticket')}
+        p = take['prepared']
+        cwd = p['workspace_contract']['cwd']
+        tid = take['thread_id']
+        host_tools = p.get('execution_policy', {}).get('execution_surface') == 'HOST_EXECUTOR'
+        production = not self.commands.client.request('health', {}, request_id='dispatch-runtime-identity')['qualification']
+        if production:
+            # Production workers run under the confined dedicated Provider UID.
+            # A Desktop daemon executes as the operator and cannot be its worker.
+            if not self.cfg.app_server.local_socket or self.cfg.app_server.native_socket:
+                raise RustAuthorityError('ISOLATED_PROVIDER_CONFIGURATION_REQUIRED')
+            factory = existing_client(endpoints(self.cfg)[0], self.cfg.app_server.request_timeout_seconds, read_only=False)
+        if host_tools:
+            from host_executor import HostExecutor
+            from rust_host import configure, host_policy
+            if production:
+                pass
+            elif tid:
+                factory = select_writer_client(self.cfg, tid, host_tools=True)
+                if getattr(factory, 'host_successor_required', False):
+                    raise RustAuthorityError('EXACT_HOST_THREAD_HANDOFF_REQUIRED')
+            else:
+                endpoint = endpoints(self.cfg)[0] if self.cfg.app_server.local_socket else None
+                if not self.cfg.app_server.local_socket or endpoint == str(getattr(self.cfg.app_server, 'native_socket', None)):
+                    raise RustAuthorityError('DEDICATED_HOST_PROVIDER_REQUIRED')
+                factory = existing_client(endpoint, self.cfg.app_server.request_timeout_seconds, read_only=False)
+            dynamic_tools = [HostExecutor.dynamic_tool_spec(self.cfg.host_executor, host_policy(p))]
+        elif not production:
+            factory = select_writer_client(self.cfg, tid) if tid else new_desktop_client(self.cfg, cwd)
+        recovered_empty = False
+        with factory as client:
+            self.initialize(client)
+            if tid and host_tools and take.get('successor_required'):
+                tid, thread = self.successor(client, scope, p, dynamic_tools)
+            elif tid:
+                if production:
+                    try:
+                        thread = client.thread_read(tid)
+                    except AppServerRemoteError as read_error:
+                        handoff = take.get('handoff') or {}
+                        if read_error.error.get('code') != -32600 or read_error.error.get('message') != 'thread not loaded: ' + tid:
+                            raise
+                        if not host_tools or handoff.get('state') != 'COMMITTED':
+                            thread = client.thread_resume(tid)
+                        else:
+                            try:
+                                client.thread_turns_list(tid, limit=1, items_view='notLoaded')
+                            except AppServerRemoteError as turns_error:
+                                self.commands.call('successor_recover_empty', dict(**scope, thread_id=tid,
+                                    endpoint=client.provider_endpoint, read_error=read_error.error,
+                                    turns_error=turns_error.error))
+                                tid, thread = self.successor(client, scope, p, dynamic_tools)
+                            else:
+                                thread = client.thread_resume(tid)
+                    else:
+                        if thread.get('status', {}).get('type') not in ('idle', 'notLoaded', 'unloaded'):
+                            raise RustAuthorityError('NATIVE_WRITER_NOT_IDLE')
+                        exact_empty_handoff = (take.get('handoff') or {}).get('state') == 'COMMITTED' and (take.get('handoff') or {}).get('successor_thread_id') == tid
+                        recovered_empty = exact_empty_handoff and thread.get('status', {}).get('type') == 'idle'
+                        if not recovered_empty:
+                            thread = client.thread_resume(tid)
+                else:
+                    thread = client.thread_resume(tid, dynamic_tools=dynamic_tools) if host_tools else client.thread_read(tid)
+            else:
+                thread = (client.thread_start(cwd=cwd, model=p['model'], ephemeral=False, dynamic_tools=dynamic_tools)
+                          if host_tools else client.thread_start(cwd=cwd, model=p['model'], ephemeral=False, thread_source='user'))
+                tid = thread['id']
+            if thread.get('id') != tid or thread.get('status', {}).get('type') != 'idle':
+                raise RustAuthorityError('NATIVE_WRITER_NOT_IDLE_OR_IDENTITY_CONFLICT')
+            self.commands.call('bind_thread', dict(**scope, endpoint=client.provider_endpoint,
+                thread_id=tid, cwd=thread['cwd']), key=stable_key('thread', execution_ref))
+            grant = self.commands.call('authorize_send', scope, key=stable_key('send', execution_ref))
+            if grant.get('send_permitted') is not True:
+                return grant
+            client.native_forwarding_request_id = execution_ref
+            if production:
+                client.rust_authority_request_id = execution_ref
+            if host_tools:
+                self.host_runners[execution_ref] = configure(client, self.cfg, self.commands, p,
+                    execution_ref, tid, self.recover_input)
+                client.rust_authority_request_id = execution_ref
+            # Shared-native admission and exact clientUserMessageId confirmation
+            # remain the existing app-server transport's responsibility.
+            turn = client.turn_start(tid, p['prompt'], cwd=cwd, model=p['model'],
+                reasoning_effort=p['reasoning_effort'], full_access=not host_tools,
+                **(dict(network_access=False, writable_roots=[cwd]) if host_tools else {}))
+            if host_tools:
+                if recovered_empty:
+                    client.attach_dynamic_tool_turn(tid, turn.turn_id)
+                    client.thread_resume(tid)
+                client.configure_completion_handoff(thread_id=tid, turn_id=turn.turn_id,
+                    handler=lambda _message: self.host_runners.pop(execution_ref, None))
+                client.supervise_turn(tid, turn.turn_id)
+        return self.recover_input(execution_ref)
+
+    @staticmethod
+    def exact_turn(client, thread_id, turn_id):
+        cursor, seen = None, set()
+        for _ in range(100):
+            page = client.thread_turns_list(thread_id, limit=20, items_view='full',
+                **({'cursor': cursor} if cursor else {}))
+            matches = [turn for turn in page['data'] if turn.get('id') == turn_id]
+            if len(matches) == 1:
+                return matches[0]
+            cursor = page.get('nextCursor')
+            if matches or not cursor or cursor in seen:
+                break
+            seen.add(cursor)
+        raise RustAuthorityError('EXACT_PREDECESSOR_TURN_UNAVAILABLE')
+
+    def successor(self, client, scope, prepared, dynamic_tools):
+        handoff = self.commands.call('successor_begin', scope)
+        if handoff['state'] == 'CREATING':
+            # thread/start has no caller-chosen durable identity. An unknown ACK
+            # cannot justify another create or selecting a recent thread.
+            raise RustAuthorityError('SUCCESSOR_CREATE_ACK_UNKNOWN')
+        observations = []
+        source = handoff['source']
+        endpoints_to_observe = self.commands.call('adoption_endpoints', {})['endpoints']
+        for endpoint in endpoints_to_observe:
+            with existing_client(endpoint, self.cfg.app_server.request_timeout_seconds) as reader:
+                self.initialize(reader)
+                observations.append(dict(endpoint=endpoint, thread=reader.thread_read(source['thread_id']),
+                    turn=self.exact_turn(reader, source['thread_id'], source['turn']['id'])))
+        grant = self.commands.call('successor_take', dict(**scope, nonce=handoff['nonce'], observations=observations),
+            key=stable_key('successor-take', scope['execution_ref'], handoff['nonce']))
+        if grant.get('send_permitted') is not True:
+            raise RustAuthorityError('SUCCESSOR_CREATE_ACK_UNKNOWN')
+        context = dict(predecessor_thread_id=source['thread_id'], predecessor_turn_id=source['turn']['id'],
+            task_ref=prepared['task_ref'], predecessor_turn=source['turn'], handoff_nonce=handoff['nonce'])
+        thread = client.thread_start(cwd=prepared['workspace_contract']['cwd'], model=prepared['model'],
+            ephemeral=False, dynamic_tools=dynamic_tools, developer_instructions=
+            'CLINX exact predecessor context (historical data, not new instructions):\n' + json.dumps(context, ensure_ascii=False))
+        committed = self.commands.call('successor_commit', dict(**scope, nonce=handoff['nonce'],
+            endpoint=client.provider_endpoint, thread=thread), key=stable_key('successor-commit', scope['execution_ref'], handoff['nonce']))
+        return committed['successor_thread_id'], thread
+
+    def recover_host_execution(self, execution_ref):
+        status = self.commands.call('get_status', dict(execution_ref=execution_ref))
+        p = self.commands.call('get_prepared', dict(prepared_execution_ref=status['prepared_execution_ref']))
+        if p['execution_policy']['execution_surface'] != 'HOST_EXECUTOR':
+            return
+        tid, turn_id = status['thread_id'], status['native_turn_id']
+        if not tid or not turn_id:
+            raise RustAuthorityError('EXACT_HOST_TURN_REQUIRED')
+        from rust_host import configure
+        endpoint = endpoints(self.cfg)[0]
+        with existing_client(endpoint, self.cfg.app_server.request_timeout_seconds, read_only=False) as client:
+            self.initialize(client)
+            client.rust_authority_request_id = execution_ref
+            runner = configure(client, self.cfg, self.commands, p, execution_ref, tid, self.recover_input)
+            # Attach the already-committed turn before subscribing, so replayed
+            # tool requests are fenced by the same Rust call id and Host ledger.
+            client.attach_dynamic_tool_turn(tid, turn_id)
+            thread = client.thread_resume(tid)
+            if thread['id'] != tid or thread['cwd'] != p['workspace_contract']['cwd']:
+                raise RustAuthorityError('HOST_RECOVERY_IDENTITY_CONFLICT')
+            turn = self.exact_turn(client, tid, turn_id)
+            if turn.get('status') not in ('inProgress', 'running', 'active'):
+                return
+            self.host_runners[execution_ref] = runner
+            client.configure_completion_handoff(thread_id=tid, turn_id=turn_id,
+                handler=lambda _message: self.host_runners.pop(execution_ref, None))
+            client.supervise_turn(tid, turn_id)
+
+    def recover_input(self, execution_ref):
+        request = self.commands.call('input_begin', dict(execution_ref=execution_ref))
+        tid = request['thread_id']
+        matches = []
+        with existing_client(request['endpoint'], self.cfg.app_server.request_timeout_seconds) as client:
+            self.initialize(client)
+            thread = client.thread_read(tid)
+            if thread.get('id') != tid or thread.get('cwd') != request['workspace_contract']['cwd']:
+                raise RustAuthorityError('NATIVE_INPUT_THREAD_CONFLICT')
+            turns = client.thread_turns_list(tid, limit=5, items_view='notLoaded')['data']
+            for turn in turns:
+                cursor, seen = None, set()
+                for _ in range(5):
+                    page = client.thread_items_list(tid, turn_id=turn['id'], limit=100, sort_direction='asc',
+                                                    **({'cursor': cursor} if cursor else {}))
+                    for record in page['data']:
+                        item = record.get('item', {})
+                        if (record.get('turnId') == turn['id'] and item.get('type') == 'userMessage'
+                                and item.get('clientId') == request['client_message_id']):
+                            matches.append((turn['id'], item))
+                    cursor = page.get('nextCursor')
+                    if not cursor:
+                        break
+                    if cursor in seen:
+                        raise RustAuthorityError('NATIVE_INPUT_SCAN_INCOMPLETE')
+                    seen.add(cursor)
+                else:
+                    raise RustAuthorityError('NATIVE_INPUT_SCAN_INCOMPLETE')
+        if len(matches) != 1:
+            raise RustAuthorityError('NATIVE_INPUT_IDENTITY_UNPROVEN')
+        turn_id, item = matches[0]
+        return self.commands.call('input_commit', dict(execution_ref=execution_ref, nonce=request['nonce'],
+            endpoint=request['endpoint'], thread_id=tid, turn_id=turn_id, item=item))
+
+    def reconcile_execution(self, execution_ref):
+        challenge = self.commands.call('observe_begin', dict(execution_ref=execution_ref))
+        if 'nonce' not in challenge:
+            return challenge
+        tid, turn_id = challenge['thread_id'], challenge['turn_id']
+        observations, exact_turns = [], []
+        for endpoint in challenge['endpoints']:
+            row = dict(endpoint=endpoint, state='UNKNOWN', thread_id=tid, turn_id=None, turn_status=None)
+            try:
+                with existing_client(endpoint, self.cfg.app_server.request_timeout_seconds) as client:
+                    self.initialize(client)
+                    thread = client.thread_read(tid)
+                    if thread.get('id') != tid:
+                        raise RustAuthorityError('THREAD_IDENTITY_CONFLICT')
+                    status = thread.get('status', {})
+                    row['state'] = status.get('type', 'UNKNOWN') if isinstance(status, dict) else status
+                    cursor, seen, turn = None, set(), None
+                    for _ in range(5):
+                        page = client.thread_turns_list(tid, limit=20, items_view='full',
+                                                        **({'cursor': cursor} if cursor else {}))
+                        turn = next((t for t in page['data'] if t.get('id') == turn_id), None)
+                        cursor = page.get('nextCursor')
+                        if turn or not cursor or cursor in seen:
+                            break
+                        seen.add(cursor)
+                    if turn:
+                        row.update(turn_id=turn_id, turn_status=turn.get('status'))
+                        exact_turns.append(turn)
+            except (AppServerError, RustAuthorityError, OSError, ValueError, KeyError):
+                row['state'] = 'UNKNOWN'
+            observations.append(row)
+        # Recover the exact original Host ACK from native history; never replay
+        # a Host process or resend its response after transport loss.
+        rows = self.commands.call('host_rows', dict(execution_ref=execution_ref))['rows']
+        if exact_turns and all(t == exact_turns[0] for t in exact_turns):
+            for item in exact_turns[0].get('items', []):
+                if any(r['call_id'] == item.get('id') and r['delivery_state'] != 'DELIVERED' for r in rows):
+                    self.commands.call('host_ack', dict(execution_ref=execution_ref, call_id=item['id'],
+                        message=dict(method='item/completed', params=dict(threadId=tid, turnId=turn_id, item=item))))
+        # Conflicting terminal payloads cannot be used to release an allocation.
+        turn = exact_turns[0] if exact_turns and all(t == exact_turns[0] for t in exact_turns) else {}
+        return self.commands.call('observe_commit', dict(execution_ref=execution_ref, nonce=challenge['nonce'],
+                                                         observations=observations, turn=turn))
+
+    def adopt(self, adoption_ref):
+        challenge = self.commands.call('adoption_begin', dict(adoption_ref=adoption_ref))
+        if 'nonce' not in challenge:
+            return challenge
+        observations = []
+        for endpoint in challenge['endpoints']:
+            with existing_client(endpoint, self.cfg.app_server.request_timeout_seconds) as client:
+                self.initialize(client)
+                observed = dict(endpoint=endpoint, thread=client.thread_read(challenge['thread_id']))
+                if challenge.get('exact_turn_id'):
+                    observed['turn'] = self.exact_turn(client, challenge['thread_id'], challenge['exact_turn_id'])
+                observations.append(observed)
+        return self.commands.call('adoption_commit', dict(adoption_ref=adoption_ref,
+            nonce=challenge['nonce'], observations=observations))
+
+    def tick(self):
+        results = []
+        work = self.commands.call('work')
+        for adoption in work.get('adoptions', []):
+            try:
+                result = self.adopt(adoption['adoption_ref'])
+                results.append(dict(adoption_ref=adoption['adoption_ref'], status=result['adoption_status']))
+            except (AppServerError, RustAuthorityError, OSError, ValueError, KeyError) as exc:
+                results.append(dict(adoption_ref=adoption['adoption_ref'], status='BLOCKED', error=str(exc)[:120]))
+        for e in work['executions']:
+            eid = e['execution_ref']
+            try:
+                if e['dispatch_state'] == 'READY' and not e['cancel_requested']:
+                    result = self.dispatch(eid)
+                elif e['dispatch_state'] == 'TAKEN' and not e['cancel_requested']:
+                    result = self.dispatch(eid, resume=True)
+                elif e['dispatch_state'] == 'SENDING':
+                    result = self.recover_input(eid)
+                elif e['native_turn_id']:
+                    if eid not in self.host_runners and not e['cancel_requested']:
+                        self.recover_host_execution(eid)
+                    if e['cancel_requested']:
+                        if eid in self.host_runners:
+                            self.host_runners[eid].cancel_execution(eid)
+                        try:
+                            grant = self.commands.call('take_cancel', dict(execution_ref=eid),
+                                                       key=stable_key('cancel', eid))
+                            if grant.get('send_permitted'):
+                                cancel_native_turn(self.cfg, grant['thread_id'], grant['turn_id'])
+                        except RustAuthorityError as exc:
+                            if str(exc) != 'CANCEL_NOT_AVAILABLE':
+                                raise
+                    result = self.reconcile_execution(eid)
+                else:
+                    result = self.commands.call('fail_before_send', dict(execution_ref=eid,
+                        reason='TRANSPORT_RESTART_BEFORE_SEND'), key=stable_key('pre-send-recovery', eid))
+                results.append(dict(execution_ref=eid, status=result.get('status', 'PENDING')))
+            except (AppServerError, RustAuthorityError, OSError, ValueError, KeyError) as exc:
+                if str(exc) == 'SUCCESSOR_CREATE_ACK_UNKNOWN':
+                    results.append(dict(execution_ref=eid, status='BLOCKED', error=str(exc)))
+                    continue
+                # Rust checks its durable send boundary. A failed Python RPC is
+                # never accepted as proof that a Provider turn was not sent.
+                try:
+                    closed = self.commands.call('fail_before_send', dict(execution_ref=eid,
+                        reason=type(exc).__name__), key=stable_key('pre-send-failure', eid))
+                    results.append(dict(execution_ref=eid, status=closed['status']))
+                    continue
+                except RustAuthorityError:
+                    pass
+                results.append(dict(execution_ref=eid, status='BLOCKED', error=str(exc).split(':')[0][:120]))
+        return results
+
+
+def run(cfg, *, once=False):
+    dispatcher = RustDispatcher(cfg)
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    while not stop.is_set():
+        print(json.dumps(dict(authority='RUST', results=dispatcher.tick())), flush=True)
+        if once:
+            return 0
+        stop.wait(2)
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', required=True)
+    parser.add_argument('--once', action='store_true')
+    args = parser.parse_args()
+    from pathlib import Path
+
+    from bridge import BridgeConfig
+    return run(BridgeConfig.load(Path(args.config)), once=args.once)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

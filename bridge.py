@@ -7430,6 +7430,13 @@ def main() -> int:
         print(f"CONFIG_ERROR: {e}", file=sys.stderr)
         return 2
 
+    from rust_integration import enabled as rust_authority_enabled
+    if rust_authority_enabled():
+        if args.command not in {'run', 'once'}:
+            raise BridgeError('RUST_DISPATCHER_COMMAND_NOT_IMPLEMENTED')
+        from rust_transport import run
+        return run(cfg, once=args.command == 'once')
+
     if args.command == "recover-execution":
         try:
             if args.reconcile_native_input:

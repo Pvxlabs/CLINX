@@ -100,9 +100,13 @@ manager to obtain a pass. The remaining recovery cases use temporary state.
 | Native OPAQUE Rust adapter | Matching Python/PyO3/maturin toolchain; independent of pytest collection |
 | `MonitorApp/Tests/CLINXMonitorTests` | macOS/Xcode; from MonitorApp run `swift test --scratch-path <fresh-directory>`; Python source checks are not GUI acceptance |
 
-Historical Decision Kernel, Runtime Lab and maintenance-authorization experiments
-have been retired with their exclusive tests and qualification wrappers. Core
-Owner, authority, SQLite, transport, idempotency and recovery assertions remain.
+The Rust authority migration retains the frozen execution contract and restores
+its Runtime Lab source and opt-in qualification wrappers for evidence recovery.
+The wrappers use the retained local `tests/` fixtures; those fixtures are still
+not distributed through Git. Lab/shadow PASS does not establish production
+authority. See [Rust authority status and acceptance](RUST_AUTHORITY.md).
+Other retired experiments remain separate from normal development. Core Owner,
+authority, SQLite, transport, idempotency and recovery assertions remain.
 [Historical source/evidence recovery](README.md#历史资料恢复) is independent of
 normal development installation.
 

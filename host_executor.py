@@ -731,7 +731,7 @@ class HostExecutor:
             # Missing Host evidence after an arbitrary handler crash is NOT this proof.
             exc.command_not_dispatched = True
             raise
-        if request.tool_call_id:
+        if request.tool_call_id and not getattr(self.registry, "rust_authority", False):
             from tool_delivery import ToolDeliveryLedger
             ToolDeliveryLedger.validated(self.registry, request.execution_ref, request.tool_call_id)
         host_execution_ref = "hostexec_" + uuid.uuid4().hex
@@ -771,10 +771,11 @@ class HostExecutor:
                 with self._lock:
                     cancelled_before_start = request.execution_ref in self._cancelled
                     if not cancelled_before_start:
-                        if request.tool_call_id:
+                        if request.tool_call_id and not getattr(self.registry, "rust_authority", False):
                             ToolDeliveryLedger.running(self.registry, request.execution_ref, request.tool_call_id)
                         process = subprocess.Popen(
-                            list(command.argv),
+                            (self.registry.spawn_argv(command.argv) if getattr(self.registry, "rust_authority", False)
+                             else list(command.argv)),
                             cwd=str(command.cwd or request.project_root),
                             env=self._clean_environment(),
                             stdin=subprocess.DEVNULL,

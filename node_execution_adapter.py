@@ -93,6 +93,12 @@ class CanonicalNodeExecutionAdapter:
         from task_registry import TaskRegistry
 
         cfg = bridge.BridgeConfig.load(path)
+        from rust_integration import RustIntegration, enabled
+        if enabled():
+            from rust_node_adapter import RustNodeExecutionAdapter
+            if cfg.runtime_host != node_id:
+                raise NodeProtocolError('NODE_TARGET_MISMATCH', 'Rust authority host differs')
+            return RustNodeExecutionAdapter(RustIntegration(cfg), node_id, **scope)
         if cfg.runtime_host != node_id or cfg.task_db_path is None:
             raise NodeProtocolError("NODE_EXECUTION_CONFIG_INVALID", "Execution requires the owning host's explicit canonical task database")
         registry = TaskRegistry(cfg.task_db_path)
