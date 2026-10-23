@@ -1,15 +1,23 @@
 # Native Rust business authority
 
-Status on 2026-10-23: **dedicated services installed and qualified before cutover;
-production cutover BLOCKED**. The production release remains
-`owner-shared-07da5fe20c4119dee1b4`, with its Python Owner and original Tunnel
-launcher active. The installed Rust candidate is `rust-a4979396ab76a29385d4`.
-A candidate that commits real work is not yet the sole production authority.
+Status on 2026-10-24 (Asia/Shanghai): **production Rust authority PASS**.
+The selected immutable release is `rust-834b236abff41aa9e117`. The existing
+Tunnel launcher now forwards stdio to `/run/clinx-rust-api/mcp.sock`; Centre
+publishes the Rust projection on `0.0.0.0:18773`. Python Owner PID 119760 exited
+after its exact active ORION turn completed. The old Owner, Dispatcher, Provider
+and Centre units are stopped and masked. No legacy history or Lease was imported.
 
-The workspace is `/home/pvxlabs/dev/CLINX-RUST`, branch `codex/clinx-rust`, HEAD
-`5a870aecd5ea5ba12edb93eb45a34339568a64e4` plus the saved dirty source manifest.
-No commit, push, reset, clean, stash, parallel checkout, or rollback implementation
-was performed. Existing production artifacts and configurations remain retained.
+The source build used `/home/pvxlabs/dev/CLINX-RUST`, `codex/clinx-rust`, based
+on integration `a7c915a8df7e9585eac5d46c152306d98d6618b0` plus the recorded
+cutover patch. Final source integration and deployed file hashes are recorded in
+the cutover provenance receipt; the immutable release manifest retains its actual
+build-time base HEAD. No push, reset, clean, stash or rollback implementation was
+performed. Original Codex development-directory access is preserved.
+
+Current evidence root:
+`/lab/runtime-worktrees/p620/clinx-rust-business-20261022T165524Z/cutover-20261023T164657Z/`.
+The independently fsynced retirement and switch receipts are also under
+`/var/lib/clinx-rust/migration-receipts/`.
 
 ## One durable Rust authority
 
@@ -53,8 +61,9 @@ Unknown Host side effects remain HELD. A lost ACK does not authorize reexecution
 
 Root-owned release, policy and service files are under `/var/lib/clinx-rust` and
 `/etc/systemd/system`. The only new business state is
-`/var/lib/clinx-rust/authority/authority.sqlite3`; it contains acceptance work,
-with no legacy task, lease or running-ledger import. Node identity, peer trust
+`/var/lib/clinx-rust/authority/authority.sqlite3`; it was initialized clean for production,
+with no legacy task, lease or running-ledger import. Candidate qualification
+ledgers were archived intact before initialization. Node identity, peer trust
 and sharing configuration were copied; legacy Node databases were not imported.
 
 The authority uses SO_PEERCRED for API/transport roles. Production mode rejects
@@ -79,13 +88,13 @@ FDs or Docker socket; canonical-path and symlink-alias access both fail.
 The installed MCP socket activates the existing `mcp_server.py` as clinx-api.
 `rust_stdio.py` forwards bytes from the existing stdio transport without decisions.
 The Rust catalog includes target registration/revocation, policy control and Host
-request parameters, with matching public response schemas. The active production
-Tunnel launcher has not been changed to this staged command.
+request parameters, with matching public response schemas. The existing production
+Tunnel launcher now invokes this command; it does not load the old Owner environment.
 
-Centre runs on the qualification loopback port 18774 with `--rust-projection`.
+Centre runs on production port 18773 with `--rust-projection`.
 It reads managed task/turn projections through Rust and writes only existing Node
 observation/index/outbox projections. It neither opens the legacy task database
-nor invokes the Python canonical lifecycle. The production Centre remains on 18773.
+nor invokes the Python canonical lifecycle. The retired Python Centre no longer owns that port.
 
 ## Completed acceptance and evidence boundaries
 
@@ -180,55 +189,70 @@ old-UID opens of the new authority DB and a symlink alias were denied.
 Actual old production processes were preserved. This is not whole-service
 legacy revocation and must not satisfy the final cutover gate by itself.
 
-## Remaining production cutover gate
+## Production cutover and postflight
 
-The final candidate is running under all four dedicated identities, with the
-acceptance ledger retained. The real external MCP connector still reports
-`owner-shared-07da5fe20c4119dee1b4`; Python Owner PID 119760 remains active.
-No legacy production service or public entry point has been switched.
+The remaining gates were closed in this cutover:
 
-Current concrete blockers are:
+* Rust resolves existing dynamic project names inside the configured workspace,
+  including HDL. Prepare, admission, send authorization and native adoption use
+  the same resolver and exact Git seal. Project listing includes registered and
+  exactly resolved projects without adding directory permissions or a filesystem
+  whitelist. The existing host/query filters work through the external connector.
+* The candidate ledger was archived, and production state was initialized with
+  zero tasks, leases, commits and commands under the sealed production policy.
+  The policy mismatch check was retained; no SQL policy patch or history import
+  occurred. Existing identity, pairing and sharing configuration was retained.
+* The existing Owner stopped admissions and drained its actual Desktop exact turn.
+  The active set was empty before whole-service revocation. The task result and
+  qualification receipt were independently fsynced before cutting the remaining
+  old control plane.
+* A stopped old-UID worker holding a writable sentinel FD was placed directly in
+  the actual production `clinx.service` cgroup. Its old FD remained writable after
+  stop/resume and path replacement. All approved old service cgroups were then
+  killed and reaped, not just a disposable child cgroup. The probe died by SIGKILL,
+  waitpid completed, SIGCONT returned ESRCH, and both sentinels remained unchanged.
+  No writable old-DB FD remained. Original-UID new DB, alias, writer FD and authority
+  socket access were denied after retirement. Epoch rejection was checked separately;
+  it is not the physical revocation proof.
+* Existing user unit definitions were preserved as evidence and masked at their
+  actual load paths. A runtime mask alone would not override those user definitions.
+  Only the existing Tunnel was restored, with its old Provider dependency removed.
+  The Rust units and MCP socket are included in multi-user.target for reboot startup.
 
-1. **RESOLVED, 2026-10-23 write-access correction.** The migration had incorrectly
-   applied ProtectSystem=strict / ProtectHome=read-only to execution services and
-   replaced the original Codex filesystem user with an unrelated UID. Provider
-   and Dispatcher no longer impose filesystem-wide read-only mounts. Provider
-   and Host execution use pvxlabs (UID 1001), preserving original file access
-   without a project allowlist or recursive chmod/chown/ACL changes. The Rust
-   writer remains UID 993. A real Provider task modified an existing 0600 file,
-   created another file, successfully added/removed its Git index entry, and
-   finished SUCCEEDED/RELEASED. The deployed Host helper also modified an owner-only
-   file under the original development tree. HDL, CLINX-RUST, ORION worktree,
-   /lab and the /data qualification directory are writable in the actual Provider
-   namespace. Raw DB, writer FD, authority socket and path-alias access denial
-   passed again for the corrected execution identity.
-   Evidence: /lab/runtime-worktrees/p620/clinx-rust-business-20261022T165524Z/write-access-20261023T155501Z/.
-   This supersedes the old read-only blocker and the earlier worker-UID description;
-   it does not assert production cutover or full legacy process revocation.
-2. Existing Python routing supports workspace-bounded dynamic projects (HDL is
-   in use); the frozen candidate authority policy currently contains only orion
-   and clinx. Preserve the existing bounded resolution semantics in Rust and
-   seal a complete production policy before initializing clean production state.
-   Editing policy.json beside the existing ledger is correctly rejected with
-   AUTHORITY_POLICY_MISMATCH; do not bypass the stored policy check.
-3. Exact Desktop observations found unrelated HDL and ORION turns inProgress,
-   despite the other Provider reporting notLoaded/interrupted for the same IDs.
-   Drain using the existing Owner admission/shutdown contract and obtain exact
-   completion evidence from the actual endpoint before full legacy cgroup kill.
-   The final readback still has HDL turn
-   `01a16953-29bd-7c83-b88f-f82d0ddfb5b6` inProgress; ORION is no longer in
-   the old registry active set. Rust also directly returned PROJECT_SCOPE_DENIED
-   for HDL preparation; this is an observed admission failure, not conjecture.
-   Do not infer safety from the alternate endpoint or stale ledger flags.
+The external CLINX connector returned authority=RUST and completed real preparation,
+status and duplicate-start readback. A start ACK was deliberately discarded at the
+production MCP socket. Exact preparation readback located the same execution.
+SIGKILL of authority and Dispatcher recovered the original thread and turn; the
+real Provider completed SUCCEEDED/RELEASED. Full exact native turn enumeration
+confirmed one turn. A separate real Provider interruption finalized FAILED/RELEASED.
+An approved running cancellation finalized CANCELLED/RELEASED. A deployed production
+API cancellation before send finalized CANCELLED/RELEASED with no thread or turn.
 
-After these are closed: independently fsync the migration result, disable old
-restart paths, inventory every old writable FD, kill/reap the exact old cgroups,
-verify only Rust holds new DB/WAL/SHM write descriptors, and switch the existing
-Tunnel launcher and Centre port together. Then perform acceptance through the
-real external connector. No extra control service or rollback implementation
-is required or implemented.
+The final release's live production MCP catalog accepted an explicit HOST_EXECUTOR
+request. The real Provider called user_identity once as pvxlabs, with one persisted
+COMPLETED/DELIVERED Host row and exit code zero. Rust finalized SUCCEEDED/RELEASED;
+the external cloud connector read back that exact result. No scripted Provider was
+used for these checks. Final readback found seven executions with all allocations
+released, only the Rust PID holding writable new DB/WAL/SHM FDs, an ONLINE authorized
+Centre source with live projections, and a healthy fresh Tunnel poll. The authority
+had 677.72 seconds of uninterrupted uptime at that readback.
 
-The final receipt keeps `safe_to_retire_old_control_plane=false`, production
-cutover BLOCKED, whole legacy revocation NOT_VERIFIED, and post-cutover real
-acceptance NOT_VERIFIED. Candidate success must not be reported as production
-unique-writer success.
+Reuse the previously passed 27 Rust tests, 100 caller regressions, crash evidence
+and 302.86-second real Provider soak. New routing checks cover traversal/symlink
+escape, wrong host/repository, restart, identity changes before send and release.
+Rust test compilation and Clippy passed. The old crash-test Policy fixture's misplaced
+field was corrected and the new optional workspace field was supplied; crash semantics
+were not changed or weakened.
+
+The only remaining client limitation is discovery in this existing chat: its loaded
+CLINX tool schema is the old native-only catalog. It omits Host parameters and policy/
+Git target tools even though live production tools/list exports them. Refresh or
+reconnect CLINX before invoking those new operations from this chat. One additional
+cloud request failed at https://chatgpt.com/backend-api/ps/mcp before a preparation
+commit was observed; it was not blindly replayed as an execution. Native production
+calls and exact readback through that connector passed. Full refreshed-chat discovery
+is NOT_VERIFIED; live production MCP Host/authority acceptance is PASS.
+
+No rollback compatibility implementation or legacy task/Lease migration was requested
+or built. Preserved source, policy, qualification evidence and runtime records remain
+available for diagnosis; enabling a second writer is not a recovery procedure.

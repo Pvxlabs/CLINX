@@ -121,6 +121,10 @@ def main():
             dict(alias=k, host="p620", cwd=v["cwd"])
             for k, v in config["projects"].items()
         ],
+        workspaces=[
+            {k: w[k] for k in ("host", "root", "allow_existing_projects")}
+            for w in config.get("workspaces", {}).values()
+        ],
         endpoints=["/run/clinx-rust-provider/provider.sock"],
         lease_ms=120000,
         host_operations=[

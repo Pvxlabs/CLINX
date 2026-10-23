@@ -11,8 +11,9 @@ use std::{
     process::Command,
 };
 fn policy() -> Policy {
-        derived_git_roots: vec![],
     Policy {
+        derived_git_roots: vec![],
+        workspaces: vec![],
         projects: vec![Project {
             alias: "clinx".into(),
             host: "p620".into(),

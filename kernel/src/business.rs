@@ -34,14 +34,69 @@ pub struct Project {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct Workspace {
+    pub host: String,
+    pub root: String,
+    pub allow_existing_projects: bool,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Policy {
     pub projects: Vec<Project>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspaces: Vec<Workspace>,
     pub endpoints: Vec<String>,
     pub lease_ms: i64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub host_operations: Vec<Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub derived_git_roots: Vec<String>,
+}
+impl Policy {
+    fn project(&self, alias: &str, host: &str) -> Result<Project> {
+        if let Some(p) = self
+            .projects
+            .iter()
+            .find(|p| p.host == host && p.alias.eq_ignore_ascii_case(alias))
+        {
+            return Ok(Project {
+                alias: alias.into(),
+                ..p.clone()
+            });
+        }
+        // Match the existing DynamicProjectResolver: one existing project name
+        // inside the configured workspace. This grants no filesystem rights.
+        let valid = alias
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+            && alias
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c));
+        if !valid {
+            return Err("PROJECT_SCOPE_DENIED".into());
+        }
+        let w = self
+            .workspaces
+            .iter()
+            .find(|w| w.host == host && w.allow_existing_projects)
+            .ok_or("PROJECT_SCOPE_DENIED")?;
+        let root = Path::new(&w.root)
+            .canonicalize()
+            .map_err(|_| "PROJECT_SCOPE_DENIED")?;
+        let cwd = root
+            .join(alias)
+            .canonicalize()
+            .map_err(|_| "PROJECT_SCOPE_DENIED")?;
+        if !cwd.starts_with(&root) || cwd == root || !cwd.is_dir() {
+            return Err("PROJECT_SCOPE_DENIED".into());
+        }
+        Ok(Project {
+            alias: alias.into(),
+            host: host.into(),
+            cwd: cwd.to_string_lossy().into_owned(),
+        })
+    }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -296,6 +351,17 @@ impl Store {
                 return Err("INVALID_PROJECT_POLICY".into());
             }
         }
+        let mut hosts = std::collections::BTreeSet::new();
+        for w in &policy.workspaces {
+            if w.host.is_empty()
+                || !hosts.insert(&w.host)
+                || !Path::new(&w.root).is_absolute()
+                || Path::new(&w.root).canonicalize().ok().as_deref() != Some(Path::new(&w.root))
+                || !Path::new(&w.root).is_dir()
+            {
+                return Err("INVALID_WORKSPACE_POLICY".into());
+            }
+        }
         let data = core::canonical(&serde_json::to_value(policy).map_err(|_| "INVALID_POLICY")?);
         if initialize {
             self.conn
@@ -448,6 +514,22 @@ impl Store {
         if operation == "adoption_endpoints" && core::keys(p, "") {
             return Ok(json!({"endpoints":policy.endpoints}));
         }
+        if operation == "list_projects" && core::keys(p, "") {
+            let mut projects = policy.projects.clone();
+            // The writer has traversal access, not workspace directory-listing
+            // privileges. Include exact routes already resolved by preparation;
+            // do not expand filesystem access merely for project discovery.
+            for prepared in rows(&self.conn, "prepared")? {
+                let alias = string(&prepared, "project")?;
+                let host = string(&prepared, "host")?;
+                if !projects.iter().any(|p| p.host == host && p.alias == alias)
+                    && let Ok(project) = policy.project(alias, host)
+                {
+                    projects.push(project);
+                }
+            }
+            return Ok(json!({"projects":projects}));
+        }
         let hash = core::digest(&json!({"operation":operation,"payload":p}));
         let tx = self
             .conn
@@ -572,11 +654,7 @@ impl Store {
                 {
                     return Err("INVALID_PREPARATION".into());
                 }
-                let project = policy
-                    .projects
-                    .iter()
-                    .find(|x| x.alias == r.project && x.host == r.host)
-                    .ok_or("PROJECT_SCOPE_DENIED")?;
+                let project = policy.project(&r.project, &r.host)?;
                 let task = r
                     .task_ref
                     .as_ref()
@@ -592,7 +670,7 @@ impl Store {
                     .workspace_contract
                     .or_else(|| task.as_ref().map(|t| t["workspace_contract"].clone()))
                     .unwrap_or(Value::Null);
-                let seal = workspace(project, &requested)?;
+                let seal = workspace(&project, &requested)?;
                 let task_policy = task
                     .as_ref()
                     .and_then(|t| t.get("execution_policy"))
@@ -630,11 +708,8 @@ impl Store {
                     public(&row(&tx, "execution", existing)?)
                 } else {
                     let project = policy
-                        .projects
-                        .iter()
-                        .find(|x| prepared["project"] == x.alias && prepared["host"] == x.host)
-                        .ok_or("PROJECT_SCOPE_DENIED")?;
-                    workspace(project, &prepared["workspace_contract"])?;
+                        .project(string(&prepared, "project")?, string(&prepared, "host")?)?;
+                    workspace(&project, &prepared["workspace_contract"])?;
                     let resource = core::digest(&json!([
                         prepared["host"],
                         prepared["workspace_contract"]["cwd"]
@@ -861,11 +936,8 @@ impl Store {
                         string(&e, "endpoint")?;
                         let prepared = row(&tx, "prepared", string(&e, "prepared_execution_ref")?)?;
                         let project = policy
-                            .projects
-                            .iter()
-                            .find(|x| prepared["project"] == x.alias && prepared["host"] == x.host)
-                            .ok_or("PROJECT_SCOPE_DENIED")?;
-                        workspace(project, &prepared["workspace_contract"])?;
+                            .project(string(&prepared, "project")?, string(&prepared, "host")?)?;
+                        workspace(&project, &prepared["workspace_contract"])?;
                         let mut f = base_facts(&e, clock());
                         f["dispatch_certainty"] = json!("NOT_DISPATCHED");
                         f["non_dispatch_proof"] = json!({"source":"dispatch_boundary","boundary":"PRE_SEND","evidence_ref":id,"execution_id":eid,"attempt_id":e["attempt_id"]});
@@ -1574,13 +1646,9 @@ fn control(
                 return Err("INVALID_ADOPTION".into());
             }
             let thread = string(p, "thread_id")?;
-            let project = policy
-                .projects
-                .iter()
-                .find(|r| p["host"] == r.host && p["project"] == r.alias)
-                .ok_or("PROJECT_SCOPE_DENIED")?;
+            let project = policy.project(string(p, "project")?, string(p, "host")?)?;
             string(p, "title")?;
-            let seal = workspace(project, &p["workspace_contract"])?;
+            let seal = workspace(&project, &p["workspace_contract"])?;
             for t in rows(c, "task")? {
                 if t["thread_id"] == thread && t["host"] == p["host"] {
                     if t["project"] != p["project"]
@@ -1685,12 +1753,8 @@ fn control(
                     return Err("NATIVE_ADOPTION_NOT_IDLE_OR_IDENTITY_CONFLICT".into());
                 }
             }
-            let project = policy
-                .projects
-                .iter()
-                .find(|r| a["host"] == r.host && a["project"] == r.alias)
-                .ok_or("PROJECT_SCOPE_DENIED")?;
-            workspace(project, &a["workspace_contract"])?;
+            let project = policy.project(string(&a, "project")?, string(&a, "host")?)?;
+            workspace(&project, &a["workspace_contract"])?;
             if rows(c, "task")?
                 .iter()
                 .any(|t| t["host"] == a["host"] && t["thread_id"] == a["thread_id"])

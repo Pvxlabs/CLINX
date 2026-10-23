@@ -229,9 +229,12 @@ class RustIntegration:
             'thread_id', 'lifecycle', 'policy_hash', 'execution_policy', 'active_execution')},
             task_ref=task['task_id'], read_only=True, authority='RUST')
 
-    def list_projects(self):
-        return dict(projects=[dict(project=p.project_alias, cwd=str(p.repo), host=self.cfg.runtime_host)
-                              for p in self.cfg.projects], read_only=True)
+    def list_projects(self, *, host=None, query=None):
+        result = self.commands.call('list_projects')
+        return dict(projects=[dict(project=p['alias'], cwd=p['cwd'], host=p['host'])
+                              for p in result['projects']
+                              if (not host or p['host'] == host)
+                              and (not query or query.casefold() in p['alias'].casefold())], read_only=True)
 
     def get_capabilities(self, **unused):
         return dict(authority='RUST', capabilities=['prepare', 'start', 'cancel', 'receipt_readback', 'native_result', 'native_adoption', 'policy_reauthorization'],
