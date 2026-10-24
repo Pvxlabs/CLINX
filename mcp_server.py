@@ -14,20 +14,19 @@ import dataclasses
 import datetime as dt
 import json
 import os
-from pathlib import Path
 import re
 import sqlite3
 import sys
+from pathlib import Path
 from typing import Any, Callable
 
 import app_server
 import bridge
+from consultations import NAMES as CONSULTATION_TOOL_NAMES
 from execution_policy import EXECUTION_SURFACES, HOST_CAPABILITIES, OPERATION_CLASSES
 from m9_integration import ClinxIntegration, M9IntegrationError
-from task_registry import TaskRegistry, TaskRegistryError
 from rust_authority import RustAuthorityError
-from consultations import NAMES as CONSULTATION_TOOL_NAMES
-
+from task_registry import TaskRegistry, TaskRegistryError
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 SERVER_DISCOVER_PROTOCOL_VERSION = "2026-07-28"
@@ -1510,8 +1509,8 @@ def main(argv: list[str] | None = None) -> int:
             from consultations import standalone_server
             serve_stdio(standalone_server(TaskRegistry(path, read_only=True)), recover_existing=False)
         elif args.observations_only:
-            from observation_mcp import standalone_server
             from network_observation import directory_from_env
+            from observation_mcp import standalone_server
             directory = directory_from_env()
             if directory is None:
                 raise ValueError("OBSERVATION_NOT_CONFIGURED")

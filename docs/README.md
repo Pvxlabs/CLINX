@@ -3,6 +3,12 @@
 使用入口是[项目 README](../README.md)，开发环境见[贡献指南](../CONTRIBUTING.md)，
 测试命令与前置条件见[测试指南](TESTING.md)；测试目录索引为本地 `tests/README.md`。
 
+## 产品定位
+
+[产品定位与职责边界](PRODUCT_POSITIONING.md)定义 CLINX 的核心使命、职责范围、
+Rust Core 唯一状态权威、五条设计原则与效果指标。CLINX 是 AI 任务路由与执行流通
+基础设施；代码工作、业务决策及业务安全策略由对应上下游负责。
+
 ## 运行契约
 
 | 内容 | 文档 |
@@ -19,8 +25,9 @@
 
 根目录 Python 模块实现 MCP、任务、Owner、Provider 和节点协调；`domain/`、
 `runtime_control/`、`provider_adapters/`、`shadow_ledger/` 提供领域、事务和事件原语。
-`kernel/` 包含 Rust Owner client，以及迁移分支恢复的冻结 core、历史 Runtime 和
-[原生 authority candidate](RUST_AUTHORITY.md)；candidate 尚未接管生产。
+`kernel/` 包含 Rust Owner client、冻结 core、历史 Runtime 和原生 Rust authority。
+Rust 权威实现、切换记录与证据边界见 [Rust authority](RUST_AUTHORITY.md)；
+当前运行身份须另行读回，不从源码目录或历史记录推导。
 `local_discovery/` 与 `native/opaque_pairing/`
 实现发现配对，`MonitorApp/` 是 macOS 产品源码。`fixtures/` 保留现行契约和传输测试输入。
 `bin/`、`systemd/` 是启动器与部署模板，存在于源码中不表示已经安装。

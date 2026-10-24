@@ -1,8 +1,21 @@
 # CLINX
 
-CLINX forwards tasks and results between ChatGPT and native Codex conversations.
-It tracks conversation identity, delivery and execution receipts. Codex owns the
-execution environment. Ordinary native tasks use `NATIVE_FULL_ACCESS`
+**AI Task Routing & Execution Infrastructure**
+
+**AI 任务路由与执行流通基础设施**
+
+CLINX connects AI clients, coding agents and execution environments. It routes
+tasks, instructions and context to the correct execution endpoint with low
+latency, and reliably returns real execution status and results. Accurate
+delivery, fast flow, reliable receipts and bidirectional communication are its
+core mission. See the [product positioning and responsibility boundaries](docs/PRODUCT_POSITIONING.md).
+
+CLINX owns task identity, routing, delivery correlation, idempotency and recovery.
+Coding agents and their environments perform the business work; upstream and
+downstream components own their business permissions, credentials and safety
+policies. CLINX adds no separate approval or business-review layer.
+
+For the current native Codex adapter, ordinary tasks use `NATIVE_FULL_ACCESS`
 (`dangerFullAccess`, `approvalPolicy=never`), without writable-root lists or
 network restrictions. See [native runtime configuration](docs/NATIVE_FULL_ACCESS.md).
 
@@ -26,18 +39,20 @@ sessions.
 
 ```mermaid
 flowchart LR
-  A[ChatGPT / Codex / other agents / automation]
-  A --> C[CLINX]
-  C --> S[Task / Execution / ConversationBinding / Workspace Lease]
-  C --> E[Evidence / Result]
-  S --> P[Coding provider]
-  S --> H[Real host runtime]
-  E --> L[Audit and projection systems]
+  U[ChatGPT / CLINX macOS App / other clients]
+  U <-->|Tasks and context / Status and results| C[CLINX Rust Core]
+  C <-->|Identity / State / Receipts / Recovery| A[Execution endpoints and adapters]
+  A <-->|Execution and real results| E[Workspaces / Hosts / Repositories / Tools]
 ```
 
-CLINX is not a foundation model, a coding-agent replacement, a generic remote
-shell, or a Linear wrapper. Linear is an audit and notification projection;
-it is not the command plane.
+Rust Core is the single authoritative entrypoint for CLINX task state, receipts,
+recovery and resource lifecycle. Adapters share those contracts; they do not own
+competing task state. This defines the architecture boundary; deployed behavior
+requires release evidence and current runtime readback.
+
+CLINX is not another AI agent, a code-review platform, a safety-approval system
+or a control center deciding what users may do. Linear is an optional audit and
+notification projection; its availability must not block normal task flow.
 
 ## Why CLINX exists
 
@@ -54,8 +69,9 @@ that work coherent while allowing the execution carrier to change.
   a workspace; unknown delivery retains only the affected task's ownership.
 - An **Execution** owns one bounded attempt, its exact route, evidence, result,
   and terminal lifecycle.
-- The **Execution Finalizer** is the authoritative terminal decision maker;
-  provider events and host evidence are inputs, not competing owners.
+- **Execution finalization** commits terminal state through the same core
+  authority; provider events and host evidence are inputs, not competing owners
+  or a separate business-acceptance layer.
 
 ## Current capabilities
 
@@ -99,21 +115,22 @@ Task (long-lived identity)
   └── Linear task index (audit projection)
 ```
 
-The lifecycle is intentionally split into authorities:
+Lifecycle stages share one task-state authority:
 
 ```text
 provider event + host evidence
             ↓
-      CLINX finalizer
+  CLINX core finalization
             ↓
  durable result → terminal state → lease release → audit projection
 ```
 
-Evidence outranks an agent claim. A provider thread that fails, times out, or
-disconnects cannot silently become a successful execution; conflicting host
-and provider evidence remains explicit. A missing provider result marker is
-resolved only from exact execution evidence, never from a task's latest result
-or another historical execution.
+CLINX reports the actual execution state and preserves conflicting or unknown
+observations. A disconnect or lost ACK alone does not establish business failure
+or permit replay. Result attribution uses the exact execution identity, never a
+task's latest result or another historical execution. Delivery, execution,
+receipt and result readback are distinct states; execution completion does not
+establish business acceptance.
 
 ## Interoperability direction
 
@@ -128,13 +145,18 @@ direction, not universal capabilities claimed by this repository today.
 
 ## Design principles
 
-- Task identity outlives provider sessions.
-- Evidence over agent claims.
-- Independent tasks may share a workspace.
-- Explicit authority boundaries.
-- Fail closed at external mutation boundaries.
-- Keep the core small and stable; put integrations in adapters.
-- Prefer real dogfood and runtime evidence over mock-only confidence.
+- Keep normal task flow short and free of unnecessary checks.
+- Correlate task, session, execution and receipt identities accurately.
+- Minimize latency, overhead and intermediate components.
+- Recover the original execution through real state readback after lost ACKs,
+  disconnects or restarts; avoid duplicate execution.
+- Give each authoritative responsibility one implementation and reuse existing
+  state, receipt and recovery mechanisms.
+
+Measure delivery success and latency, correlation accuracy, recovery success,
+duplicate execution or business submissions, competing state writers, and
+adapter maintenance cost. Code volume, test count, approval layers and the
+proportion of Rust files do not establish product quality.
 
 ## Nearby devices (Local Discovery v1)
 
