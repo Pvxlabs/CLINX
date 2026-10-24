@@ -75,7 +75,7 @@ fn main() -> Result<(), String> {
             .map_err(|_| "WORKSPACE_OBSERVER_UNAVAILABLE")?
             .parent()
             .ok_or("WORKSPACE_OBSERVER_UNAVAILABLE")?
-            .join("control/rust_workspace_probe.py");
+            .join("control/clinx/provider/rust_workspace_probe.py");
         let info = program
             .symlink_metadata()
             .map_err(|_| "WORKSPACE_OBSERVER_UNAVAILABLE")?;

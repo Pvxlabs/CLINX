@@ -19,9 +19,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from local_discovery.discovery import DiscoveryIndex, LanDiscovery
-from local_discovery.identity import DeviceError, NodeIdentity, PrivateStore, TrustedPeerStore
-from local_discovery.transport import DeviceServer, LanTransport
+from clinx.discovery.discovery import DiscoveryIndex, LanDiscovery
+from clinx.discovery.identity import DeviceError, NodeIdentity, PrivateStore, TrustedPeerStore
+from clinx.discovery.transport import DeviceServer, LanTransport
 
 
 def node(pipe, root, name):

@@ -23,7 +23,7 @@ else:
     from tunnel_release_cas import sha, state
 
 SOURCES = (
-    "tunnel_reliability.py",
+    "clinx/transport/tunnel_reliability.py",
     "scripts/build_tunnel_release.py",
     "scripts/tunnel_release_cas.py",
     "systemd/clinx-tunnel-reliability.service.in",
@@ -63,6 +63,8 @@ def build(source, output, home, python, tunnel, guard_paths, evidence, *, runtim
     if output.resolve() != output:
         raise ValueError("OUTPUT_SYMLINK_REFUSED")
     source = Path(source).resolve()
+    if control_overlay_base is not None and (source / 'architecture/python-sources.json').is_file():
+        raise ValueError('LEGACY_CONTROL_OVERLAY_RETIRED_USE_STAGE_RUST_RELEASE')
     home = str(Path(home))
     # P620 systemd ExecStart paths are unquoted tokens: reject ambiguous inputs.
     for value in (home, str(python), str(tunnel)):
@@ -134,7 +136,7 @@ def build(source, output, home, python, tunnel, guard_paths, evidence, *, runtim
         ),
     }
     contents = {
-        "tunnel_reliability.py": (source / "tunnel_reliability.py").read_bytes(),
+        "tunnel_reliability.py": (source / "clinx/transport/tunnel_reliability.py").read_bytes(),
         "tunnel_release_cas.py": (source / "scripts/tunnel_release_cas.py").read_bytes(),
         "policy.json": encoded(policy),
         "units/99-p1-reliability.conf": (

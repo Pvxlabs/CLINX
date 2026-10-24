@@ -11,4 +11,4 @@ uv pip install --python "$runtime/bin/python" -r requirements-discovery.txt matu
 CARGO_PROFILE_RELEASE_DEBUG=1 CARGO_PROFILE_RELEASE_STRIP=none \
     "$runtime/bin/maturin" build --release --locked --manifest-path native/opaque_pairing/Cargo.toml --out .validation/lan-pairing-wheels
 uv pip install --python "$runtime/bin/python" --reinstall .validation/lan-pairing-wheels/clinx_opaque-0.1.0-*-macosx_*.whl
-"$runtime/bin/python" -c 'from local_discovery.pairing import production_backend; production_backend()'
+"$runtime/bin/python" -c 'from clinx.discovery.pairing import production_backend; production_backend()'

@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from runtime_packaging import source_paths
+from tools.build.runtime_sources import source_paths
 
 
 def stage_desktop(args, source):
@@ -43,22 +43,26 @@ def stage_desktop(args, source):
     for name in args.replace_source:
         path = source / name
         if 'control/' + name not in allowed or path.is_symlink():
-            raise SystemExit('ROOT_PYTHON_SOURCE_REQUIRED')
+            raise SystemExit('DECLARED_RUNTIME_SOURCE_REQUIRED')
         replacements['control/' + name] = hashlib.sha256(path.read_bytes()).hexdigest()
     files.update(replacements)
-    runtime_binary = getattr(args, 'runtime_binary', None)
-    if runtime_binary:
-        runtime_binary = runtime_binary.resolve(strict=True)
-        if not runtime_binary.is_file() or not runtime_binary.stat().st_mode & 0o111:
+    binaries = {}
+    for name, attribute in [('clinx-runtime', 'runtime_binary'), ('clinx-mcp-relay', 'mcp_relay_binary')]:
+        binary = getattr(args, attribute, None)
+        if binary is None:
+            raise SystemExit('TESTED_LAYOUT_BINARY_REQUIRED:' + name)
+        binary = binary.resolve(strict=True)
+        if not binary.is_file() or not binary.stat().st_mode & 0o111:
             raise SystemExit('RUNTIME_EXECUTABLE_REQUIRED')
-        files['clinx-runtime'] = hashlib.sha256(runtime_binary.read_bytes()).hexdigest()
+        binaries[name] = binary
+        files[name] = hashlib.sha256(binary.read_bytes()).hexdigest()
     version = 'rust-' + hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()[:20]
     release = base.parent / version
     release.mkdir(mode=0o755, exist_ok=False)
     for name, digest in files.items():
         target = release / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        original = (runtime_binary if name == 'clinx-runtime' and runtime_binary else
+        original = (binaries[name] if name in binaries else
                     allowed[name] if name in replacements else base / name)
         shutil.copyfile(original, target)
         target.chmod(0o755 if original.stat().st_mode & 0o111 else 0o644)
@@ -70,7 +74,7 @@ def stage_desktop(args, source):
     result = dict(version=version, source_cwd=str(source),
                   head=subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip(),
                   base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY',
-                  source_replacements=replacements, runtime_source_profile='rust',
+                  source_replacements=replacements, runtime_source_profile='rust', source_layout='qualified-clinx-v1',
                   retired_files=sorted(set(manifest['files']) - set(files)),
                   files=files, status='STAGED_NOT_SELECTED')
     (release / 'manifest.json').write_text(json.dumps(result, indent=2) + '\n')
@@ -83,7 +87,8 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--source", type=Path, help="Exact committed checkout to package; defaults to this repository")
     p.add_argument('--desktop-base-release', type=Path, required=True)
-    p.add_argument('--runtime-binary', type=Path, help='Explicit tested authority binary for this release')
+    p.add_argument('--runtime-binary', type=Path, required=True, help='Tested authority binary matching the package layout')
+    p.add_argument('--mcp-relay-binary', type=Path, required=True, help='Tested Rust stdio relay binary')
     p.add_argument('--replace-source', action='append', default=[],
                    help='Compatibility assertion that a named source belongs to the packaged profile; all adapters are refreshed')
     args = p.parse_args()

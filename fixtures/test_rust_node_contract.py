@@ -5,8 +5,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from node_protocol import NodeProtocolError
-from rust_node_adapter import RustNodeExecutionAdapter
+from clinx.nodes.node_protocol import NodeProtocolError
+from clinx.nodes.rust_node_adapter import RustNodeExecutionAdapter
 
 
 @pytest.fixture
@@ -63,8 +63,8 @@ def test_helper_close_has_no_authority_or_provider_lifecycle_side_effect(node):
 
 def test_mcp_factory_never_falls_back_to_a_python_registry(monkeypatch):
     import builtins
-    import mcp_server
-    import rust_integration
+    from clinx.mcp import mcp_server
+    from clinx.authority import rust_integration
 
     cfg = SimpleNamespace(runtime_host="air")
     monkeypatch.setattr(mcp_server.BridgeConfig, "load", lambda _: cfg)
@@ -72,6 +72,7 @@ def test_mcp_factory_never_falls_back_to_a_python_registry(monkeypatch):
 
     def guarded(name, *args, **kwargs):
         assert name not in {"bridge", "task_registry", "m9_integration", "execution_owner"}
+        assert not name.startswith('clinx.compat')
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", guarded)

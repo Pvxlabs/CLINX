@@ -1,10 +1,10 @@
 # 脚本与启动器
 
 现役任务状态由 Rust Authority 提供。Rust release 的 Python 源文件清单位于
-[runtime_packaging.py](../runtime_packaging.py)，不再复制整个仓库。构建器
-`stage_rust_release.py --desktop-base-release <installed-release> --source <checkout> --output <receipt>`
+[runtime_sources.py](../tools/build/runtime_sources.py)，不再复制整个仓库。构建器
+`stage_rust_release.py --desktop-base-release <installed-release> --source <checkout> --runtime-binary <tested-authority> --mcp-relay-binary <tested-relay> --output <receipt>`
 使用现有不可变 release 的 native 依赖，刷新完整的 Rust adapter 源码集合并移除旧 Python
-Owner、Registry、实验包和独立 Provider。`--runtime-binary` 可指定已验证的 Authority binary；
+Owner、Registry、实验包和独立 Provider。必须同时提供已验证的 Authority 和 Rust relay binary；
 `--replace-source` 仅保留为清单成员校验兼容参数，不再代表部分源码覆盖。
 该命令只生成候选，不选择或启动服务。独立 Provider 的旧 bootstrap 打包分支已退役。
 
@@ -18,8 +18,8 @@ pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它�
 
 | 入口 | 用途与副作用 |
 | --- | --- |
-| `python -B -m pytest -c tests/pytest.ini tests/test_rust_native_routing.py tests/test_rust_request_contract.py` | Rust MCP 请求及路由 fixture 回归；无需现役任务 |
-| `python tests/run_tests.py collect` | 全仓库 pytest 收集，不执行测试 |
+| `python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/adapter-tests test_rust_native_routing.py test_rust_request_contract.py` | Rust MCP 请求及路由 fixture 回归；无需现役任务 |
+| `python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only` | 全仓库 pytest 收集，不执行测试 |
 | `python tests/run_tests.py basic` / `owner` | 历史 profile 含已退役实验的测试，当前会收集失败；不能作为当前完整门禁 |
 | `python tests/run_tests.py transport --temp-parent <task-artifact-dir>` | 隔离发布/传输回归；要求 `/data/artifacts` 下临时目录及精确外部制品 |
 | `python tests/run_tests.py recovery` | 历史 profile 含退役 Authority transport 测试；其余 transient systemd 用例还需要隔离 user manager |
@@ -38,7 +38,7 @@ pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它�
 源码启动器：[CLI](../bin/clinx)、[MCP](../bin/clinx-context-mcp)、
 [节点中心](../bin/clinx-node-centre)、
 [Observer](../bin/clinx-observer)。设备发现 CLI 已与旧业务核心解耦；旧 Linear `run/once/doctor` 已移除。
-MCP 源码启动器只执行 `rust_stdio.py`，连接现有 Rust MCP Unix socket，不创建 Python 后端。
+MCP 源码启动器只执行 Rust `clinx-mcp-relay`，连接现有 Rust MCP Unix socket，不创建 Python 后端。
 这些入口可能写状态或启动服务；已安装服务通常
 使用独立的 release，不因编辑源码而升级。
 

@@ -6,6 +6,10 @@ Use the setup below, then [the test guide](docs/TESTING.md). Read applicable `AG
 The Python pytest suite is local-only under the ignored `tests/` directory.
 It is not distributed through Git. The commands below require that retained
 local directory; installing dependencies after a fresh clone does not recreate it.
+The current runner copies the suite into a new task-owned directory and translates
+historical imports/patch targets using `architecture/module-moves.json`. It never
+edits retained tests or installs flat runtime import aliases. Tracked portable
+fixtures remain in `fixtures/`; see the test guide for Rust relay/node checks.
 
 ## Development setup
 
@@ -14,8 +18,8 @@ Use Python 3.12 and Git. From the repository root:
 ```sh
 python3.12 -m venv .venv-test
 .venv-test/bin/python -m pip install -r requirements-dev.txt
-.venv-test/bin/python -B -m pytest -c tests/pytest.ini tests/test_rust_native_routing.py tests/test_rust_request_contract.py
-.venv-test/bin/python tests/run_tests.py collect
+.venv-test/bin/python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/adapter-tests test_rust_native_routing.py test_rust_request_contract.py
+.venv-test/bin/python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only
 ```
 
 If your Python distribution omits `venv`/`ensurepip`, install its venv package or
@@ -36,7 +40,7 @@ from current runtime regressions as described in the phase 2 cleanup record.
 
 1. Install `requirements-dev.txt` in a separate virtual environment.
 2. Run the Rust adapter fixtures above and the tests for the changed behavior.
-3. Run `python tests/run_tests.py collect`; compare node IDs if changing collection.
+3. Run `python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only`; compare node IDs if changing collection.
 4. Run `python -m ruff check --no-cache --config ruff-discovery.toml <changed-python-files>`
    and `git diff --check`. Use the repository configuration, not Ruff defaults.
 5. Report exact commands, interpreter/dependency versions, failures, existing
@@ -55,7 +59,7 @@ fixtures from one another. Repository-relative paths resolve from the parent of
 `tests/`, and `tests/conftest.py` supplies imports and marker registration.
 Do not add root-level test modules or force-add this ignored directory to Git.
 
-Run `python tests/run_tests.py collect` after changes and compare case identities.
+Run `python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only` after changes and compare case identities.
 Markers describe behavior and may overlap; no automatic hook filters old tests.
 Keep unique ownership, transport, SQLite, idempotency and recovery assertions.
 

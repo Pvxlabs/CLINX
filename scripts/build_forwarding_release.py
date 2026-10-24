@@ -43,6 +43,10 @@ def check_source(name, data):
 
 def build(repo, installed, output, runtime_manifest, guards, evidence, python, tunnel):
     repo, installed, output = (Path(p).absolute() for p in (repo, installed, output))
+    # Historical exact-source reproduction only. Its flat control overlay cannot
+    # publish the qualified package layout or revive a retired Python Owner.
+    if (repo / 'architecture/python-sources.json').is_file():
+        raise ValueError('LEGACY_FORWARDING_RELEASE_RETIRED_USE_STAGE_RUST_RELEASE')
     if (not output.is_relative_to('/data/artifacts') or output.exists()
             or output.resolve() != output or installed.resolve() != installed):
         raise ValueError('NEW_ARTIFACT_OUTPUT_AND_EXACT_INSTALLED_SOURCE_REQUIRED')

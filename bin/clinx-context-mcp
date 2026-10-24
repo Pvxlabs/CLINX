@@ -4,12 +4,16 @@ set -eu
 launcher_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$launcher_dir/.." && pwd)
 
-# The existing Rust MCP service owns the request lifecycle. This launcher only
-# forwards stdio bytes to its Unix socket; it cannot construct a Python backend.
+# The relay forwards bytes only. Build the Rust binary or select an immutable
+# installed release explicitly; source checkout changes never select production.
+relay="${CLINX_MCP_RELAY:-$repo_root/kernel/target/release/clinx-mcp-relay}"
+if [ ! -x "$relay" ]; then
+    echo 'Build clinx-mcp-relay or set CLINX_MCP_RELAY to the tested release binary.' >&2
+    exit 1
+fi
 exec /usr/bin/env -i \
   "HOME=${HOME:-/home/pvxlabs}" \
   PATH=/usr/bin:/bin \
   "LANG=${LANG:-C.UTF-8}" \
   "LC_ALL=${LC_ALL:-C.UTF-8}" \
-  PYTHONUNBUFFERED=1 \
-  /usr/bin/python3.12 "$repo_root/rust_stdio.py"
+  "$relay" "$@"

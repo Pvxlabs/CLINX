@@ -1,0 +1,1394 @@
+"""Small, dependency-free MCP boundary for the CLINX M12 surface.
+
+The server intentionally supports stdio only.  A stdio server is safe to run
+locally and is deterministic for qualification, but it is not a remotely
+discoverable ChatGPT endpoint by itself.  Remote exposure must be provided by
+an authenticated, TLS-terminated, officially supported MCP transport outside
+this repository; this module never opens a public listener.
+"""
+
+from __future__ import annotations
+
+
+# Direct-file entrypoints use only this source/release package root.
+if not __package__:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+
+import argparse
+import json
+import os
+import sqlite3
+import sys
+from pathlib import Path
+from typing import Any, Callable
+
+from clinx.provider import app_server
+
+from clinx.contracts.runtime_config import BridgeConfig
+from clinx.contracts.runtime_contracts import BridgeError, M9IntegrationError, TaskRegistryError
+from clinx.mcp.consultation_schema import NAMES as CONSULTATION_TOOL_NAMES
+from clinx.contracts.execution_policy import EXECUTION_SURFACES, HOST_CAPABILITIES, OPERATION_CLASSES
+from clinx.authority.rust_authority import RustAuthorityError
+
+MCP_PROTOCOL_VERSION = "2025-06-18"
+SERVER_DISCOVER_PROTOCOL_VERSION = "2026-07-28"
+SERVER_NAME = "clinx"
+SERVER_VERSION = "native-conversation-relay-consultations-v1"
+READ_ONLY_TOOL_NAMES = (
+    "clinx_find_task",
+    "clinx_get_context",
+    "clinx_get_topic_status",
+    "clinx_list_projects",
+    "clinx_get_status",
+    "clinx_get_capabilities",
+    "clinx_prepare_execution",
+)
+DEFAULT_TOOL_NAMES = READ_ONLY_TOOL_NAMES + ("clinx_start_execution", "clinx_cancel_execution", "clinx_get_prepared_request", "clinx_adopt_conversation") + CONSULTATION_TOOL_NAMES
+RUST_TOOL_NAMES = ("clinx_prepare_execution", "clinx_start_execution", "clinx_cancel_execution",
+    "clinx_get_prepared_request", "clinx_get_status", "clinx_find_task", "clinx_list_projects",
+    "clinx_get_context", "clinx_get_capabilities", "clinx_get_effective_authority",
+    "clinx_adopt_conversation", "clinx_prepare_policy_reauthorization", "clinx_apply_policy_reauthorization",
+    "clinx_register_derived_git_target", "clinx_revoke_derived_git_target")
+# Historical Host authority APIs remain internal for old receipt reconciliation.
+# They are not part of the conversation-forwarding connector.
+RELAY_METADATA_FIELDS = frozenset({
+    "execution_mode", "execution_policy",
+    "routing_identity", "linear_handoff", "description",
+})
+RELAY_INPUT_FIELDS = frozenset({
+    "execution_mode", "execution_surface", "required_capabilities",
+    "operation_classes", "production_mutation_intent", "requested_operations", "reasoning",
+})
+
+
+class MCPServerError(RuntimeError):
+    pass
+
+
+class MCPRequestError(MCPServerError):
+    def __init__(self, code: int, message: str, data: Any = None):
+        super().__init__(message)
+        self.code = code
+        self.data = data
+
+
+def _json_schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": required or [],
+        "additionalProperties": False,
+    }
+
+
+def _routing_identity_schema() -> dict[str, Any]:
+    """Public route shape; conversation bindings are intentionally redacted."""
+    def identity(properties):
+        return _json_schema(properties)
+    return _json_schema({
+        "host": identity({
+            "stable_identifier": {"type": "string"},
+            "display": {"type": "string"},
+            "machine_id": {"type": ["string", "null"]},
+            "alias": {"type": "string"},
+            "status": {"type": "string", "enum": ["KNOWN", "UNKNOWN"]},
+        }),
+        "surface": identity({
+            "stable_identifier": {"type": "string"},
+            "display": {"type": "string"},
+            "capability_boundary": {"type": "string"},
+            "status": {"type": "string"},
+        }),
+        "provider": identity({
+            "stable_identifier": {"type": "string"},
+            "display": {"type": "string"},
+            "bounded_task_backend": {"type": "boolean"},
+            "status": {"type": "string"},
+        }),
+        "transport": identity({
+            "stable_identifier": {"type": "string"},
+            "display": {"type": "string"},
+            "remote": {"type": "boolean"},
+            "status": {"type": "string"},
+        }),
+        "workspace": identity({
+            "workspace_alias": {"type": "string"},
+            "project_alias": {"type": "string"},
+            "worktree_key": {"type": "string"},
+        }),
+        "conversation": identity({
+            "status": {"type": "string"},
+            "binding": {"type": "string", "const": "REDACTED"},
+        }),
+        "authority": identity({
+            "stable_identifier": {"type": "string"},
+            "scopes": {"type": "array", "items": {"type": "string"}},
+            "status": {"type": "string"},
+            "identity_is_authority": {"type": "boolean", "const": False},
+        }),
+        "network_policy": identity({
+            "stable_identifier": {"type": "string"},
+            "network_access": {"type": "boolean"},
+            "mode": {"type": "string", "enum": ["ENABLED", "DISABLED"]},
+            "remote_execution": {"type": "boolean", "const": False},
+        }),
+        "project_identity": {"type": "string"},
+        "routing_contract": {"type": "string", "const": "execution -> host -> surface -> provider -> transport"},
+        "separation": {"type": "object", "additionalProperties": {"type": "boolean"}},
+    })
+
+
+def _operation_scope_schema():
+    return _json_schema({
+        'capability': {'type': 'string', 'enum': list(HOST_CAPABILITIES)},
+        'operation': {'type': 'string', 'minLength': 1},
+        'operation_class': {'type': 'string', 'enum': list(OPERATION_CLASSES)},
+        'target': {'type': 'string'},
+    }, ['capability', 'operation', 'operation_class', 'target'])
+
+
+def _authority_tools():
+    scope = {'type': 'array', 'items': _operation_scope_schema(), 'maxItems': 128}
+    target = _json_schema({
+        'execution_surface': {'type': 'string', 'enum': list(EXECUTION_SURFACES)},
+        'required_capabilities': {'type': 'array', 'items': {'type': 'string', 'enum': list(HOST_CAPABILITIES)}},
+        'operation_classes': {'type': 'array', 'items': {'type': 'string', 'enum': list(OPERATION_CLASSES)}},
+        'production_mutation_intent': {'type': 'boolean'}, 'operation_scopes': scope,
+    })
+    return [
+        {'name': 'clinx_get_effective_authority',
+         'description': 'Read effective FUTURE execution authority for the exact canonical task. Separate policy, operation/target grants, client exposure and runtime health. Discovery never grants authority.',
+         'inputSchema': _json_schema({'task_ref': {'type': 'string'}, 'requested_operations': scope}, ['task_ref']),
+         'annotations': {'readOnlyHint': True, 'destructiveHint': False}},
+        {'name': 'clinx_get_prepared_request',
+         'description': 'Read one exact prepared execution or policy change, including immutable content hash, target, scope differences, validity, applied version and exact execution/thread/turn readback. Does not apply, consume or start. Use after lost responses or to resolve a concrete target ambiguity; not a routine prerequisite to start; raw prompts and credentials are not returned.',
+         'inputSchema': _json_schema({'request_ref': {'type': 'string', 'pattern': '^(prepared|reauth)_[0-9a-f]{32}$'}}, ['request_ref']),
+         'outputSchema': _json_schema({
+             **{k: {'type': 'string'} for k in ('request_ref', 'request_type', 'request_hash', 'request_state', 'created_at', 'task_action', 'expiry_semantics', 'prompt_sha256', 'provider_running')},
+             **{k: {'type': ['string', 'null']} for k in ('task_ref', 'expires_at', 'baseline_policy_hash', 'current_policy_hash', 'execution_ref', 'execution_state', 'execution_stage', 'thread_id', 'turn_id', 'execution_owner_state', 'applied_at')},
+             **{k: {'type': ['integer', 'null']} for k in ('baseline_policy_version', 'current_policy_version', 'applied_policy_version')},
+             **{k: {'type': ['object', 'null']} for k in ('previous_policy', 'current_policy', 'proposed_policy', 'routing_identity')},
+             **{k: {'type': 'boolean'} for k in ('execution_present', 'network_access', 'previous_network_access', 'current_network_access', 'execution_started')},
+             'target': {'type': 'object'}, 'policy_difference': {'type': 'object'},
+             'read_only': {'type': 'boolean', 'const': True},
+         }, ['request_ref', 'request_type', 'request_hash', 'request_state', 'target', 'read_only']),
+         'annotations': {'readOnlyHint': True, 'destructiveHint': False}},
+        {'name': 'clinx_prepare_policy_reauthorization',
+         'description': 'Prepare a reviewed authority change on the SAME task. New Git target scope must identify a registered task-owned worktree. No execution starts; historical execution policies remain unchanged. Only the outer operator may call this, never the managed worker.',
+         'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
+             'task_ref': {'type': 'string'}, 'expected_policy_hash': {'type': 'string', 'pattern': '^[0-9a-f]{64}$'},
+             'target_policy': target, 'network_access': {'type': 'boolean'}, 'reason': {'type': 'string', 'minLength': 1}},
+             ['approved', 'task_ref', 'expected_policy_hash', 'target_policy', 'reason']),
+         'annotations': {'readOnlyHint': False, 'destructiveHint': False}},
+        {'name': 'clinx_apply_policy_reauthorization',
+         'description': 'Apply exactly one prepared authority change with explicit operator approval, CAS and immutable audit. Idempotent. Active ownership or unresolved side effects block application. Does not execute or replay deployment.',
+         'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
+             'prepared_reauthorization_ref': {'type': 'string'},
+             'expected_request_hash': {'type': 'string', 'pattern': '^[0-9a-f]{64}$'},
+             'expected_task_ref': {'type': 'string'}}, ['approved', 'prepared_reauthorization_ref']),
+         'annotations': {'readOnlyHint': False, 'destructiveHint': True}},
+        {'name': 'clinx_register_derived_git_target',
+         'description': 'Explicit operator registration of one real linked Git worktree for one active task. Supply its successful task Host worktree-add receipt when available; otherwise record explicit operator adoption evidence. Returns a stable target identity; registration alone grants no push.',
+         'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
+             'task_ref': {'type': 'string'}, 'path': {'type': 'string'},
+             'ownership_evidence': {'type': 'string', 'minLength': 1},
+             'creation_host_execution_ref': {'type': 'string'}},
+             ['approved', 'task_ref', 'path', 'ownership_evidence']),
+         'annotations': {'readOnlyHint': False, 'destructiveHint': False}},
+        {'name': 'clinx_revoke_derived_git_target',
+         'description': 'Revoke one task-owned Git target. Existing policy history remains immutable; future push fails closed.',
+         'inputSchema': _json_schema({'approved': {'type': 'boolean', 'const': True},
+             'task_ref': {'type': 'string'}, 'target': {'type': 'string'}},
+             ['approved', 'task_ref', 'target']),
+         'annotations': {'readOnlyHint': False, 'destructiveHint': True}},
+    ]
+
+
+def _execution_policy_schema() -> dict[str, Any]:
+    return _json_schema({
+        "contract": {"type": "string", "const": "CLINX_EXECUTION_POLICY_V1"},
+        "execution_surface": {
+            "type": "string",
+            "enum": ["SANDBOX_WORKSPACE", "NETWORKED_SANDBOX", "NATIVE_FULL_ACCESS", "HOST_EXECUTOR"],
+        },
+        "required_capabilities": {"type": "array", "items": {"type": "string"}},
+        "operation_classes": {"type": "array", "items": {"type": "string"}},
+        "production_mutation_intent": {"type": "boolean"},
+        "host_executor_default": {"type": "boolean", "const": False},
+        "business_action_authority": {"type": "boolean", "const": False},
+        "operation_scopes": {"type": "array", "items": _operation_scope_schema()},
+    })
+
+
+def _public_task_schema() -> dict[str, Any]:
+    """Describe the public task projection without exposing private identity."""
+    return _json_schema({
+        "task_ref": {"type": "string"},
+        "task_key": {"type": ["string", "null"]},
+        "codex_uri": {"type": ["string", "null"]},
+        "host": {"type": "string"},
+        "project": {"type": "string"},
+        "project_name": {"type": "string"},
+        "title": {"type": "string"},
+        "summary": {"type": ["string", "null"]},
+        "status": {"type": "string"},
+        "updated_at": {"type": "string"},
+        "context_available": {"type": "boolean"},
+        "execution_state": {"type": "string"},
+        "current_stage": {"type": "string"},
+        "current_blocker": {"type": ["string", "null"]},
+        "provider_liveness": {"type": "string", "enum": ["LIVE", "TERMINAL", "UNKNOWN"]},
+        "transport_health": {"type": "string", "enum": ["HEALTHY", "DEGRADED", "UNAVAILABLE"]},
+        "last_provider_activity_at": {"type": ["string", "null"]},
+        "last_host_delivery_at": {"type": ["string", "null"]},
+        "last_live_owner_at": {"type": ["string", "null"]},
+        "liveness_observed_at": {"type": ["string", "null"]},
+        "liveness_reason": {"type": "string"},
+        "ownership_conflict": {"type": "boolean"},
+        "liveness_grace_seconds": {"type": "number"},
+        "last_progress_at": {"type": "string"},
+        "codex_running": {"type": "boolean"},
+        "retry_required": {"type": "boolean"},
+        "failure_stage": {"type": ["string", "null"]},
+        "failure_code": {"type": ["string", "null"]},
+        "failure_evidence": {"type": ["string", "null"]},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "adoption_source": {"type": ["string", "null"]},
+        "adopted_at": {"type": ["string", "null"]},
+        "historical_status": {"type": ["string", "null"]},
+        "historical_route_evidence": {"type": ["string", "null"]},
+    })
+
+
+def _context_output_schema() -> dict[str, Any]:
+    return _json_schema({
+        "task_context_read": {"type": "string", "const": "PASS"},
+        "task_ref": {"type": "string"},
+        "task_title": {"type": "string"},
+        "task_status": {"type": "string"},
+        "host": {"type": "string"},
+        "project": {"type": "string"},
+        "context_source": {"type": "string"},
+        "context_range": {"type": "string"},
+        "context_truncated": {"type": "boolean"},
+        "checkpoint_stale": {"type": "boolean"},
+        "last_user_intent": {"type": "string"},
+        "last_codex_result": {"type": "string"},
+        "changed_files": {"type": "string"},
+        "validation": {"type": "string"},
+        "blockers": {"type": "string"},
+        "current_state": {"type": "string"},
+        "ready_for_continuation": {"type": "boolean"},
+        "provenance": {"type": "object", "additionalProperties": True},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "read_only": {"type": "boolean", "const": True},
+    })
+
+
+def _topic_work_item_schema() -> dict[str, Any]:
+    return _json_schema({
+        "title": {"type": "string"},
+        "source_kind": {"type": "string"},
+        "registry_status": {"type": "string"},
+        "conversation_status": {"type": "string"},
+        "last_activity": {"type": "string"},
+        "last_user_intent": {"type": "string"},
+        "last_codex_result": {"type": "string"},
+        "current_state": {"type": "string"},
+        "blockers": {"type": "string"},
+        "validation": {"type": "string"},
+        "context_source": {"type": "string"},
+        "context_range": {"type": "string"},
+        "context_truncated": {"type": "boolean"},
+        "task_ref": {"type": ["string", "null"]},
+        "provenance": {"type": "object", "additionalProperties": True},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+    })
+
+
+def _topic_status_output_schema() -> dict[str, Any]:
+    work = {"type": "array", "items": _topic_work_item_schema()}
+    return _json_schema({
+        "topic_status_read": {"type": "string", "const": "PASS"},
+        "host": {"type": "string"},
+        "project": {"type": "string"},
+        "topic": {"type": "string"},
+        "summary_state": {"type": "string"},
+        "completed_work": work,
+        "active_work": work,
+        "blocked_work": work,
+        "paused_work": work,
+        "superseded_work": work,
+        "unknown_work": work,
+        "latest_activity": {"type": "string"},
+        "source_count": {"type": "integer", "minimum": 0},
+        "task_count": {"type": "integer", "minimum": 0},
+        "conversation_count": {"type": "integer", "minimum": 0},
+        "context_coverage": {"type": "string"},
+        "context_truncated": {"type": "boolean"},
+        "threads_screened": {"type": "integer", "minimum": 0},
+        "topic_candidate_threads": {"type": "integer", "minimum": 0},
+        "topic_matched_threads": {"type": "integer", "minimum": 0},
+        "deduplication": {"type": "string"},
+        "search_bounded": {"type": "boolean", "const": True},
+        "read_only": {"type": "boolean", "const": True},
+    })
+
+
+def _status_output_schema() -> dict[str, Any]:
+    execution_result = _json_schema({
+        "status": {"type": "string"},
+        "summary": {"type": "string"},
+        "changed_files": {"type": "string"},
+        "validation": {"type": "string"},
+        "blockers": {"type": "string"},
+        "next_state": {"type": "string"},
+        "received_at": {"type": "string"},
+        "writeback_state": {"type": "string"},
+        "response_text": {"type": "string", "description": "Original Codex final response. Preserve its Markdown verbatim."},
+        "response_format": {"type": "string"},
+        "status_scope": {"type": "string"},
+        "business_outcome": {"type": "string"},
+    })
+    return _json_schema({
+        **_public_task_schema()["properties"],
+        "execution_result": {"anyOf": [execution_result, {"type": "null"}]},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "execution_routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
+        "host_executions": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "dynamic_tool_deliveries": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+        "desktop_publication": {"type": ["object", "null"], "additionalProperties": True},
+        "native_forwarding": {"type": "object", "additionalProperties": True},
+        "provider_delivery": {"type": "object", "additionalProperties": True},
+        "execution_owner": {"type": ["object", "null"], "additionalProperties": True},
+        "task_current_projection": {"type": "object", "additionalProperties": True},
+        "selection_reason": {"type": "string"},
+        "status_source": {"type": "string"},
+        "lookup_status": {"type": "string"},
+        "prepared_request": {"type": "object", "additionalProperties": True},
+        "execution_present": {"type": "boolean"},
+        "execution_state": {"type": ["string", "null"]},
+        "execution_stage": {"type": ["string", "null"]},
+        "provider_running": {"type": "string"},
+        "failure_source": {"type": "string"},
+        "retry_allowed": {"type": "boolean"},
+        "recovery_action": {"type": "string"},
+        "execution_turn_ref": {"type": ["string", "null"]},
+        "EXECUTION_STATE": {"type": "string"},
+        "CODEX_RUNNING": {"type": "boolean"},
+        "CURRENT_STAGE": {"type": "string"},
+        "CURRENT_BLOCKER": {"type": "string"},
+        "LAST_PROGRESS_AT": {"type": "string"},
+        "TURN_PRESENT": {"type": "boolean"},
+        "RETRY_REQUIRED": {"type": "boolean"},
+        "failure_stage": {"type": ["string", "null"]},
+        "failure_code": {"type": ["string", "null"]},
+        "failure_evidence": {"type": ["string", "null"]},
+        "execution_ref": {"type": "string"},
+        "active_execution": {"anyOf": [{"type": "object", "additionalProperties": True}, {"type": "null"}]},
+        "linear_audit_sync": {"type": "string"},
+        "linear_retry_required": {"type": "boolean"},
+        "linear_last_error": {"type": ["string", "null"]},
+        "linear_issue_ref": {"type": ["string", "null"]},
+        "network_access": {"type": "boolean"},
+        "NETWORK_ACCESS": {"type": "string", "enum": ["ENABLED", "DISABLED"]},
+        "read_only": {"type": "boolean", "const": True},
+    })
+
+
+def _capabilities_output_schema() -> dict[str, Any]:
+    return _json_schema({
+        "context_plane": {"type": "object", "additionalProperties": True},
+        "context_read_only": {"type": "boolean", "const": True},
+        "execution_available": {"type": "boolean", "const": True},
+        "command_plane": {"type": "string", "const": "CLINX"},
+        "linear_role": {"type": "string", "const": "AUDIT"},
+        "prepare_tool": {"type": "string", "const": "clinx_prepare_execution"},
+        "start_tool": {"type": "string", "const": "clinx_start_execution"},
+        "cancel_tool": {"type": "string", "const": "clinx_cancel_execution"},
+        "status_tool": {"type": "string", "const": "clinx_get_status"},
+        "execution": {
+            "type": "object",
+            "properties": {
+                "available": {"type": "boolean", "const": True},
+                "direct_mcp_execution": {"type": "boolean", "const": True},
+                "command_plane": {"type": "string", "const": "CLINX"},
+                "linear_role": {"type": "string", "const": "AUDIT"},
+                "requires_user_approval": {"type": "boolean", "const": True},
+                "prepare_tool": {"type": "string", "const": "clinx_prepare_execution"},
+                "start_tool": {"type": "string", "const": "clinx_start_execution"},
+                "cancel_tool": {"type": "string", "const": "clinx_cancel_execution"},
+            },
+            "required": [
+                "available", "direct_mcp_execution", "command_plane",
+                "requires_user_approval", "prepare_tool", "start_tool",
+            ],
+            "additionalProperties": False,
+        },
+        "execution_surfaces": {"type": "object", "additionalProperties": True},
+        "host_executor_available": {"type": "boolean"},
+        "host_executor_default": {"type": "boolean", "const": False},
+        "status": {"type": "object", "additionalProperties": True},
+        "linear": {"type": "object", "additionalProperties": True},
+        "instructions": {"type": "string"},
+        "read_only": {"type": "boolean", "const": True},
+    })
+
+
+def _prepare_output_schema() -> dict[str, Any]:
+    handoff = _json_schema({
+        "team": {"type": "string"},
+        "project": {"type": "string"},
+        "state": {"type": "string"},
+        "labels": {"type": "array", "items": {"type": "string"}},
+        "host": {"type": "string"},
+        "project_alias": {"type": "string"},
+        "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
+        "task_ref": {"type": ["string", "null"]},
+        "model": {"type": "string"},
+        "reasoning": {"type": "string"},
+        "execution_mode": {"type": "string"},
+        "network_access": {"type": "boolean"},
+        "NETWORK_ACCESS": {"type": "string", "enum": ["ENABLED", "DISABLED"]},
+        "title": {"type": "string"},
+        "summary": {"type": "string"},
+        "prompt": {"type": "string"},
+        "description": {"type": "string"},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
+    })
+    return _json_schema({
+        "execution_available": {"type": "boolean", "const": True},
+        "command_plane": {"type": "string", "const": "CLINX"},
+        "linear_role": {"type": "string", "const": "AUDIT"},
+        "prepared_execution_ref": {"type": "string"},
+        "linear_audit": {"type": "object", "properties": {
+            "optional": {"type": "boolean"}, "purpose": {"type": "string"}}, "additionalProperties": False},
+        "requires_user_approval": {"type": "boolean", "const": True},
+        "requires_command_write": {"type": "boolean", "const": False},
+        "approval_state": {"type": "string", "const": "SATISFIED"},
+        "handoff_ready": {"type": "boolean", "const": True},
+        "codex_uri": {"type": ["string", "null"]},
+        "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
+        "task_ref": {"type": ["string", "null"]},
+        "host": {"type": "string"},
+        "project": {"type": "string"},
+        "model": {"type": "string"},
+        "reasoning": {"type": "string"},
+        "execution_mode": {"type": "string"},
+        "network_access": {"type": "boolean"},
+        "NETWORK_ACCESS": {"type": "string", "enum": ["ENABLED", "DISABLED"]},
+        "title": {"type": "string"},
+        "summary": {"type": "string"},
+        "prompt": {"type": "string"},
+        "description": {"type": "string"},
+        "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+        "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
+        "linear_handoff": handoff,
+        "next_action": {
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "const": "CLINX"},
+                "operation": {"type": "string", "const": "START_EXECUTION"},
+                "required": {"type": "boolean", "const": True},
+            },
+            "required": ["provider", "operation", "required"],
+            "additionalProperties": False,
+        },
+        "status_lookup": {"type": "object", "additionalProperties": True},
+        "read_only": {"type": "boolean", "const": True},
+    })
+
+
+MCP_INSTRUCTIONS = (
+    "CLINX forwards messages to native Codex conversations without a reply format contract. "
+    "Return execution_result.response_text as the original Markdown; do not rewrite it into summary fields. "
+    "Native COMPLETED records turn completion only; business_outcome=NOT_EVALUATED is not a business PASS. "
+    "There is one execution backend: native Codex, using its own runtime configuration. "
+    "When the user supplies codex://threads/... preserve the complete URI including hostId "
+    "and pass it directly as codex_uri to clinx_prepare_execution. Do not search first, "
+    "read status first, or call adopt separately. Reuse a known task_ref when no URI is supplied. "
+    "Only search if the destination is genuinely unknown. "
+    "The user's request to send or continue work supplies approval; use approved=true "
+    "without asking for the same approval again. Prepare once, then call clinx_start_execution "
+    "with the returned prepared_execution_ref and approved=true. "
+    "Execution stays native Codex. On the Rust connector, an exact thread uses its live native cwd; workspace_contract can otherwise supply an absolute cwd in the target repository. Branch and HEAD snapshots do not gate native forwarding. Independent tasks may share a cwd. Do not put routing requirements only in prompt. Native tasks use full access with no CLINX network gate or filesystem sandbox; legacy network_access flags do not restrict execution. "
+    "Do not routinely call clinx_get_prepared_request between prepare and start. "
+    "After a lost response, inspect the ORIGINAL prepared request or exact execution before retrying; "
+    "never submit another preparation blindly. QUEUED is not Provider running: report execution_started "
+    "and the returned state accurately. Query status only for progress, results or a concrete conflict. "
+    "CLINX coordinates task identity and active execution ownership, not operation permissions. "
+    "Linear is optional audit history. Cancellation uses a managed execution_ref, or a canonical native "
+    "task_ref with its observed native_turn_id and approved=true. Native cancellation requires "
+    "the owning node execution scope and remains pending until the native terminal event. "
+    "For read requests use exact thread_id/codex_uri selectors; do not search the ID as query."
+)
+
+
+def _read_only_tool_definitions(*, include_nodes: bool = False) -> list[dict[str, Any]]:
+    """Return the public read-only context catalog."""
+    task_selector = {
+        "task_ref": {"type": "string", "description": "Opaque CLINX task reference."},
+        "node_id": {"type": "string", "description": "Explicit trusted node identity for an exact native thread."},
+        "host": {"type": "string"},
+        "project": {"type": "string"},
+        "query": {"type": "string"},
+    }
+    tools = [
+        {
+            "name": "clinx_find_task",
+            "description": "Find active or historical CLINX tasks by human query.",
+            "inputSchema": _json_schema(
+                {
+                    "host": {"type": "string"},
+                    "project": {"type": "string"},
+                    "query": {"type": "string"},
+                    "status": {"type": "string"},
+                },
+                ["query"],
+            ),
+            "outputSchema": _json_schema({
+                "classification": {"type": "string"},
+                "tasks": {"type": "array", "items": _public_task_schema()},
+                "read_only": {"type": "boolean", "const": True},
+            }),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "clinx_get_context",
+            "description": "Read bounded authoritative context for one CLINX task.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    **task_selector,
+                    "recent_turns": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "max_bytes": {"type": "integer", "minimum": 1024, "maximum": 128000},
+                },
+                "anyOf": [
+                    {"required": ["task_ref"]},
+                    {"required": ["query", "project"]},
+                ],
+                "additionalProperties": False,
+            },
+            "outputSchema": _context_output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "clinx_get_topic_status",
+            "description": "Read bounded deterministic status for a project topic.",
+            "inputSchema": _json_schema(
+                {
+                    "host": {"type": "string"},
+                    "project": {"type": "string"},
+                    "topic": {"type": "string"},
+                    "include_completed": {"type": "boolean", "default": True},
+                    "include_historical": {"type": "boolean", "default": True},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                    "recent_turns": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "max_bytes": {"type": "integer", "minimum": 1024, "maximum": 128000},
+                },
+                ["project", "topic"],
+            ),
+            "outputSchema": _topic_status_output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "clinx_list_projects",
+            "description": "List registered and bounded workspace projects.",
+            "inputSchema": _json_schema(
+                {"host": {"type": "string"}, "query": {"type": "string"}},
+            ),
+            "outputSchema": _json_schema({
+                "projects": {"type": "array", "items": _json_schema({
+                    "project": {"type": "string"},
+                    "name": {"type": "string"},
+                    "workspace": {"type": "string"},
+                    "host": {"type": "string"},
+                    "availability": {"type": "string"},
+                    "registered": {"type": "boolean"},
+                })},
+                "read_only": {"type": "boolean", "const": True},
+            }),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "clinx_get_status",
+            "description": "Read task execution state and existing audit evidence.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    **task_selector,
+                    "execution_ref": {"type": "string"},
+                },
+                "anyOf": [
+                    {"required": ["task_ref"]},
+                    {"required": ["query", "project"]},
+                    {"required": ["execution_ref"]},
+                ],
+                "additionalProperties": False,
+            },
+            "outputSchema": _status_output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "clinx_get_capabilities",
+            "description": "Discover how CLINX context and execution work. CLINX is the command plane; Linear is optional audit history.",
+            "inputSchema": _json_schema({}, []),
+            "outputSchema": _capabilities_output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "clinx_prepare_execution",
+            "description": "Prepare, but do not execute, a canonical CLINX command for a user-approved Codex task. When supplied, codex_uri selects an exact native conversation for association/continuation; create without it starts a new thread. CLINX forwards operation intent without operation-name or repository-scope authorization. Active task ownership remains coordinated.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "approved": {"type": "boolean", "const": True},
+                    "prompt": {"type": "string", "minLength": 1},
+                    "task_mode": {"type": "string", "enum": ["new", "continue"]},
+                    "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
+                    "task_ref": {"type": "string"},
+                    "codex_uri": {"type": "string", "maxLength": 2048},
+                    "host": {"type": "string"},
+                    "project": {"type": "string"},
+                    "query": {"type": "string"},
+                    "title": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "model": {"type": "string"},
+                    "reasoning_effort": {"type": "string"},
+                    "reasoning": {"type": "string"},
+                    "execution_mode": {"type": "string", "enum": ["normal", "fast"]},
+                    "network_access": {"type": "boolean", "default": False},
+                    "execution_surface": {
+                        "type": "string",
+                        "enum": list(EXECUTION_SURFACES),
+                    },
+                    "required_capabilities": {
+                        "type": "array",
+                        "items": {"type": "string", "examples": list(HOST_CAPABILITIES)},
+                        "description": (
+                            "Canonical values (case-insensitive, surrounding whitespace ignored): "
+                            + ", ".join(HOST_CAPABILITIES)
+                            + ". Discovery probe labels and operation names are not a request vocabulary."
+                        ),
+                    },
+                    "operation_classes": {
+                        "type": "array",
+                        "items": {"type": "string", "examples": list(OPERATION_CLASSES)},
+                        "description": (
+                            "Canonical values (case-insensitive, surrounding whitespace ignored): "
+                            + ", ".join(OPERATION_CLASSES)
+                            + ". DEVELOPMENT_MUTATION for bounded repository commands; "
+                            "production mutation requires explicit intent; BUSINESS_ACTION is denied."
+                        ),
+                    },
+                    "production_mutation_intent": {"type": "boolean", "default": False},
+                },
+                "required": ["approved", "prompt"],
+                "additionalProperties": False,
+            },
+            "outputSchema": _prepare_output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "clinx_start_execution",
+            "description": (
+                "Send the prepared task message to its native Codex conversation. Desktop-owned "
+                "conversations accept native input without an exclusive Task handoff or a replacement chat. "
+                "The receipt identifies this exact input and the actual native Turn; it does not claim an exclusive writer. "
+                "Codex may run tools, modify files or deploy services according to the task and its "
+                "native permissions. CLINX does not set sandbox configuration or grant operation permissions. "
+                "Use the user's request as approval; start directly after prepare without repeated confirmation."
+            ),
+            "inputSchema": _json_schema(
+                {
+                    "prepared_execution_ref": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Opaque reference returned by clinx_prepare_execution.",
+                    },
+                    "approved": {"type": "boolean", "const": True},
+                    "expected_request_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "expected_task_ref": {"type": "string"},
+                },
+                ["prepared_execution_ref", "approved"],
+            ),
+            "outputSchema": _json_schema({
+                "execution_started": {"type": "boolean"},
+                "native_forwarding": {"type": "object", "additionalProperties": True},
+                "workspace_contract": {"type": "object", "additionalProperties": True},
+                "codex_uri": {"type": ["string", "null"]},
+                "execution_owner": {"type": "object", "additionalProperties": True},
+                "prepared_execution_ref": {"type": "string"},
+                "execution_ref": {"type": "string"},
+                "task_ref": {"type": "string"},
+                "task_action": {"type": "string", "enum": ["create", "continue", "reopen"]},
+                "model": {"type": "string"},
+                "reasoning_effort": {"type": "string"},
+                "execution_mode": {"type": "string", "enum": ["normal", "fast"]},
+                "network_access": {"type": "boolean"},
+                "NETWORK_ACCESS": {"type": "string", "enum": ["ENABLED", "DISABLED"]},
+                "dispatch_status": {"type": "string"},
+                "linear_audit": {"type": "string"},
+                "status": {"type": "string"},
+                "duplicate_prevented": {"type": "boolean"},
+                "active_task_ref": {"type": "string"},
+                "active_execution_ref": {"type": ["string", "null"]},
+                "active_stage": {"type": "string"},
+                "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+                "execution_policy": {"anyOf": [_execution_policy_schema(), {"type": "null"}]},
+                "read_only": {"type": "boolean", "const": False},
+            }),
+            "annotations": {"readOnlyHint": False, "destructiveHint": True},
+        },
+        {
+            "name": "clinx_cancel_execution",
+            "description": (
+                "Cancel a managed turn by execution_ref, or an observed native turn by canonical "
+                "task_ref, exact native_turn_id and approved=true through its authorized node owner. "
+                "Native cancellation creates no managed execution record; acknowledgement is pending until observed."
+            ),
+            "inputSchema": dict(_json_schema({
+                "execution_ref": {"type": "string", "pattern": "^exec_[A-Za-z0-9]+$"},
+                "task_ref": {"type": "string", "pattern": "^task_[A-Za-z0-9]+$"},
+                "native_turn_id": {"type": "string", "minLength": 1, "maxLength": 256},
+                "approved": {"type": "boolean", "const": True},
+            }), oneOf=[
+                {"required": ["execution_ref"], "not": {"anyOf": [{"required": ["task_ref"]}, {"required": ["native_turn_id"]}]}},
+                {"required": ["task_ref", "native_turn_id", "approved"], "not": {"required": ["execution_ref"]}},
+            ]),
+            "outputSchema": _json_schema({
+                "execution_cancelled": {"type": "boolean"},
+                "execution_ref": {"type": ["string", "null"]},
+                "task_ref": {"type": "string"},
+                "native_turn_id": {"type": "string"},
+                "node_id": {"type": "string"},
+                "source": {"type": "string"},
+                "operation_state": {"type": "string"},
+                "status": {"type": "string", "enum": ["CANCELLED", "CANCELLATION_PENDING"]},
+                "cancel_requested": {"type": "boolean", "const": True},
+                "cancel_confirmed": {"type": "boolean"},
+                "retry_required": {"type": "boolean"},
+                "idempotent": {"type": "boolean"},
+                "routing_identity": {"anyOf": [_routing_identity_schema(), {"type": "null"}]},
+                "read_only": {"type": "boolean", "const": False},
+            }),
+            "annotations": {"readOnlyHint": False, "destructiveHint": True},
+        },
+    ]
+    if include_nodes:
+        # Node tools are opt-in with a configured centre router so the legacy
+        # connector catalog remains byte-for-byte compatible on P620 installs
+        # that have not enabled multi-device routing.
+        insert_at = next((i for i, item in enumerate(tools) if item["name"] == "clinx_get_status"), len(tools))
+        tools[insert_at:insert_at] = [
+            {
+                "name": "clinx_list_nodes",
+                "description": "List trusted CLINX nodes, protocol versions, capabilities and freshness.",
+                "inputSchema": _json_schema({}, []),
+                "outputSchema": _json_schema({
+                    "nodes": {"type": "array", "items": {"type": "object"}},
+                    "coverage": {"type": "string"},
+                    "read_only": {"type": "boolean", "const": True},
+                }),
+                "annotations": {"readOnlyHint": True, "destructiveHint": False},
+            },
+            {
+                "name": "clinx_get_node_status",
+                "description": "Read cached node state and SharingScope separately from real connection and task authority. Unprobed connections and unselected task execution are UNKNOWN/null; use exact task/execution reads for authority and Provider observations.",
+                "inputSchema": _json_schema({"node_id": {"type": "string"}}, ["node_id"]),
+                "outputSchema": _json_schema({
+                    "node": {"type": ["object", "null"]},
+                    "scope": {"type": ["object", "null"]},
+                    "node_reachable": {"type": ["boolean", "null"]},
+                    "provider_reachable": {"type": ["boolean", "null"]},
+                    "history_readable": {"type": "boolean"},
+                    "execution_active": {"type": ["boolean", "null"]},
+                    "cache_status": {"type": "object"},
+                    "connection_status": {"type": "object"},
+                    "task_authority": {"type": "object"},
+                    "observed_at": {"type": ["string", "null"]},
+                    "status_source": {"type": "string"},
+                    "read_only": {"type": "boolean", "const": True},
+                }),
+                "annotations": {"readOnlyHint": True, "destructiveHint": False},
+            },
+        ]
+    return tools
+
+
+def _execute_tool_definition() -> dict[str, Any]:
+    """Return the internal/experimental execution schema when explicitly enabled."""
+    return {
+        "name": "clinx_execute",
+        "description": (
+            "Internal execution path. ChatGPT public context MCP does not expose this; "
+            "execution belongs to the CLINX command plane; Linear is audit-only."
+        ),
+        "inputSchema": _json_schema(
+            {
+                "approved": {"type": "boolean", "const": True},
+                "prompt": {"type": "string"},
+                "execution_ref": {"type": "string"},
+                "task_mode": {"type": "string", "enum": ["new", "continue"]},
+                "task_ref": {"type": "string"},
+                "host": {"type": "string"},
+                "project": {"type": "string"},
+                "query": {"type": "string"},
+                "title": {"type": "string"},
+                "summary": {"type": "string"},
+                "model": {"type": "string"},
+                "reasoning_effort": {"type": "string"},
+                "execution_mode": {"type": "string", "enum": ["normal", "fast"]},
+            },
+            ["approved", "prompt", "execution_ref"],
+        ),
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
+    }
+
+
+def tool_definitions(*, include_execute: bool = False, include_nodes: bool = False,
+                     rust_authority: bool = False) -> list[dict[str, Any]]:
+    """Return the public catalog, with execution opt-in for internal use only."""
+    tools = _read_only_tool_definitions(include_nodes=include_nodes) + _authority_tools()
+    authority_outputs = {
+        'task_ref': {'type': 'string'}, 'policy_version': {'type': 'integer'},
+        'policy_hash': {'type': 'string'}, 'expected_policy_hash': {'type': 'string'},
+        'prepared_reauthorization_ref': {'type': 'string'}, 'reauthorization_ref': {'type': 'string'},
+        'idempotent': {'type': 'boolean'}, 'execution_started': {'type': 'boolean', 'const': False},
+        'future_execution_policy': {'type': ['object', 'null']}, 'new_policy': {'type': 'object'},
+        'previous_policy': {'type': 'object'}, 'requested_scope': {'type': 'object'},
+        'effective_authority': {'type': 'object'}, 'operations': {'type': 'object'},
+        'expires_at': {'type': 'string'}, 'network_access': {'type': 'boolean'},
+        'backend_implemented': {'type': 'boolean'}, 'mcp_exposed': {'type': 'boolean'},
+        'client_exposure': {'type': 'string'}, 'runtime_health': {'type': 'string'},
+        'read_only': {'type': 'boolean'},
+        'derived_git_targets': {'type': 'array'},
+        'requirements_evaluated': {'type': 'boolean'},
+        'requirements_covered': {'type': ['boolean', 'null']},
+        'missing_operations': {'type': 'array'},
+        'request_hash': {'type': 'string'}, 'operation_id': {'type': 'string'},
+        'status': {'type': 'string'},
+    }
+    for tool in tools:
+        if tool['name'] in {'clinx_get_effective_authority', 'clinx_prepare_policy_reauthorization', 'clinx_apply_policy_reauthorization'}:
+            tool['outputSchema'] = _json_schema(authority_outputs)
+        elif tool['name'] == 'clinx_register_derived_git_target':
+            tool['outputSchema'] = _json_schema({
+                'target_id': {'type': 'string'}, 'task_id': {'type': 'string'},
+                'path': {'type': 'string'}, 'worktree_key': {'type': 'string'},
+                'common_dir': {'type': 'string'}, 'git_dir': {'type': 'string'},
+                'git_dir_device': {'type': 'integer'}, 'git_dir_inode': {'type': 'integer'},
+                'branch': {'type': 'string'}, 'origin': {'type': 'string'},
+                'provenance': {'type': 'string'}, 'registered_at': {'type': 'string'},
+                'revoked_at': {'type': ['string', 'null']},
+            })
+        elif tool['name'] == 'clinx_revoke_derived_git_target':
+            tool['outputSchema'] = _json_schema({'task_ref': {'type': 'string'},
+                'target': {'type': 'string'}, 'revoked': {'type': 'boolean'}})
+    for tool in tools:
+        if tool['name'] == 'clinx_prepare_execution':
+            tool['inputSchema']['properties']['requested_operations'] = {
+                'type': 'array', 'items': _operation_scope_schema(), 'maxItems': 128,
+                'description': 'Optional legacy task context forwarded to native Codex. CLINX does not validate operation names or repository target scopes.'}
+            tool['inputSchema']['properties']['network_access'].pop('default', None)
+            properties = tool['inputSchema']['properties']
+            from clinx.contracts.workspace_contract import workspace_contract_schema
+            properties['workspace_contract'] = workspace_contract_schema()
+            properties['network_access']['description'] = 'Deprecated compatibility input. Native Codex tasks always have network access; this flag does not impose a CLINX network restriction.'
+            tool['outputSchema']['properties']['workspace_contract'] = {'type': 'object'}
+            for name in ('execution_surface', 'required_capabilities', 'operation_classes', 'production_mutation_intent'):
+                properties[name]['description'] = 'Legacy task context; does not select an executor or grant authority.'
+            context_scope = properties['requested_operations']['items']['properties']
+            context_scope['capability'].pop('enum', None)
+            context_scope['operation_class'].pop('enum', None)
+            tool['annotations']['readOnlyHint'] = False
+
+    from clinx.contracts.thread_identity import ID_PATTERN
+    uri_schema = {"type": "string", "maxLength": 2048, "pattern": "^codex://threads/" + ID_PATTERN + r"(?:\?[^\s#]*)?$"}
+    for tool in tools:
+        if tool["name"] == "clinx_get_capabilities":
+            tool["outputSchema"]["properties"]["thread_lookup"] = {"type": "object"}
+        if tool["name"] not in {"clinx_get_context", "clinx_get_status"}:
+            continue
+        tool["description"] += (
+            " When the user supplies thread_id or codex://threads/..., use the exact "
+            "selector directly; do not call clinx_find_task first or put the ID in query. "
+            "Thread reads are read-only and separate historical execution from task_current_projection."
+        )
+        schema = tool["inputSchema"]
+        schema["properties"].update({
+            "thread_id": {"type": "string", "pattern": "^" + ID_PATTERN + "$"},
+            "codex_uri": uri_schema,
+            "execution_ref": {"type": "string"},
+        })
+        legacy = schema.pop("anyOf")
+        if tool["name"] == "clinx_get_context":
+            schema["properties"]["cursor"] = {"type": "string", "maxLength": 1024}
+            legacy = [{"allOf": [{"anyOf": legacy}, {"not": {"required": ["execution_ref"]}}]}]
+        schema["anyOf"] = [
+            {"anyOf": legacy, "not": {"anyOf": [{"required": ["thread_id"]}, {"required": ["codex_uri"]}, {"required": ["node_id"]}]}},
+            {"required": ["thread_id"], "not": {"anyOf": [{"required": [k]} for k in ("codex_uri", "task_ref", "query")]}},
+            {"required": ["codex_uri"], "not": {"anyOf": [{"required": [k]} for k in ("thread_id", "task_ref", "query")]}},
+        ]
+        nullable = {"type": ["string", "null"]}
+        thread_properties = {k: nullable for k in (
+            "queried_thread_id", "codex_uri", "node_id", "source_node_id", "lookup_status", "error_code", "unavailable_reason",
+            "task_ref", "task_key", "host", "project", "workspace", "provider", "current_thread_id",
+            "relationship", "predecessor_thread_id", "successor_thread_id", "adoption_source",
+            "execution_ref", "execution_state", "selection_reason", "selection_scope", "execution_turn_ref",
+            "status_source", "context_status", "context_source", "context_scope", "context_range",
+            "context_unavailable_reason", "last_user_intent", "last_codex_result", "observed_at",
+            "binding_status", "provider_existence", "absence_scope", "next_cursor", "failure_stage", "failure_code", "failure_evidence", "failure_source",
+            "native_turn_state", "native_display_state", "native_status_source",
+        )}
+        thread_properties.update({k: {"type": "boolean"} for k in ("is_current_thread", "context_truncated", "read_only")})
+        thread_properties.update({k: {"type": "array", "items": {"type": "string"}} for k in ("binding_sources", "other_execution_refs")})
+        thread_properties.update({k: {"type": "array", "items": {"type": "object"}} for k in ("dynamic_tool_deliveries", "host_executions")})
+        thread_properties.update({
+            "provider_liveness": {"type": "string"},
+            "transport_health": {"type": "string"},
+            "codex_running": {"type": "boolean"},
+            "ownership_conflict": {"type": "boolean"},
+            "liveness_grace_seconds": {"type": "number"},
+            "liveness_reason": {"type": "string"},
+            **{key: {"type": ["string", "null"]} for key in (
+                "last_provider_activity_at", "last_host_delivery_at", "last_live_owner_at", "liveness_observed_at")},
+        })
+        thread_properties.update({k: {"type": ["object", "null"]} for k in ("provider_observation", "native_thread", "native_status", "task_current_projection", "execution_result", "provenance", "provider_delivery", "execution_owner")})
+        thread_properties['execution_result'] = _status_output_schema()['properties']['execution_result']
+        # Keep one strict root object for connector discovery and legacy clients.
+        tool["outputSchema"]["properties"].update(thread_properties)
+
+    tools.append({
+        "name": "clinx_adopt_conversation",
+        "description": "Explicitly associate one native Codex thread with its canonical CLINX task. Accept the original Desktop URI including hostId. No project registration prerequisite, no new thread, resume, interrupt or execution; active owners keep control. Execution needs a separate current authorized request.",
+        "inputSchema": {"type": "object", "additionalProperties": False,
+            "properties": {"thread_id": {"type": "string", "pattern": "^" + ID_PATTERN + "$"},
+                "codex_uri": uri_schema, "host": {"type": "string"}, "project": {"type": "string"},
+                "title": {"type": "string", "maxLength": 240}, "summary": {"type": "string", "maxLength": 4000}},
+            "oneOf": [{"required": ["thread_id"], "not": {"required": ["codex_uri"]}},
+                      {"required": ["codex_uri"], "not": {"required": ["thread_id"]}}]},
+        "outputSchema": {"type": "object", "properties": {
+            "adoption_status": {"type": "string"}, "task_ref": {"type": ["string", "null"]},
+            "control_transferred": {"type": "boolean"}, "execution_started": {"type": "boolean"}},
+            "required": ["adoption_status", "control_transferred"], "additionalProperties": True},
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True},
+    })
+    if include_execute:
+        tools.append(_execute_tool_definition())
+    from clinx.mcp.consultation_schema import tools as consultation_tools
+    tools.extend(consultation_tools())
+    tools = [tool for tool in tools if tool["name"] in (RUST_TOOL_NAMES if rust_authority else DEFAULT_TOOL_NAMES) or
+             (include_execute and tool["name"] == "clinx_execute")]
+    for tool in tools:
+        # Reads/preparation/cancellation address the connected private task
+        # registry. Starting native work can act on open-ended external targets.
+        tool['annotations']['openWorldHint'] = tool['name'] in {'clinx_start_execution', 'clinx_execute'}
+        if rust_authority:
+            if tool['name'] == 'clinx_prepare_execution':
+                tool['annotations']['readOnlyHint'] = False
+                tool['inputSchema']['properties']['execution_surface']['enum'] = ['CODEX_NATIVE', 'HOST_EXECUTOR']
+            continue
+        if tool["name"] == "clinx_prepare_execution":
+            for field in RELAY_INPUT_FIELDS:
+                tool["inputSchema"]["properties"].pop(field, None)
+            tool['outputSchema']['properties']['summary'] = {'type': ['string', 'null']}
+            for field in ("model", "reasoning_effort"):
+                tool["inputSchema"]["properties"][field]["description"] = "Optional explicit Codex parameter. Omit to inherit the conversation setting."
+        if tool["name"] in {"clinx_prepare_execution", "clinx_start_execution"}:
+            for field in RELAY_METADATA_FIELDS:
+                tool["outputSchema"]["properties"].pop(field, None)
+            if "reasoning" in tool["outputSchema"]["properties"]:
+                tool["outputSchema"]["properties"]["reasoning_effort"] = tool["outputSchema"]["properties"].pop("reasoning")
+            tool["outputSchema"]["properties"].update({
+                "workspace_contract": {"type": "object"},
+                "execution_backend": {"type": "string", "const": "CODEX_NATIVE"},
+                "runtime_configuration": {"type": "string", "const": "NATIVE_FULL_ACCESS"},
+            })
+        if tool['name'] == 'clinx_prepare_execution':
+            tool['outputSchema']['properties']['workspace_contract'] = workspace_contract_schema()
+        if tool["name"] == "clinx_get_status":
+            tool["outputSchema"]["properties"]["workspace_contract"] = {"type": "object"}
+        if tool["name"] == "clinx_get_capabilities":
+            for field in ("host_executor_available", "host_executor_default"):
+                tool["outputSchema"]["properties"].pop(field, None)
+            tool["outputSchema"]["properties"]["control_runtime"] = {"type": "object", "additionalProperties": True}
+    if rust_authority:
+        from clinx.mcp.rust_mcp import configure
+        configure(tools)
+    return tools
+
+
+def _server_discover_result(public_tools: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return the confirmed connector-discovery schema from the canonical registry."""
+    names = tuple(tool["name"] for tool in public_tools)
+    node_names = ("clinx_list_nodes", "clinx_get_node_status", "clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context", "clinx_get_observation_activity")
+    canonical_names = tuple(name for name in names if name not in node_names)
+    if (canonical_names not in {(), CONSULTATION_TOOL_NAMES, DEFAULT_TOOL_NAMES, DEFAULT_TOOL_NAMES + ("clinx_execute",)}
+            and set(canonical_names) != set(RUST_TOOL_NAMES)):
+        raise MCPServerError("server/discover requires the canonical tool registry")
+    return {
+        "resultType": "complete",
+        "supportedVersions": [SERVER_DISCOVER_PROTOCOL_VERSION],
+        "capabilities": {"tools": {}},
+        "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+                "name": SERVER_NAME,
+                "version": SERVER_VERSION,
+            },
+        },
+        "instructions": MCP_INSTRUCTIONS,
+        "ttlMs": 3600000,
+        "cacheScope": "public",
+    }
+
+
+def _public_json(value: Any, *, native_identity: bool = False) -> Any:
+    """Defensive response scrubber for accidental internal-field leakage."""
+    forbidden = {
+        "thread_id", "threadId", "session_id", "sessionId", "turn_id", "turnId",
+        "turn_ids", "item_ids", "message_ids", "execution_ids", "task_id", "taskId",
+        "cwd", "origin", "repository_origin", "branch", "raw_result", "credentials",
+        "token", "api_key", "authorization",
+    }
+    if native_identity:
+        forbidden -= {'thread_id', 'threadId', 'session_id', 'sessionId', 'turn_id', 'turnId', 'cwd'}
+    if isinstance(value, dict):
+        return {
+            # Both native cwd routes and historical Git seals are public.
+            key: (dict(item) if key == 'workspace_contract' and isinstance(item, dict)
+                  and 'cwd' in item and set(item) <= {'cwd', 'branch', 'head'}
+                  or key == 'workspace_resolution' and isinstance(item, dict)
+                  and set(item) <= {'cwd', 'branch', 'head', 'repository_identity', 'repository_root', 'repository_common_dir', 'worktree', 'observer_uid', 'observer_source'}
+                  else _public_json(item, native_identity=native_identity))
+            for key, item in value.items()
+            if key not in forbidden
+        }
+    if isinstance(value, (list, tuple)):
+        return [_public_json(item, native_identity=native_identity) for item in value]
+    return value
+
+
+class ClinxMCPServer:
+    def __init__(
+        self,
+        integration: Any,
+        *,
+        allow_execute: bool = False,
+        executor: Callable[..., dict[str, Any]] | None = None,
+        observations=None,
+    ):
+        self.integration = integration
+        self.observations = observations
+        self.allow_execute = allow_execute
+        self.executor = executor or integration.execute
+        self.public_tools = tool_definitions(
+            include_execute=allow_execute,
+            include_nodes=getattr(getattr(integration, "cfg", None), "node_router", None) is not None,
+            rust_authority=getattr(integration, 'rust_authority', False),
+        )
+        if observations is not None:
+            from clinx.monitor.observation_mcp import observation_tools
+            self.public_tools.extend(observation_tools())
+        self.public_tool_names = {
+            tool["name"] for tool in self.public_tools
+        }
+
+    def _call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(arguments, dict):
+            raise MCPRequestError(-32602, "tool arguments must be an object")
+        if name in CONSULTATION_TOOL_NAMES:
+            return self.integration.call_consultation(name, arguments)
+        if name in {"clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context", "clinx_get_observation_activity"}:
+            from clinx.monitor.observation_mcp import call_observation
+            return call_observation(self.observations, name, arguments)
+        if name == "clinx_find_task":
+            result = self.integration.find_task(**arguments)
+        elif name == "clinx_get_context":
+            result = self.integration.get_context(**arguments)
+        elif name == "clinx_get_topic_status":
+            result = self.integration.get_topic_status(**arguments)
+        elif name == "clinx_list_projects":
+            result = self.integration.list_projects(**arguments)
+        elif name == "clinx_list_nodes":
+            result = self.integration.list_nodes()
+        elif name == "clinx_get_node_status":
+            result = self.integration.get_node_status(**arguments)
+        elif name == "clinx_get_status":
+            result = self.integration.get_status(**arguments)
+        elif name == "clinx_adopt_conversation":
+            result = self.integration.adopt_conversation(**arguments)
+        elif name == "clinx_get_capabilities":
+            result = self.integration.get_capabilities(**arguments)
+        elif name == "clinx_get_effective_authority":
+            result = self.integration.get_effective_authority(**arguments)
+        elif name == "clinx_get_prepared_request":
+            result = self.integration.get_prepared_request(**arguments)
+        elif name == "clinx_prepare_policy_reauthorization":
+            result = self.integration.prepare_policy_reauthorization(**arguments)
+        elif name == "clinx_apply_policy_reauthorization":
+            result = self.integration.apply_policy_reauthorization(**arguments)
+        elif name == "clinx_register_derived_git_target":
+            result = self.integration.register_derived_git_target(**arguments)
+        elif name == "clinx_revoke_derived_git_target":
+            result = self.integration.revoke_derived_git_target(**arguments)
+        elif name == "clinx_prepare_execution":
+            if ('workspace_contract' in arguments
+                    and not getattr(self.integration, 'rust_authority', False)):
+                from clinx.contracts.workspace_contract import validate_workspace_contract
+                validate_workspace_contract(arguments['workspace_contract'])
+            result = self.integration.prepare_execution(**arguments)
+        elif name == "clinx_start_execution":
+            unexpected = set(arguments) - {"prepared_execution_ref", "approved", "expected_request_hash", "expected_task_ref"}
+            if unexpected:
+                raise TypeError(
+                    "clinx_start_execution accepts prepared_execution_ref, approved and optional review hash/task assertions"
+                )
+            result = self.integration.start_execution(**arguments)
+        elif name == "clinx_cancel_execution":
+            unexpected = set(arguments) - {"execution_ref", "task_ref", "native_turn_id", "approved"}
+            if unexpected:
+                raise TypeError("clinx_cancel_execution accepts execution_ref or an explicitly approved canonical native turn")
+            result = self.integration.cancel_execution(**arguments)
+        elif name == "clinx_execute":
+            if not self.allow_execute:
+                result = {
+                    "execution_action_required": "LINEAR_HANDOFF",
+                    "status": "BLOCKED",
+                    "reason": (
+                        "The public CLINX Context MCP is read-only; use the existing "
+                        "CLINX command plane with Linear as audit-only projection."
+                    ),
+                    "read_only": True,
+                }
+            else:
+                result = self.executor(**arguments)
+        else:
+            raise MCPRequestError(-32602, f"unknown tool: {name}")
+        if name in {"clinx_prepare_execution", "clinx_start_execution"} and not getattr(self.integration, 'rust_authority', False):
+            # Persist legacy identities internally; never present them as active
+            # permission settings for the native conversation.
+            result = {key: value for key, value in result.items() if key not in RELAY_METADATA_FIELDS}
+            if "reasoning" in result:
+                result["reasoning_effort"] = result.pop("reasoning")
+            for field in ("model", "reasoning_effort"):
+                if result.get(field) == "inherit":
+                    result.pop(field)
+            result.update(execution_backend="CODEX_NATIVE", runtime_configuration="NATIVE_FULL_ACCESS")
+        return _public_json(result, native_identity=(getattr(self.integration, 'rust_authority', False) or name in {'clinx_adopt_conversation', 'clinx_get_prepared_request'} or
+            (name in {'clinx_get_context', 'clinx_get_status'} and
+             any(k in arguments for k in ('thread_id', 'codex_uri')))))
+
+    @staticmethod
+    def _app_server_error_result(exc: app_server.AppServerError) -> dict[str, Any]:
+        from clinx.contracts.dispatch_errors import safe_reason
+        payload = {
+            "error": safe_reason(exc),
+            "error_type": type(exc).__name__,
+            "codex_running": False,
+            "retry_required": True,
+        }
+        if isinstance(exc, app_server.ModelCapabilityError):
+            payload.update(
+                failure_stage="MODEL_RESOLUTION",
+                failure_code="MODEL_CAPABILITY_UNAVAILABLE",
+            )
+        elif isinstance(exc, app_server.AppServerTransportError):
+            payload.update(
+                failure_stage="APP_SERVER_TRANSPORT",
+                failure_code="PROVIDER_UNAVAILABLE",
+            )
+        elif isinstance(exc, app_server.AppServerProtocolError):
+            payload.update(
+                failure_stage=getattr(exc, 'method', 'APP_SERVER_PROTOCOL'),
+                failure_code=getattr(exc, 'code', 'MODEL_LIST_MALFORMED'),
+            )
+        else:
+            payload.update(
+                failure_stage="APP_SERVER_REQUEST",
+                failure_code="APP_SERVER_REQUEST_ERROR",
+            )
+        return payload
+
+    @staticmethod
+    def _tool_result(value: dict[str, Any], *, is_error: bool = False) -> dict[str, Any]:
+        return {
+            "resultType": "complete",
+            "content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, sort_keys=True)}],
+            "structuredContent": value,
+            "isError": is_error,
+        }
+
+    def handle(self, request: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(request, dict):
+            raise MCPRequestError(-32600, "request must be an object")
+        request_id = request.get("id")
+        method = request.get("method")
+        if not isinstance(method, str):
+            raise MCPRequestError(-32600, "method is required")
+        params = request.get("params") or {}
+        if not isinstance(params, dict):
+            raise MCPRequestError(-32602, "params must be an object")
+
+        if method == "notifications/initialized":
+            return None
+        if method == "ping":
+            result: dict[str, Any] = {}
+        elif method == "initialize":
+            result = {
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {"tools": {"listChanged": False}},
+                "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+                "instructions": MCP_INSTRUCTIONS,
+            }
+        elif method == "server/discover":
+            result = _server_discover_result(self.public_tools)
+        elif method == "tools/list":
+            result = {
+                "resultType": "complete",
+                "tools": self.public_tools,
+                "ttlMs": 3600000,
+                "cacheScope": "public",
+            }
+        elif method == "tools/call":
+            name = params.get("name")
+            if not isinstance(name, str):
+                raise MCPRequestError(-32602, "tools/call requires name")
+            if name not in self.public_tool_names:
+                if name == "clinx_execute":
+                    raise MCPRequestError(-32602, f"tool is not exposed: {name}")
+                raise MCPRequestError(-32602, f"unknown tool: {name}")
+            arguments = params.get("arguments", {})
+            try:
+                result = self._tool_result(self._call_tool(name, arguments))
+            except RustAuthorityError as exc:
+                result = self._tool_result({"error_code": str(exc).split(':', 1)[0],
+                    "operation_id": getattr(exc, 'operation_id', None), "authority": "RUST",
+                    "retry_required": False,
+                    "reconciliation_required": str(exc) == 'DELIVERY_UNKNOWN'}, is_error=True)
+            except app_server.AppServerError as exc:
+                from clinx.contracts.dispatch_errors import failure_details
+                payload = self._app_server_error_result(exc)
+                payload.update(failure_details(name, arguments, exc, getattr(self.integration, 'registry', None)))
+                if payload['outcome_certainty'] == 'UNKNOWN':
+                    payload.update(codex_running=None, retry_required=False)
+                result = self._tool_result(payload, is_error=True)
+            except (M9IntegrationError, TaskRegistryError, BridgeError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+                from clinx.contracts.dispatch_errors import failure_details, safe_reason
+                payload = {"error": safe_reason(exc)}
+                if getattr(exc, "code", None):
+                    payload.update(error_code=exc.code, execution_started=False)
+                code = str(exc).split(':', 1)[0]
+                if code in {'AUTHORITY_REAUTHORIZATION_REQUIRED', 'POLICY_REAUTHORIZATION_BLOCKED', 'PRODUCTION_SCOPE_REQUIRED',
+                            'POLICY_IDENTITY_CONFLICT', 'TARGET_NOT_AUTHORIZED', 'HOST_EXECUTOR_UNAVAILABLE',
+                            'WORKFLOW_EXECUTABLE_UNAVAILABLE', 'OPERATION_NOT_IMPLEMENTED'}:
+                    payload.update({'failure_code': code, 'execution_started': False,
+                        'evaluation_scope': 'PROPOSED_EXECUTION_ONLY_PRIOR_EVIDENCE_UNCHANGED',
+                        'root_blocker': {'layer': 'AUTHORITY' if code.startswith(('AUTHORITY', 'POLICY', 'TARGET', 'PRODUCTION_SCOPE')) else 'CAPABILITY',
+                                         'status': 'BLOCKED', 'reason': safe_reason(exc)},
+                        'downstream': {'QUALIFICATION': 'NOT_RUN', 'CAPACITY': 'UNVERIFIED',
+                                       'DEPLOYMENT': 'NOT_RUN', 'READBACK': 'NOT_RUN', 'OBSERVATION': 'NOT_RUN'}})
+                payload.update(failure_details(name, arguments, exc, getattr(self.integration, 'registry', None)))
+                if payload['outcome_certainty'] == 'UNKNOWN':
+                    payload.pop('execution_started', None)
+                result = self._tool_result(payload, is_error=True)
+        else:
+            raise MCPRequestError(-32601, f"method not found: {method}")
+
+        if request_id is None:
+            return None
+        return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+
+def build_server(
+    config_path: Path | str,
+    *,
+    task_db_path: Path | str | None = None,
+    allow_execute: bool = False,
+    own_executions: bool = False,
+) -> ClinxMCPServer:
+    """Construct the Rust adapter only; legacy database ownership is retired."""
+    if own_executions or task_db_path is not None:
+        raise ValueError("PYTHON_OWNER_RETIRED_USE_RUST_AUTHORITY")
+    cfg = BridgeConfig.load(Path(config_path).expanduser().resolve())
+    from clinx.authority.rust_integration import RustIntegration, enabled
+    if not enabled():
+        raise ValueError("RUST_AUTHORITY_REQUIRED")
+    integration = RustIntegration(cfg)
+    observations = None
+    if os.environ.get('CLINX_RUST_OBSERVATION_READS') == '1':
+        from clinx.monitor.network_observation import directory_from_env
+        observations = directory_from_env()
+        if observations is None:
+            raise ValueError('RUST_OBSERVATION_CONFIG_REQUIRED')
+        from clinx.monitor.rust_monitor import RustObservationDirectory
+        observations = RustObservationDirectory(observations, integration)
+    return ClinxMCPServer(integration, allow_execute=False, observations=observations)
+
+
+def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None, *, recover_existing: bool = True) -> None:
+    stdin = stdin or sys.stdin
+    stdout = stdout or sys.stdout
+    # Keep the legacy keyword for callers of the codec. Completion and recovery
+    # belong to the Rust transport service, never an MCP stdio request process.
+    try:
+        for line in stdin:
+            if not line.strip():
+                continue
+            try:
+                request = json.loads(line)
+                response = server.handle(request)
+                if response is not None:
+                    stdout.write(json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n")
+                    stdout.flush()
+            except json.JSONDecodeError as exc:
+                response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(exc)}}
+                stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
+                stdout.flush()
+            except MCPRequestError as exc:
+                response = {"jsonrpc": "2.0", "id": None, "error": {"code": exc.code, "message": str(exc)}}
+                if exc.data is not None:
+                    response["error"]["data"] = _public_json(exc.data)
+                stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
+                stdout.flush()
+    finally:
+        # No payload, credentials or exception text: distinguish EOF from an
+        # uncaught request failure in the service-owned stderr log.
+        if os.environ.get('CLINX_STDIO_DIAGNOSTICS') == '1':
+            print(f"MCP_STDIO_CLOSED pid={os.getpid()} reason={'ERROR' if sys.exc_info()[0] else 'EOF'}", file=sys.stderr, flush=True)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="CLINX M12 MCP stdio server")
+    parser.add_argument("--config", default="bridge.toml")
+    parser.add_argument("--observations-only", action="store_true", help="Read-only network directory; no canonical runtime construction")
+    parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
+    # Existing immutable Rust caller units may still include this former flag.
+    parser.add_argument("--no-recover-existing", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")
+    args = parser.parse_args(argv)
+    if not args.stdio:
+        print("MCP_TRANSPORT=BLOCKED: only authenticated external transport may expose CLINX", file=sys.stderr)
+        return 2
+    try:
+        if args.observations_only:
+            from clinx.monitor.network_observation import directory_from_env
+            from clinx.monitor.observation_mcp import standalone_server
+            directory = directory_from_env()
+            if directory is None:
+                raise ValueError("OBSERVATION_NOT_CONFIGURED")
+            serve_stdio(standalone_server(directory), recover_existing=False)
+        else:
+            serve_stdio(build_server(args.config, allow_execute=args.allow_execute), recover_existing=not args.no_recover_existing)
+    except Exception as exc:
+        print(f"MCP_SERVER=BLOCKED: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""CLINX centre registration service and explicit owner control commands."""
+
+from __future__ import annotations
+
+
+# Direct-file entrypoints use only this source/release package root.
+if not __package__:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+
+import argparse
+import getpass
+import json
+import signal
+import threading
+import time
+from pathlib import Path
+
+from clinx.discovery.discovery import Candidate
+from clinx.discovery.identity import NodeIdentity, PrivateStore, TrustedPeerStore
+from clinx.discovery.transport import DeviceServer, LanTransport
+from clinx.nodes.node_protocol import NodeAuthorizationStore, NodeRegistry
+from clinx.nodes.node_runtime import CentreService, PairedTLS, endpoint_address
+
+
+def parser():
+    value = argparse.ArgumentParser(description=__doc__)
+    value.add_argument("--state", type=Path, required=True)
+    value.add_argument("--node-id", required=True)
+    commands = value.add_subparsers(dest="command", required=True)
+    commands.add_parser("bootstrap")
+    serve = commands.add_parser("serve")
+    serve.add_argument("--registry", type=Path, required=True)
+    serve.add_argument("--observations", type=Path, help="Separate durable observation projection")
+    serve.add_argument("--bind", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8771)
+    serve.add_argument("--stale-after", type=int, default=45)
+    serve.add_argument("--local-native-home", type=Path)
+    serve.add_argument("--rust-projection", action="store_true", help="Publish Rust managed tasks without opening a legacy native or canonical database")
+    serve.add_argument("--local-canonical-db", type=Path)
+    serve.add_argument("--local-owner-host")
+    serve.add_argument("--local-codex-host-id", help="Exact Codex Desktop host identity for local thread URIs")
+    serve.add_argument("--local-provider-config", type=Path, help="Existing native owner configuration for read-only liveness observations")
+    share = commands.add_parser("share")
+    share.add_argument("--peer", required=True)
+    share.add_argument("--local-source", action="store_true", help="Explicit local read_sessions grant; peer must equal this node")
+    share.add_argument("--user-scope", required=True)
+    share.add_argument("--read-sessions", action="store_true")
+    share.add_argument("--execute-tasks", action="store_true")
+    share.add_argument("--project", action="append", help="Approved exact cwd; omitted preserves whole-user read scope")
+    share.add_argument("--revoke", action="store_true")
+    share.add_argument("--approved", action="store_true", required=True)
+    pair = commands.add_parser("pair-listen")
+    pair.add_argument("--bind", default="127.0.0.1")
+    pair.add_argument("--port", type=int, default=8770)
+    pair.add_argument("--seconds", type=int, default=120)
+    connect = commands.add_parser("pair-connect")
+    connect.add_argument("--peer", required=True)
+    connect.add_argument("--fingerprint", required=True)
+    connect.add_argument("--endpoint", required=True)
+    configure = commands.add_parser("configure-node")
+    configure.add_argument("--centre", required=True)
+    configure.add_argument("--endpoint", required=True)
+    configure.add_argument("--bind", default="0.0.0.0")
+    configure.add_argument("--port", type=int, default=8772)
+    configure.add_argument("--execution-config", type=Path)
+    configure.add_argument("--observation-canonical-db", type=Path)
+    configure.add_argument("--observation-owner-host")
+    configure.add_argument("--observation-previous-stream", help="Explicit CAS identity when rebuilding a lost observation spool")
+    configure.add_argument("--execution-thread", action="append")
+    configure.add_argument("--execution-project", action="append")
+    configure.add_argument("--execution-new-project", action="append")
+    configure.add_argument("--execution-cancel-project", action="append")
+    return value
+
+
+def main(argv=None) -> int:
+    args = parser().parse_args(argv)
+    from clinx.authority.rust_integration import enabled as rust_authority_enabled
+    if rust_authority_enabled() and (getattr(args, 'local_canonical_db', None)
+                                     or getattr(args, 'observation_canonical_db', None)):
+        raise ValueError('RUST_AUTHORITY_REQUIRES_REMOVAL_OF_LEGACY_CANONICAL_DB_ARGUMENTS')
+    private = PrivateStore(args.state)
+    if args.command != "bootstrap" and private.read("identity.json") is None:
+        raise ValueError("IDENTITY_BOOTSTRAP_REQUIRED")
+    identity = NodeIdentity(private, args.node_id)
+    peers = TrustedPeerStore(private)
+    if args.command == "bootstrap":
+        print(json.dumps(identity.public))
+        return 0
+    if args.command == "share":
+        if args.local_source:
+            if args.peer != identity.public["node_id"] or args.execute_tasks:
+                raise ValueError("LOCAL_OBSERVATION_GRANT_INVALID")
+        else:
+            PairedTLS(identity, peers).peer(args.peer)
+        approvals = NodeAuthorizationStore(args.state)
+        scope = approvals.revoke(args.peer, user_scope=args.user_scope) if args.revoke else approvals.grant(
+            args.peer, user_scope=args.user_scope, read_sessions=args.read_sessions, execute_tasks=args.execute_tasks, projects=tuple(args.project or ("*",)))
+        print(json.dumps({"peer_id": args.peer, "scope": scope.as_dict()}))
+        return 0
+    if args.command == "configure-node":
+        PairedTLS(identity, peers).peer(args.centre)
+        endpoint_address(args.endpoint)
+        with private.lock():
+            private.write("node-config.json", dict(schema_version=1, centre_id=args.centre,
+                centre_endpoint=args.endpoint, bind_address=args.bind, port=args.port,
+                execution_config=str(args.execution_config.resolve()) if args.execution_config else None,
+                observation_canonical_db=str(args.observation_canonical_db.resolve()) if args.observation_canonical_db else None,
+                observation_owner_host=args.observation_owner_host,
+                observation_previous_stream=args.observation_previous_stream,
+                execution_threads=args.execution_thread, execution_projects=args.execution_project,
+                execution_new_projects=args.execution_new_project, execution_cancel_projects=args.execution_cancel_project))
+        print(json.dumps({"configured": True, "centre_id": args.centre}))
+        return 0
+    if args.command == "pair-connect":
+        address = endpoint_address(args.endpoint)
+        candidate = Candidate(args.peer, args.peer, args.fingerprint, (address,))
+        session = LanTransport(identity, peers, allow_direct=True).pair(candidate, getpass.getpass("Pairing code: "))
+        print(json.dumps({"paired": True, "node_id": session.node_id, "authority_granted": False}))
+        return 0
+    if args.command == "pair-listen":
+        with DeviceServer(identity, peers, address=args.bind, port=args.port, allow_direct=True) as server:
+            code = server.window.open()
+            print(json.dumps({"identity": identity.public, "port": server.port, "pairing_code": code}), flush=True)
+            threading.Event().wait(min(120, max(1, args.seconds)))
+        return 0
+    registry = NodeRegistry(args.registry)
+    from clinx.monitor.network_observation import ObservationWriter
+    observations = ObservationWriter(args.observations) if args.observations else None
+    service = CentreService(PairedTLS(identity, peers), registry, NodeAuthorizationStore(args.state), stale_after=args.stale_after, observations=observations)
+    server = service.server(address=args.bind, port=args.port)
+    collector = None
+    if args.local_native_home or args.rust_projection:
+        if args.rust_projection and not rust_authority_enabled():
+            raise ValueError('RUST_PROJECTION_REQUIRES_RUST_AUTHORITY')
+        if observations is None:
+            raise ValueError("LOCAL_OBSERVATION_REQUIRES_PROJECTION")
+        from clinx.monitor.observation_source import CodexObservationSource,ObservationCollector,LocalObservationRegistration
+        provider_config=None
+        if args.local_provider_config:
+            from clinx.contracts.runtime_config import BridgeConfig
+            provider_config=BridgeConfig.load(args.local_provider_config)
+        approvals=NodeAuthorizationStore(args.state)
+        if rust_authority_enabled():
+            from clinx.monitor.rust_observation import RustObservationSource
+            from clinx.monitor.native_observation_bridge import RemoteNativeSource
+            source = RustObservationSource(args.local_native_home, identity.public["node_id"], args.local_owner_host,
+                provider_config, native_source=RemoteNativeSource.from_env())
+        else:
+            source = CodexObservationSource(args.local_native_home, identity.public["node_id"], args.local_canonical_db, args.local_owner_host, provider_config)
+        collector=ObservationCollector(args.state / "local-observation-outbox.sqlite3", source,
+            identity,LocalObservationRegistration(identity,registry,approvals,observations,args.stale_after,args.local_codex_host_id),
+            lambda: approvals.get(identity.public["node_id"]),server.address[1],("session.read",))
+    next_collection=0.0
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    print(json.dumps({"ready": True, "address": server.address, "registry": str(args.registry)}), flush=True)
+    try:
+        while not stop.wait(0.25):
+            registry.refresh_states()
+            if collector and time.monotonic()>=next_collection:
+                try:
+                    delay=collector.tick()
+                except Exception as exc:
+                    # Bounded diagnostic only; do not expose source text or credentials.
+                    print(json.dumps({"observation_error":type(exc).__name__}),flush=True)
+                    delay=2
+                next_collection=time.monotonic()+delay
+    finally:
+        if collector: collector.close()
+        server.close()
+        registry.close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

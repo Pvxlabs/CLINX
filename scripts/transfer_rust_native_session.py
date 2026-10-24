@@ -26,6 +26,9 @@ def main():
     args = parser.parse_args()
     if os.geteuid() != 0 or args.output.exists():
         raise RuntimeError('ROOT_AND_UNIQUE_RECEIPT_REQUIRED')
+    manifest = json.loads((args.release / 'manifest.json').read_text())
+    if manifest.get('source_layout') != 'qualified-clinx-v1':
+        raise RuntimeError('QUALIFIED_PACKAGE_LAYOUT_REQUIRED')
     original = json.loads(args.source_receipt.read_text())['status']
     tid, turn_id = original['thread_id'], original['native_turn_id']
     if original['status'] != 'SUCCEEDED' or original['resource_state'] != 'RELEASED':
@@ -64,8 +67,8 @@ def main():
         return json.loads(subprocess.check_output(command, env=env, text=True, timeout=45))
 
     source_code = '''import json,sys
-from native_provider import existing_client
-from rust_transport import RustDispatcher
+from clinx.provider.native_provider import existing_client
+from clinx.transport.rust_transport import RustDispatcher
 with existing_client(sys.argv[1],20,read_only=False) as c:
  c.initialize(client_name='clinx-exact-native-transfer',client_title='Clinx',client_version='1')
  t=c.thread_read(sys.argv[2]);turn=RustDispatcher.exact_turn(c,sys.argv[2],sys.argv[3])
@@ -121,8 +124,8 @@ with existing_client(sys.argv[1],20,read_only=False) as c:
                       source_sha256=hashlib.sha256(data).hexdigest(), target_path=str(target))
         save()
         destination_code = '''import json,sys
-from native_provider import existing_client
-from rust_transport import RustDispatcher
+from clinx.provider.native_provider import existing_client
+from clinx.transport.rust_transport import RustDispatcher
 with existing_client('/run/clinx-rust-provider/provider.sock',20,read_only=False) as c:
  c.initialize(client_name='clinx-exact-native-import',client_title='Clinx',client_version='1')
  r=c._request('thread/resume',dict(threadId=sys.argv[1],excludeTurns=True))
@@ -141,8 +144,8 @@ with existing_client('/run/clinx-rust-provider/provider.sock',20,read_only=False
                     head=subprocess.check_output(['git','-c','safe.directory='+cwd,'-C',cwd,'rev-parse','HEAD'],text=True).strip())
         adoption_code = '''import json,sys
 from pathlib import Path
-from bridge import BridgeConfig
-from rust_integration import RustIntegration
+from clinx.contracts.runtime_config import BridgeConfig
+from clinx.authority.rust_integration import RustIntegration
 api=RustIntegration(BridgeConfig.load(Path('/var/lib/clinx-rust/config/bridge.toml')))
 print(json.dumps(api.adopt_conversation(host='p620',project='clinx',thread_id=sys.argv[1],exact_turn_id=sys.argv[2],workspace_contract=json.loads(sys.argv[3]),title='Transferred exact native acceptance session')))
 '''

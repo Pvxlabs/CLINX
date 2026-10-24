@@ -6,4 +6,4 @@ Environment=CLINX_OBSERVER_RUST_MCP=/tmp/clinx-rust-monitor/mcp.sock
 # Bind the directory so socket replacement does not pin a dead socket inode.
 BindReadOnlyPaths=/run/clinx-rust-api:/tmp/clinx-rust-monitor
 ExecStart=
-ExecStart=/usr/bin/python3 -B @RELEASE@/control/observer_server.py
+ExecStart=/usr/bin/python3 -B -m clinx.monitor.observer_server

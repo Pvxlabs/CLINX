@@ -28,7 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
-from runtime_lab.reference import CONTRACT, PROTOCOL, Reference  # noqa: E402
+from tools.qualification.runtime_lab.reference import CONTRACT, PROTOCOL, Reference  # noqa: E402
 from scripts import check_execution_core_contract as v  # noqa: E402
 from test_rust_runtime_lab import (  # noqa: E402
     ack_row,
@@ -423,7 +423,7 @@ def run_gate(
     baseline_manifest = manifest.copy()
     if approved_reference_sha256 is not None:
         # Explicit identity for the separately authorized Python repair.
-        manifest["runtime_lab/reference.py"] = approved_reference_sha256
+        manifest["tools/qualification/runtime_lab/reference.py"] = approved_reference_sha256
     approved_rust = {}
     if approved_rust_sources is not None:
         approved_rust = json.loads(approved_rust_sources.read_text())
@@ -710,7 +710,7 @@ def run_gate(
         "--edition=2024",
         "-C",
         "opt-level=3",
-        str(ROOT / "runtime_lab/shadow_probe.rs"),
+        str(ROOT / "tools/qualification/runtime_lab/shadow_probe.rs"),
         "--extern",
         f"clinx_decision_kernel={lib('clinx_decision_kernel')}",
         "--extern",
@@ -931,7 +931,7 @@ def run_gate(
             *manifest,
             "kernel/Cargo.lock",
             "scripts/qualify_runtime_shadow.py",
-            "runtime_lab/shadow_probe.rs",
+            "tools/qualification/runtime_lab/shadow_probe.rs",
         ]:
             archive.add(ROOT / f, arcname=f)
     shutil.rmtree(output / "target")

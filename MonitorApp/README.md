@@ -5,6 +5,15 @@ project manifest; Xcode can open this package. `Sources/CLINXMonitor` contains t
 model, HTTPS client, view model and UI. The Swift files in `docs/monitor` remain the
 Phase 0/1 handoff snapshot and are not the app build source.
 
+The shared [Python source manifest](../architecture/python-sources.json) supplies
+the Helper package under `Resources/clinx/`; the bundle records exact copied
+hashes in `Resources/python-sources.json`. Swift discovery invokes
+`clinx/discovery/monitor_helper.py`, and `CLINXNodeService` invokes
+`clinx/nodes/node_service_entrypoint.py`. Incremental builds remove old flat
+Python files and `Discovery/` copies while preserving the embedded interpreter,
+native wheel and Swift resources. The Mac execution core remains COMPAT; see
+[the architecture boundary](../docs/REPOSITORY_ARCHITECTURE.md).
+
 ## Build and run (macOS)
 
 ```sh

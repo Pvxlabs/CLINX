@@ -1,5 +1,17 @@
 # CLINX
 
+**Target architecture:** Rust owns the complete runtime core (Authority,
+lifecycle, persistence/recovery, MCP/Provider/Host/Transport and Node/Discovery);
+Swift owns the macOS UI. Python is ultimately limited to development and
+maintenance tooling. Current Python runtime and Mac compatibility implementations
+are explicitly classified; the migration is incomplete.
+
+Start with [the repository architecture and layout](docs/REPOSITORY_ARCHITECTURE.md).
+`kernel/` is Rust, `MonitorApp/` is Swift, `clinx/` contains the current Python
+runtime grouped by responsibility, and `clinx/compat/` contains the remaining
+Mac business core. `tools/` contains build/maintenance/qualification code.
+There are no root Python modules or flat import shims.
+
 **AI Task Routing & Execution Infrastructure**
 
 **AI 任务路由与执行流通基础设施**
@@ -45,10 +57,10 @@ flowchart LR
   A <-->|Execution and real results| E[Workspaces / Hosts / Repositories / Tools]
 ```
 
-Rust Core is the single authoritative entrypoint for CLINX task state, receipts,
-recovery and resource lifecycle. Adapters share those contracts; they do not own
-competing task state. This defines the architecture boundary; deployed behavior
-requires release evidence and current runtime readback.
+Rust Core is the authoritative entrypoint for deployed P620 task state, receipts,
+recovery and resource lifecycle. The Mac compatibility route still has a Python
+registry and execution lifecycle; it has not reached the target architecture.
+Source structure, staged releases and deployed behavior require separate evidence.
 
 CLINX is not another AI agent, a code-review platform, a safety-approval system
 or a control center deciding what users may do. Linear is an optional audit and
@@ -182,8 +194,8 @@ No production service, API key or Codex daemon is needed for these Rust adapter 
 ```sh
 python3.12 -m venv .venv-test
 .venv-test/bin/python -m pip install -r requirements-dev.txt
-.venv-test/bin/python -B -m pytest -c tests/pytest.ini tests/test_rust_native_routing.py tests/test_rust_request_contract.py
-.venv-test/bin/python tests/run_tests.py collect
+.venv-test/bin/python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/adapter-tests test_rust_native_routing.py test_rust_request_contract.py
+.venv-test/bin/python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only
 ```
 
 If your distribution omits ensurepip, use `uv venv --python 3.12 --seed .venv-test`

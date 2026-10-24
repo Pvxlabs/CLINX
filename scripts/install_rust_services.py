@@ -61,6 +61,8 @@ def main():
             raise RuntimeError('SERVICE_ALREADY_EXISTS:' + name)
     release = args.release.resolve(strict=True)
     manifest = json.loads((release / "manifest.json").read_text())
+    if manifest.get('source_layout') != 'qualified-clinx-v1':
+        raise RuntimeError('QUALIFIED_PACKAGE_LAYOUT_REQUIRED')
     if release.name != manifest["version"]:
         raise RuntimeError("RELEASE_IDENTITY_MISMATCH")
     import hashlib
@@ -90,7 +92,7 @@ def main():
     owned_dir("/run/clinx-rust-provider", worker.pw_name, 0o2750, "clinx-ipc")
     desktop_socket = args.desktop_socket.resolve(strict=True)
     subprocess.run(['runuser', '-u', worker.pw_name, '--', '/usr/bin/python3',
-                    str(release / 'control/desktop_socket.py'), '--socket', str(desktop_socket),
+                    str(release / 'control/clinx/provider/desktop_socket.py'), '--socket', str(desktop_socket),
                     '--witness-thread-id', args.desktop_thread_id, '--apply'], check=True)
     config = tomllib.loads(args.bridge_config.read_text())
     config["app_server"]["local_socket"] = "/run/clinx-rust-provider/provider.sock"
@@ -167,7 +169,7 @@ User=clinx-transport
 Group=clinx-transport
 SupplementaryGroups=clinx-ipc
 {env}Environment=CLINX_RUST_WORKER_LAUNCHER={release}/host-worker
-ExecStart=/usr/bin/python3 {release}/control/rust_transport.py --config {cfgdir}/bridge.toml
+ExecStart=/usr/bin/python3 -m clinx.transport.rust_transport --config {cfgdir}/bridge.toml
 BindReadOnlyPaths={desktop_socket.parent}:/tmp/codex-daemon-{worker.pw_uid}
 ReadWritePaths={ROOT}/transport
 InaccessiblePaths={ROOT}/authority /run/clinx-rust-api /run/user/1001 -/run/docker.sock -/run/containerd

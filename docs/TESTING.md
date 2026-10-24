@@ -3,8 +3,14 @@
 All pytest modules, the runner, configuration and suite index are concentrated
 in the local `tests/` directory. This directory is ignored and not tracked by Git;
 a new GitHub clone does not contain it. The commands here apply when that local
-suite is present. Use `python -m pytest -c tests/pytest.ini tests` for direct pytest
-invocation from the repository root; shared fixture imports are handled locally.
+suite is present. The retained tests still use historical flat module names.
+Use `tools.qualification.run_local_tests` below: it creates a temporary copy,
+relocates imports, patch targets and source paths using
+`architecture/module-moves.json`, and runs with private HOME/XDG/TMPDIR state.
+It preserves the original files, assertions, failures and pytest exit status;
+each run records source hashes, a log and JUnit XML. There are no runtime import
+shims. Directly running the old suite against the new package layout is not the
+current regression command.
 
 Install Python 3.12 and the pinned dependencies as described in
 [CONTRIBUTING](../CONTRIBUTING.md). `requirements-dev.txt` includes the existing
@@ -52,8 +58,8 @@ python -B -m pytest --import-mode=prepend -o pythonpath=. fixtures/test_rust_nod
 For the existing public request and native routing fixtures:
 
 ```sh
-python -B -m pytest -c tests/pytest.ini -p no:cacheprovider tests/test_rust_native_routing.py tests/test_rust_request_contract.py
-python tests/run_tests.py collect
+python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/adapters test_rust_native_routing.py test_rust_request_contract.py
+python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only
 python -m ruff check --no-cache --config ruff-discovery.toml <changed-python-files>
 git diff --check
 ```
@@ -61,9 +67,14 @@ git diff --check
 The two adapter modules passed 36 tests from an independently copied Rust source
 package. They need no production service, account or real Codex daemon. Use
 private HOME/XDG/TMPDIR state and no live opt-ins for offline regression work.
-The original runner still supplies disposable state, disables bytecode/cache
+The current qualification runner supplies disposable state, disables bytecode/cache
 writes and third-party plugin autoload, and preserves pytest's exit status.
 Pytest 9.1 includes unittest subtest support; use the pinned dependency versions.
+
+[Phase 5](cleanup/REPOSITORY_CONVERGENCE_PHASE5.md) records the package relocation
+and unchanged baseline outcomes. Replace `<unique-task>` with a fresh task-owned
+directory. The following historical profile examples explain prerequisites and
+old evidence; they are not current passing gates and do not translate flat imports.
 
 Useful retained compatibility modules include `test_execution_owner_routing.py`,
 `test_execution_liveness.py`, `test_result_ingestion.py` and
@@ -79,7 +90,9 @@ Rust checks use a task-owned output directory, never an installed release:
 
 ```sh
 cargo test --lib --locked --offline --manifest-path kernel/Cargo.toml --target-dir <task-build-dir>
-cargo build --release --locked --offline --manifest-path kernel/Cargo.toml --bin clinx-runtime --target-dir <task-build-dir>
+cargo test --tests --locked --offline --manifest-path kernel/Cargo.toml --target-dir <task-build-dir>
+cargo build --release --locked --offline --manifest-path kernel/Cargo.toml --bin clinx-runtime --bin clinx-mcp-relay --target-dir <task-build-dir>
+CLINX_MCP_RELAY=<task-build-dir>/release/clinx-mcp-relay python -B -m pytest --import-mode=prepend -o pythonpath=. fixtures/test_mcp_relay.py fixtures/test_rust_node_contract.py
 ```
 
 Historical Linux compatibility Owner fixtures may have left empty lock files under

@@ -34,7 +34,7 @@ The existing authority uses the pvxlabs user manager. The independent Observer
 uses that user manager with unprivileged user/mount namespaces, not root:
 
 - Unit: `~/.config/systemd/user/clinx-observer.service`.
-- Source: `~/.local/lib/clinx-observer/current/observer_server.py`; `current` points
+- Source: `~/.local/lib/clinx-observer/current/clinx/monitor/observer_server.py`; `current` points
   to a release directory named by the deployed canonical SHA.
 - Registry: `~/.local/state/clinx/tasks.sqlite3`, including live WAL/SHM. Mount the
   directory read-only to follow live WAL replacement; do not use immutable=1.

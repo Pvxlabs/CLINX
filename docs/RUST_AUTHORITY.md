@@ -191,7 +191,9 @@ The worker cannot open the state, authority socket, MCP entry socket, writer pro
 FDs or Docker socket; canonical-path and symlink-alias access both fail.
 
 The installed MCP socket activates the existing `mcp_server.py` as clinx-api.
-`rust_stdio.py` forwards bytes from the existing stdio transport without decisions.
+That installed release still uses its original Python stdio relay. Current source replaces
+it with Rust `clinx-mcp-relay`; see [the package layout](REPOSITORY_ARCHITECTURE.md).
+The source change has not been deployed.
 The Rust catalog includes target registration/revocation, policy control and Host
 request parameters, with matching public response schemas. The existing production
 Tunnel launcher now invokes this command; it does not load the old Owner environment.

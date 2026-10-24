@@ -29,6 +29,8 @@ def main():
             raise RuntimeError('CALLER_UNIT_EXISTS:' + name)
     release = args.release.resolve(strict=True)
     manifest = json.loads((release / "manifest.json").read_text())
+    if manifest.get('source_layout') != 'qualified-clinx-v1':
+        raise RuntimeError('QUALIFIED_PACKAGE_LAYOUT_REQUIRED')
     for name, digest in manifest["files"].items():
         path = release / name
         if (
@@ -96,7 +98,7 @@ Description=CLINX MCP API adapter
 After=clinx-rust-authority.service
 Requires=clinx-rust-authority.service
 [Service]
-{common}ExecStart=/usr/bin/python3 {release}/control/mcp_server.py --config {root}/config/bridge.toml --stdio
+{common}ExecStart=/usr/bin/python3 -m clinx.mcp.mcp_server --config {root}/config/bridge.toml --stdio
 StandardInput=socket
 StandardOutput=inherit
 StandardError=journal
@@ -106,7 +108,7 @@ Description=CLINX Centre Rust projection (pre-cutover loopback)
 After=clinx-rust-authority.service
 Requires=clinx-rust-authority.service
 [Service]
-{common}ExecStart=/usr/bin/python3 {release}/control/node_centre_entrypoint.py --state {state} --node-id p620 serve --registry {state}/registry.sqlite3 --observations {state}/observations.sqlite3 --bind 127.0.0.1 --port 18774 --rust-projection --local-owner-host p620 --local-provider-config {root}/config/bridge.toml --stale-after 45
+{common}ExecStart=/usr/bin/python3 -m clinx.nodes.node_centre_entrypoint --state {state} --node-id p620 serve --registry {state}/registry.sqlite3 --observations {state}/observations.sqlite3 --bind 127.0.0.1 --port 18774 --rust-projection --local-owner-host p620 --local-provider-config {root}/config/bridge.toml --stale-after 45
 Restart=on-failure
 RestartSec=3
 """,

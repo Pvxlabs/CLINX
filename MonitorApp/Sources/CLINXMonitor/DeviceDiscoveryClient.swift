@@ -71,11 +71,11 @@ private final class DiscoveryProcess: @unchecked Sendable {
             .appendingPathComponent("Library/Application Support/CLINX Monitor/DiscoveryRuntime/bin/python")
         guard FileManager.default.isExecutableFile(atPath: runtime.path),
               let root = Bundle.main.resourceURL,
-              FileManager.default.fileExists(atPath: root.appendingPathComponent("Discovery/local_discovery/monitor_helper.py").path)
+              FileManager.default.fileExists(atPath: root.appendingPathComponent("clinx/discovery/monitor_helper.py").path)
         else { throw DeviceConnectionError.runtimeUnavailable }
         let input = Pipe(), output = Pipe()
         process.executableURL = runtime
-        process.arguments = ["-I", "-B", root.appendingPathComponent("Discovery/local_discovery/monitor_helper.py").path]
+        process.arguments = ["-I", "-B", root.appendingPathComponent("clinx/discovery/monitor_helper.py").path]
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice

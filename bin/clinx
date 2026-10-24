@@ -6,5 +6,5 @@ if [ "$#" -eq 0 ]; then
     set -- devices
 fi
 exec "${CLINX_PYTHON:-python3}" -c \
-  'import sys; sys.path.insert(0, sys.argv.pop(1)); from local_discovery.cli import main; raise SystemExit(main())' \
+  'import sys; sys.path.insert(0, sys.argv.pop(1)); from clinx.discovery.cli import main; raise SystemExit(main())' \
   "$repo_root" --config "$repo_root/bridge.toml" "$@"

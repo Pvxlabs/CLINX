@@ -1,0 +1,979 @@
+{
+  "schema": 1,
+  "target": "Rust runtime; Swift UI; Python development and maintenance tools only",
+  "modules": [
+    {
+      "path": "clinx/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Package namespace; no startup side effects"
+    },
+    {
+      "path": "clinx/authority/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+    },
+    {
+      "path": "clinx/authority/rust_authority.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+    },
+    {
+      "path": "clinx/authority/rust_integration.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+    },
+    {
+      "path": "clinx/authority/rust_reads.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+    },
+    {
+      "path": "clinx/authority/rust_worker_identity.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+    },
+    {
+      "path": "clinx/compat/__init__.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/bridge.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/completion_runtime.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/consultations.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/desktop_publication.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/domain/__init__.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/domain/_model.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/domain/event.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/execution_liveness.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/historical_handoff.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/m9_integration.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/native_input_recovery.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/native_lifecycle.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/node_execution_adapter.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/prepared_requests.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/result_ingestion.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/shadow_ledger/__init__.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/shadow_ledger/errors.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/shadow_ledger/models.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/shadow_ledger/schema.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/shadow_ledger/store.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/task_projection.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/task_registry.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/thread_identity.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/compat/unstarted_recovery.py",
+      "role": "COMPAT",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+    },
+    {
+      "path": "clinx/contracts/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/dispatch_errors.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/execution_policy.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/execution_semantics.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/runtime_config.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/runtime_contracts.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/thread_identity.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/workspace_contract.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/cli.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/discovery.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/identity.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/monitor_helper.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/observer_bootstrap.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/pairing.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/transport.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/host/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/host/derived_git_targets.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/host/host_contract.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/host/host_executor.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/host/production_workflows.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/host/rust_host.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/host/tool_delivery.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/mcp/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python MCP framing and schemas; target owner Rust"
+    },
+    {
+      "path": "clinx/mcp/consultation_schema.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python MCP framing and schemas; target owner Rust"
+    },
+    {
+      "path": "clinx/mcp/mcp_server.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python MCP framing and schemas; target owner Rust"
+    },
+    {
+      "path": "clinx/mcp/rust_mcp.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python MCP framing and schemas; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/native_associations.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/native_observation_bridge.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/network_observation.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/observation_mcp.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/observation_source.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/observer_server.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/rust_monitor.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/rust_observation.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/nodes/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+    },
+    {
+      "path": "clinx/nodes/node_centre_entrypoint.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust"
+      ],
+      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+    },
+    {
+      "path": "clinx/nodes/node_protocol.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+    },
+    {
+      "path": "clinx/nodes/node_runtime.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+    },
+    {
+      "path": "clinx/nodes/node_service_entrypoint.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+    },
+    {
+      "path": "clinx/nodes/rust_node_adapter.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/app_server.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/desktop_socket.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/liveness.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/native_history.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/native_provider.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/native_writer_probe.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/rust_workspace_probe.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/transport/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current transport and tunnel supervisor implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/transport/rust_transport.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current transport and tunnel supervisor implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/transport/tunnel_reliability.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [],
+      "reason": "Current transport and tunnel supervisor implementation; target owner Rust"
+    },
+    {
+      "path": "fixtures/bridge_migration_codex.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "fixtures/test_mcp_relay.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "fixtures/test_rust_node_contract.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "fixtures/transport_only_mcp.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "rust_stdio.py",
+      "role": "DEAD",
+      "profiles": [],
+      "replacement": "kernel/src/bin/clinx-mcp-relay.rs",
+      "reason": "Replaced with qualified Rust byte relay; no task-state logic"
+    },
+    {
+      "path": "scripts/build_forwarding_release.py",
+      "role": "COMPAT",
+      "profiles": [],
+      "reason": "Historical forwarding-package reproduction/rollback tooling; current source build rejected; immutable old source required"
+    },
+    {
+      "path": "scripts/build_transport_runtime.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/build_tunnel_release.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/check_embedded_bridge_idle.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/check_execution_core_contract.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/check_tunnel_health.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/deploy_forwarding_release.py",
+      "role": "COMPAT",
+      "profiles": [],
+      "reason": "Historical forwarding-package reproduction/rollback tooling; current source build rejected; immutable old source required"
+    },
+    {
+      "path": "scripts/install_rust_services.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/local_discovery_smoke.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/qualify_bridge_transport.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/qualify_runtime_migration.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Historical offline runtime qualification; requires archived test_rust_runtime_lab.py and exact prior source/receipt hashes, absent from the retained local suite; not a current passing gate or runtime dependency"
+    },
+    {
+      "path": "scripts/qualify_runtime_shadow.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Historical offline runtime qualification; requires archived test_rust_runtime_lab.py and exact prior source/receipt hashes, absent from the retained local suite; not a current passing gate or runtime dependency"
+    },
+    {
+      "path": "scripts/qualify_rust_legacy_cgroup.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/qualify_rust_physical_revocation.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/qualify_rust_runtime.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Historical offline runtime qualification; requires archived test_rust_runtime_lab.py and exact prior source/receipt hashes, absent from the retained local suite; not a current passing gate or runtime dependency"
+    },
+    {
+      "path": "scripts/qualify_rust_service_isolation.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/reconcile_historical_handoff.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/reconcile_task_projection.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/rust_authority_isolation.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/stage_rust_callers.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/stage_rust_release.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/transfer_rust_native_session.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "scripts/tunnel_release_cas.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "tools/__init__.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "tools/build/__init__.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "tools/build/runtime_sources.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "tools/maintenance/__init__.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "tools/maintenance/observer_history_guard.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "tools/maintenance/policy_maintenance.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+    },
+    {
+      "path": "tools/qualification/__init__.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "tools/qualification/check_structure.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "tools/qualification/embedded_bridge_readiness.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "tools/qualification/provider_qualification.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "tools/qualification/relocate_tests.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "tools/qualification/runtime_lab/__init__.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "tools/qualification/runtime_lab/reference.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "tools/qualification/run_local_tests.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Run preserved local tests through recorded import relocation and private fixture state"
+    }
+  ]
+}

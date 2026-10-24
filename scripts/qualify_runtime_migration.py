@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
-from runtime_lab.reference import CONTRACT, Reference  # noqa: E402
+from tools.qualification.runtime_lab.reference import CONTRACT, Reference  # noqa: E402
 from scripts import check_execution_core_contract as v  # noqa: E402
 from scripts.qualify_runtime_shadow import (  # noqa: E402
     Peer,
@@ -68,7 +68,7 @@ class Qualification:
         assert sha(self.binary) == receipt['binary_sha256']
         # Include all transitive Rust inputs, the probe, oracle, fixtures and runner.
         for p in [*sorted((ROOT / 'kernel/src').rglob('*.rs')),
-                  ROOT / 'kernel/Cargo.lock', ROOT / 'runtime_lab/shadow_probe.rs',
+                  ROOT / 'kernel/Cargo.lock', ROOT / 'tools/qualification/runtime_lab/shadow_probe.rs',
                   Path(__file__).resolve()]:
             identity[str(p.relative_to(ROOT))] = sha(p)
         self.identity = identity
@@ -412,7 +412,7 @@ class Qualification:
         library = next(deps.glob('libclinx_decision_kernel-*.rlib'))
         probe = self.out / 'bin/shadow-core-probe'
         compile_cmd = ['/home/pvxlabs/.cargo/bin/rustc', '--edition=2024', '-C', 'opt-level=3',
-                       str(ROOT / 'runtime_lab/shadow_probe.rs'), '--extern',
+                       str(ROOT / 'tools/qualification/runtime_lab/shadow_probe.rs'), '--extern',
                        f'clinx_decision_kernel={library}', '--extern',
                        f'serde_json={next(deps.glob("libserde_json-*.rlib"))}',
                        '-L', f'dependency={deps}', '-o', str(probe)]

@@ -18,8 +18,7 @@ cp ThirdPartyNotices.txt "$app_dir/Contents/Resources/ThirdPartyNotices.txt"
 # Copy the declared helper closure, including its still-configurable execution
 # compatibility route. Retired experiments and stale incremental sources are
 # excluded by the shared inventory used by Rust release packaging.
-python3 -B ../runtime_packaging.py --monitor-resources "$app_dir/Contents/Resources"
-cp Scripts/node_service_entrypoint.py "$app_dir/Contents/Resources/"
+python3 -B ../tools/build/runtime_sources.py --monitor-resources "$app_dir/Contents/Resources"
 cp Scripts/CLINXNodeService "$app_dir/Contents/Resources/CLINXNodeService"
 chmod 755 "$app_dir/Contents/Resources/CLINXNodeService"
 

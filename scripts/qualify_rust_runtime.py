@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from runtime_lab.reference import CONTRACT, PROTOCOL, Reference, run  # noqa: E402
+from tools.qualification.runtime_lab.reference import CONTRACT, PROTOCOL, Reference, run  # noqa: E402
 from scripts import check_execution_core_contract as v  # noqa: E402
 
 
@@ -92,7 +92,7 @@ def main():
         ("differential", [sys.executable, "-m", "pytest", "-q", "tests/test_rust_runtime_lab.py",
                           "-o", "cache_dir=" + str(output / "pytest-cache"),
                           "--basetemp=" + str(output / "pytest-tmp")]),
-        ("ruff", ["ruff", "check", "--config", "ruff-discovery.toml", "runtime_lab",
+        ("ruff", ["ruff", "check", "--config", "ruff-discovery.toml", "tools/qualification/runtime_lab",
                   "scripts/qualify_rust_runtime.py", "tests/test_rust_runtime_lab.py"]),
         ("diff", ["git", "diff", "--check", "--", "kernel/Cargo.toml", "kernel/src/lib.rs"]),
     ]
