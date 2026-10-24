@@ -23,6 +23,7 @@ fn policy() -> Policy {
                 .to_string_lossy()
                 .into(),
         }],
+        provider_routes: Default::default(),
         endpoints: vec!["/fixture/provider.sock".into()],
         lease_ms: 120000,
         host_operations: vec![],

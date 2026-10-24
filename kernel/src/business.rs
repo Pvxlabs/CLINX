@@ -12,6 +12,8 @@ use std::{collections::BTreeMap, os::unix::fs::MetadataExt, path::Path, process:
 
 #[path = "business_handoff.rs"]
 mod handoff;
+#[path = "business_node.rs"]
+mod node;
 #[path = "business_targets.rs"]
 mod targets;
 #[path = "business_workspace.rs"]
@@ -52,6 +54,10 @@ pub struct Policy {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspaces: Vec<Workspace>,
     pub endpoints: Vec<String>,
+    /// When present, every host must have an explicit Provider route. No
+    /// fallback from an unknown remote host to the writer's Desktop socket.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_routes: BTreeMap<String, Vec<String>>,
     pub lease_ms: i64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub host_operations: Vec<Value>,
@@ -59,6 +65,16 @@ pub struct Policy {
     pub derived_git_roots: Vec<String>,
 }
 impl Policy {
+    fn endpoints_for(&self, host: &str) -> Result<&[String]> {
+        if self.provider_routes.is_empty() {
+            Ok(&self.endpoints)
+        } else {
+            self.provider_routes
+                .get(host)
+                .map(Vec::as_slice)
+                .ok_or_else(|| "PROVIDER_ROUTE_REQUIRED".into())
+        }
+    }
     fn project(&self, alias: &str, host: &str) -> Result<Project> {
         if let Some(p) = self
             .projects
@@ -158,8 +174,8 @@ fn rows(c: &Connection, kind: &str) -> Result<Vec<Value>> {
         .map(|r| parse(r.map_err(db)?))
         .collect()
 }
-fn git(cwd: &str, args: &[&str]) -> Result<String> {
-    if let Some(observed) = workspace_observer::read("git", cwd, args)? {
+fn git(host: &str, cwd: &str, args: &[&str]) -> Result<String> {
+    if let Some(observed) = workspace_observer::read(host, "git", cwd, args)? {
         return Ok(observed["value"].as_str().unwrap().into());
     }
     // Read-only, bounded local identity query. Never interpret repository text as shell.
@@ -210,11 +226,12 @@ fn native_workspace(project: &Project, requested: &Value) -> Result<Value> {
     Ok(json!({"cwd":cwd}))
 }
 
-fn repository(cwd: &str) -> Result<String> {
-    if let Some(observed) = workspace_observer::read("repository", cwd, &[])? {
+fn repository(host: &str, cwd: &str) -> Result<String> {
+    if let Some(observed) = workspace_observer::read(host, "repository", cwd, &[])? {
         return Ok(string(&observed, "repository_identity")?.into());
     }
     let common = git(
+        host,
         cwd,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
     )?;
@@ -243,7 +260,7 @@ fn known_repository(c: &Connection, project: &Project, saved: &Value) -> Result<
         .collect();
     match identities.len() {
         1 => Ok(json!(identities.into_iter().next().unwrap())),
-        0 => repository(&project.cwd)
+        0 => repository(&project.host, &project.cwd)
             .map(Value::from)
             .map_err(|_| "PROJECT_REPOSITORY_UNAVAILABLE".into()),
         _ => Err("PROJECT_REPOSITORY_AMBIGUOUS".into()),
@@ -252,10 +269,13 @@ fn known_repository(c: &Connection, project: &Project, saved: &Value) -> Result<
 
 fn native_resolution(project: &Project, requested: &Value, identity: &Value) -> Result<Value> {
     let route = native_workspace(project, requested)?;
-    if let Some(observed) = workspace_observer::read("workspace", string(&route, "cwd")?, &[])? {
+    if let Some(observed) =
+        workspace_observer::read(&project.host, "workspace", string(&route, "cwd")?, &[])?
+    {
         let expected = match identity.as_str() {
             Some(saved) => saved.to_owned(),
-            None => repository(&project.cwd).map_err(|_| "PROJECT_REPOSITORY_UNAVAILABLE")?,
+            None => repository(&project.host, &project.cwd)
+                .map_err(|_| "PROJECT_REPOSITORY_UNAVAILABLE")?,
         };
         if observed["repository_identity"] != expected {
             return Err("WORKSPACE_REPOSITORY_MISMATCH".into());
@@ -269,22 +289,24 @@ fn native_resolution(project: &Project, requested: &Value, identity: &Value) -> 
         return Err("WORKSPACE_CWD_UNREADABLE".into());
     }
     let cwd = cwd.to_string_lossy().into_owned();
-    let common = repository(&cwd)?;
+    let common = repository(&project.host, &cwd)?;
     // Once a task has a proven repository identity, a retired registration path
     // need not remain readable. Unknown identities still fail closed.
     let expected = match identity.as_str() {
         Some(s) => s.to_owned(),
-        None => repository(&project.cwd).map_err(|_| "PROJECT_REPOSITORY_UNAVAILABLE")?,
+        None => {
+            repository(&project.host, &project.cwd).map_err(|_| "PROJECT_REPOSITORY_UNAVAILABLE")?
+        }
     };
     if common != expected {
         return Err("WORKSPACE_REPOSITORY_MISMATCH".into());
     }
     Ok(json!({"cwd":cwd,"repository_identity":common,
-        "repository_common_dir":git(&cwd, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?,
-        "repository_root":git(&cwd, &["rev-parse", "--show-toplevel"])?,
-        "worktree":git(&cwd, &["rev-parse", "--path-format=absolute", "--git-dir"])?,
-        "branch":git(&cwd, &["branch", "--show-current"])?,
-        "head":git(&cwd, &["rev-parse", "HEAD"])?}))
+        "repository_common_dir":git(&project.host, &cwd, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?,
+        "repository_root":git(&project.host, &cwd, &["rev-parse", "--show-toplevel"])?,
+        "worktree":git(&project.host, &cwd, &["rev-parse", "--path-format=absolute", "--git-dir"])?,
+        "branch":git(&project.host, &cwd, &["branch", "--show-current"])?,
+        "head":git(&project.host, &cwd, &["rev-parse", "HEAD"])?}))
 }
 
 fn resolved_contract(resolution: &Value) -> Value {
@@ -526,7 +548,20 @@ impl Store {
             return Err("INVALID_AUTHORITY_POLICY".into());
         }
         let mut aliases = std::collections::BTreeSet::new();
+        let mut routed = std::collections::BTreeSet::new();
+        for (host, endpoints) in &policy.provider_routes {
+            if host.is_empty()
+                || host == "*"
+                || endpoints.is_empty()
+                || endpoints
+                    .iter()
+                    .any(|e| !policy.endpoints.contains(e) || !routed.insert(e))
+            {
+                return Err("INVALID_PROVIDER_ROUTE".into());
+            }
+        }
         for p in &policy.projects {
+            policy.endpoints_for(&p.host)?;
             if p.alias.is_empty()
                 || p.host.is_empty()
                 || !Path::new(&p.cwd).is_absolute()
@@ -537,6 +572,7 @@ impl Store {
         }
         let mut hosts = std::collections::BTreeSet::new();
         for w in &policy.workspaces {
+            policy.endpoints_for(&w.host)?;
             if w.host.is_empty()
                 || !hosts.insert(&w.host)
                 || !Path::new(&w.root).is_absolute()
@@ -652,6 +688,34 @@ impl Store {
         operation: &str,
         id: &str,
         p: &Value,
+        fault: impl FnMut(&str) -> Result<()>,
+    ) -> Result<Value> {
+        if operation == "node_request" {
+            if role != Role::Api {
+                return Err("NODE_GATEWAY_API_PEER_REQUIRED".into());
+            }
+            let request: node::Request = decode(p)?;
+            request.validate()?;
+            return self.business_scoped_at(
+                role,
+                policy,
+                &request.operation,
+                &request.scope.operation_id(&request.request_id)?,
+                &request.payload,
+                Some(&request.scope),
+                fault,
+            );
+        }
+        self.business_scoped_at(role, policy, operation, id, p, None, fault)
+    }
+    fn business_scoped_at(
+        &mut self,
+        role: Role,
+        policy: &Policy,
+        operation: &str,
+        id: &str,
+        p: &Value,
+        scope: Option<&node::Scope>,
         mut fault: impl FnMut(&str) -> Result<()>,
     ) -> Result<Value> {
         self.check_identity()?;
@@ -661,6 +725,12 @@ impl Store {
         let transport = transport_operation(operation);
         if transport && role != Role::Transport {
             return Err("TRANSPORT_PEER_REQUIRED".into());
+        }
+        if let Some(scope) = scope {
+            scope.authorize(&self.conn, policy, operation, p)?;
+            if let Some(result) = scope.read(&self.conn, policy, operation, p)? {
+                return Ok(result);
+            }
         }
         if matches!(
             operation,
@@ -675,7 +745,7 @@ impl Store {
                 | "observation_inventory"
                 | "observation_turns"
         ) {
-            return self.business_read(role, operation, p);
+            return self.business_read(role, policy, operation, p);
         }
         if operation == "effective_policy" && core::keys(p, "task_ref") {
             let task = row(&self.conn, "task", string(p, "task_ref")?)?;
@@ -714,11 +784,18 @@ impl Store {
             }
             return Ok(json!({"projects":projects}));
         }
-        let hash = core::digest(&json!({"operation":operation,"payload":p}));
+        let mut request = json!({"operation":operation,"payload":p});
+        if let Some(scope) = scope {
+            request["node_principal"] = scope.principal.clone();
+        }
+        let hash = core::digest(&request);
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db)?;
+        if let Some(scope) = scope {
+            scope.authorize(&tx, policy, operation, p)?;
+        }
         if matches!(
             operation,
             "bind_thread"
@@ -768,9 +845,15 @@ impl Store {
             return Ok(parse(body)?["result"].clone());
         }
         let mut changes = vec![];
-        let result = match operation {
-            "host_receive" | "host_take" | "host_begin" | "host_complete" | "host_sent"
-            | "host_failed" | "host_ack" | "host_reconcile_rejected" => {
+        let mut result = match operation {
+            "host_receive"
+            | "host_take"
+            | "host_begin"
+            | "host_complete"
+            | "host_sent"
+            | "host_failed"
+            | "host_ack"
+            | "host_reconcile_rejected" => {
                 let eid = string(p, "execution_ref")?;
                 let mut e = row(&tx, "execution", eid)?;
                 if terminal(&e) {
@@ -866,7 +949,8 @@ impl Store {
                         return Err("TASK_ROUTE_MISMATCH".into());
                     }
                     if rows(&tx, "task")?.iter().any(|t| {
-                        thread_bound(t, &json!(thread))
+                        t["host"] == r.host
+                            && thread_bound(t, &json!(thread))
                             && task
                                 .as_ref()
                                 .is_none_or(|selected| selected["id"] != t["id"])
@@ -968,6 +1052,7 @@ impl Store {
                     } else {
                         row(&tx, "task", &task_id)?
                     };
+                    node::inherit(&prepared, &mut task);
                     if prepared["new_task"] != true
                         && prepared["thread_id"].is_string()
                         && prepared["thread_id"] != task["thread_id"]
@@ -987,6 +1072,7 @@ impl Store {
                         && prepared["execution_policy"]["execution_surface"] == "HOST_EXECUTOR"
                     {
                         task["repository_origin"] = git(
+                            &project.host,
                             string(&prepared["workspace_contract"], "cwd")?,
                             &["remote", "get-url", "--all", "origin"],
                         )
@@ -1112,6 +1198,8 @@ impl Store {
             | "fail_before_send" => {
                 let eid = string(p, "execution_ref")?.to_owned();
                 let mut e = row(&tx, "execution", &eid)?;
+                let prepared_route = row(&tx, "prepared", string(&e, "prepared_execution_ref")?)?;
+                let route_endpoints = policy.endpoints_for(string(&prepared_route, "host")?)?;
                 let mut result;
                 let mut events = vec![];
                 match operation {
@@ -1128,7 +1216,7 @@ impl Store {
                         e["dispatch_state"] = json!("TAKEN");
                         let prepared = row(&tx, "prepared", string(&e, "prepared_execution_ref")?)?;
                         let task = row(&tx, "task", string(&e, "task_ref")?)?;
-                        result = json!({"execution_ref":eid,"epoch":e["epoch"],"ticket":e["ticket"],"thread_id":e["thread_id"].as_str().map(Value::from).unwrap_or(e["predecessor_thread_id"].clone()),"prepared":prepared,"handoff":e["handoff"],"successor_required":handoff::needed(&task, &prepared),"send_permitted":false});
+                        result = json!({"execution_ref":eid,"epoch":e["epoch"],"ticket":e["ticket"],"thread_id":e["thread_id"].as_str().map(Value::from).unwrap_or(e["predecessor_thread_id"].clone()),"prepared":prepared,"handoff":e["handoff"],"endpoints":route_endpoints,"successor_required":handoff::needed(&task, &prepared),"send_permitted":false});
                     }
                     "bind_thread" => {
                         if !core::keys(p, "execution_ref epoch ticket endpoint thread_id cwd") {
@@ -1137,7 +1225,7 @@ impl Store {
                         worker_fence(&tx, &e, p, &self.boot)?;
                         if e["dispatch_state"] != "TAKEN"
                             || (!e["thread_id"].is_null() && e["thread_id"] != p["thread_id"])
-                            || !policy.endpoints.iter().any(|x| p["endpoint"] == *x)
+                            || !route_endpoints.iter().any(|x| p["endpoint"] == *x)
                         {
                             return Err("BINDING_CONFLICT".into());
                         }
@@ -1299,7 +1387,7 @@ impl Store {
                         let nonce = random_id()?;
                         e["observation"] =
                             json!({"nonce":nonce,"boot":self.boot,"deadline":clock()+30000});
-                        result = json!({"nonce":nonce,"execution_ref":eid,"thread_id":e["thread_id"],"turn_id":e["turn_id"],"endpoints":policy.endpoints});
+                        result = json!({"nonce":nonce,"execution_ref":eid,"thread_id":e["thread_id"],"turn_id":e["turn_id"],"endpoints":route_endpoints});
                     }
                     "observe_commit" => {
                         if !core::keys(p, "execution_ref nonce observations turn") {
@@ -1317,7 +1405,7 @@ impl Store {
                         if terminal(&e) {
                             return Err("ALREADY_TERMINAL".into());
                         }
-                        let evidence = classify(policy, &e, p)?;
+                        let evidence = classify(route_endpoints, &e, p)?;
                         e["last_evidence"] = json!({"received_ms":clock(),"boot":self.boot,"request_hash":hash,"observations":p["observations"]});
                         e["observation"] = Value::Null;
                         if evidence == "TERMINAL" {
@@ -1413,7 +1501,7 @@ impl Store {
                         }
                         string(&e, "turn_id")?;
                         e["cancel_taken"] = json!(true);
-                        result = json!({"send_permitted":true,"execution_ref":eid,"thread_id":e["thread_id"],"turn_id":e["turn_id"]});
+                        result = json!({"send_permitted":true,"execution_ref":eid,"thread_id":e["thread_id"],"turn_id":e["turn_id"],"endpoint":e["endpoint"]});
                     }
                     _ => unreachable!(),
                 }
@@ -1448,6 +1536,23 @@ impl Store {
             }
             _ => return Err("UNSUPPORTED_BUSINESS_OPERATION".into()),
         };
+        if let Some(scope) = scope {
+            if matches!(operation, "prepare" | "adopt") && result["id"].is_string() {
+                result["node_principal"] = scope.principal.clone();
+                put(
+                    &tx,
+                    "prepared",
+                    string(&result, "id")?,
+                    &result,
+                    &mut changes,
+                )?;
+            }
+            for change in &changes {
+                if !change["value"]["node_principal"].is_null() {
+                    scope.owned(&change["value"])?;
+                }
+            }
+        }
         let (position, previous) = tx
             .query_row(
                 "SELECT position,hash FROM business_commands ORDER BY position DESC LIMIT 1",
@@ -1457,7 +1562,11 @@ impl Store {
             .optional()
             .map_err(db)?
             .unwrap_or((0, String::new()));
-        let body = json!({"authority_id":self.identity,"position":position+1,"previous":previous,"operation_id":id,"operation":operation,"role":role.name(),"request_hash":hash,"changes":changes,"result":result});
+        let mut body = json!({"authority_id":self.identity,"position":position+1,"previous":previous,"operation_id":id,"operation":operation,"role":role.name(),"request_hash":hash,"changes":changes,"result":result});
+        if let Some(scope) = scope {
+            body["node_principal"] = scope.principal.clone();
+            body["node_request"] = request;
+        }
         let digest = core::digest(&body);
         if core::canonical(&body).len() > MAX_BUSINESS_RECEIPT_BYTES {
             return Err("BUSINESS_RECEIPT_CAPACITY_EXCEEDED".into());
@@ -1480,7 +1589,7 @@ impl Store {
         fault("AFTER_BUSINESS_COMMIT")?;
         Ok(result)
     }
-    fn business_read(&self, role: Role, op: &str, p: &Value) -> Result<Value> {
+    fn business_read(&self, role: Role, policy: &Policy, op: &str, p: &Value) -> Result<Value> {
         match op {
             "get_prepared" if core::keys(p, "prepared_execution_ref") => {
                 row(&self.conn, "prepared", string(p, "prepared_execution_ref")?)
@@ -1529,7 +1638,7 @@ impl Store {
                 Ok(
                     json!({"execution_ref":e["execution_ref"],"epoch":e["epoch"],"ticket":e["ticket"],
                     "thread_id":e["thread_id"].as_str().map(Value::from).unwrap_or(e["predecessor_thread_id"].clone()),"prepared":prepared,"handoff":e["handoff"],
-                    "successor_required":handoff::needed(&task,&prepared),"send_permitted":false}),
+                    "endpoints":policy.endpoints_for(string(&prepared,"host")?)?,"successor_required":handoff::needed(&task,&prepared),"send_permitted":false}),
                 )
             }
             "host_rows" if core::keys(p, "execution_ref") => {
@@ -1606,9 +1715,9 @@ fn normalized(v: &Value) -> String {
         .replace(['_', '-'], "")
         .to_ascii_lowercase()
 }
-fn classify(policy: &Policy, e: &Value, p: &Value) -> Result<&'static str> {
+fn classify(endpoints: &[String], e: &Value, p: &Value) -> Result<&'static str> {
     let rs = p["observations"].as_array().ok_or("INVALID_OBSERVATIONS")?;
-    if rs.len() != policy.endpoints.len() {
+    if rs.len() != endpoints.len() {
         return Err("OBSERVATION_ENDPOINT_SET_MISMATCH".into());
     }
     let mut seen = std::collections::BTreeSet::new();
@@ -1618,7 +1727,7 @@ fn classify(policy: &Policy, e: &Value, p: &Value) -> Result<&'static str> {
     let mut terminals = 0;
     for r in rs {
         if !core::keys(r, "endpoint state thread_id turn_id turn_status")
-            || !policy.endpoints.iter().any(|x| r["endpoint"] == *x)
+            || !endpoints.iter().any(|x| r["endpoint"] == *x)
             || !seen.insert(string(r, "endpoint")?)
         {
             return Err("OBSERVATION_ENDPOINT_SET_MISMATCH".into());
@@ -1677,8 +1786,10 @@ fn finalize(
     let aid = string(e, "attempt_id")?.to_owned();
     let allocation = string(e, "allocation_id")?.to_owned();
     let status = normalized(&p["turn"]["status"]);
-    let host_rejected = e["host_deliveries"].as_object().is_some_and(|rows| rows.values().any(|row|
-        row["terminal_rejection_reconciled"] == true));
+    let host_rejected = e["host_deliveries"].as_object().is_some_and(|rows| {
+        rows.values()
+            .any(|row| row["terminal_rejection_reconciled"] == true)
+    });
     let outcome = match status.as_str() {
         "completed" if host_rejected => "FAILED",
         "completed" => "SUCCEEDED",
@@ -1995,6 +2106,7 @@ fn control(
         "adoption_begin" | "adoption_commit" => {
             let ref_id = string(p, "adoption_ref")?;
             let mut a = row(c, "prepared", ref_id)?;
+            let route_endpoints = policy.endpoints_for(string(&a, "host")?)?;
             if a["kind"] != "ADOPTION" {
                 return Err("INVALID_ADOPTION".into());
             }
@@ -2009,7 +2121,7 @@ fn control(
                     json!({"nonce":random_id()?,"boot":boot,"deadline":clock()+30000});
                 put(c, "prepared", ref_id, &a, changes)?;
                 return Ok(
-                    json!({"adoption_ref":ref_id,"nonce":a["observation"]["nonce"],"thread_id":a["thread_id"],"exact_turn_id":a["exact_turn_id"],"endpoints":policy.endpoints}),
+                    json!({"adoption_ref":ref_id,"nonce":a["observation"]["nonce"],"thread_id":a["thread_id"],"exact_turn_id":a["exact_turn_id"],"endpoints":route_endpoints}),
                 );
             }
             if !core::keys(p, "adoption_ref nonce observations")
@@ -2026,7 +2138,7 @@ fn control(
                 .as_array()
                 .ok_or("INVALID_ADOPTION_OBSERVATIONS")?;
             let mut endpoints = std::collections::BTreeSet::new();
-            if observations.len() != policy.endpoints.len() {
+            if observations.len() != route_endpoints.len() {
                 return Err("OBSERVATION_ENDPOINT_SET_MISMATCH".into());
             }
             for observation in observations {
@@ -2035,7 +2147,7 @@ fn control(
                     core::keys(observation, "endpoint thread")
                 } else {
                     core::keys(observation, "endpoint thread turn")
-                }) || !policy.endpoints.iter().any(|e| e == endpoint)
+                }) || !route_endpoints.iter().any(|e| e == endpoint)
                     || !endpoints.insert(endpoint)
                 {
                     return Err("OBSERVATION_ENDPOINT_SET_MISMATCH".into());
@@ -2085,6 +2197,7 @@ fn control(
             }
             let execution_policy = native_policy();
             let mut task = json!({"id":task_id,"task_id":task_id,"project":a["project"],"host":a["host"],"title":a["title"],"workspace_contract":a["workspace_contract"],"thread_id":a["thread_id"],"lifecycle":"OPEN","version":0,"execution_policy":execution_policy,"policy_hash":core::digest(&execution_policy),"adoption_evidence":observations});
+            node::inherit(&a, &mut task);
             task["repository_identity"] = resolution["repository_identity"].clone();
             task["workspace_resolution"] = resolution;
             if !a["canonical_handoff"].is_null() {
@@ -2335,7 +2448,10 @@ fn host_command(
             if !core::keys(p, "execution_ref call_id endpoint turn")
                 || p["endpoint"] != e["endpoint"]
                 || p["turn"]["id"] != e["turn_id"]
-                || !matches!(normalized(&p["turn"]["status"]).as_str(), "completed" | "failed")
+                || !matches!(
+                    normalized(&p["turn"]["status"]).as_str(),
+                    "completed" | "failed"
+                )
                 || row["call_state"] != "RUNNING"
                 || row["delivery_state"] != "FAILED"
                 || row["response_sent"] != true
@@ -2345,22 +2461,35 @@ fn host_command(
             {
                 return Err("HOST_REJECTION_RECONCILIATION_DENIED".into());
             }
-            let items = p["turn"]["items"].as_array().ok_or("HOST_REJECTION_ITEM_REQUIRED")?;
+            let items = p["turn"]["items"]
+                .as_array()
+                .ok_or("HOST_REJECTION_ITEM_REQUIRED")?;
             let exact: Vec<_> = items.iter().filter(|item| item["id"] == call_id).collect();
             if exact.len() != 1 {
                 return Err("HOST_REJECTION_ITEM_REQUIRED".into());
             }
             let item = exact[0];
-            let proved = item["contentItems"].as_array().is_some_and(|parts| parts.iter().any(|part|
-                part["text"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok())
-                .is_some_and(|body| body["error"] == "ROOT_CONTROLLED_WORKER_LAUNCHER_REQUIRED"
-                    && body["result_state"] == "RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH"
-                    && body["execution_state"] == "COMMAND_DISPATCHED"
-                    && body["reconciliation_required"] == true)));
+            let proved = item["contentItems"].as_array().is_some_and(|parts| {
+                parts.iter().any(|part| {
+                    part["text"]
+                        .as_str()
+                        .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                        .is_some_and(|body| {
+                            body["error"] == "ROOT_CONTROLLED_WORKER_LAUNCHER_REQUIRED"
+                                && body["result_state"]
+                                    == "RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH"
+                                && body["execution_state"] == "COMMAND_DISPATCHED"
+                                && body["reconciliation_required"] == true
+                        })
+                })
+            });
             // This named guard throws while evaluating spawn_argv, before
             // Popen. Generic command/transport failures prove no such fact.
-            if item["type"] != "dynamicToolCall" || item["namespace"] != "clinx"
-                || item["tool"] != "clinx_host_operation" || item["success"] != false || !proved
+            if item["type"] != "dynamicToolCall"
+                || item["namespace"] != "clinx"
+                || item["tool"] != "clinx_host_operation"
+                || item["success"] != false
+                || !proved
             {
                 return Err("HOST_PRESPAWN_REJECTION_UNPROVEN".into());
             }

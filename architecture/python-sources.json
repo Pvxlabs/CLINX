@@ -591,7 +591,7 @@
       "profiles": [
         "rust"
       ],
-      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+      "reason": "Centre entrypoint; wires reverse requests to Rust when Rust mode is enabled; retains existing pairing and approval boundary"
     },
     {
       "path": "clinx/nodes/node_protocol.py",
@@ -609,7 +609,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+      "reason": "Paired mTLS Node/Centre routing, including authenticated reverse Authority requests; no business state commit. Node runtime remains Python pending Rust port"
     },
     {
       "path": "clinx/nodes/node_service_entrypoint.py",
@@ -679,7 +679,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+      "reason": "Python exact Provider evidence and cancellation reads; supports Authority-selected endpoints; still an ACTIVE_RUNTIME dependency"
     },
     {
       "path": "clinx/provider/native_writer_probe.py",
@@ -714,7 +714,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current transport and tunnel supervisor implementation; target owner Rust"
+      "reason": "Python Provider transport consuming Rust host-specific endpoints and send permits; remote network Provider proxy still required"
     },
     {
       "path": "clinx/transport/tunnel_reliability.py",
@@ -733,6 +733,12 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "fixtures/test_node_authority_route.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Paired reverse Authority gateway identity, scope revocation, frame limits and unknown ACK regression"
     },
     {
       "path": "fixtures/test_rust_node_contract.py",
@@ -958,6 +964,12 @@
       "reason": "Explicit development or qualification only; excluded from runtime packages"
     },
     {
+      "path": "tools/qualification/run_local_tests.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Run preserved local tests through recorded import relocation and private fixture state"
+    },
+    {
       "path": "tools/qualification/runtime_lab/__init__.py",
       "role": "QUALIFICATION",
       "profiles": [],
@@ -968,12 +980,6 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Explicit development or qualification only; excluded from runtime packages"
-    },
-    {
-      "path": "tools/qualification/run_local_tests.py",
-      "role": "QUALIFICATION",
-      "profiles": [],
-      "reason": "Run preserved local tests through recorded import relocation and private fixture state"
     }
   ]
 }

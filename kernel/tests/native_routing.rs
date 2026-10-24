@@ -169,6 +169,7 @@ impl Fixture {
                 cwd: cwd.to_str().unwrap().into(),
             }],
             workspaces: vec![],
+            provider_routes: Default::default(),
             endpoints: vec!["/fixture/provider.sock".into()],
             lease_ms: 120000,
             host_operations: vec![

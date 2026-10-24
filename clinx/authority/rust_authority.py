@@ -29,7 +29,7 @@ class RustAuthorityClient:
     def request(self, operation: str, payload: dict, *, request_id: str) -> dict:
         if operation not in {"claim", "commit", "renew", "read_commit", "health"} and operation not in {
             "business." + op for op in (
-                "prepare", "start", "cancel", "get_status", "get_prepared", "list_tasks", "list_projects", "read_receipt",
+                "node_request", "prepare", "start", "cancel", "get_status", "get_prepared", "list_tasks", "list_projects", "read_receipt",
                 "work", "take_dispatch", "resume_dispatch", "successor_begin", "successor_take", "successor_commit", "successor_recover_empty",
                 "effective_policy", "register_git_target", "revoke_git_target", "resolve_git_target", "adoption_endpoints", "bind_thread", "authorize_send", "fail_before_send",
                 "observation_inventory", "observation_turns", "adopt", "adoption_begin", "adoption_commit", "prepare_policy", "apply_policy",

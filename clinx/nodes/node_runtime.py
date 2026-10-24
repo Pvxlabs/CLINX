@@ -128,10 +128,11 @@ def intersect_scope(local: SharingScope | None, centre: SharingScope | None) -> 
 class CentreService:
     """Authenticated registration uses observed peer address, never claimed host."""
 
-    def __init__(self, tls: PairedTLS, registry: NodeRegistry, approvals: NodeAuthorizationStore, *, stale_after: int = 45, observations=None):
+    def __init__(self, tls: PairedTLS, registry: NodeRegistry, approvals: NodeAuthorizationStore, *, stale_after: int = 45, observations=None, authority=None):
         self.tls, self.registry, self.approvals = tls, registry, approvals
         self.stale_after = stale_after
         self.observations = observations
+        self.authority = authority
 
     def handle(self, request: Mapping[str, Any], sock: Any, address: Any) -> dict[str, Any]:
         try:
@@ -141,7 +142,7 @@ class CentreService:
                 raise NodeProtocolError("NODE_IDENTITY_MISMATCH", "Claimed node does not match authenticated paired identity")
             if request.get("protocol_version") != NODE_PROTOCOL_VERSION:
                 raise NodeProtocolError("NODE_VERSION_INCOMPATIBLE", "Unsupported node protocol")
-            if request.get("operation") not in {"node.register", "node.heartbeat", "observation.upload"}:
+            if request.get("operation") not in {"node.register", "node.heartbeat", "observation.upload", "authority.request"}:
                 raise NodeProtocolError("UNKNOWN_NODE_OPERATION", "Centre accepts registration and heartbeat only")
             local_raw = request.get("sharing_scope")
             if not isinstance(local_raw, dict):
@@ -156,6 +157,31 @@ class CentreService:
                 if existing:
                     self.registry.revoke(node_id, existing.user_scope)
                 raise NodeProtocolError("SHARING_SCOPE_DENIED", "Both owner and centre approvals are required")
+            if request.get("operation") == "authority.request":
+                # The wire supplies intent only. The authenticated certificate
+                # and current registration/approval intersection supply scope.
+                from clinx.authority.rust_authority import RustAuthorityError
+                record = self.registry.get(node_id)
+                if (record is None or not record.authorized or record.stale
+                        or record.state == "OFFLINE" or record.public_key_fingerprint != peer["fingerprint"]):
+                    raise NodeProtocolError("REGISTRATION_REQUIRED", "Current authenticated registration is required")
+                effective = intersect_scope(effective, self.registry.scope(node_id, record.user_scope))
+                if not effective.allows("execution.authority"):
+                    raise NodeProtocolError("SHARING_SCOPE_DENIED", "Existing execute_tasks grant is required")
+                if self.authority is None:
+                    raise NodeProtocolError("RUST_AUTHORITY_NOT_CONFIGURED", "Reverse Authority route is unavailable")
+                request_id = request.get("request_id")
+                if not isinstance(request_id, str) or not 0 < len(request_id) <= 128:
+                    raise NodeProtocolError("INVALID_REQUEST_ID", "A bounded request identity is required")
+                envelope = dict(scope=dict(principal=dict(node_id=node_id,
+                    user_scope=effective.user_scope, fingerprint=peer["fingerprint"]),
+                    projects=list(effective.projects)), request_id=request_id,
+                    operation=request.get("command"), payload=request.get("payload"))
+                try:
+                    result = self.authority.call("node_request", envelope)
+                    return {"request_id": request_id, "result": result}
+                except RustAuthorityError as exc:
+                    return {"request_id": request_id, "error_code": str(exc)}
             if request.get("operation") == "observation.upload":
                 record = self.registry.get(node_id)
                 if not self.observations:
@@ -194,6 +220,44 @@ class CentreService:
     def server(self, *, address: str, port: int) -> NodeRPCServer:
         return NodeRPCServer(self, address=address, port=port,
                              ssl_context_factory=self.tls.server_context, request_handler=self.handle)
+
+
+class NodeAuthorityClient:
+    """Rust client interface over the existing paired channel; no retry or DB.
+
+    The Centre supplies the principal. This works on Mac without Linux IPC
+    credentials. Commands preserves request_id for explicit receipt readback.
+    """
+
+    def __init__(self, registration: NodeRegistrationClient, scope):
+        self.registration, self.scope = registration, scope
+
+    def request(self, operation: str, payload: dict, *, request_id: str) -> dict:
+        from clinx.authority.rust_authority import RustAuthorityError
+        from clinx.nodes.node_protocol import MAX_FRAME_BYTES
+        import json
+        if not operation.startswith("business."):
+            raise RustAuthorityError("UNSUPPORTED_OPERATION")
+        scope = self.scope() if callable(self.scope) else self.scope
+        if scope is None or not scope.allows("execution.authority"):
+            raise RustAuthorityError("SHARING_SCOPE_DENIED")
+        registration = self.registration
+        request = dict(operation="authority.request", protocol_version=NODE_PROTOCOL_VERSION,
+            node_id=registration.tls.identity.public["node_id"], sharing_scope=scope.as_dict(),
+            request_id=request_id, command=operation.removeprefix("business."), payload=payload)
+        if len(json.dumps(request, separators=(",", ":")).encode()) + 1 > MAX_FRAME_BYTES:
+            raise RustAuthorityError("REQUEST_TOO_LARGE")
+        try:
+            result = registration.tls.client(registration.centre_id, registration.endpoint,
+                timeout=registration.timeout).call(request)
+        except (OSError, ValueError):
+            # Includes a partial send or lost reply. Never replay here.
+            raise RustAuthorityError("DELIVERY_UNKNOWN") from None
+        if result.get("error_code"):
+            raise RustAuthorityError(result["error_code"])
+        if result.get("request_id") != request_id or not isinstance(result.get("result"), dict):
+            raise RustAuthorityError("DELIVERY_UNKNOWN")
+        return result["result"]
 
 
 class AuthorizedRemoteClient:

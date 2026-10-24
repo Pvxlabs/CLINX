@@ -82,14 +82,29 @@ fn main() -> Result<(), String> {
         if !info.is_file() || info.uid() != 0 || info.mode() & 0o022 != 0 {
             return Err("ROOT_CONTROLLED_WORKSPACE_OBSERVER_REQUIRED".into());
         }
-        clinx_decision_kernel::business::workspace_observer::configure(
-            program,
-            policy
-                .as_ref()
-                .and_then(|p| p.endpoints.first())
-                .ok_or("BUSINESS_POLICY_REQUIRED")?
-                .clone(),
-        )?;
+        let policy = policy.as_ref().ok_or("BUSINESS_POLICY_REQUIRED")?;
+        if policy.provider_routes.is_empty() {
+            clinx_decision_kernel::business::workspace_observer::configure(
+                program,
+                policy
+                    .endpoints
+                    .first()
+                    .ok_or("BUSINESS_POLICY_REQUIRED")?
+                    .clone(),
+            )?;
+        } else {
+            let routes = policy
+                .provider_routes
+                .iter()
+                .map(|(host, endpoints)| {
+                    if endpoints.len() != 1 {
+                        return Err("EXACT_WORKSPACE_PROVIDER_REQUIRED");
+                    }
+                    Ok((host.clone(), endpoints[0].clone()))
+                })
+                .collect::<Result<_, &str>>()?;
+            clinx_decision_kernel::business::workspace_observer::configure_routes(program, routes)?;
+        }
     }
     if !qualification {
         // Protect the path's parent identities, not merely the current inode.

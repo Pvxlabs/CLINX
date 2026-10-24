@@ -3,24 +3,37 @@
 use super::*;
 use std::{path::PathBuf, sync::OnceLock};
 
-static OBSERVER: OnceLock<(PathBuf, String)> = OnceLock::new();
+static OBSERVER: OnceLock<(PathBuf, BTreeMap<String, String>)> = OnceLock::new();
 
 pub fn configure(program: PathBuf, endpoint: String) -> Result<()> {
-    if !program.is_absolute() || !Path::new(&endpoint).is_absolute() {
+    configure_routes(program, BTreeMap::from([("*".into(), endpoint)]))
+}
+
+pub fn configure_routes(program: PathBuf, endpoints: BTreeMap<String, String>) -> Result<()> {
+    if !program.is_absolute()
+        || endpoints.is_empty()
+        || endpoints
+            .iter()
+            .any(|(host, path)| host.is_empty() || !Path::new(path).is_absolute())
+    {
         return Err("INVALID_WORKSPACE_OBSERVER".into());
     }
     OBSERVER
-        .set((program, endpoint))
+        .set((program, endpoints))
         .map_err(|_| "WORKSPACE_OBSERVER_ALREADY_CONFIGURED".into())
 }
 
-pub(super) fn read(mode: &str, cwd: &str, args: &[&str]) -> Result<Option<Value>> {
-    let Some((program, endpoint)) = OBSERVER.get() else {
+pub(super) fn read(host: &str, mode: &str, cwd: &str, args: &[&str]) -> Result<Option<Value>> {
+    let Some((program, endpoints)) = OBSERVER.get() else {
         // Direct Store tests and qualification retain their own local identity.
         // Production configures the immutable Provider adapter before serving.
         return Ok(None);
     };
-    let request = json!({"mode":mode,"cwd":cwd,"args":args});
+    let endpoint = endpoints
+        .get(host)
+        .or_else(|| endpoints.get("*"))
+        .ok_or("WORKSPACE_PROVIDER_ROUTE_REQUIRED")?;
+    let request = json!({"host":host,"mode":mode,"cwd":cwd,"args":args});
     let out = Command::new("/usr/bin/timeout")
         .args(["4", "/usr/bin/python3", "-I"])
         .arg(program)

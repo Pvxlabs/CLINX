@@ -130,7 +130,11 @@ def main(argv=None) -> int:
     registry = NodeRegistry(args.registry)
     from clinx.monitor.network_observation import ObservationWriter
     observations = ObservationWriter(args.observations) if args.observations else None
-    service = CentreService(PairedTLS(identity, peers), registry, NodeAuthorizationStore(args.state), stale_after=args.stale_after, observations=observations)
+    authority = None
+    if rust_authority_enabled():
+        from clinx.authority.rust_integration import Commands
+        authority = Commands.from_env()
+    service = CentreService(PairedTLS(identity, peers), registry, NodeAuthorizationStore(args.state), stale_after=args.stale_after, observations=observations, authority=authority)
     server = service.server(address=args.bind, port=args.port)
     collector = None
     if args.local_native_home or args.rust_projection:

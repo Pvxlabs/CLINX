@@ -29,9 +29,9 @@ from clinx.authority.rust_authority import RustAuthorityError
 from clinx.authority.rust_integration import Commands, stable_key
 
 
-def desktop_client(cfg, thread_id, cwd, *, host_tools=False):
+def desktop_client(cfg, thread_id, cwd, *, host_tools=False, route_endpoints=None):
     """One configured Desktop endpoint; no Provider discovery or fallback."""
-    configured = endpoints(cfg)
+    configured = endpoints(cfg) if route_endpoints is None else route_endpoints
     if len(configured) != 1:
         raise RustAuthorityError('EXACT_DESKTOP_ENDPOINT_REQUIRED')
     client = existing_client(configured[0], cfg.app_server.request_timeout_seconds, read_only=False)
@@ -71,7 +71,7 @@ class RustDispatcher:
         # Every execution surface uses the configured Desktop daemon. The
         # logical endpoint remains stable for Rust receipt identity; deployment
         # publishes that alias to the Desktop socket, never another daemon.
-        factory = desktop_client(self.cfg, tid, cwd, host_tools=host_tools)
+        factory = desktop_client(self.cfg, tid, cwd, host_tools=host_tools, route_endpoints=take.get('endpoints'))
         if host_tools:
             from clinx.host.host_executor import HostExecutor
             from clinx.host.rust_host import configure, host_policy
@@ -366,7 +366,8 @@ class RustDispatcher:
                             grant = self.commands.call('take_cancel', dict(execution_ref=eid),
                                                        key=stable_key('cancel', eid))
                             if grant.get('send_permitted'):
-                                cancel_native_turn(self.cfg, grant['thread_id'], grant['turn_id'])
+                                cancel_native_turn(self.cfg, grant['thread_id'], grant['turn_id'],
+                                    **({'route_endpoints': [grant['endpoint']]} if grant.get('endpoint') else {}))
                         except RustAuthorityError as exc:
                             if str(exc) != 'CANCEL_NOT_AVAILABLE':
                                 raise

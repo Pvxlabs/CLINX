@@ -345,7 +345,7 @@ def select_execution_client(cfg, tid, *, read_only=True, turn_id=None):
     return client
 
 
-def cancel_native_turn(cfg, tid, turn_id):
+def cancel_native_turn(cfg, tid, turn_id, *, route_endpoints=None):
     """Interrupt only the explicitly selected live native turn. Never resume.
 
     Authorization and durable request audit are owned by NodeService. An RPC
@@ -353,7 +353,8 @@ def cancel_native_turn(cfg, tid, turn_id):
     """
     if not isinstance(turn_id, str) or not turn_id or len(turn_id) > 256:
         raise NativeWriterError('INVALID_NATIVE_TURN_ID', 'A bounded exact turn id is required')
-    evidence = observe_execution(cfg, tid, turn_id)
+    evidence = (observe_execution(cfg, tid, turn_id) if route_endpoints is None else
+                observe_execution(cfg, tid, turn_id, route_endpoints=route_endpoints))
     if evidence.get('provider_liveness') != 'LIVE' or not evidence.get('owner_endpoint'):
         error = NativeWriterError('NATIVE_EXECUTION_OWNER_UNPROVEN', 'Exact live owner must be proved before cancellation')
         error.liveness_evidence = evidence
@@ -364,7 +365,8 @@ def cancel_native_turn(cfg, tid, turn_id):
                           client_version=cfg.app_server.client_version)
         # Repeat at the write boundary. The exact turn parameter also prevents
         # a delayed request from interrupting a successor turn.
-        current = observe_execution(cfg, tid, turn_id)
+        current = (observe_execution(cfg, tid, turn_id) if route_endpoints is None else
+                   observe_execution(cfg, tid, turn_id, route_endpoints=route_endpoints))
         if current.get('provider_liveness') != 'LIVE' or current.get('owner_endpoint') != endpoint:
             raise NativeWriterError('NATIVE_EXECUTION_OWNER_CHANGED', 'Native owner changed before interrupt')
         client.turn_interrupt(tid, turn_id)
@@ -374,11 +376,11 @@ def cancel_native_turn(cfg, tid, turn_id):
                 'provider_observation': current}
 
 
-def observe_execution(cfg, tid, turn_id):
+def observe_execution(cfg, tid, turn_id, *, route_endpoints=None):
     """Read every configured endpoint, bounded to five pages of exact turns."""
     from clinx.provider.liveness import classify
     observations = []
-    for endpoint in endpoints(cfg):
+    for endpoint in endpoints(cfg) if route_endpoints is None else route_endpoints:
         state = "UNKNOWN"
         try:
             with existing_client(endpoint) as client:

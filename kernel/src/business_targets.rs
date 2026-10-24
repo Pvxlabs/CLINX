@@ -14,6 +14,7 @@ const FIELDS: &[&str] = &[
 ];
 
 fn inspect(policy: &Policy, task: &Value, path: &str) -> Result<Value> {
+    let host = string(task, "host")?;
     let candidate = Path::new(path);
     let parent = string(&task["workspace_contract"], "cwd")?;
     if !candidate.is_absolute()
@@ -33,41 +34,52 @@ fn inspect(policy: &Policy, task: &Value, path: &str) -> Result<Value> {
     let marker = candidate.join(".git");
     if !marker.is_file()
         || marker.is_symlink()
-        || git(path, &["rev-parse", "--show-toplevel"])? != path
+        || git(host, path, &["rev-parse", "--show-toplevel"])? != path
     {
         return Err("LINKED_WORKTREE_REQUIRED".into());
     }
     let common = git(
+        host,
         parent,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
     )?;
     if git(
+        host,
         path,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
     )? != common
     {
         return Err("GIT_TARGET_REPOSITORY_CONFLICT".into());
     }
-    let dir = git(path, &["rev-parse", "--path-format=absolute", "--git-dir"])?;
+    let dir = git(
+        host,
+        path,
+        &["rev-parse", "--path-format=absolute", "--git-dir"],
+    )?;
     if !Path::new(&dir).starts_with(Path::new(&common).join("worktrees"))
-        || !git(parent, &["worktree", "list", "--porcelain", "-z"])?
+        || !git(host, parent, &["worktree", "list", "--porcelain", "-z"])?
             .split('\0')
             .any(|s| s == format!("worktree {path}"))
     {
         return Err("LINKED_WORKTREE_REQUIRED".into());
     }
-    let origin = git(parent, &["remote", "get-url", "--all", "origin"])?;
+    let origin = git(host, parent, &["remote", "get-url", "--all", "origin"])?;
     if task["repository_origin"] != origin
         || origin.is_empty()
         || origin.contains('\n')
-        || git(path, &["remote", "get-url", "--all", "origin"])? != origin
-        || git(path, &["remote", "get-url", "--push", "--all", "origin"])? != origin
+        || git(host, path, &["remote", "get-url", "--all", "origin"])? != origin
+        || git(
+            host,
+            path,
+            &["remote", "get-url", "--push", "--all", "origin"],
+        )? != origin
     {
         return Err("GIT_TARGET_ORIGIN_CONFLICT".into());
     }
-    let branch = git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
-    git(path, &["check-ref-format", "--branch", &branch])?;
+    let branch = git(host, path, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
+    git(host, path, &["check-ref-format", "--branch", &branch])?;
     let remote_head = git(
+        host,
         path,
         &[
             "for-each-ref",
@@ -75,7 +87,7 @@ fn inspect(policy: &Policy, task: &Value, path: &str) -> Result<Value> {
             "refs/remotes/origin/HEAD",
         ],
     )?;
-    let config = git(path, &["config", "--list"])?;
+    let config = git(host, path, &["config", "--list"])?;
     if ["main", "master"].contains(&branch.as_str())
         || remote_head == format!("refs/remotes/origin/{branch}")
         || config
@@ -93,6 +105,7 @@ fn inspect(policy: &Policy, task: &Value, path: &str) -> Result<Value> {
         "rebase-apply",
     ] {
         if Path::new(&git(
+            host,
             path,
             &["rev-parse", "--path-format=absolute", "--git-path", marker],
         )?)

@@ -46,6 +46,7 @@ print(json.dumps(value))
             cwd: "/provider-only/repo".into(),
         }],
         workspaces: vec![],
+        provider_routes: Default::default(),
         endpoints: vec!["/fixture/provider.sock".into()],
         lease_ms: 120000,
         host_operations: vec![],

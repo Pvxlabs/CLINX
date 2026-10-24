@@ -92,6 +92,7 @@ pub(super) fn command(
     }
     let task_id = string(&e, "task_ref")?.to_owned();
     let mut task = row(c, "task", &task_id)?;
+    let route_endpoints = policy.endpoints_for(string(&task, "host")?)?;
     let prepared = row(c, "prepared", string(&e, "prepared_execution_ref")?)?;
     targets::validate(policy, Some(&task), &prepared["execution_policy"])?;
     if task["active_execution"] != eid || task["policy_hash"] != prepared["policy_hash"] {
@@ -153,10 +154,7 @@ pub(super) fn command(
         let checkpoint = &task["native_checkpoint"];
         if checkpoint["thread_id"] != e["predecessor_thread_id"]
             || !checkpoint["turn"]["id"].is_string()
-            || !policy
-                .endpoints
-                .iter()
-                .any(|s| checkpoint["endpoint"] == *s)
+            || !route_endpoints.iter().any(|s| checkpoint["endpoint"] == *s)
         {
             return Err("EXACT_PREDECESSOR_TURN_REQUIRED".into());
         }
@@ -173,14 +171,13 @@ pub(super) fn command(
         let observations = p["observations"]
             .as_array()
             .ok_or("INVALID_HANDOFF_OBSERVATION")?;
-        if observations.len() != policy.endpoints.len() {
+        if observations.len() != route_endpoints.len() {
             return Err("OBSERVATION_ENDPOINT_SET_MISMATCH".into());
         }
         let mut seen = std::collections::BTreeSet::new();
         for observation in observations {
             if !core::keys(observation, "endpoint thread turn")
-                || !policy
-                    .endpoints
+                || !route_endpoints
                     .iter()
                     .any(|s| observation["endpoint"] == *s)
                 || !seen.insert(string(observation, "endpoint")?)
@@ -200,7 +197,7 @@ pub(super) fn command(
         if !core::keys(p, "execution_ref epoch ticket nonce endpoint thread")
             || p["nonce"] != e["handoff"]["nonce"]
             || e["handoff"]["state"] != "CREATING"
-            || !policy.endpoints.iter().any(|s| p["endpoint"] == *s)
+            || !route_endpoints.iter().any(|s| p["endpoint"] == *s)
             || p["thread"]["cwd"] != prepared["workspace_contract"]["cwd"]
             || p["thread"]["status"]["type"] != "idle"
             || p["thread"]["id"] == e["handoff"]["source"]["thread_id"]

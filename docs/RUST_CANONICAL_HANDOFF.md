@@ -1,5 +1,8 @@
 # Rust canonical handoff：身份与 predecessor 事务
 
+后续基于 `c440856` 的反向请求与按 host 选择证据端点进展见
+[第七轮节点路由记录](RUST_NODE_ROUTING.md)。本页保留第六轮当时的验收范围。
+
 2026-10-24，基于 main `30d5a5f390c17a94ae0d4b2a022408fa3e6871b0`。
 本轮范围是剩余 Mac 业务核心的迁移，未重复整理目录。
 
