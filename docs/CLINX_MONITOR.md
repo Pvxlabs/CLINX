@@ -305,6 +305,10 @@ and native turn through its configured Provider, and recheck grants and identity
 before returning content. Local external conversations retain the existing
 Desktop Observer route; remote conversations stay with their owning node.
 The Observer does not receive authority database access or write commands.
+The versioned [Rust Observer deployment override](monitor/OBSERVER_DEPLOYMENT.md#rust-mcp-deployment-override-2026-10-24)
+binds the MCP socket directory so replacing the socket does not leave the
+Observer pinned to a dead socket inode. Future release deployments must render
+the repository template rather than reuse the old single-socket bind.
 
 The macOS source candidate is **0.3.1 (4)**. It preserves canonical execution
 identity, recognizes Rust terminal states, and shows the returned authority in

@@ -1,0 +1,9 @@
+# Render @RELEASE@ as the verified immutable Rust release directory.
+# Install as clinx-observer.service.d/97-rust-monitor.conf.
+[Service]
+Environment=PYTHONPATH=@RELEASE@/control:@RELEASE@/deps
+Environment=CLINX_OBSERVER_RUST_MCP=/tmp/clinx-rust-monitor/mcp.sock
+# Bind the directory so socket replacement does not pin a dead socket inode.
+BindReadOnlyPaths=/run/clinx-rust-api:/tmp/clinx-rust-monitor
+ExecStart=
+ExecStart=/usr/bin/python3 -B @RELEASE@/control/observer_server.py

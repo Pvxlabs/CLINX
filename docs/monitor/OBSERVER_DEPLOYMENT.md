@@ -54,6 +54,61 @@ the application opens only the configured canonical DB and exposes an allowliste
 projection. It has no filesystem endpoint. This does not introduce a database
 column-level security boundary; a future separate database principal is out of scope.
 
+## Rust MCP deployment override (2026-10-24)
+
+For the existing Rust-backed Observer, the source of truth for
+`clinx-observer.service.d/97-rust-monitor.conf` is
+[`systemd/clinx-observer-rust-monitor.conf.in`](../../systemd/clinx-observer-rust-monitor.conf.in).
+Use this template when selecting a new immutable Rust release; do not regenerate
+the override from an older deployed copy. The legacy DB deployment above remains
+separate: this override selects the existing read-only Rust MCP projection and
+does not open or import the legacy task database.
+
+Render `@RELEASE@` with the verified `/var/lib/clinx-rust/releases/rust-<20 hex>`
+directory for the intended deployment. For example, from the repository root,
+with `release` selected and `candidate` pointing into the deployment's artifact
+directory (not the live unit directory):
+
+```sh
+python3 - "$release" "$candidate" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+release, candidate = sys.argv[1:]
+if not re.fullmatch(r'/var/lib/clinx-rust/releases/rust-[0-9a-f]{20}', release):
+    raise SystemExit('Expected a verified immutable Rust release path')
+template = Path('systemd/clinx-observer-rust-monitor.conf.in').read_text()
+with Path(candidate).open('x') as output:
+    output.write(template.replace('@RELEASE@', release))
+PY
+```
+
+The endpoint must be `/tmp/clinx-rust-monitor/mcp.sock` and the read-only bind
+must be **the directory** `/run/clinx-rust-api:/tmp/clinx-rust-monitor`.
+Binding `/run/clinx-rust-api/mcp.sock` as a single file pins its inode inside the
+Observer's mount namespace. After the production socket is replaced, that bind
+can still point to the dead socket and cause `RUST_OBSERVATION_UNAVAILABLE` or
+`PROJECTION_UNAVAILABLE` even while the current production endpoint is healthy.
+The directory bind follows socket entries recreated inside the existing source
+directory. Replacing the source directory itself still requires a new bind.
+
+This template replaces only the existing `97-rust-monitor.conf`. Retain the base
+unit, bearer environment file and existing sandbox/native-route overrides,
+including `AF_INET AF_UNIX` support. Keep `PrivateTmp=yes` and the existing
+`InaccessiblePaths=/run`; the socket is exposed through the explicit read-only
+directory bind. No socket permission or credential changes are required.
+
+Before activation, validate the merged unit with `systemd-analyze --user verify`
+and compare its effective endpoint/bind and release paths with the candidate.
+Installing source or rendering the candidate does not activate it. A deployment
+must separately authorize any Observer restart; it must not restart the Rust
+Authority, Provider, Dispatcher, Centre, or node helpers. After authorized
+activation, verify authenticated `/v1/health` and `/v2/observations`, current node
+coverage, and the installed App's `CURRENT`/connected state. Check the production
+socket and the Observer namespace socket refer to the same inode. Preserve task
+service PID/start/restart snapshots and the previous override for rollback.
+
 ## Network and authorization scope
 
 Backend: `127.0.0.1:8766` only. Planned frontend:
