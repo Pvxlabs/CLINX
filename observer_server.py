@@ -1,6 +1,7 @@
 """CLINX Monitor v1: a read-only projection of the canonical registry.
 
-No TaskRegistry construction, migrations, provider calls, reconciliation or writes.
+No TaskRegistry construction, migrations, reconciliation or business writes.
+Optional exact native reads use an existing daemon with a read-only client.
 Run separately from the authority. The HTTP listener is always loopback-only.
 """
 from __future__ import annotations
@@ -530,6 +531,28 @@ class ObserverAPI:
             raise APIError(400, "INVALID_QUERY") from None
         if any(len(v) != 1 for v in query.values()):
             raise APIError(400, "INVALID_QUERY")
+        native = re.fullmatch(r"/v2/native/([0-9a-f-]{36})", url.path)
+        if native:
+            from rust_reads import observe_desktop
+            from rust_authority import RustAuthorityError
+            from thread_identity import ThreadLookupError
+            from node_protocol import NodeProtocolError
+            if set(query) - {'context', 'recent_turns', 'max_bytes', 'cursor'}:
+                raise APIError(400, 'INVALID_QUERY')
+            try:
+                context = query.get('context', ['0'])[0]
+                if context not in ('0', '1'):
+                    raise ValueError()
+                return observe_desktop(self.observations, native[1], context=context == '1',
+                    recent_turns=int(query.get('recent_turns', ['8'])[0]),
+                    max_bytes=int(query.get('max_bytes', ['32000'])[0]),
+                    cursor=query.get('cursor', [None])[0])
+            except (NodeProtocolError, ThreadLookupError) as exc:
+                raise APIError(400, exc.code) from None
+            except RustAuthorityError as exc:
+                raise APIError(400, str(exc)) from None
+            except (TypeError, ValueError):
+                raise APIError(400, 'INVALID_QUERY') from None
         if url.path.startswith("/v2/observations"):
             from node_protocol import NodeProtocolError
             if self.observations is None:

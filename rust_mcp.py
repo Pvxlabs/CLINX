@@ -28,18 +28,31 @@ def configure(tools):
             'read_only':boolean}, ('prepared_execution_ref','task_ref','request_hash','workspace_contract','execution_started')),
         'clinx_start_execution': obj(execution, ('execution_ref','task_ref','status','resource_state','authority')),
         'clinx_cancel_execution': obj(execution, ('execution_ref','task_ref','status','resource_state','authority')),
-        'clinx_get_status': dict(oneOf=[obj(execution, ('execution_ref','task_ref','status','resource_state','authority')),
-                                       obj(task, ('task_ref','lifecycle','workspace_contract','authority'))]),
         'clinx_find_task': obj(dict(tasks=dict(type='array',items=obj(task,('task_ref',))),read_only=boolean), ('tasks','read_only')),
         'clinx_list_projects': obj(dict(projects=dict(type='array',items=obj(dict(project=string,host=string,cwd=string))),read_only=boolean), ('projects','read_only')),
         'clinx_get_capabilities': obj(dict(authority=dict(const='RUST',type='string'),capabilities=dict(type='array',items=string),
             legacy_history=boolean,host_tools=boolean,read_only=boolean), ('authority','capabilities')),
-        'clinx_get_context': obj(dict(thread_id=string,task_ref=nullable,context=dict(type='object'),read_only=boolean), ('context','read_only')),
         'clinx_adopt_conversation': obj(dict(adoption_ref=string,adoption_status=string,task_ref=string,
             thread_id=string,workspace_contract=seal,read_only=boolean), ('adoption_status','task_ref','thread_id')),
     }
     for tool in tools:
         name = tool['name']
+        if name in {'clinx_get_status', 'clinx_get_context'}:
+            # Retain the published exact-native response contract as well as
+            # Rust task/execution projections. All branches remain read-only.
+            native = tool['outputSchema']
+            native['properties']['thread_id'] = nullable
+            native['properties']['execution_result']['anyOf'][0]['properties'].update(
+                outcome=string, result_ref=string)
+            if name == 'clinx_get_status':
+                tool['outputSchema'] = dict(anyOf=[native,
+                    obj(execution, ('execution_ref','task_ref','status','resource_state','authority')),
+                    obj(task, ('task_ref','lifecycle','workspace_contract','authority'))])
+            else:
+                tool['outputSchema']['properties']['thread_id'] = nullable
+                tool['outputSchema']['properties']['context'] = dict(type='object')
+                tool['inputSchema']['anyOf'].append({'required': ['execution_ref'],
+                    'not': {'anyOf': [{'required': [k]} for k in ('query', 'thread_id', 'codex_uri')]}})
         if name in outputs:
             tool['outputSchema'] = outputs[name]
         if name == 'clinx_prepare_execution':

@@ -177,17 +177,122 @@ class RustIntegration:
             raise RustAuthorityError('EXACT_RUST_EXECUTION_REQUIRED')
         return self.commands.call('cancel', dict(execution_ref=execution_ref, approved=approved))
 
-    def get_status(self, *, execution_ref=None, task_ref=None, **selectors):
-        if any(v is not None for v in selectors.values()):
-            raise RustAuthorityError('EXACT_RUST_EXECUTION_REQUIRED')
+    def _read_target(self, *, execution_ref=None, task_ref=None, thread_id=None, codex_uri=None,
+                     host=None, project=None, node_id=None, query=None):
+        from thread_identity import resolve_selector, ThreadLookupError
+        if query is not None:
+            raise RustAuthorityError('EXACT_THREAD_SELECTOR_REQUIRED')
+        selected = None
+        task = None
         if execution_ref:
-            result = self.commands.call('get_status', dict(execution_ref=execution_ref))
-            if task_ref and result['task_ref'] != task_ref:
+            selected = self.commands.call('get_status', dict(execution_ref=execution_ref))
+            if task_ref not in (None, selected['task_ref']):
                 raise RustAuthorityError('TASK_ROUTE_MISMATCH')
-            return result
+            task_ref = selected['task_ref']
         if task_ref:
-            return self._task_public(vars(self.registry.get_task(task_ref)))
-        raise RustAuthorityError('EXACT_RUST_EXECUTION_REQUIRED')
+            task = self.registry.get_task(task_ref)
+        if thread_id is not None or codex_uri is not None:
+            try:
+                thread_id, resolved, _ = resolve_selector(self.cfg, thread_id=thread_id,
+                                                         codex_uri=codex_uri, host=host)
+            except ThreadLookupError as exc:
+                raise RustAuthorityError(exc.code) from None
+            host = resolved
+            if selected and thread_id != selected['thread_id']:
+                raise RustAuthorityError('EXECUTION_TURN_IDENTITY_CONFLICT')
+            if not task:
+                matches = [t for t in self.registry.tasks() if t['thread_id'] == thread_id]
+                if len(matches) > 1:
+                    raise RustAuthorityError('THREAD_IDENTITY_CONFLICT')
+                if matches:
+                    task = self.registry.get_task(matches[0]['task_id'])
+        elif selected:
+            thread_id = selected['thread_id']
+        elif task:
+            thread_id = task.thread_id
+        if host not in (None, self.cfg.runtime_host) or node_id not in (None, self.cfg.runtime_host):
+            raise RustAuthorityError('NATIVE_HOST_UNAVAILABLE')
+        if task:
+            if host not in (None, task.host) or project not in (None, task.project_alias):
+                raise RustAuthorityError('TASK_ROUTE_MISMATCH')
+            if not selected and thread_id != task.thread_id:
+                raise RustAuthorityError('TASK_ROUTE_MISMATCH')
+        if not thread_id:
+            raise RustAuthorityError('EXACT_THREAD_SELECTOR_REQUIRED')
+        return thread_id, task, selected
+
+    def get_status(self, *, execution_ref=None, task_ref=None, thread_id=None, codex_uri=None,
+                   host=None, project=None, node_id=None, query=None):
+        if thread_id is None and codex_uri is None and all(v is None for v in (host, project, node_id, query)):
+            if execution_ref:
+                result = self.commands.call('get_status', dict(execution_ref=execution_ref))
+                if task_ref and result['task_ref'] != task_ref:
+                    raise RustAuthorityError('TASK_ROUTE_MISMATCH')
+                return result
+            if task_ref:
+                return self._task_public(vars(self.registry.get_task(task_ref)))
+        tid, task, selected = self._read_target(execution_ref=execution_ref, task_ref=task_ref,
+            thread_id=thread_id, codex_uri=codex_uri, host=host, project=project, node_id=node_id, query=query)
+        return self._read_native(tid, task, selected, project=project)
+
+    def _read_native(self, tid, task, selected, *, context=False, project=None,
+                     recent_turns=8, max_bytes=32000, cursor=None):
+        from rust_reads import desktop_read, stamp
+        if task is None:
+            result = desktop_read(tid, context=context, recent_turns=recent_turns, max_bytes=max_bytes, cursor=cursor)
+            if project is not None and project != result.get('project'):
+                raise RustAuthorityError('THREAD_SCOPE_MISMATCH')
+            return result
+        from native_provider import existing_client, endpoints
+        from native_history import context_result
+        exact = selected.get('native_turn_id') if selected else None
+        if selected and context and not exact:
+            raise RustAuthorityError('EXACT_NATIVE_TURN_UNAVAILABLE')
+        if exact and cursor is not None:
+            raise RustAuthorityError('EXECUTION_CONTEXT_CURSOR_NOT_SUPPORTED')
+        # Managed threads always use the configured production Provider. Never
+        # route a business read to Desktop based on its latest visible turn.
+        with existing_client(endpoints(self.cfg)[0], self.cfg.app_server.request_timeout_seconds) as client:
+            client.initialize(client_name=self.cfg.app_server.client_name, client_title=self.cfg.app_server.client_title,
+                              client_version=self.cfg.app_server.client_version)
+            native = client.thread_read(tid)
+            if native.get('id') != tid or native.get('cwd') != task.workspace_contract['cwd']:
+                raise RustAuthorityError('NATIVE_OBSERVATION_IDENTITY_CONFLICT')
+            page = None
+            if context:
+                if exact:
+                    from rust_transport import RustDispatcher
+                    page = dict(data=[RustDispatcher.exact_turn(client, tid, exact)], nextCursor=None)
+                else:
+                    page = client.thread_turns_list(tid, limit=recent_turns, items_view='full', cursor=cursor)
+        state = native.get('status', {}).get('type', 'UNKNOWN')
+        result = dict(queried_thread_id=tid, thread_id=tid, host=task.host, project=task.project_alias,
+            task_ref=task.task_id, execution_ref=selected['execution_ref'] if selected else None,
+            execution_turn_ref=exact, execution_state=selected['status'] if selected else None,
+            execution_result=selected.get('execution_result') if selected else None,
+            lookup_status='RESOLVED', read_only=True, observed_at=stamp(), status_source='RUST_AUTHORITY',
+            selection_scope='EXACT_EXECUTION' if selected else 'QUERIED_THREAD',
+            task_current_projection=self._task_public(vars(task)),
+            current_thread_id=task.thread_id, is_current_thread=tid == task.thread_id,
+            native_thread=dict(id=tid, cwd=native.get('cwd'), status=native.get('status')),
+            provider_observation=dict(state=state, source='LIVE_THREAD_READ', writer_claimed=False),
+            native_status_source='LIVE_THREAD_READ', native_display_state='RUNNING' if state == 'active' else 'IDLE' if state == 'idle' else 'UNKNOWN')
+        if context:
+            # Project only user-visible messages; preserve original final Markdown.
+            entries = [dict(item=item, turn_id=turn['id']) for turn in reversed(page['data'])
+                       for item in turn.get('items', [])]
+            result.update(context_result(tid, entries, source='LIVE_PROVIDER_TURNS', max_bytes=max_bytes,
+                turns=[t['id'] for t in page['data']], next_cursor=page.get('nextCursor')))
+            result['context_scope'] = 'EXACT_EXECUTION_TURN' if exact else 'THREAD_RECENT'
+            result['provenance']['execution_attribution'] = selected['execution_ref'] if selected else 'NOT_CLAIMED'
+            import json
+            # Retain the former page field only within the requested budget;
+            # large turns still have a bounded public-message projection.
+            if len(json.dumps(page).encode()) <= max_bytes:
+                result['context'] = page
+            else:
+                result['context_truncated'] = True
+        return result
 
     def get_effective_authority(self, *, task_ref, requested_operations=None):
         effective = self.commands.call('effective_policy', dict(task_ref=task_ref))
@@ -241,42 +346,13 @@ class RustIntegration:
                     legacy_history=False, host_tools=True, read_only=True)
 
     def get_context(self, *, task_ref=None, thread_id=None, host=None, project=None, execution_ref=None,
-                    recent_turns=8, max_bytes=32000, cursor=None, codex_uri=None):
-        if cursor or codex_uri:
-            raise RustAuthorityError('EXACT_THREAD_SELECTOR_REQUIRED')
-        exact_turn_id = None
-        if execution_ref:
-            execution = self.commands.call('get_status', dict(execution_ref=execution_ref))
-            if task_ref not in (None, execution['task_ref']) or thread_id not in (None, execution['thread_id']):
-                raise RustAuthorityError('EXECUTION_TURN_IDENTITY_CONFLICT')
-            task_ref, thread_id = execution['task_ref'], execution['thread_id']
-            task = self.registry.get_task(task_ref)
-            if host not in (None, task.host) or project not in (None, task.project_alias):
-                raise RustAuthorityError('TASK_ROUTE_MISMATCH')
-            host = task.host
-            exact_turn_id = execution['native_turn_id']
-            if not exact_turn_id:
-                raise RustAuthorityError('EXACT_NATIVE_TURN_UNAVAILABLE')
-        elif task_ref:
-            task = self.registry.get_task(task_ref)
-            if thread_id not in (None, task.thread_id) or host not in (None, task.host):
-                raise RustAuthorityError('TASK_ROUTE_MISMATCH')
-            thread_id, host = task.thread_id, task.host
-        if not thread_id or host not in (None, self.cfg.runtime_host):
-            raise RustAuthorityError('LOCAL_EXACT_THREAD_REQUIRED')
-        from native_provider import select_execution_client
-        with select_execution_client(self.cfg, thread_id) as client:
-            client.initialize(client_name=self.cfg.app_server.client_name, client_title=self.cfg.app_server.client_title,
-                              client_version=self.cfg.app_server.client_version)
-            if exact_turn_id:
-                from rust_transport import RustDispatcher
-                page = dict(data=[RustDispatcher.exact_turn(client, thread_id, exact_turn_id)], nextCursor=None)
-            else:
-                page = client.thread_turns_list(thread_id, limit=min(20, max(1, recent_turns)), items_view='full')
-        import json
-        if len(json.dumps(page).encode()) > min(524288, max_bytes):
-            raise RustAuthorityError('CONTEXT_CAPACITY_EXCEEDED')
-        return dict(thread_id=thread_id, task_ref=task_ref, context=page, read_only=True)
+                    recent_turns=None, max_bytes=None, cursor=None, codex_uri=None, query=None, node_id=None):
+        from rust_reads import limits
+        recent_turns, max_bytes = limits(recent_turns, max_bytes)
+        tid, task, selected = self._read_target(execution_ref=execution_ref, task_ref=task_ref,
+            thread_id=thread_id, codex_uri=codex_uri, host=host, project=project, query=query, node_id=node_id)
+        return self._read_native(tid, task, selected, context=True, project=project,
+                                 recent_turns=recent_turns, max_bytes=max_bytes, cursor=cursor)
 
     def execute(self, **arguments):
         raise RustAuthorityError('SEALED_PREPARATION_REQUIRED')
