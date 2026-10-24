@@ -63,6 +63,8 @@ struct ObservationTurn: Codable, Identifiable, Sendable, Equatable {
     let summary: String?
     let artifacts: [String]
     var source: String? = nil
+    /// Exact native turn_context evidence, absent on older Observer versions.
+    var model: String? = nil
     var isTerminal: Bool {
         ["COMPLETED", "FAILED", "CANCELLED", "INTERRUPTED", "TIMED_OUT", "DISCONNECTED"].contains(nativeState)
         || ["COMPLETED", "IN_REVIEW", "SUCCEEDED", "FAILED", "CANCELLED", "FENCED"].contains(executionState ?? "")

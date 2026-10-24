@@ -11,7 +11,7 @@ import sqlite3
 import time
 import uuid
 
-from native_history import NativeHistory, ThreadLookupError, message, normalize_native_status, readonly, _budget_sql
+from native_history import NativeHistory, ThreadLookupError, message, model_identifier, normalize_native_status, readonly, _budget_sql
 from network_observation import compact, clean, MAX_BATCH, TERMINAL
 from node_protocol import NODE_PROTOCOL_VERSION, SUPPORTED_PROVIDER, NodeProtocolError
 
@@ -133,7 +133,9 @@ class CodexObservationSource:
                         for key in ("history_before","history_complete","active_turns"):
                             state.pop(key,None)
                         state["history_thread_id"]=history_tid
-                    fields="turn_id,rollout_ordinal,status,started_at,completed_at"
+                    columns={r[1] for r in c.execute("PRAGMA table_info(thread_turns)")}
+                    fields="turn_id,rollout_ordinal,status,started_at,completed_at,"+(
+                        "rollout_byte_offset" if "rollout_byte_offset" in columns else "NULL AS rollout_byte_offset")
                     recent=[dict(r) for r in c.execute("SELECT "+fields+" FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 4",(history_tid,))]
                     if state.get("history_complete"):
                         state["history_before"]=9223372036854775807
@@ -154,7 +156,8 @@ class CodexObservationSource:
                         "native_state":normalize_native_status(r["status"]),"started_at":r["started_at"],
                         "completed_at":r["completed_at"],"summary":context.get("last_codex_result"),
                         "progress":context.get("last_codex_result") if normalize_native_status(r["status"])=="RUNNING" else None,
-                        "result_processing":"UNMANAGED"})
+                        "result_processing":"UNMANAGED",
+                        "model":self.history.turn_model(tid,metadata,r["turn_id"],r["rollout_byte_offset"])})
                 if not state.get("history_complete"): coverage="HISTORY_BACKFILL"
             except (ThreadLookupError,sqlite3.Error,OSError):
                 coverage="NATIVE_HISTORY_UNAVAILABLE"
@@ -174,6 +177,8 @@ class CodexObservationSource:
                 turn["ordinal"]=original["ordinal"]
                 if original.get("live_observation"):
                     turn["live_observation"]=original["live_observation"]
+                if original.get("model"):
+                    turn["model"]=original["model"]
                 if not turn.get("summary"): turn["summary"]=original.get("summary")
                 turns.remove(original)
         turns+=canonical
@@ -262,6 +267,8 @@ class CodexObservationSource:
                 if current: turns[current["turn_id"]]=dict(current)
                 current={"turn_id":turn_id,"ordinal":order(row.get("timestamp"),offset),
                          "native_state":"RUNNING","started_at":row.get("timestamp"),"result_processing":"UNMANAGED"}
+                if row.get("type")=="turn_context":
+                    current["model"]=model_identifier(payload.get("model"))
             if not current or not current.get("turn_id"): continue
             if row.get("type")=="event_msg" and kind in ("task_complete","turn_aborted"):
                 if turn_id and turn_id!=current["turn_id"]: continue

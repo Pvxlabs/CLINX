@@ -41,6 +41,11 @@ except ImportError:  # pragma: no cover - exercised by the standalone bundle
 SCAN_BYTES = 512 * 1024
 SQL_STEPS = 250_000
 
+
+def model_identifier(value):
+    """Only a bounded public model identifier, never configuration or payloads."""
+    return value if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}', value) else None
+
 # One-time retirement of CLINX's former developer-level output template.
 # Stored by Codex in its own history; never rewrite old records or replace
 # the thread's developer configuration (which may contain user instructions).
@@ -280,6 +285,47 @@ class NativeHistory:
             return dict(base, reason=exc.code)
         except (OSError, sqlite3.Error):
             return dict(base, reason='NATIVE_HISTORY_UNAVAILABLE')
+
+    def turn_model(self, tid, metadata, turn_id, offset):
+        """Read only this indexed turn's context; never borrow the latest model.
+
+        Older indexes without offsets remain UNKNOWN. Reads stop at the next turn
+        and at 128 KiB, including oversized/partial records.
+        """
+        if not turn_id or type(offset) is not int or offset < 0:
+            return None
+        try:
+            path = self._path(tid, metadata)
+            with path.open('rb') as stream:
+                if offset >= path.stat().st_size:
+                    return None
+                stream.seek(offset)
+                remaining = 128 * 1024
+                anchored = False
+                while remaining > 0:
+                    line = stream.readline(remaining)
+                    remaining -= len(line)
+                    if not line or not line.endswith(b'\n'):
+                        return None
+                    row = json.loads(line)
+                    if not isinstance(row, dict) or not isinstance(row.get('payload'), dict):
+                        return None
+                    payload = row['payload']
+                    is_start = row.get('type') == 'event_msg' and payload.get('type') == 'task_started'
+                    is_context = row.get('type') == 'turn_context'
+                    if not anchored:
+                        if not (is_start or is_context) or payload.get('turn_id') != turn_id:
+                            return None
+                        anchored = True
+                    if (is_start or is_context) and payload.get('turn_id') != turn_id:
+                        return None
+                    if is_context:
+                        if payload.get('cwd', metadata['cwd']) != metadata['cwd']:
+                            return None
+                        return model_identifier(payload.get('model'))
+        except (OSError, ValueError, TypeError, ThreadLookupError):
+            return None
+        return None
 
     def _paginated(self, tid, host, metadata, recent_turns, max_bytes, anchor, cursor):
         before = cursor_decode(cursor, tid, host, 'paginated')

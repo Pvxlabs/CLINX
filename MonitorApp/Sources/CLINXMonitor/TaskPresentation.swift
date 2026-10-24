@@ -108,6 +108,13 @@ extension ObservedTask {
 
     var projectText: String { project?.isEmpty == false ? project! : "unassigned" }
 
+    /// Display only; routing, filters and copied paths keep the complete identity.
+    var workspaceName: String {
+        guard let project, !project.isEmpty else { return "UNASSIGNED" }
+        let name = (project as NSString).lastPathComponent
+        return name.isEmpty ? project : name
+    }
+
     var hostText: String {
         if let host, !host.isEmpty { return host }
         if let identifier = routing.host.identifier, !identifier.isEmpty { return identifier }
@@ -130,7 +137,24 @@ extension ObservedTask {
 
     var activityText: String { currentActivity.label.isEmpty ? currentActivity.kind : currentActivity.label }
 
-    var modelText: String { model.resolved ?? model.logical ?? "—" }
+    var modelText: String {
+        if let resolved = model.resolved?.trimmingCharacters(in: .whitespacesAndNewlines), !resolved.isEmpty {
+            return resolved
+        }
+        if let logical = model.logical?.trimmingCharacters(in: .whitespacesAndNewlines), !logical.isEmpty {
+            return "\(logical) (configured)"
+        }
+        return "UNKNOWN"
+    }
+
+    var startedDetailText: String {
+        guard let date = startedDate else { return "UNKNOWN" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 8 * 3600)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss 'UTC+8'"
+        return formatter.string(from: date)
+    }
 
     var lastProgressText: String { RelativeTime.ago(since: lastProgressDate) }
     var lastProgressMinutes: Int? { RelativeTime.minutes(since: lastProgressDate) }
@@ -144,6 +168,7 @@ extension ObservedTask {
         case .failed: return "Failed \(lastProgressText)"
         case .completed: return "Done \(lastProgressText)"
         case .cancelled: return "Cancelled \(lastProgressText)"
+        case .stale: return "Snapshot stale"
         default: return lastProgressText
         }
     }

@@ -357,6 +357,7 @@ struct MetadataGrid: View {
         let label: String
         let value: String?
         let mono: Bool
+        var copyable = false
     }
 
     let rows: [Row]
@@ -370,13 +371,21 @@ struct MetadataGrid: View {
                         .font(DS.Font.body)
                         .foregroundStyle(DS.Palette.textTertiary)
                     if let value = row.value {
-                        Text(value)
-                            .font(row.mono ? DS.Font.monoID : DS.Font.body)
+                        Group {
+                            if row.copyable {
+                                CopyableMetadataValue(label: row.label, value: value)
+                                    .id(value)
+                            } else {
+                                Text(value)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                            .font(row.mono ? DS.Font.mono(12) : DS.Font.body)
                             .monospacedDigit()
                             .foregroundStyle(DS.Palette.textPrimary)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                            .help(value)
+                            .help(row.copyable ? "Click to copy\n\(value)" : value)
                     } else {
                         Text("—")
                             .font(DS.Font.body)

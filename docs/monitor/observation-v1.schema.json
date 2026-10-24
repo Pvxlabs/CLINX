@@ -94,6 +94,11 @@
             "CODEX_NATIVE",
             "CLINX_MANAGED"
           ]
+        },
+        "model": {
+          "type": ["string", "null"],
+          "maxLength": 128,
+          "description": "Exact native turn_context model identifier. Absent when unproven; never inherited from another turn or a global default."
         }
       }
     },

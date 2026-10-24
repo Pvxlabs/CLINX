@@ -10,9 +10,12 @@ struct ExecutionListView: View {
     @Binding var popover: ListPopover?
 
     var body: some View {
+        // Lazy row bodies can be evaluated after the header. Capture freshness once
+        // so a wall-clock threshold cannot give one snapshot two different states.
+        let freshness = store.freshness
         VStack(spacing: 0) {
-            header
-            content
+            header(freshness: freshness)
+            content(freshness: freshness)
             pagination
         }
         .background(DS.Palette.surface)
@@ -20,7 +23,7 @@ struct ExecutionListView: View {
 
     // MARK: header
 
-    private var header: some View {
+    private func header(freshness: Freshness) -> some View {
         HStack(spacing: 8) {
             Text(store.view.label)
                 .interfaceFont(size: 13, weight: .medium)
@@ -29,7 +32,7 @@ struct ExecutionListView: View {
                 .font(DS.Font.meta)
                 .monospacedDigit()
                 .foregroundStyle(DS.Palette.textTertiary)
-            FreshnessTag(freshness: store.freshness)
+            FreshnessTag(freshness: freshness)
             Spacer(minLength: 8)
 
             if let project = store.projectFilter {
@@ -82,7 +85,7 @@ struct ExecutionListView: View {
 
     // MARK: body
 
-    @ViewBuilder private var content: some View {
+    @ViewBuilder private func content(freshness: Freshness) -> some View {
         if store.visibleTasks.isEmpty {
             emptyState
         } else {
@@ -91,12 +94,12 @@ struct ExecutionListView: View {
                     ForEach(store.groupedTasks) { group in
                         if let title = group.title {
                             Section {
-                                rows(group.tasks)
+                                rows(group.tasks, freshness: freshness)
                             } header: {
                                 groupHeader(title, count: group.tasks.count)
                             }
                         } else {
-                            rows(group.tasks)
+                            rows(group.tasks, freshness: freshness)
                         }
                     }
                 }
@@ -114,14 +117,16 @@ struct ExecutionListView: View {
         }
     }
 
-    private func rows(_ tasks: [ObservedTask]) -> some View {
+    private func rows(_ tasks: [ObservedTask], freshness: Freshness) -> some View {
         ForEach(tasks, id: \.executionIdentity) { task in
-            ExecutionRowView(store: store,
-                             task: task,
-                             dimmed: store.isStaleSnapshot) {
+            ExecutionRowView(task: task,
+                             status: task.status(freshness: freshness),
+                             selected: store.selectedRef == task.taskRef && store.selectedExecutionRef == task.executionRef,
+                             dimmed: freshness != .current,
+                             onSelect: {
                 store.beginSelection(task.taskRef, executionRef: task.executionRef)
                 listFocused = true
-            }
+            }, onArchive: { store.archiveLocally(task) })
         }
     }
 
@@ -189,28 +194,24 @@ struct ExecutionListView: View {
 // MARK: - Row
 
 struct ExecutionRowView: View {
-    @ObservedObject var store: MonitorStore
     let task: ObservedTask
+    let status: MonitorStatus
+    let selected: Bool
     let dimmed: Bool
     let onSelect: () -> Void
+    let onArchive: () -> Void
 
     @State private var hovering = false
 
-    // Read selection from the observed store, including when SwiftUI reuses a lazy row.
-    private var selected: Bool {
-        store.selectedRef == task.taskRef && store.selectedExecutionRef == task.executionRef
-    }
-
     var body: some View {
-        // Lazy rows can retain their original value while observing later store
-        // publications. Resolve the exact execution before projecting every field.
-        let task = store.allTasks.first { $0.executionIdentity == self.task.executionIdentity } ?? self.task
-        let status = store.status(of: task)
+        // Status and selection are value inputs from the same parent snapshot.
+        // A refresh must invalidate the lazy row even when task bytes did not change.
         Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     StatusGlyphView(glyph: status.glyph, color: status.color, size: 12)
                         .frame(width: 12)
+                        .help(statusExplanation)
                     Text(task.titleText)
                         .font(DS.Font.rowTitle)
                         .foregroundStyle(DS.Palette.textPrimary)
@@ -227,9 +228,10 @@ struct ExecutionRowView: View {
                 }
                 HStack(spacing: 8) {
                     HStack(spacing: 2) {
-                        Text(task.projectText)
+                        Text(task.workspaceName)
                             .font(DS.Font.metaEmphasis)
                             .foregroundStyle(DS.Palette.textSecondary)
+                            .help(task.projectText)
                         Text("·")
                             .font(DS.Font.meta)
                             .foregroundStyle(DS.Palette.textTertiary)
@@ -265,7 +267,7 @@ struct ExecutionRowView: View {
         .buttonStyle(.plain)
         .overlay(alignment: .topTrailing) {
             if hovering && status.canArchiveLocally {
-                Button { store.archiveLocally(task) } label: {
+                Button(action: onArchive) {
                     Image(systemName: "archivebox")
                         .interfaceFont(size: 12)
                         .foregroundStyle(DS.Palette.textTertiary)
@@ -283,17 +285,24 @@ struct ExecutionRowView: View {
         .contextMenu {
             Button("Copy title") { copy(task.titleText) }
             Button("Copy execution ID") { copy(task.executionText) }
+            Button("Copy workspace path") { copy(task.projectText) }
             Button("Copy summary") { copy(summaryText(task: task, status: status)) }
             if status.canArchiveLocally {
                 Divider()
-                Button("Archive on this Mac") { store.archiveLocally(task) }
+                Button("Archive on this Mac", action: onArchive)
             }
             Divider()
             Text("Read-only — no execution actions")
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(status.label), \(task.titleText), \(task.projectText) on \(task.hostText)")
+        .accessibilityLabel("\(statusExplanation), \(task.titleText), \(task.projectText) on \(task.hostText)")
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var statusExplanation: String {
+        status == .stale
+            ? "Monitoring snapshot is stale. Last known execution: \(task.monitorStatus.label)."
+            : status.label
     }
 
     private func tailColor(_ status: MonitorStatus) -> Color {

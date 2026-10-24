@@ -96,6 +96,15 @@ Observer, and checking UI, Keychain, TLS and tailnet ACL behavior with real evid
 
 ### Activity
 
+The task list and inspector header show the workspace name; hover reveals the full
+path and the list context menu can copy it. The header keeps status, workspace and
+host without duplicating the inspector's metadata. OVERVIEW uses uppercase field
+labels and a shared 12pt base size (including monospaced IDs). Click TASK ID or
+THREAD ID to copy the complete value; Copied / Copy failed confirms the outcome.
+Activity summaries belong to the Activity tab. A missing exact turn model is
+UNKNOWN; configured-only model names are labelled as configured. New observation
+sources export the model only from the indexed native turn's own turn_context.
+
 The Activity tab follows Raw snapshot. While visible it polls the exact execution's
 public persisted Codex feedback approximately every two seconds. The initial page
 contains the latest 40 messages; Load earlier feedback pages backwards. Revisions

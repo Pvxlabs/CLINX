@@ -19,7 +19,7 @@ import secrets
 import sqlite3
 import time
 
-from native_history import message, normalize_native_status
+from native_history import message, model_identifier, normalize_native_status
 from node_protocol import NODE_PROTOCOL_VERSION, SUPPORTED_PROVIDER, NodeProtocolError, SharingScope
 
 VERSION = "clinx-observation-v1"
@@ -121,6 +121,11 @@ def validate_event(event, node, scope):
         raise NodeProtocolError("INVALID_OBSERVATION", "Invalid business result")
     if result is not None and not (task and eref):
         raise NodeProtocolError("OBSERVATION_BINDING_UNPROVEN", "Business result needs canonical execution")
+    model = turn.get("model")
+    if model is not None and model_identifier(model) is None:
+        raise NodeProtocolError("INVALID_OBSERVATION", "Invalid native turn model")
+    if model is not None and not turn.get("turn_id"):
+        raise NodeProtocolError("INVALID_OBSERVATION", "Model requires exact native turn identity")
     artifacts = turn.get("artifacts", [])
     if not isinstance(artifacts, list) or len(artifacts) > 16:
         raise NodeProtocolError("INVALID_OBSERVATION", "Artifact limit exceeded")
@@ -143,6 +148,7 @@ def validate_event(event, node, scope):
         "coverage": clean(event.get("coverage") or "PARTIAL", 80),
         "source_updated_at": clean(str(event.get("source_updated_at") or ""), 64),
         "turn": {
+            **({"model":model} if model is not None else {}),
             **({"live_observation":proof} if proof is not None else {}),
             "turn_id": bounded_id(turn.get("turn_id"), True), "ordinal": ordinal,
             **({"source": "CLINX_MANAGED" if eref else "CODEX_NATIVE"} if "source" in turn else {}),

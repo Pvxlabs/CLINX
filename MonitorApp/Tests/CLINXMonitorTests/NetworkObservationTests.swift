@@ -22,6 +22,25 @@ private func networkFixture(_ key: String = "detail", id: String? = nil,
 }
 
 final class NetworkObservationModelTests: XCTestCase {
+    func testModelComesFromTheSelectedNativeTurn() throws {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        var raw = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(try networkFixture().item)) as? [String: Any])
+        var turn = try XCTUnwrap(raw["turn"] as? [String: Any])
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        for model in ["gpt-6-astra", "gpt-6.1-sol"] {
+            turn["model"] = model
+            raw["turn"] = turn
+            let item = try decoder.decode(NetworkObservation.self, from: JSONSerialization.data(withJSONObject: raw))
+            XCTAssertEqual(NetworkObservationAdapter.project([item], canonical: []).first?.modelText, model)
+        }
+        turn.removeValue(forKey: "model")
+        raw["turn"] = turn
+        let olderObserverItem = try decoder.decode(NetworkObservation.self, from: JSONSerialization.data(withJSONObject: raw))
+        XCTAssertEqual(NetworkObservationAdapter.project([olderObserverItem], canonical: []).first?.modelText, "UNKNOWN")
+    }
+
     func testRepeatedSnapshotsDoNotRepeatSessionTextAcrossTurns() {
         func entry(_ id: String, _ turn: String, _ text: String) -> ObservationActivityEntry {
             ObservationActivityEntry(eventId: id, turnId: turn, executionRef: nil,

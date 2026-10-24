@@ -93,7 +93,7 @@ enum NetworkObservationAdapter {
             project: item.project, title: item.shortTitle, host: host,
             state: state, stage: item.turn.nativeState, executionState: state,
             executionStage: item.turn.nativeState,
-            model: ModelIdentity(logical: nil, resolved: nil), reasoning: nil,
+            model: ModelIdentity(logical: nil, resolved: item.turn.model), reasoning: nil,
             currentActivity: CurrentActivity(kind: "NATIVE_OBSERVATION", label: activity, observedAt: observed),
             blocker: nil,
             timestamps: TaskTimestamps(createdAt: started, updatedAt: observed,

@@ -25,7 +25,7 @@ struct InspectorView: View {
     @ViewBuilder private func content(for task: ObservedTask) -> some View {
         let status = store.status(of: task)
         VStack(spacing: 0) {
-            ExecutionHeaderView(store: store, task: task, status: status, stacked: stacked)
+            ExecutionHeaderView(store: store, task: task, status: status)
             if store.selectedDetailIncomplete {
                 Text("当前 Observer 未提供该历史 execution 的 task 详情；保留精确列表快照，未用当前 execution 替代。")
                     .font(DS.Font.meta)
@@ -110,56 +110,23 @@ struct InspectorView: View {
 
     private func overview(_ task: ObservedTask) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionLabel(title: "Overview")
-            MetadataGrid(rows: [
-                .init(label: "Task ID", value: task.taskRef, mono: true),
-                .init(label: "Thread ID", value: task.nativeConversation?.threadId ?? "UNKNOWN", mono: true),
-                .init(label: "State", value: store.status(of: task).label, mono: false),
-                .init(label: "Stage", value: task.stage, mono: true),
-                .init(label: "Activity", value: task.activityText, mono: true),
-                .init(label: task.progressPresentation.fieldLabel, value: progressText(task), mono: false),
-                .init(label: "Started", value: task.startedText, mono: true),
-                .init(label: "Last progress", value: task.lastProgressText, mono: false),
-                .init(label: "Duration", value: task.durationText, mono: false),
-                .init(label: "Host", value: task.hostText, mono: true),
-                .init(label: "Provider", value: task.providerText, mono: false),
-                .init(label: "Model", value: task.modelText, mono: false),
-                .init(label: "Project", value: task.projectText, mono: false),
-                .init(label: "Result", value: resultText(task), mono: true),
-                .init(label: "Coverage", value: store.eventCoverage, mono: false),
-            ])
+            SectionLabel(title: "OVERVIEW")
+            MetadataGrid(rows: task.overviewRows)
             if let uri = task.codexUri, let url = URL(string: uri),
                url.scheme == "codex", url.host == "threads" {
-                Link("在 Codex 打开", destination: url)
-                    .font(DS.Font.meta)
-                Text(uri)
-                    .font(DS.Font.mono(10))
-                    .foregroundStyle(DS.Palette.textSecondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 16) {
+                    Link("Open in Codex", destination: url)
+                    CopyableMetadataValue(label: "LINK", value: uri, displayText: "Copy link")
+                }
+                .font(DS.Font.body)
             }
-        }
-    }
-
-    /// Only an exact structured result for this execution is shown; otherwise the absence
-    /// is stated rather than inferred.
-    private func resultText(_ task: ObservedTask) -> String {
-        guard let result = task.exactResult else { return "no exact structured result" }
-        return result.status
-    }
-
-    private func progressText(_ task: ObservedTask) -> String {
-        switch task.progressPresentation {
-        case .determinate(let label, let done, let total): return "\(label) · \(done) / \(total)"
-        case .indeterminate(let label, _): return "\(label) · in progress"
-        case .lifecycle(let label): return label
         }
     }
 
     private func timeline(_ task: ObservedTask, status: MonitorStatus) -> some View {
         let items = task.timeline
         return VStack(alignment: .leading, spacing: 12) {
-            SectionLabel(title: "Timeline", trailing: "\(items.count) events")
+            SectionLabel(title: "TIMELINE", trailing: "\(items.count) events")
             if items.isEmpty {
                 Text("No available event evidence")
                     .font(DS.Font.meta)
@@ -169,7 +136,7 @@ struct InspectorView: View {
                     .id(task.executionRef ?? task.taskRef)
             }
             HStack(spacing: 10) {
-                Text("Coverage \(store.eventCoverage)")
+                Text("COVERAGE \(store.eventCoverage)")
                     .font(DS.Font.micro)
                     .foregroundStyle(DS.Palette.textTertiary)
                 if store.eventHasMore {
@@ -191,8 +158,6 @@ struct ExecutionHeaderView: View {
     @ObservedObject var store: MonitorStore
     let task: ObservedTask
     let status: MonitorStatus
-    /// Narrow inspectors stack the stat strip into two rows instead of truncating it.
-    var stacked = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -208,29 +173,16 @@ struct ExecutionHeaderView: View {
 
             HStack(spacing: 8) {
                 StatusPill(status: status)
-                if task.resultPassed {
-                    Text("PASS")
-                        .font(DS.Font.monoMicro)
-                        .foregroundStyle(DS.Palette.success)
-                        .padding(.horizontal, 4)
-                        .frame(height: 14)
-                        .overlay(RoundedRectangle(cornerRadius: 3)
-                            .strokeBorder(DS.Palette.success.opacity(0.4), lineWidth: 1))
-                        .help("Exact structured result for this execution")
-                }
-                Text(task.projectText)
+                Text(task.workspaceName)
+                    .help(task.projectText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                     .font(DS.Font.metaEmphasis)
                     .foregroundStyle(DS.Palette.textPrimary)
                 Text("·").font(DS.Font.meta).foregroundStyle(DS.Palette.textTertiary)
                 Text(task.hostText)
                     .font(DS.Font.monoID)
                     .foregroundStyle(DS.Palette.textSecondary)
-                Text("·").font(DS.Font.meta).foregroundStyle(DS.Palette.textTertiary)
-                Text(task.executionText)
-                    .font(DS.Font.monoID)
-                    .foregroundStyle(DS.Palette.textSecondary)
-                    .textSelection(.enabled)
-                CopyButton(text: task.executionText, label: "ID")
                 if store.isStaleSnapshot {
                     Text(store.freshness.label)
                         .font(DS.Font.monoMicro)
@@ -243,93 +195,10 @@ struct ExecutionHeaderView: View {
                 Spacer(minLength: 0)
             }
             .padding(.top, 8)
-
-            Group {
-                if stacked {
-                    VStack(spacing: 12) {
-                        HStack(alignment: .top, spacing: 12) {
-                            stageStat
-                            lastProgressStat
-                        }
-                        HStack(alignment: .top, spacing: 12) {
-                            durationStat
-                            progressStat
-                        }
-                    }
-                } else {
-                    HStack(alignment: .top, spacing: 12) {
-                        stageStat
-                        lastProgressStat
-                        durationStat
-                        progressStat
-                    }
-                }
-            }
-            .padding(.top, 12)
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
         .padding(.bottom, 16)
-    }
-
-    private var stageStat: some View {
-        stat("Current stage") {
-            Text(task.stage)
-                .font(DS.Font.mono(11.5, weight: .medium))
-                .foregroundStyle(stageColor)
-        }
-    }
-
-    private var lastProgressStat: some View {
-        stat("Last progress") {
-            Text(task.lastProgressText)
-                .font(DS.Font.statValue)
-                .monospacedDigit()
-                .foregroundStyle(lastProgressColor)
-        }
-    }
-
-    private var durationStat: some View {
-        stat("Duration") {
-            Text(task.durationText)
-                .font(DS.Font.statValue)
-                .monospacedDigit()
-                .foregroundStyle(DS.Palette.textPrimary)
-        }
-    }
-
-    private var progressStat: some View {
-        stat(task.progressPresentation.fieldLabel) {
-            ProgressIndicator(progress: task.progressPresentation)
-        }
-    }
-
-    private var stageColor: Color {
-        switch status {
-        case .blocked: return DS.Palette.warning
-        case .failed: return DS.Palette.error
-        default: return DS.Palette.textPrimary
-        }
-    }
-
-    /// “Last progress ≥ 5m (active)” turns amber in the stat strip.
-    private var lastProgressColor: Color {
-        guard let minutes = task.lastProgressMinutes, minutes >= 5,
-              status == .blocked || status == .running else { return DS.Palette.textPrimary }
-        return DS.Palette.warning
-    }
-
-    private func stat<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(DS.Font.micro)
-                .foregroundStyle(DS.Palette.textTertiary)
-            content()
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 12)
-        .overlay(alignment: .leading) { Rectangle().fill(DS.Palette.divider).frame(width: 1) }
     }
 }
 
