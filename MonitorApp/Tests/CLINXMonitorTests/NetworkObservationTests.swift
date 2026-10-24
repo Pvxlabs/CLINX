@@ -111,6 +111,7 @@ private actor UnifiedProjectionService: ObserverServing, NetworkObservationServi
     let canonical: [ObservedTask]
     let native: [NetworkObservation]
     let paginated: Bool
+    private var observationFailure: MonitorError?
     private(set) var taskCalls = 0
     private(set) var eventCalls = 0
 
@@ -119,6 +120,7 @@ private actor UnifiedProjectionService: ObserverServing, NetworkObservationServi
         self.native = native
         self.paginated = paginated
     }
+    func failObservations(_ error: MonitorError?) { observationFailure = error }
     func health() async throws -> ObserverHealth {
         ObserverHealth(schemaVersion: "1", status: "OK", readOnly: true,
                        observedAt: ISO8601DateFormatter().string(from: Date()),
@@ -137,6 +139,7 @@ private actor UnifiedProjectionService: ObserverServing, NetworkObservationServi
         return canonical[0].recentEvents
     }
     func observations(filters: ObservationFilters, cursor: String?) async throws -> ObservationPage {
+        if let observationFailure { throw observationFailure }
         let candidates = native.filter { (filters.state.isEmpty || $0.turn.nativeState == filters.state) && (filters.nativeThreadId.isEmpty || $0.nativeThreadId == filters.nativeThreadId) }
         let offset = Int(cursor ?? "0") ?? 0
         let page = paginated ? Array(candidates.dropFirst(offset).prefix(50)) : candidates
@@ -157,6 +160,53 @@ private actor UnifiedProjectionService: ObserverServing, NetworkObservationServi
 
 @MainActor
 final class UnifiedMonitorProjectionTests: XCTestCase {
+    func testObservationFailureKeepsLastKnownRowsAndRecoversWithoutFalseCurrent() async throws {
+        let native = try projectedObservation(node: "p620", host: "P620", thread: "active-hdl",
+            state: "RUNNING", liveness: "PROVEN")
+        let canonical = try canonicalFixture()
+        let service = UnifiedProjectionService(canonical: [canonical], native: [native])
+        let store = MonitorStore(service: service, defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await store.refresh()
+        let ref = try XCTUnwrap(store.allTasks.first { $0.observationId == native.observationId }).taskRef
+        let activeCount = store.active.count
+        await store.select(ref)
+        let successfulFetch = store.lastSuccessfulFetch
+        XCTAssertEqual(store.freshness, .current)
+
+        await service.failObservations(.server(400))
+        await store.refresh()
+        XCTAssertTrue(store.allTasks.contains { $0.observationId == native.observationId })
+        XCTAssertTrue(store.allTasks.contains { $0.taskRef == canonical.taskRef })
+        XCTAssertEqual(store.selected?.observationId, native.observationId)
+        XCTAssertEqual(store.freshness, .lastKnown)
+        XCTAssertEqual(store.lastSuccessfulFetch, successfulFetch)
+        XCTAssertNotNil(store.errorCategory)
+        if let row = store.allTasks.first(where: { $0.observationId == native.observationId }) {
+            XCTAssertEqual(store.status(of: row), .stale)
+            XCTAssertTrue(store.visibleTasks.contains { $0.observationId == native.observationId })
+        }
+
+        await service.failObservations(nil)
+        await store.refresh()
+        XCTAssertEqual(store.connection, .connected)
+        XCTAssertEqual(store.freshness, .current)
+        XCTAssertNil(store.errorCategory)
+        XCTAssertEqual(store.active.count, activeCount)
+        XCTAssertEqual(store.selected?.observationId, native.observationId)
+    }
+
+    func testInitialObservationFailureKeepsCanonicalRowsAndReportsUnavailable() async throws {
+        let canonical = try canonicalFixture()
+        let service = UnifiedProjectionService(canonical: [canonical], native: [])
+        await service.failObservations(.server(503))
+        let store = MonitorStore(service: service, defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await store.refresh()
+        XCTAssertEqual(store.allTasks.map(\.taskRef), [canonical.taskRef])
+        XCTAssertNotEqual(store.freshness, .current)
+        XCTAssertNotNil(store.errorCategory)
+        XCTAssertNil(store.lastSuccessfulFetch)
+    }
+
     func testRustTerminalProjectionPreservesExactExecutionWithoutBusinessPass() throws {
         let fixture = try projectedObservation(node: "p620", host: "P620", thread: "rust-thread",
             state: "UNKNOWN", taskRef: "task_rust", executionRef: "exec_rust")

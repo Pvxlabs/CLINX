@@ -720,6 +720,7 @@ final class MonitorStore: ObservableObject {
                 (activePage.hasMore ? Array(active.filter { $0.observationId == nil }.dropFirst(50)) : []))
             let canonicalRecent = Self.merge(recentPage.items +
                 (recentPage.hasMore ? Array(recent.filter { $0.observationId == nil }.dropFirst(50)) : []))
+            var observationFailure: Error?
             if let networkService {
                 do {
                     let observations = try await Self.fetchObservations(using: networkService,
@@ -730,8 +731,9 @@ final class MonitorStore: ObservableObject {
                         canonical: Self.merge(canonicalActive + canonicalRecent))
                 } catch {
                     guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
-                    networkObservations = []
-                    observationRows = []
+                    // A failed read is not an authoritative empty session list.
+                    // Retain the last snapshot and report it as last known below.
+                    observationFailure = error
                 }
             } else { networkObservations = []; observationRows = [] }
             health = newHealth
@@ -740,8 +742,15 @@ final class MonitorStore: ObservableObject {
             activeNextOffset = canonicalActive.count > 50 ? activeNextOffset : activePage.nextOffset
             recentNextOffset = canonicalRecent.count > 50 ? recentNextOffset : recentPage.nextOffset
             lastObservedAt = activePage.observedAt
-            lastSuccessfulFetch = Date()
-            failed = false; authFailed = false; failureCount = 0; errorCategory = nil
+            if let observationFailure {
+                failed = true
+                authFailed = observationFailure as? MonitorError == .server(401)
+                failureCount += 1
+                errorCategory = "Session updates unavailable: \(Self.category(observationFailure))"
+            } else {
+                lastSuccessfulFetch = Date()
+                failed = false; authFailed = false; failureCount = 0; errorCategory = nil
+            }
             if selectedRef != nil { await reloadSelected(using: service) }
         } catch {
             guard token == sourceToken, requestGeneration == listRequestGeneration else { return }
