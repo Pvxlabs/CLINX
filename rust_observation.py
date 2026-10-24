@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from observation_source import CodexObservationSource, order
+from rust_authority import RustAuthorityError
 from rust_integration import Commands
 
 
@@ -9,6 +10,7 @@ class RustObservationSource(CodexObservationSource):
     def __init__(self, root, node_id, owner_host=None, provider_config=None, commands=None, native_source=None):
         self.rust_only = root is None
         self.native_source = native_source
+        self.managed_inventory_unavailable = False
         super().__init__(root or Path('/nonexistent'), node_id, owner_host=owner_host, provider_config=provider_config)
         self.commands = commands or Commands.from_env()
 
@@ -44,7 +46,17 @@ class RustObservationSource(CodexObservationSource):
         return super().native_turns(metadata, state)
 
     def canonical_inventory(self, scope, after=''):
-        tasks = self.commands.call('observation_inventory', dict(host=self.owner_host, after=after))['tasks']
+        try:
+            tasks = self.commands.call('observation_inventory', dict(host=self.owner_host, after=after))['tasks']
+        except RustAuthorityError as exc:
+            if str(exc) != 'RESPONSE_CAPACITY_EXCEEDED':
+                raise
+            # Independent native reads must not stall behind an oversized managed
+            # projection. Retry on the next normal tick without authority writes, and
+            # explicitly report incomplete managed coverage on sampled events.
+            self.managed_inventory_unavailable = True
+            return []
+        self.managed_inventory_unavailable = False
         return [dict(id=t['thread_id'], cwd=t['workspace_contract']['cwd'], name=t['title'],
                      history_mode='canonical', rollout_path='') for t in tasks
                 if scope.allows_project(t['workspace_contract']['cwd'])]
@@ -54,8 +66,15 @@ class RustObservationSource(CodexObservationSource):
         def page(before):
             return self.commands.call('observation_turns', dict(host=self.owner_host, thread_id=tid,
                                                                 before=before))['executions']
-        recent = page('~')
-        older = page(state.get('rust_before', '~'))
+        try:
+            recent = page('~')
+            older = page(state.get('rust_before', '~'))
+        except RustAuthorityError as exc:
+            if str(exc) != 'RESPONSE_CAPACITY_EXCEEDED':
+                raise
+            state['rust_projection_unavailable'] = True
+            return []
+        state.pop('rust_projection_unavailable', None)
         if older:
             state['rust_before'] = older[-1]['id']
         state['rust_history_complete'] = len(older) < 16
@@ -71,6 +90,9 @@ class RustObservationSource(CodexObservationSource):
         if state.get('rust_history_complete') is False:
             for event in events:
                 event['coverage'] = 'HISTORY_BACKFILL'
+        if self.managed_inventory_unavailable or state.get('rust_projection_unavailable'):
+            for event in events:
+                event['coverage'] = 'RUST_MANAGED_PROJECTION_UNAVAILABLE'
         state['active'] = state.get('active', False) or any(
             e['turn'].get('execution_state') in ('ADMITTED', 'RUNNING', 'RECOVERY_REQUIRED', 'FINALIZING') for e in events)
         return events, state
