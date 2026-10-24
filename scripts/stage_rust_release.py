@@ -33,9 +33,11 @@ def stage_desktop(args, source):
     # The new release contains no separate Codex Provider binary or home.
     allowed = {'control/' + str(path.relative_to(source)): path
                for path in source_paths(source, 'rust')}
+    # Preserve only native dependencies from the old artifact. Python sources
+    # always come from the current profile, even if an older release placed
+    # retired modules outside control/. Never inherit an old business core.
     files = {name: digest for name, digest in manifest['files'].items()
-             if not name.startswith('provider/')
-             and (not name.startswith('control/') or name in allowed)}
+             if name == 'host-worker' or name.startswith('deps/')}
     # Package a coherent source closure, including the newly separated shared
     # contracts. Mixing old adapter imports with a pruned package is invalid.
     replacements = {name: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -47,7 +49,7 @@ def stage_desktop(args, source):
         replacements['control/' + name] = hashlib.sha256(path.read_bytes()).hexdigest()
     files.update(replacements)
     binaries = {}
-    for name, attribute in [('clinx-runtime', 'runtime_binary'), ('clinx-mcp-relay', 'mcp_relay_binary')]:
+    for name, attribute in [('clinx-runtime', 'runtime_binary'), ('clinx-mcp-relay', 'mcp_relay_binary'), ('clinx-native-transport', 'native_transport_binary')]:
         binary = getattr(args, attribute, None)
         if binary is None:
             raise SystemExit('TESTED_LAYOUT_BINARY_REQUIRED:' + name)
@@ -73,7 +75,7 @@ def stage_desktop(args, source):
     (release / 'host-worker').chmod(0o4750)
     result = dict(version=version, source_cwd=str(source),
                   head=subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip(),
-                  base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY',
+                  base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1',
                   source_replacements=replacements, runtime_source_profile='rust', source_layout='qualified-clinx-v1',
                   retired_files=sorted(set(manifest['files']) - set(files)),
                   files=files, status='STAGED_NOT_SELECTED')
@@ -88,6 +90,7 @@ def main():
     p.add_argument("--source", type=Path, help="Exact committed checkout to package; defaults to this repository")
     p.add_argument('--desktop-base-release', type=Path, required=True)
     p.add_argument('--runtime-binary', type=Path, required=True, help='Tested authority binary matching the package layout')
+    p.add_argument('--native-transport-binary', type=Path, required=True, help='Tested Rust native execution/Provider worker')
     p.add_argument('--mcp-relay-binary', type=Path, required=True, help='Tested Rust stdio relay binary')
     p.add_argument('--replace-source', action='append', default=[],
                    help='Compatibility assertion that a named source belongs to the packaged profile; all adapters are refreshed')

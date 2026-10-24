@@ -3,13 +3,13 @@
 **Target architecture:** Rust owns the complete runtime core (Authority,
 lifecycle, persistence/recovery, MCP/Provider/Host/Transport and Node/Discovery);
 Swift owns the macOS UI. Python is ultimately limited to development and
-maintenance tooling. Current Python runtime and Mac compatibility implementations
-are explicitly classified; the migration is incomplete.
+maintenance tooling. Remaining Python runtime modules are explicitly classified; the migration is incomplete.
+The old Mac business core has been retired from source and new release profiles.
 
 Start with [the repository architecture and layout](docs/REPOSITORY_ARCHITECTURE.md).
 `kernel/` is Rust, `MonitorApp/` is Swift, `clinx/` contains the current Python
-runtime grouped by responsibility, and `clinx/compat/` contains the remaining
-Mac business core. `tools/` contains build/maintenance/qualification code.
+runtime grouped by responsibility. The old `clinx/compat/` Mac business core has been deleted;
+native execution uses the Rust Authority and native Transport worker. `tools/` contains build/maintenance/qualification code.
 There are no root Python modules or flat import shims.
 
 **AI Task Routing & Execution Infrastructure**
@@ -58,8 +58,9 @@ flowchart LR
 ```
 
 Rust Core is the authoritative entrypoint for deployed P620 task state, receipts,
-recovery and resource lifecycle. The Mac compatibility route still has a Python
-registry and execution lifecycle; it has not reached the target architecture.
+recovery and resource lifecycle. The source Helper now uses the paired Rust authority
+route with independently read Mac Provider evidence; see [native core retirement](docs/RUST_NATIVE_CORE_RETIREMENT.md).
+Python MCP, Host, Node/Discovery and monitoring runtime still remain.
 Source structure, staged releases and deployed behavior require separate evidence.
 
 CLINX is not another AI agent, a code-review platform, a safety-approval system
@@ -225,12 +226,12 @@ release manifests and running services are separate identities; see
 
 `bin/clinx` defaults to device discovery. Its `devices`, `pair` and `serve`
 commands use the discovery CLI directly, without importing the Python execution
-core. Explicit task/history/recovery utilities still serve the configured local
-device compatibility route. The old Linear polling `run`, `once` and `doctor`
+core. Task execution and recovery use the Rust MCP/Authority contracts;
+the local Registry/M9 CLI and legacy SQLite repair utilities are retired. The old Linear polling `run`, `once` and `doctor`
 commands and the separate V1/M3 Dispatcher have been retired.
 
 For a configured Rust MCP development or qualification environment, use
-`mcp_server.py --config <config> --stdio` with the existing `CLINX_AUTHORITY=rust`,
+`python -m clinx.mcp.mcp_server --config <config> --stdio` with the existing `CLINX_AUTHORITY=rust`,
 `CLINX_RUST_SOCKET` and `CLINX_RUST_UID` settings. These must identify the intended
 existing authority; the adapter does not create or migrate its database. A fresh
 clone does not configure an authority or reproduce an installed service.

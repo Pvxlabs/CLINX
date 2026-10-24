@@ -28,6 +28,7 @@ fn main() -> Result<(), String> {
     let mut init = false;
     let mut init_only = false;
     let mut qualification = false;
+    let mut qualification_observer = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--state-dir" => state = args.next().map(PathBuf::from),
@@ -38,6 +39,7 @@ fn main() -> Result<(), String> {
             "--init" => init = true,
             "--init-only" => {init = true; init_only = true;},
             "--qualification" => qualification = true,
+            "--qualification-workspace-observer" => qualification_observer = args.next().map(PathBuf::from),
             _ => return Err("usage: clinx-runtime --state-dir PRIVATE_DIR --socket ABSOLUTE_SOCKET --caller-uid UID [--init] [--qualification]".into()),
         }
     }
@@ -70,16 +72,23 @@ fn main() -> Result<(), String> {
     } else {
         None
     };
-    if !qualification {
-        let program = std::env::current_exe()
-            .map_err(|_| "WORKSPACE_OBSERVER_UNAVAILABLE")?
-            .parent()
-            .ok_or("WORKSPACE_OBSERVER_UNAVAILABLE")?
-            .join("control/clinx/provider/rust_workspace_probe.py");
+    if qualification_observer.is_some() && !qualification {
+        return Err("QUALIFICATION_OBSERVER_REQUIRES_QUALIFICATION".into());
+    }
+    if !qualification || qualification_observer.is_some() {
+        let program = if let Some(program) = qualification_observer {
+            program
+        } else {
+            std::env::current_exe()
+                .map_err(|_| "WORKSPACE_OBSERVER_UNAVAILABLE")?
+                .parent()
+                .ok_or("WORKSPACE_OBSERVER_UNAVAILABLE")?
+                .join("control/clinx/provider/rust_workspace_probe.py")
+        };
         let info = program
             .symlink_metadata()
             .map_err(|_| "WORKSPACE_OBSERVER_UNAVAILABLE")?;
-        if !info.is_file() || info.uid() != 0 || info.mode() & 0o022 != 0 {
+        if !info.is_file() || (!qualification && (info.uid() != 0 || info.mode() & 0o022 != 0)) {
             return Err("ROOT_CONTROLLED_WORKSPACE_OBSERVER_REQUIRED".into());
         }
         let policy = policy.as_ref().ok_or("BUSINESS_POLICY_REQUIRED")?;

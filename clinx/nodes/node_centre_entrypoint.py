@@ -36,6 +36,10 @@ def parser():
     serve.add_argument("--observations", type=Path, help="Separate durable observation projection")
     serve.add_argument("--bind", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8771)
+    serve.add_argument("--provider-gateway", type=Path, action="append", help="Centre-local IPC for the existing Transport principal")
+    serve.add_argument("--provider-transport-uid", type=int)
+    serve.add_argument("--provider-observer-uid", type=int)
+    serve.add_argument("--provider-gateway-gid", type=int, help="Existing shared IPC group for gateway sockets")
     serve.add_argument("--stale-after", type=int, default=45)
     serve.add_argument("--local-native-home", type=Path)
     serve.add_argument("--rust-projection", action="store_true", help="Publish Rust managed tasks without opening a legacy native or canonical database")
@@ -136,6 +140,15 @@ def main(argv=None) -> int:
         authority = Commands.from_env()
     service = CentreService(PairedTLS(identity, peers), registry, NodeAuthorizationStore(args.state), stale_after=args.stale_after, observations=observations, authority=authority)
     server = service.server(address=args.bind, port=args.port)
+    gateways = []
+    if args.provider_gateway:
+        if args.provider_transport_uid is None or authority is None:
+            raise ValueError('RUST_TRANSPORT_GATEWAY_CONFIG_REQUIRED')
+        from clinx.nodes.provider_relay import ProviderGateway
+        for endpoint in args.provider_gateway:
+            gateways.append(ProviderGateway(endpoint, args.provider_transport_uid,
+                service.tls, registry, service.approvals, observer_uid=args.provider_observer_uid,
+                socket_gid=args.provider_gateway_gid))
     collector = None
     if args.local_native_home or args.rust_projection:
         if args.rust_projection and not rust_authority_enabled():
@@ -176,6 +189,7 @@ def main(argv=None) -> int:
                 next_collection=time.monotonic()+delay
     finally:
         if collector: collector.close()
+        for gateway in gateways: gateway.close()
         server.close()
         registry.close()
     return 0

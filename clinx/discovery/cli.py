@@ -1,4 +1,4 @@
-"""Device discovery CLI with a lazy boundary to local execution utilities."""
+"""Device discovery CLI. Execution is exposed by the Rust authority API."""
 
 from __future__ import annotations
 
@@ -17,14 +17,6 @@ COMMANDS = {"devices", "pair", "serve"}
 
 
 def main() -> int:
-    selector = argparse.ArgumentParser(add_help=False)
-    selector.add_argument("--config", default="bridge.toml")
-    selector.add_argument("command", nargs="?")
-    selected, _ = selector.parse_known_args()
-    if selected.command not in COMMANDS:
-        from clinx.compat.bridge import main as compatibility_main
-
-        return compatibility_main()
     parser = argparse.ArgumentParser(prog="clinx", description="Discover and pair CLINX devices")
     parser.add_argument("--config", default="bridge.toml", help="Path to TOML config")
     add_commands(parser.add_subparsers(dest="command", required=True))

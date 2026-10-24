@@ -16,6 +16,7 @@ def check(source: Path = SOURCE_ROOT) -> dict:
               for p in (source / folder).rglob('*.py') if '__pycache__' not in p.parts}
     assert actual == declared, {'undeclared': sorted(actual-declared), 'missing': sorted(declared-actual)}
     rust = {str(p.relative_to(source)) for p in source_paths(source, 'rust')}
+    monitor = {str(p.relative_to(source)) for p in source_paths(source, 'monitor')}
     edges = []
     for path in sorted(actual):
         for node in ast.walk(ast.parse((source / path).read_text())):
@@ -39,6 +40,9 @@ def check(source: Path = SOURCE_ROOT) -> dict:
                 if path in rust:
                     assert target in rust and not target.startswith('clinx/compat/'), (
                         path, node.lineno, 'Rust release imports outside its profile', name)
+                if path in monitor:
+                    assert target in monitor and not target.startswith('clinx/compat/'), (
+                        path, node.lineno, 'Monitor release imports outside its profile', name)
                 edges.append({'source': path, 'line': node.lineno, 'target': target})
     return {'status': 'PASS', 'python_modules': len(actual), 'root_python_modules': 0,
             'rust_sources': len(rust), 'monitor_sources': len(source_paths(source, 'monitor')),

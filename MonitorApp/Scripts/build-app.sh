@@ -15,9 +15,8 @@ cp "$binary_dir/CLINXMonitor" "$app_dir/Contents/MacOS/CLINXMonitor"
 cp Info.plist "$app_dir/Contents/Info.plist"
 cp ThirdPartyNotices.txt "$app_dir/Contents/Resources/ThirdPartyNotices.txt"
 
-# Copy the declared helper closure, including its still-configurable execution
-# compatibility route. Retired experiments and stale incremental sources are
-# excluded by the shared inventory used by Rust release packaging.
+# Copy the declared Helper protocol closure. Execution uses the paired Rust
+# authority; the shared inventory rejects legacy business cores in both bundles.
 python3 -B ../tools/build/runtime_sources.py --monitor-resources "$app_dir/Contents/Resources"
 cp Scripts/CLINXNodeService "$app_dir/Contents/Resources/CLINXNodeService"
 chmod 755 "$app_dir/Contents/Resources/CLINXNodeService"

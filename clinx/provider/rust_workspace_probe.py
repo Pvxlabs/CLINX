@@ -66,6 +66,21 @@ def inspect(request):
 
 
 def observe(endpoint, request):
+    gateway = os.environ.get('CLINX_RUST_PROVIDER_GATEWAY')
+    remote_hosts = json.loads(os.environ.get('CLINX_RUST_REMOTE_HOSTS', '[]'))
+    routes = json.loads(os.environ.get('CLINX_RUST_PROVIDER_GATEWAYS', '{}'))
+    host = request.get('host')
+    if host in remote_hosts or host in routes:
+        gateway = routes.get(host, gateway)
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from clinx.nodes.provider_relay import gateway_request
+        if endpoint != gateway:
+            raise ProbeError('WORKSPACE_OBSERVER_IDENTITY_CONFLICT')
+        result = gateway_request(gateway, int(os.environ['CLINX_RUST_PROVIDER_GATEWAY_UID']),
+            dict(host=request['host'], cwd=request['cwd'], mode='workspace'), 'workspace/inspect', request)
+        if result.get('observer_source') != 'CODEX_PROVIDER_COMMAND_EXEC' or not result.get('observer_uid'):
+            raise ProbeError('WORKSPACE_OBSERVER_INVALID')
+        return result
     # -I excludes caller Python paths; only the selected release is imported.
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from clinx.provider.app_server import CodexAppServerClient, UnixSocketTransport

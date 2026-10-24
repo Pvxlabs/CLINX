@@ -765,6 +765,9 @@ impl Store {
             }
             return Ok(json!({"operation_scopes":allowed,"denied_scopes":denied,"task":task}));
         }
+        if operation == "adoption_endpoints" && core::keys(p, "host") {
+            return Ok(json!({"endpoints":policy.endpoints_for(string(p,"host")?)?}));
+        }
         if operation == "adoption_endpoints" && core::keys(p, "") {
             return Ok(json!({"endpoints":policy.endpoints}));
         }
@@ -1193,9 +1196,9 @@ impl Store {
                     public(&e)
                 }
             }
-            "take_dispatch" | "bind_thread" | "authorize_send" | "observe_begin"
-            | "observe_commit" | "input_begin" | "input_commit" | "cancel" | "take_cancel"
-            | "fail_before_send" => {
+            "metadata_begin" | "metadata_commit" | "native_create_take" | "take_dispatch"
+            | "bind_thread" | "authorize_send" | "observe_begin" | "observe_commit"
+            | "input_begin" | "input_commit" | "cancel" | "take_cancel" | "fail_before_send" => {
                 let eid = string(p, "execution_ref")?.to_owned();
                 let mut e = row(&tx, "execution", &eid)?;
                 let prepared_route = row(&tx, "prepared", string(&e, "prepared_execution_ref")?)?;
@@ -1217,6 +1220,88 @@ impl Store {
                         let prepared = row(&tx, "prepared", string(&e, "prepared_execution_ref")?)?;
                         let task = row(&tx, "task", string(&e, "task_ref")?)?;
                         result = json!({"execution_ref":eid,"epoch":e["epoch"],"ticket":e["ticket"],"thread_id":e["thread_id"].as_str().map(Value::from).unwrap_or(e["predecessor_thread_id"].clone()),"prepared":prepared,"handoff":e["handoff"],"endpoints":route_endpoints,"successor_required":handoff::needed(&task, &prepared),"send_permitted":false});
+                    }
+                    "metadata_begin" => {
+                        if !core::keys(p, "execution_ref") {
+                            return Err("INVALID_METADATA_REQUEST".into());
+                        }
+                        let m = &e["metadata_publication"];
+                        if m.is_null()
+                            || matches!(
+                                m["state"].as_str(),
+                                Some("DELIVERED" | "SUPERSEDED" | "EXHAUSTED")
+                            )
+                            || m["next_ms"].as_i64().is_some_and(|at| at > clock())
+                            || (m["boot"] == self.boot
+                                && m["deadline"].as_i64().is_some_and(|at| at > clock()))
+                        {
+                            return Err("METADATA_NOT_AVAILABLE".into());
+                        }
+                        let attempts = m["attempts"].as_u64().ok_or("INVALID_METADATA_STATE")?;
+                        if attempts >= 8 {
+                            e["metadata_publication"]["state"] = json!("EXHAUSTED");
+                            result = json!({"state":"EXHAUSTED"});
+                        } else {
+                            let nonce = random_id()?;
+                            e["metadata_publication"]["attempts"] = json!(attempts + 1);
+                            e["metadata_publication"]["nonce"] = json!(nonce);
+                            e["metadata_publication"]["boot"] = json!(self.boot);
+                            e["metadata_publication"]["deadline"] = json!(clock() + 30000);
+                            result = json!({"execution_ref":eid,"nonce":nonce,"publication":e["metadata_publication"],"route":{"host":prepared_route["host"],"project":prepared_route["project"],"cwd":e["metadata_publication"]["cwd"],"node_principal":prepared_route["node_principal"]}});
+                        }
+                    }
+                    "metadata_commit" => {
+                        if !core::keys(p, "execution_ref nonce endpoint thread") {
+                            return Err("INVALID_METADATA_EVIDENCE".into());
+                        }
+                        let m = &e["metadata_publication"];
+                        if m.is_null()
+                            || p["nonce"].is_null()
+                            || m["nonce"] != p["nonce"]
+                            || m["boot"] != self.boot
+                            || m["deadline"].as_i64().is_none_or(|at| at <= clock())
+                        {
+                            return Err("METADATA_OBSERVATION_FENCED".into());
+                        }
+                        if p["endpoint"] != m["endpoint"]
+                            || p["thread"]["id"] != m["thread_id"]
+                            || p["thread"]["cwd"] != m["cwd"]
+                            || !route_endpoints.iter().any(|v| p["endpoint"] == *v)
+                        {
+                            return Err("METADATA_IDENTITY_CONFLICT".into());
+                        }
+                        let state = if p["thread"]["name"] == m["title"] {
+                            "DELIVERED"
+                        } else if p["thread"]["name"].as_str().is_some() {
+                            "SUPERSEDED"
+                        } else {
+                            "RETRY"
+                        };
+                        let attempts = m["attempts"].as_u64().ok_or("INVALID_METADATA_STATE")?;
+                        e["metadata_publication"]["state"] = json!(state);
+                        e["metadata_publication"]["nonce"] = Value::Null;
+                        e["metadata_publication"]["deadline"] = Value::Null;
+                        e["metadata_publication"]["next_ms"] =
+                            json!(clock() + (1i64 << attempts.min(8)) * 1000);
+                        result = json!({"state":state});
+                    }
+                    "native_create_take" => {
+                        if !core::keys(p, "execution_ref epoch ticket") {
+                            return Err("INVALID_NATIVE_CREATE".into());
+                        }
+                        worker_fence(&tx, &e, p, &self.boot)?;
+                        if e["dispatch_state"] != "TAKEN"
+                            || e["cancel_requested"] == true
+                            || !e["thread_id"].is_null()
+                            || !e["predecessor_thread_id"].is_null()
+                            || !e["native_create_state"].is_null()
+                            || prepared_route["execution_policy"]["execution_surface"]
+                                != "CODEX_NATIVE"
+                        {
+                            return Err("NATIVE_CREATE_ACK_UNKNOWN".into());
+                        }
+                        e["native_create_state"] = json!("TAKEN");
+                        result = json!({"create_permitted":true,"execution_ref":eid});
                     }
                     "bind_thread" => {
                         if !core::keys(p, "execution_ref epoch ticket endpoint thread_id cwd") {
@@ -1246,6 +1331,19 @@ impl Store {
                         e["workspace_resolution"] = resolution;
                         e["thread_id"] = p["thread_id"].clone();
                         e["endpoint"] = p["endpoint"].clone();
+                        // Only a new, Authority-permitted thread gets a metadata
+                        // outbox. Adoption/continuation must preserve user titles.
+                        if e["native_create_state"] == "TAKEN"
+                            && e["metadata_publication"].is_null()
+                            && prepared["title"]
+                                .as_str()
+                                .is_some_and(|t| !t.is_empty() && t.chars().count() <= 200)
+                        {
+                            e["metadata_publication"] = json!({"state":"PENDING","attempts":0,
+                                "thread_id":p["thread_id"],"endpoint":p["endpoint"],"cwd":p["cwd"],
+                                "title":prepared["title"],"task_ref":e["task_ref"]});
+                        }
+
                         let tid = string(&e, "task_ref")?;
                         let mut t = row(&tx, "task", tid)?;
                         if rows(&tx, "task")?.iter().any(|other| {
@@ -1335,7 +1433,7 @@ impl Store {
                         let actual = e
                             .get("workspace_contract")
                             .unwrap_or(&prepared["workspace_contract"]);
-                        result = json!({"execution_ref":eid,"thread_id":e["thread_id"],"endpoint":e["endpoint"],"workspace_contract":actual,"prompt":prepared["prompt"],"client_message_id":native_client_id(string(&e,"thread_id")?,&eid),"nonce":nonce});
+                        result = json!({"execution_ref":eid,"thread_id":e["thread_id"],"endpoint":e["endpoint"],"workspace_contract":actual,"prompt":prepared["prompt"],"client_message_id":native_client_id(string(&e,"thread_id")?,&eid),"nonce":nonce,"route":{"host":prepared["host"],"project":prepared["project"],"cwd":actual["cwd"],"node_principal":prepared["node_principal"]}});
                     }
                     "input_commit" => {
                         if !core::keys(p, "execution_ref nonce endpoint thread_id turn_id item") {
@@ -1387,7 +1485,7 @@ impl Store {
                         let nonce = random_id()?;
                         e["observation"] =
                             json!({"nonce":nonce,"boot":self.boot,"deadline":clock()+30000});
-                        result = json!({"nonce":nonce,"execution_ref":eid,"thread_id":e["thread_id"],"turn_id":e["turn_id"],"endpoints":route_endpoints});
+                        result = json!({"nonce":nonce,"execution_ref":eid,"thread_id":e["thread_id"],"turn_id":e["turn_id"],"endpoints":route_endpoints,"route":{"host":prepared_route["host"],"project":prepared_route["project"],"cwd":e["workspace_contract"]["cwd"],"node_principal":prepared_route["node_principal"]}});
                     }
                     "observe_commit" => {
                         if !core::keys(p, "execution_ref nonce observations turn") {
@@ -1501,7 +1599,7 @@ impl Store {
                         }
                         string(&e, "turn_id")?;
                         e["cancel_taken"] = json!(true);
-                        result = json!({"send_permitted":true,"execution_ref":eid,"thread_id":e["thread_id"],"turn_id":e["turn_id"],"endpoint":e["endpoint"]});
+                        result = json!({"send_permitted":true,"execution_ref":eid,"thread_id":e["thread_id"],"turn_id":e["turn_id"],"endpoint":e["endpoint"],"route":{"host":prepared_route["host"],"project":prepared_route["project"],"cwd":e["workspace_contract"]["cwd"],"node_principal":prepared_route["node_principal"]}});
                     }
                     _ => unreachable!(),
                 }
@@ -1662,6 +1760,12 @@ impl Store {
             }
             "work" if core::keys(p, "") => Ok(
                 json!({"executions":rows(&self.conn,"execution")?.iter().filter(|e|!terminal(e)).take(100).map(public).collect::<Vec<_>>(),
+                    "metadata":rows(&self.conn,"execution")?.iter().filter(|e| {
+                        let m = &e["metadata_publication"];
+                        !m.is_null() && !matches!(m["state"].as_str(),Some("DELIVERED"|"SUPERSEDED"|"EXHAUSTED"))
+                            && m["next_ms"].as_i64().is_none_or(|at|at<=clock())
+                            && (m["boot"] != self.boot || m["deadline"].as_i64().is_none_or(|at|at<=clock()))
+                    }).take(100).map(|e| json!({"execution_ref":e["execution_ref"]})).collect::<Vec<_>>(),
                     "adoptions":rows(&self.conn,"prepared")?.iter().filter(|p|p["kind"]=="ADOPTION" && p["status"]=="PENDING").take(100).cloned().collect::<Vec<_>>()}),
             ),
             "read_receipt" if core::keys(p, "operation_id") => {
@@ -1961,7 +2065,7 @@ fn close_before_send(
     put(c, "task", task_id, &task, changes)
 }
 
-fn native_client_id(thread: &str, execution: &str) -> String {
+pub fn native_client_id(thread: &str, execution: &str) -> String {
     use sha1::{Digest, Sha1};
     let namespace: [u8; 16] = [
         0x6b, 0xa7, 0xb8, 0x11, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30,
@@ -2121,7 +2225,7 @@ fn control(
                     json!({"nonce":random_id()?,"boot":boot,"deadline":clock()+30000});
                 put(c, "prepared", ref_id, &a, changes)?;
                 return Ok(
-                    json!({"adoption_ref":ref_id,"nonce":a["observation"]["nonce"],"thread_id":a["thread_id"],"exact_turn_id":a["exact_turn_id"],"endpoints":route_endpoints}),
+                    json!({"adoption_ref":ref_id,"nonce":a["observation"]["nonce"],"thread_id":a["thread_id"],"exact_turn_id":a["exact_turn_id"],"endpoints":route_endpoints,"route":{"host":a["host"],"project":a["project"],"cwd":a["workspace_contract"]["cwd"],"node_principal":a["node_principal"]}}),
                 );
             }
             if !core::keys(p, "adoption_ref nonce observations")
@@ -2613,6 +2717,9 @@ pub fn transport_operation(operation: &str) -> bool {
         operation,
         "work"
             | "resume_dispatch"
+            | "metadata_begin"
+            | "metadata_commit"
+            | "native_create_take"
             | "take_dispatch"
             | "bind_thread"
             | "authorize_send"

@@ -798,9 +798,11 @@ class NodeService:
 
     def start(self, request: Mapping[str, Any]) -> dict[str, Any]:
         self._authorize("execution.start", request)
-        # Canonical adapters own the single-writer lease. Legacy callbacks
-        # carrying a raw thread still use their existing transport fence.
-        identity = self._identity(request) if request.get("thread_id") else None
+        # Rust owns all task writer decisions. Keep the protocol callback fence
+        # only for independent callbacks that do not use that authority.
+        authority_owned = getattr(getattr(self.start_execution, '__self__', None),
+                                  'authority_owns_execution', False) is True
+        identity = self._identity(request) if request.get("thread_id") and not authority_owned else None
         execution_ref = _text("execution_ref", request.get("execution_ref"), max_len=256)
         request_id = _text("request_id", request.get("request_id"), max_len=256)
         state, prior = self.registry.claim_request(node_id=self.record.node_id, request_id=request_id, operation="execution.start", payload=request)

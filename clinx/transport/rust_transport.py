@@ -15,6 +15,9 @@ if not __package__:
 import argparse
 import json
 import logging
+import os
+from pathlib import Path
+import subprocess
 import re
 import signal
 import threading
@@ -46,10 +49,11 @@ def desktop_client(cfg, thread_id, cwd, *, host_tools=False, route_endpoints=Non
 
 
 class RustDispatcher:
-    def __init__(self, cfg, commands=None):
+    def __init__(self, cfg, commands=None, *, native_owned_by_rust=False):
         self.cfg = cfg
         self.commands = commands or Commands.from_env()
         self.host_runners = {}
+        self.native_owned_by_rust = native_owned_by_rust
 
     def initialize(self, client):
         client.initialize(client_name=self.cfg.app_server.client_name,
@@ -183,7 +187,7 @@ class RustDispatcher:
             raise RustAuthorityError('SUCCESSOR_CREATE_ACK_UNKNOWN')
         observations = []
         source = handoff['source']
-        endpoints_to_observe = self.commands.call('adoption_endpoints', {})['endpoints']
+        endpoints_to_observe = self.commands.call('adoption_endpoints', dict(host=prepared['host']))['endpoints']
         for endpoint in endpoints_to_observe:
             with existing_client(endpoint, self.cfg.app_server.request_timeout_seconds) as reader:
                 self.initialize(reader)
@@ -211,7 +215,8 @@ class RustDispatcher:
         if not tid or not turn_id:
             raise RustAuthorityError('EXACT_HOST_TURN_REQUIRED')
         from clinx.host.rust_host import configure
-        with desktop_client(self.cfg, tid, p['workspace_contract']['cwd'], host_tools=True) as client:
+        with desktop_client(self.cfg, tid, p['workspace_contract']['cwd'], host_tools=True,
+                route_endpoints=self.commands.call('adoption_endpoints', dict(host=p['host']))['endpoints']) as client:
             self.initialize(client)
             client.rust_authority_request_id = execution_ref
             runner = configure(client, self.cfg, self.commands, p, execution_ref, tid, self.recover_input)
@@ -341,7 +346,7 @@ class RustDispatcher:
     def tick(self):
         results = []
         work = self.commands.call('work')
-        for adoption in work.get('adoptions', []):
+        for adoption in (() if self.native_owned_by_rust else work.get('adoptions', [])):
             try:
                 result = self.adopt(adoption['adoption_ref'])
                 results.append(dict(adoption_ref=adoption['adoption_ref'], status=result['adoption_status']))
@@ -349,6 +354,10 @@ class RustDispatcher:
                 results.append(dict(adoption_ref=adoption['adoption_ref'], status='BLOCKED', error=str(exc)[:120]))
         for e in work['executions']:
             eid = e['execution_ref']
+            if self.native_owned_by_rust:
+                prepared = self.commands.call('get_prepared', dict(prepared_execution_ref=e['prepared_execution_ref']))
+                if prepared['execution_policy']['execution_surface'] != 'HOST_EXECUTOR':
+                    continue
             try:
                 if e['dispatch_state'] == 'READY' and not e['cancel_requested']:
                     result = self.dispatch(eid)
@@ -396,17 +405,69 @@ class RustDispatcher:
         return results
 
 
+def native_worker_command(*, once=False):
+    """A coherent release must include the tested Rust native worker.
+
+    No PATH lookup, implicit build, old Python native loop, or local DB fallback.
+    The worker shares this service's existing Transport principal.
+    """
+    binary = Path(os.environ.get('CLINX_RUST_NATIVE_TRANSPORT',
+        str(Path(__file__).resolve().parents[3] / 'clinx-native-transport')))
+    if not binary.is_absolute() or not binary.is_file() or not os.access(binary, os.X_OK):
+        raise RustAuthorityError('RUST_NATIVE_TRANSPORT_REQUIRED')
+    try:
+        socket_path = os.environ['CLINX_RUST_SOCKET']
+        authority_uid = int(os.environ['CLINX_RUST_UID'])
+    except (KeyError, ValueError):
+        raise RustAuthorityError('RUST_AUTHORITY_CONFIG_REQUIRED') from None
+    routes = []
+    node_routes = json.loads(os.environ.get('CLINX_RUST_PROVIDER_GATEWAYS', '{}'))
+    if not isinstance(node_routes, dict) or any(not isinstance(k, str) or not k or not isinstance(v, str) or not Path(v).is_absolute() for k, v in node_routes.items()):
+        raise RustAuthorityError('INVALID_PROVIDER_ROUTE')
+    for host, endpoint in sorted(node_routes.items()):
+        routes.extend(['--provider-route', host, endpoint])
+    if node_routes:
+        routes.extend(['--provider-gateway-uid', os.environ['CLINX_RUST_PROVIDER_GATEWAY_UID']])
+    remote_hosts = json.loads(os.environ.get('CLINX_RUST_REMOTE_HOSTS', '[]'))
+    if remote_hosts:
+        routes += ['--provider-gateway', os.environ['CLINX_RUST_PROVIDER_GATEWAY'],
+                  '--provider-gateway-uid', os.environ['CLINX_RUST_PROVIDER_GATEWAY_UID']]
+        for host in remote_hosts:
+            routes.extend(['--remote-host', host])
+    return [str(binary), '--socket', socket_path, '--authority-uid', str(authority_uid),
+            *routes, *(['--once'] if once else [])]
+
+
 def run(cfg, *, once=False):
-    dispatcher = RustDispatcher(cfg)
+    dispatcher = RustDispatcher(cfg, native_owned_by_rust=True)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
-    while not stop.is_set():
-        print(json.dumps(dict(authority='RUST', results=dispatcher.tick())), flush=True)
+    # This remaining Python supervisor runs Host dynamic tools only. Native
+    # dispatch, adoption, evidence, cancellation, recovery and metadata outbox
+    # run in Rust, under the same existing service/cgroup and Transport UID.
+    worker = subprocess.Popen(native_worker_command(once=once))
+    try:
         if once:
+            code = worker.wait()
+            if code:
+                raise RustAuthorityError('RUST_NATIVE_TRANSPORT_EXITED')
+            print(json.dumps(dict(authority='RUST', results=dispatcher.tick())), flush=True)
             return 0
-        stop.wait(2)
-    return 0
+        while not stop.is_set():
+            if worker.poll() is not None:
+                raise RustAuthorityError('RUST_NATIVE_TRANSPORT_EXITED')
+            print(json.dumps(dict(authority='RUST', results=dispatcher.tick())), flush=True)
+            stop.wait(2)
+        return 0
+    finally:
+        if worker.poll() is None:
+            worker.terminate()
+            try:
+                worker.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                worker.kill()
+                worker.wait()
 
 
 def main():

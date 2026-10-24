@@ -27,10 +27,9 @@ Rust Core 唯一状态权威、五条设计原则与效果指标。CLINX 是 AI 
 [仓库架构](REPOSITORY_ARCHITECTURE.md)；旧清理记录保留各自当时的路径和计数。
 
 `clinx/` 按职责集中 Python MCP/IPC、Provider、Host、Transport、观察和节点实现；
-`clinx/compat/` 明确保存 Mac 本地执行所需的 Registry/Dispatcher/M9 等旧业务核心。
-Python Owner 已删除；`clinx/compat/domain/`、`clinx/compat/shadow_ledger/`
-仅保留 Desktop metadata outbox 的事件序列化和旧存储格式，
-任务模型、双写和 replay 已退役，见[第四轮清理记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md)。
+旧 `clinx/compat/` Registry/Dispatcher/M9、completion/recovery/outbox 已删除，正常 Helper
+通过配对通道交给 Rust Authority 与 native Transport；实机验证和剩余运行时见
+[核心退役验证](RUST_NATIVE_CORE_RETIREMENT.md)。历史报告保留当时的源码状态与计数。
 Python Authority、`runtime_control/`、
 `provider_adapters/` 实验已退役，见[第二轮清理记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md)。
 `kernel/` 包含 Rust Owner client、冻结 core、历史 Runtime 和原生 Rust authority。

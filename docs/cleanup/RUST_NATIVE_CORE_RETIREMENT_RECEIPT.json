@@ -1,0 +1,450 @@
+{
+  "schema": 1,
+  "base_head": "69b2471e22d9f693a2bb4ece306c90a7f9b6a26f",
+  "scope": "SOURCE_INTEGRATED_NOT_DEPLOYED",
+  "deleted": [
+    {
+      "path": "clinx/compat/__init__.py",
+      "lines": 1
+    },
+    {
+      "path": "clinx/compat/bridge.py",
+      "lines": 5556
+    },
+    {
+      "path": "clinx/compat/completion_runtime.py",
+      "lines": 308
+    },
+    {
+      "path": "clinx/compat/consultations.py",
+      "lines": 192
+    },
+    {
+      "path": "clinx/compat/desktop_publication.py",
+      "lines": 172
+    },
+    {
+      "path": "clinx/compat/domain/__init__.py",
+      "lines": 6
+    },
+    {
+      "path": "clinx/compat/domain/_model.py",
+      "lines": 134
+    },
+    {
+      "path": "clinx/compat/domain/event.py",
+      "lines": 75
+    },
+    {
+      "path": "clinx/compat/execution_liveness.py",
+      "lines": 245
+    },
+    {
+      "path": "clinx/compat/historical_handoff.py",
+      "lines": 138
+    },
+    {
+      "path": "clinx/compat/m9_integration.py",
+      "lines": 2786
+    },
+    {
+      "path": "clinx/compat/native_input_recovery.py",
+      "lines": 280
+    },
+    {
+      "path": "clinx/compat/native_lifecycle.py",
+      "lines": 83
+    },
+    {
+      "path": "clinx/compat/node_execution_adapter.py",
+      "lines": 241
+    },
+    {
+      "path": "clinx/compat/prepared_requests.py",
+      "lines": 142
+    },
+    {
+      "path": "clinx/compat/result_ingestion.py",
+      "lines": 220
+    },
+    {
+      "path": "clinx/compat/shadow_ledger/__init__.py",
+      "lines": 21
+    },
+    {
+      "path": "clinx/compat/shadow_ledger/errors.py",
+      "lines": 35
+    },
+    {
+      "path": "clinx/compat/shadow_ledger/models.py",
+      "lines": 132
+    },
+    {
+      "path": "clinx/compat/shadow_ledger/schema.py",
+      "lines": 114
+    },
+    {
+      "path": "clinx/compat/shadow_ledger/store.py",
+      "lines": 453
+    },
+    {
+      "path": "clinx/compat/task_projection.py",
+      "lines": 107
+    },
+    {
+      "path": "clinx/compat/task_registry.py",
+      "lines": 4052
+    },
+    {
+      "path": "clinx/compat/thread_identity.py",
+      "lines": 380
+    },
+    {
+      "path": "clinx/compat/unstarted_recovery.py",
+      "lines": 279
+    },
+    {
+      "path": "scripts/reconcile_historical_handoff.py",
+      "lines": 24
+    },
+    {
+      "path": "scripts/reconcile_task_projection.py",
+      "lines": 27
+    }
+  ],
+  "sizes": {
+    "py": {
+      "before_files": 126,
+      "before_lines": 39410,
+      "after_files": 103,
+      "after_lines": 24129
+    },
+    "rs": {
+      "before_files": 24,
+      "before_lines": 10711,
+      "after_files": 29,
+      "after_lines": 12297
+    },
+    "swift": {
+      "before_files": 62,
+      "before_lines": 11355,
+      "after_files": 62,
+      "after_lines": 11355
+    }
+  },
+  "runtime_python": {
+    "__init__.py": {
+      "files": 1,
+      "lines": 1
+    },
+    "authority": {
+      "files": 5,
+      "lines": 728
+    },
+    "contracts": {
+      "files": 8,
+      "lines": 1944
+    },
+    "discovery": {
+      "files": 8,
+      "lines": 1860
+    },
+    "host": {
+      "files": 7,
+      "lines": 1946
+    },
+    "mcp": {
+      "files": 4,
+      "lines": 1506
+    },
+    "monitor": {
+      "files": 9,
+      "lines": 2372
+    },
+    "nodes": {
+      "files": 7,
+      "lines": 2460
+    },
+    "provider": {
+      "files": 8,
+      "lines": 3413
+    },
+    "transport": {
+      "files": 3,
+      "lines": 989
+    }
+  },
+  "tests": {
+    "rust_serial": 64,
+    "tracked_affected_fixtures": 40,
+    "original_test_files_unchanged": 129,
+    "affected_legacy_python": {
+      "passed": 51,
+      "failed": 1,
+      "collection_errors": 1
+    },
+    "full_collection_before": 24,
+    "full_collection_after": 94,
+    "new_collection_errors": [
+      "tests/test_acceptance_result_live.py",
+      "tests/test_air_result_contract.py",
+      "tests/test_bridge.py",
+      "tests/test_cancelled_execution_recovery.py",
+      "tests/test_derived_git_targets.py",
+      "tests/test_desktop_native_creation.py",
+      "tests/test_desktop_publication.py",
+      "tests/test_exact_native_reconciliation.py",
+      "tests/test_execution_authority.py",
+      "tests/test_execution_authority_live.py",
+      "tests/test_execution_continuity.py",
+      "tests/test_execution_liveness.py",
+      "tests/test_execution_owner_routing.py",
+      "tests/test_historical_handoff.py",
+      "tests/test_host_contract_v2.py",
+      "tests/test_host_contract_v2_live.py",
+      "tests/test_host_delivery_ingress.py",
+      "tests/test_host_provider_isolation_live.py",
+      "tests/test_lifecycle_routing_tunnel.py",
+      "tests/test_linked_workspace_completion.py",
+      "tests/test_m10.py",
+      "tests/test_m11.py",
+      "tests/test_m12.py",
+      "tests/test_m13.py",
+      "tests/test_m13b.py",
+      "tests/test_m13c.py",
+      "tests/test_m5.py",
+      "tests/test_m6.py",
+      "tests/test_m7.py",
+      "tests/test_m8.py",
+      "tests/test_m9.py",
+      "tests/test_monitor_model_identity.py",
+      "tests/test_native_completion_report.py",
+      "tests/test_native_control.py",
+      "tests/test_native_desktop_discovery.py",
+      "tests/test_native_full_access.py",
+      "tests/test_native_input_forwarding.py",
+      "tests/test_native_interop.py",
+      "tests/test_native_interop_live.py",
+      "tests/test_native_lifecycle_process.py",
+      "tests/test_native_observation_bridge.py",
+      "tests/test_native_replies.py",
+      "tests/test_native_thread_preservation.py",
+      "tests/test_native_workspace_policy.py",
+      "tests/test_native_writer_observation.py",
+      "tests/test_network_observation.py",
+      "tests/test_network_observation_process.py",
+      "tests/test_node_control.py",
+      "tests/test_observer_activity.py",
+      "tests/test_observer_schema.py",
+      "tests/test_observer_server.py",
+      "tests/test_policy_maintenance.py",
+      "tests/test_prepare_contract_idempotency.py",
+      "tests/test_prepared_requests.py",
+      "tests/test_pvx1805_v1_compatibility.py",
+      "tests/test_pvx1812_completion.py",
+      "tests/test_readable_results.py",
+      "tests/test_result_ingestion.py",
+      "tests/test_rust_desktop_daemon.py",
+      "tests/test_rust_observation_capacity.py",
+      "tests/test_shared_read_registry.py",
+      "tests/test_task_forwarding.py",
+      "tests/test_thread_identity.py",
+      "tests/test_thread_router_recovery.py",
+      "tests/test_tool_delivery.py",
+      "tests/test_tool_delivery_live.py",
+      "tests/test_trusted_workspace_paths.py",
+      "tests/test_unloaded_completion.py",
+      "tests/test_worker_continuation.py",
+      "tests/test_worker_continuation_live.py"
+    ],
+    "existing_collection_errors": [
+      "tests/test_archived_native_failure.py",
+      "tests/test_authority_closure.py",
+      "tests/test_bridge_first_migration.py",
+      "tests/test_canonical_authority.py",
+      "tests/test_consultation_owner.py",
+      "tests/test_consultations.py",
+      "tests/test_domain.py",
+      "tests/test_execution_owner.py",
+      "tests/test_native_input_recovery.py",
+      "tests/test_native_lifecycle.py",
+      "tests/test_owner_authority_transport.py",
+      "tests/test_owner_business_commit.py",
+      "tests/test_owner_callers.py",
+      "tests/test_prepared_status.py",
+      "tests/test_provider_adapters.py",
+      "tests/test_pvx1806_remediation.py",
+      "tests/test_pvx1807_remediation.py",
+      "tests/test_runtime_authority_transport.py",
+      "tests/test_runtime_control.py",
+      "tests/test_shadow_ledger.py",
+      "tests/test_tunnel_reliability_wire.py",
+      "tests/test_tunnel_stage1_wire.py",
+      "tests/test_tunnel_transport_runtime.py",
+      "tests/test_unstarted_model_recovery.py"
+    ],
+    "parallel_rust_failure": "node_owner_and_receipt_commit_together_at_fault_boundaries: WRITER_ALREADY_ACTIVE; one default-parallel run failed; serial run passed; pre-existing attribution not proved"
+  },
+  "mac_package": {
+    "status": "PASS",
+    "monitor_sources": 55,
+    "legacy_core_present": false,
+    "legacy_task_db_created": false,
+    "qualification_auth_removed": true,
+    "swift_binary_sha256": "fa69c8837dfcda5b7279fc8c405f130afbc1a2ed03d930445059693f52c17d75",
+    "source_manifest_sha256": "8cc18c74bb476f0731ebcc921efdb3facd5b8fbe0adb1b4ef483e8b88205a6bf"
+  },
+  "release_manifest": {
+    "version": "rust-ac807acc082a51c8ec75",
+    "status": "STAGED_IN_TASK_FIXTURE_ONLY"
+  },
+  "evidence_directory": "/data/artifacts/clinx-core-retirement8-20261025/evidence",
+  "physical_mac": {
+    "lost_ack": {
+      "task_ref": "task_116b816d70fc3132c0b27ddf4dffe81c",
+      "execution_ref": "exec_b9acbe33d0886fd59fa1138a24a25053",
+      "thread_id": "01a16ee8-ca23-76c3-acb8-fac2624dc304",
+      "native_turn_id": "01a16ef3-c2da-7bf1-917c-212979568b44",
+      "status": "SUCCEEDED",
+      "dispatch_state": "ACKED",
+      "resource_state": "RELEASED",
+      "execution_result": {
+        "outcome": "SUCCEEDED",
+        "response_text": "CLINX_MAC_LOST_ACK_RECOVERED",
+        "result_ref": "227ddd31971d51e1d61756ab3fa4418b1bc06ccd374edfb7c19a42220000c2bb"
+      },
+      "workspace_resolution": {
+        "branch": "master",
+        "cwd": "/private/tmp/clinx8-mac-20261025/repository",
+        "head": "9cb7c67b9737bc8a04e5b064cac72d7b9b526e8d",
+        "observer_source": "CODEX_PROVIDER_COMMAND_EXEC",
+        "observer_uid": 501,
+        "repository_common_dir": "/private/tmp/clinx8-mac-20261025/repository/.git",
+        "repository_identity": "git-common:16777232:395273805",
+        "repository_root": "/private/tmp/clinx8-mac-20261025/repository",
+        "worktree": "/private/tmp/clinx8-mac-20261025/repository/.git"
+      }
+    },
+    "cancel": {
+      "task_ref": "task_116b816d70fc3132c0b27ddf4dffe81c",
+      "execution_ref": "exec_ad4e68891a276feea78e840bc2722342",
+      "thread_id": "01a16ee8-ca23-76c3-acb8-fac2624dc304",
+      "native_turn_id": "01a16ef5-64fd-76e1-ba4a-ed0fde26c9ef",
+      "status": "CANCELLED",
+      "dispatch_state": "ACKED",
+      "resource_state": "RELEASED",
+      "execution_result": {
+        "outcome": "CANCELLED",
+        "response_text": "",
+        "result_ref": "92804c3693810a61881fdb7799695e7669df5c9ef738f59b9113040fe3c2ac42"
+      },
+      "workspace_resolution": {
+        "branch": "master",
+        "cwd": "/private/tmp/clinx8-mac-20261025/repository",
+        "head": "9cb7c67b9737bc8a04e5b064cac72d7b9b526e8d",
+        "observer_source": "CODEX_PROVIDER_COMMAND_EXEC",
+        "observer_uid": 501,
+        "repository_common_dir": "/private/tmp/clinx8-mac-20261025/repository/.git",
+        "repository_identity": "git-common:16777232:395273805",
+        "repository_root": "/private/tmp/clinx8-mac-20261025/repository",
+        "worktree": "/private/tmp/clinx8-mac-20261025/repository/.git"
+      }
+    },
+    "canonical": {
+      "task_ref": "task_db679bf0af435063a410630024a043b2",
+      "execution_ref": "exec_66e14d19f129ca412fd05ae0f60b01f3",
+      "thread_id": "01a16ef7-589a-77e3-ab0a-59c545f2d1c9",
+      "native_turn_id": "01a16eff-0d2f-7b80-9fe1-981692d8696f",
+      "status": "SUCCEEDED",
+      "dispatch_state": "ACKED",
+      "resource_state": "RELEASED",
+      "execution_result": {
+        "outcome": "SUCCEEDED",
+        "response_text": "CLINX_CANONICAL_HANDOFF_RUST_OK",
+        "result_ref": "2e329ee29beb06c0272e58d058fbba47d7fbacafd3e3d94d2d319394f367547a"
+      },
+      "workspace_resolution": {
+        "branch": "master",
+        "cwd": "/private/tmp/clinx8-mac-20261025/repository",
+        "head": "9cb7c67b9737bc8a04e5b064cac72d7b9b526e8d",
+        "observer_source": "CODEX_PROVIDER_COMMAND_EXEC",
+        "observer_uid": 501,
+        "repository_common_dir": "/private/tmp/clinx8-mac-20261025/repository/.git",
+        "repository_identity": "git-common:16777232:395273805",
+        "repository_root": "/private/tmp/clinx8-mac-20261025/repository",
+        "worktree": "/private/tmp/clinx8-mac-20261025/repository/.git"
+      }
+    },
+    "bundled_helper": {
+      "task_ref": "task_116b816d70fc3132c0b27ddf4dffe81c",
+      "execution_ref": "exec_6d8a92d8ee7fdab9cbe0fc43f7bb1b9e",
+      "thread_id": "01a16ee8-ca23-76c3-acb8-fac2624dc304",
+      "native_turn_id": "01a16f02-cb3b-7081-ac07-13dd0d793a51",
+      "status": "SUCCEEDED",
+      "dispatch_state": "ACKED",
+      "resource_state": "RELEASED",
+      "execution_result": {
+        "outcome": "SUCCEEDED",
+        "response_text": "CLINX_BUNDLED_HELPER_RUST_OK",
+        "result_ref": "27cf68a496ffe5f1daa03947261b67f807d76067ceb0f37f0b50d4bc89199bfc"
+      },
+      "workspace_resolution": {
+        "branch": "master",
+        "cwd": "/private/tmp/clinx8-mac-20261025/repository",
+        "head": "9cb7c67b9737bc8a04e5b064cac72d7b9b526e8d",
+        "observer_source": "CODEX_PROVIDER_COMMAND_EXEC",
+        "observer_uid": 501,
+        "repository_common_dir": "/private/tmp/clinx8-mac-20261025/repository/.git",
+        "repository_identity": "git-common:16777232:395273805",
+        "repository_root": "/private/tmp/clinx8-mac-20261025/repository",
+        "worktree": "/private/tmp/clinx8-mac-20261025/repository/.git"
+      }
+    }
+  },
+  "physical_exact_inputs": {
+    "lost": {
+      "execution_ref": "exec_b9acbe33d0886fd59fa1138a24a25053",
+      "client_id": "f6e94b02-0d06-5fec-848b-4e7468341675",
+      "matches": [
+        {
+          "turn_id": "01a16ef3-c2da-7bf1-917c-212979568b44",
+          "status": "completed",
+          "item": {
+            "type": "userMessage",
+            "id": "01a16ef3-ccec-7922-939e-5434b2b11038",
+            "clientId": "f6e94b02-0d06-5fec-848b-4e7468341675",
+            "content": [
+              {
+                "type": "text",
+                "text": "Reply exactly CLINX_MAC_LOST_ACK_RECOVERED. Do not use tools or change files.",
+                "text_elements": []
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "cancel": {
+      "execution_ref": "exec_ad4e68891a276feea78e840bc2722342",
+      "client_id": "d11bfe20-936e-58ca-842f-ed0052f12e5d",
+      "matches": [
+        {
+          "turn_id": "01a16ef5-64fd-76e1-ba4a-ed0fde26c9ef",
+          "status": "interrupted",
+          "item": {
+            "type": "userMessage",
+            "id": "01a16ef5-658b-7413-927c-6351e89d855d",
+            "clientId": "d11bfe20-936e-58ca-842f-ed0052f12e5d",
+            "content": [
+              {
+                "type": "text",
+                "text": "For an isolated cancellation qualification, write a detailed 5000 word tutorial about arithmetic. Do not use tools or change files.",
+                "text_elements": []
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

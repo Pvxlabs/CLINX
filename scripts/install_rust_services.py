@@ -168,7 +168,8 @@ Requires=clinx-rust-authority.service
 User=clinx-transport
 Group=clinx-transport
 SupplementaryGroups=clinx-ipc
-{env}Environment=CLINX_RUST_WORKER_LAUNCHER={release}/host-worker
+{env}Environment=CLINX_RUST_NATIVE_TRANSPORT={release}/clinx-native-transport
+Environment=CLINX_RUST_WORKER_LAUNCHER={release}/host-worker
 ExecStart=/usr/bin/python3 -m clinx.transport.rust_transport --config {cfgdir}/bridge.toml
 BindReadOnlyPaths={desktop_socket.parent}:/tmp/codex-daemon-{worker.pw_uid}
 ReadWritePaths={ROOT}/transport

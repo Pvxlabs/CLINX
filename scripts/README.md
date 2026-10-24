@@ -2,15 +2,16 @@
 
 现役任务状态由 Rust Authority 提供。Rust release 的 Python 源文件清单位于
 [runtime_sources.py](../tools/build/runtime_sources.py)，不再复制整个仓库。构建器
-`stage_rust_release.py --desktop-base-release <installed-release> --source <checkout> --runtime-binary <tested-authority> --mcp-relay-binary <tested-relay> --output <receipt>`
+`stage_rust_release.py --desktop-base-release <installed-release> --source <checkout> --runtime-binary <tested-authority> --mcp-relay-binary <tested-relay> --native-transport-binary <tested-native-worker> --output <receipt>`
 使用现有不可变 release 的 native 依赖，刷新完整的 Rust adapter 源码集合并移除旧 Python
-Owner、Registry、实验包和独立 Provider。必须同时提供已验证的 Authority 和 Rust relay binary；
+Owner、Registry、实验包和独立 Provider。必须同时提供已验证的 Authority、Rust relay 和 native Transport binary；
 `--replace-source` 仅保留为清单成员校验兼容参数，不再代表部分源码覆盖。
 该命令只生成候选，不选择或启动服务。独立 Provider 的旧 bootstrap 打包分支已退役。
 
-macOS Helper 仍保留可配置的本地 Python 执行兼容路径，因此其清单比 Rust release 大。
-依赖分类、设备验证和未解除的兼容边界见[第四轮清理记录](../docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md)。
-Python Authority 实验和 `--authority-transport` 已移除；普通设备本地执行路径仍保留。
+macOS Helper 默认经既有配对 mTLS 调用 Rust Authority 和远端 Provider，不再构造本地
+Registry/Dispatcher/M9。Rust 与 Monitor profile 均禁止 COMPAT 源码。
+实机闭环及剩余 Python 运行时见[核心退役验证](../docs/RUST_NATIVE_CORE_RETIREMENT.md)。
+旧 SQLite projection/handoff 修复脚本随该业务库契约退役；历史离线维护使用对应 Git 源码。
 
 pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它；运行器也位于该目录。
 从仓库根目录运行。开发安装见[贡献指南](../CONTRIBUTING.md)，常用验证命令见
@@ -25,8 +26,6 @@ pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它�
 | `python tests/run_tests.py recovery` | 历史 profile 含退役 Authority transport 测试；其余 transient systemd 用例还需要隔离 user manager |
 | [check_tunnel_health.py](check_tunnel_health.py) | `--url-file`、可选 `--max-age`；只读核对 PID 和 poll 新鲜度 |
 | [check_embedded_bridge_idle.py](check_embedded_bridge_idle.py) | `--base-url --tunnel-pid --bridge-pid`；只读，不 Warmup、回收或接管 |
-| [reconcile_task_projection.py](reconcile_task_projection.py) | `--database --execution-ref --check-only` 为检查；省略 `--check-only` 会应用精确维护 |
-| [reconcile_historical_handoff.py](reconcile_historical_handoff.py) | 先 `--check-only`；应用需 `--expected-sha256`，记录 handoff 对账事实 |
 | [build_transport_runtime.py](build_transport_runtime.py) | 指定源码及 Go 归档，构建 transport runtime 到 `--output`，不安装 |
 | [build_tunnel_release.py](build_tunnel_release.py) | 构建候选、manifest 与回退 capsule，不操作服务 |
 | [build_forwarding_release.py](build_forwarding_release.py) | 构建 parser 和配对 Tunnel/health 候选 |

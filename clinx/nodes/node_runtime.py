@@ -297,7 +297,7 @@ def remote_client_factory(identity_root: Path, host: str, registry: NodeRegistry
     return lambda record: AuthorizedRemoteClient(tls, registry, approvals, record.node_id)
 
 
-def node_request_handler(service: NodeService, tls: PairedTLS, approvals: NodeAuthorizationStore, centre_id: str, active_scope: Any = None):
+def node_request_handler(service: NodeService, tls: PairedTLS, approvals: NodeAuthorizationStore, centre_id: str, active_scope: Any = None, provider_relay=None):
 
     def handle(request: Mapping[str, Any], sock: Any, address: Any) -> dict[str, Any]:
         try:
@@ -309,6 +309,11 @@ def node_request_handler(service: NodeService, tls: PairedTLS, approvals: NodeAu
             if local_scope is None or local_scope.revoked or centre_scope is None or centre_scope.revoked:
                 raise NodeProtocolError("SHARING_SCOPE_DENIED", "Node owner approval was revoked")
             service.set_scope(intersect_scope(local_scope, centre_scope))
+            if request.get("operation") in {"provider.upload", "provider.read"}:
+                if (provider_relay is None or request.get("protocol_version") != NODE_PROTOCOL_VERSION
+                        or request.get("node_id") != service.record.node_id):
+                    raise NodeProtocolError("PROVIDER_RELAY_UNAVAILABLE", "Configured Provider relay is required")
+                return provider_relay.handle(request, service.scope)
             return service.handle(request)
         except NodeProtocolError as exc:
             return exc.as_dict() | {"read_only": True}

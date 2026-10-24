@@ -176,3 +176,26 @@ def test_canonical_adoption_readback_needs_no_api_side_provider_access(canonical
     payload = commands.call.call_args.args[1]
     assert payload['workspace_contract'] == {'cwd': identity['cwd']}
     assert payload['canonical_identity'] == identity
+
+
+def test_rust_start_uses_authority_without_a_second_node_writer_fence():
+    from clinx.nodes.node_protocol import NodeRecord, NodeRegistry, NodeService, SharingScope
+
+    prepared = dict(host='air', project='project', new_task=True, execution_ref=None,
+                    task_ref='task_exact')
+    integration = SimpleNamespace(
+        commands=SimpleNamespace(call=Mock(return_value=prepared)),
+        start_execution=Mock(return_value=dict(execution_ref='exec_exact', status='ADMITTED')),
+    )
+    adapter = RustNodeExecutionAdapter(integration, 'air')
+    registry = Mock(spec=NodeRegistry)
+    registry.claim_request.return_value = ('NEW', None)
+    service = NodeService(NodeRecord(node_id='air'), registry,
+        scope=SharingScope(user_scope='fixture', execute_tasks=True), read_thread=Mock(),
+        start_execution=adapter.start)
+    receipt = service.start(dict(request_id='start-exact', execution_ref='exec_exact',
+        prepared_execution_ref='prepared_exact', thread_id='exact-thread', approved=True))
+    assert receipt['status'] == 'ADMITTED'
+    integration.start_execution.assert_called_once()
+    registry.acquire_fence.assert_not_called()
+    registry.finish_request.assert_called_once()

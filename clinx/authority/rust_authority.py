@@ -34,7 +34,7 @@ class RustAuthorityClient:
                 "effective_policy", "register_git_target", "revoke_git_target", "resolve_git_target", "adoption_endpoints", "bind_thread", "authorize_send", "fail_before_send",
                 "observation_inventory", "observation_turns", "adopt", "adoption_begin", "adoption_commit", "prepare_policy", "apply_policy",
                 "host_receive", "host_take", "host_begin", "host_complete", "host_sent", "host_failed", "host_ack", "host_rows", "host_reconcile_rejected",
-                "input_begin", "input_commit", "observe_begin", "observe_commit", "take_cancel", "outbox", "ack_outbox",
+                "native_create_take", "metadata_begin", "metadata_commit", "input_begin", "input_commit", "observe_begin", "observe_commit", "take_cancel", "outbox", "ack_outbox",
             )
         }:
             raise RustAuthorityError("UNSUPPORTED_OPERATION")

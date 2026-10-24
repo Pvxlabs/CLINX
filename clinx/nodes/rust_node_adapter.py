@@ -8,6 +8,10 @@ from clinx.nodes.node_protocol import NodeProtocolError
 
 
 class RustNodeExecutionAdapter:
+    # Internal callback capability, never accepted from the network envelope.
+    # The Node registry records protocol deduplication, not task writer leases.
+    authority_owns_execution = True
+
     def __init__(self, integration, node_id, *, allowed_threads=None, allowed_projects=None,
                  allowed_new_projects=None, allowed_cancel_projects=None):
         self.integration, self.node_id = integration, node_id

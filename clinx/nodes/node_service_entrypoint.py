@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from clinx.discovery.identity import DeviceError, NodeIdentity, PrivateStore, TrustedPeerStore  # noqa: E402
 from clinx.provider.native_history import NativeHistory, ThreadLookupError  # noqa: E402
-from clinx.compat.node_execution_adapter import CanonicalNodeExecutionAdapter  # noqa: E402
+from clinx.nodes.rust_node_adapter import RustNodeExecutionAdapter  # noqa: E402
 from clinx.nodes.node_protocol import NodeAuthorizationStore, NodeRecord, NodeRegistry, NodeRPCServer, NodeService, SharingScope  # noqa: E402
 from clinx.nodes.node_runtime import NodeRegistrationClient, PairedTLS, endpoint_address, node_request_handler  # noqa: E402
 
@@ -130,11 +130,17 @@ def main() -> int:
                         "unavailable_reason": exc.reason, "provider_existence": "UNKNOWN",
                         "context_status": "CONTEXT_UNAVAILABLE"}
 
+        active_scope: list[SharingScope | None] = [None]
+        registration = NodeRegistrationClient(tls, centre_id, centre_endpoint)
         execution = None
         execution_config = config.get("execution_config")
         if local_scope.execute_tasks and isinstance(execution_config, str) and execution_config:
             try:
-                execution = CanonicalNodeExecutionAdapter.from_config(Path(execution_config), identity.public["node_id"],
+                from clinx.authority.rust_integration import RustIntegration, Commands
+                from clinx.contracts.runtime_config import BridgeConfig
+                from clinx.nodes.node_runtime import NodeAuthorityClient
+                execution = RustNodeExecutionAdapter(RustIntegration(BridgeConfig.load(Path(execution_config)),
+                    Commands(NodeAuthorityClient(registration, lambda: active_scope[0]))), identity.public["node_id"],
                     allowed_threads=config.get('execution_threads'),
                     allowed_projects=tuple(p.casefold() for p in config['execution_projects']) if config.get('execution_projects') is not None else None,
                     allowed_new_projects=tuple(p.casefold() for p in config['execution_new_projects']) if config.get('execution_new_projects') is not None else None,
@@ -156,16 +162,19 @@ def main() -> int:
             cancel_execution=execution.cancel if execution else None,
             reconcile_execution=execution.reconcile if execution else None,
         )
-        active_scope: list[SharingScope | None] = [None]
         bind_address = str(config.get("bind_address") or os.environ.get("CLINX_NODE_BIND_ADDRESS", "0.0.0.0"))
         port = int(config.get("port") or os.environ.get("CLINX_NODE_PORT", "8772"))
+        provider_relay = None
+        if execution_config:
+            from clinx.contracts.runtime_config import BridgeConfig
+            from clinx.nodes.provider_relay import NodeProviderRelay
+            provider_relay = NodeProviderRelay(BridgeConfig.load(Path(execution_config)), record.node_id)
         server = NodeRPCServer(
             service, address=bind_address, port=port,
             ssl_context_factory=tls.server_context,
-            request_handler=node_request_handler(service, tls, approvals, centre_id, lambda: active_scope[0]),
+            request_handler=node_request_handler(service, tls, approvals, centre_id, lambda: active_scope[0], provider_relay),
         )
         actual_port = server.address[1]
-        registration = NodeRegistrationClient(tls, centre_id, centre_endpoint)
         from clinx.monitor.observation_source import ObservationCollector
         collector = ObservationCollector(state / "observation-outbox.sqlite3",
             configured_observation_source(native_history.root, record.node_id, config),

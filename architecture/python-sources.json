@@ -58,203 +58,153 @@
     },
     {
       "path": "clinx/compat/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/bridge.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/completion_runtime.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/consultations.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/desktop_publication.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/domain/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/domain/_model.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/domain/event.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/execution_liveness.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/historical_handoff.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/m9_integration.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/native_input_recovery.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/native_lifecycle.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/node_execution_adapter.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/prepared_requests.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/result_ingestion.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/shadow_ledger/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/shadow_ledger/errors.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/shadow_ledger/models.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/shadow_ledger/schema.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/shadow_ledger/store.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/task_projection.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/task_registry.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/thread_identity.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/compat/unstarted_recovery.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Unmigrated Mac business state/lifecycle/recovery or local historical compatibility; excluded from Rust release"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "clinx/contracts/__init__.py",
@@ -620,6 +570,15 @@
       "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
     },
     {
+      "path": "clinx/nodes/provider_relay.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Existing paired mTLS Provider protocol exchange, bounded chunk readback and Centre-local Transport UID gateway; no task state DB or lifecycle decisions"
+    },
+    {
       "path": "clinx/nodes/rust_node_adapter.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
@@ -694,9 +653,10 @@
       "path": "clinx/provider/rust_workspace_probe.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
+        "monitor",
         "rust"
       ],
-      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+      "reason": "Fixed read-only workspace command executed by the selected local or paired remote Provider; required in the Mac Helper closure"
     },
     {
       "path": "clinx/transport/__init__.py",
@@ -714,7 +674,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Python Provider transport consuming Rust host-specific endpoints and send permits; remote network Provider proxy still required"
+      "reason": "Host dynamic-tool execution and Rust native worker supervision; direct native Python methods still used by compatibility/qualification callers pending retirement"
     },
     {
       "path": "clinx/transport/tunnel_reliability.py",
@@ -735,10 +695,22 @@
       "reason": "Explicit development or qualification only; excluded from runtime packages"
     },
     {
+      "path": "fixtures/test_native_transport_binary.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Fresh Rust Authority/Transport process and real WebSocket protocol fault regression; synthetic Provider only"
+    },
+    {
       "path": "fixtures/test_node_authority_route.py",
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Paired reverse Authority gateway identity, scope revocation, frame limits and unknown ACK regression"
+    },
+    {
+      "path": "fixtures/test_provider_relay.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Paired Provider relay chunk integrity, scope, concurrent duplicate and protocol identity fault regression"
     },
     {
       "path": "fixtures/test_rust_node_contract.py",
@@ -857,15 +829,15 @@
     },
     {
       "path": "scripts/reconcile_historical_handoff.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "scripts/reconcile_task_projection.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Retired: Rust native Transport and Authority transactions replace local Mac task state, dispatch, completion, cancellation, recovery and metadata outbox. Historical SQLite repair commands retire with that database contract; use exact historical Git source for offline maintenance."
     },
     {
       "path": "scripts/rust_authority_isolation.py",
@@ -980,6 +952,12 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Explicit development or qualification only; excluded from runtime packages"
+    },
+    {
+      "path": "fixtures/test_runtime_packages.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Verify release inheritance whitelist and incremental Monitor source retirement"
     }
   ]
 }
