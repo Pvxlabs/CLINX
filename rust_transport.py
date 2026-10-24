@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import signal
 import threading
 
@@ -108,8 +109,12 @@ class RustDispatcher:
                 tid = thread['id']
             if thread.get('id') != tid or thread.get('status', {}).get('type') != 'idle':
                 raise RustAuthorityError('NATIVE_WRITER_NOT_IDLE_OR_IDENTITY_CONFLICT')
-            self.commands.call('bind_thread', dict(**scope, endpoint=client.provider_endpoint,
-                thread_id=tid, cwd=thread['cwd']), key=stable_key('thread', execution_ref))
+            # Live native cwd selects execution context for both native and Host tasks.
+            cwd = thread.get('cwd')
+            bound = self.commands.call('bind_thread', dict(**scope, endpoint=client.provider_endpoint,
+                thread_id=tid, cwd=cwd))
+            if bound.get('workspace_contract'):
+                p = dict(p, workspace_contract=bound['workspace_contract'])
             grant = self.commands.call('authorize_send', scope, key=stable_key('send', execution_ref))
             if grant.get('send_permitted') is not True:
                 return grant
@@ -194,7 +199,7 @@ class RustDispatcher:
             # tool requests are fenced by the same Rust call id and Host ledger.
             client.attach_dynamic_tool_turn(tid, turn_id)
             thread = client.thread_resume(tid)
-            if thread['id'] != tid or thread['cwd'] != p['workspace_contract']['cwd']:
+            if thread['id'] != tid:
                 raise RustAuthorityError('HOST_RECOVERY_IDENTITY_CONFLICT')
             turn = self.exact_turn(client, tid, turn_id)
             if turn.get('status') not in ('inProgress', 'running', 'active'):
@@ -211,7 +216,9 @@ class RustDispatcher:
         with existing_client(request['endpoint'], self.cfg.app_server.request_timeout_seconds) as client:
             self.initialize(client)
             thread = client.thread_read(tid)
-            if thread.get('id') != tid or thread.get('cwd') != request['workspace_contract']['cwd']:
+            # Exact user-message identity binds recovery to this execution. A
+            # later cwd change cannot invalidate a historical input receipt.
+            if thread.get('id') != tid:
                 raise RustAuthorityError('NATIVE_INPUT_THREAD_CONFLICT')
             turns = client.thread_turns_list(tid, limit=5, items_view='notLoaded')['data']
             for turn in turns:
@@ -341,8 +348,11 @@ class RustDispatcher:
                 # Rust checks its durable send boundary. A failed Python RPC is
                 # never accepted as proof that a Provider turn was not sent.
                 try:
+                    reason = str(exc).split(':', 1)[0] if isinstance(exc, RustAuthorityError) else type(exc).__name__
+                    if not re.fullmatch(r'[A-Z][A-Z0-9_]{0,95}', reason):
+                        reason = type(exc).__name__
                     closed = self.commands.call('fail_before_send', dict(execution_ref=eid,
-                        reason=type(exc).__name__), key=stable_key('pre-send-failure', eid))
+                        reason=reason), key=stable_key('pre-send-failure', eid))
                     results.append(dict(execution_ref=eid, status=closed['status']))
                     continue
                 except RustAuthorityError:

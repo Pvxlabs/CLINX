@@ -167,8 +167,9 @@ After=network.target
 [Service]
 User=clinx-authority
 Group=clinx-authority
-SupplementaryGroups=clinx-ipc
+SupplementaryGroups=clinx-ipc clinx-provider-ipc
 ExecStart={command}
+BindReadOnlyPaths=/run/clinx-rust-provider/native:/tmp/codex-daemon-{worker.pw_uid}
 ReadWritePaths={ROOT}/authority /run/clinx-rust
 NoNewPrivileges=yes
 CapabilityBoundingSet=

@@ -50,8 +50,8 @@ that work coherent while allowing the execution carrier to change.
 - A provider **thread/session/turn** is a replaceable execution carrier.
 - **ConversationBinding** records which verified provider conversation is bound
   to the task, including historical adoption and migration lineage.
-- A workspace **lease** enforces single-writer coordination and supports stale
-  lease recovery.
+- Rust execution **leases** fence attempts per task. Independent tasks can share
+  a workspace; unknown delivery retains only the affected task's ownership.
 - An **Execution** owns one bounded attempt, its exact route, evidence, result,
   and terminal lifecycle.
 - The **Execution Finalizer** is the authoritative terminal decision maker;
@@ -67,7 +67,7 @@ The checked-in implementation and test suite currently cover:
   and lease ownership.
 - ConversationBinding, bounded historical conversation adoption, and
   provider-thread migration with predecessor/successor lineage.
-- Worktree single-writer leases, stale-lease reclamation, cancellation, and
+- Per-task Rust leases, stale-lease reconciliation, cancellation, and
   fail-closed routing checks.
 - Internal legacy Host execution and receipt reconciliation. Host capability
   tools are not part of the public native-forwarding catalog.
@@ -92,7 +92,7 @@ environment rather than inferred from unit tests alone.
 Task (long-lived identity)
   ├── ConversationBinding (verified provider conversation)
   ├── Execution (one bounded attempt)
-  │     ├── Workspace / worktree lease
+  │     ├── Per-task execution lease
   │     ├── Provider turn
   │     ├── Host execution evidence
   │     └── Execution result
@@ -130,7 +130,7 @@ direction, not universal capabilities claimed by this repository today.
 
 - Task identity outlives provider sessions.
 - Evidence over agent claims.
-- One writer per workspace.
+- Independent tasks may share a workspace.
 - Explicit authority boundaries.
 - Fail closed at external mutation boundaries.
 - Keep the core small and stable; put integrations in adapters.

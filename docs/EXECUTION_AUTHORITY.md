@@ -40,6 +40,38 @@ Active execution ownership,
 exact target identity, duplicate prevention and completion receipts are retained.
 They coordinate delivery and do not authorize Git operations or repository paths.
 
+The 2026-10-24 Rust native workspace binding resolves an exact Thread's live
+`cwd` before preparation and admission, and verifies the transport's observed
+cwd before sending. The resolved context records the repository root, shared Git
+common directory (repository identity), worktree Git directory, branch and HEAD.
+Project registration supplies a default path and identity discovery; legacy
+`workspace_contract` branch/HEAD values are audit metadata. Changes to branch,
+HEAD or cwd within the same repository do not reject a native execution. Unknown
+repository identity, unreadable cwd and a different repository fail explicitly.
+Historical status and exact input receipts do not depend on a current checkout.
+Explicit Host execution uses the same workspace resolver while retaining operation
+scope, exact handoff and receipt checks.
+
+Rust leases are scoped by `host + task_ref`, rather than `host + cwd`. Independent
+tasks can dispatch and run in the same directory while other executions are
+RUNNING, unknown or awaiting an ACK. Each task retains its own attempt fence,
+active execution, cancellation, finalization and receipt identities. Host command
+identity deduplication remains; a shared resource key does not exclude other
+executions. Git and filesystem operations report actual conflicts normally.
+Existing persisted execution resources remain valid without database migration.
+This is a source contract; local tests do not establish installed-release activation.
+
+Production workspace metadata is read by a fixed, bounded probe through the
+existing Codex Provider's `command/exec`, under the configured native worker UID.
+Rust authenticates that Provider's peer identity and validates and records the
+observed repository identity, cwd, branch and HEAD in its existing transaction.
+It does not require the SQLite writer UID to read or list project directories.
+The adapter creates no thread or turn and never writes task state. Provider
+failure, malformed evidence and actual worker filesystem failures remain explicit
+errors; production never falls back to the writer's filesystem identity. The
+Authority retains its existing empty capability set, database ownership and
+read-only filesystem confinement. Project ACLs are unchanged.
+
 An exact execution status read can resolve its sealed preparation before an
 execution record exists. An untouched `PREPARED` request without an owner claim
 is reported as `PREPARED_WITHOUT_EXECUTION`, with the exact request evidence and

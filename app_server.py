@@ -1465,7 +1465,9 @@ class CodexAppServerClient:
             raise AppServerSharedWriterError(
                 f"Managed {method} on the shared Desktop daemon lacks atomic writer admission"
             )
-        if getattr(self, 'read_only_observer', False) and method not in {
+        metadata_probe = (method == 'command/exec' and params is not None
+                          and params == getattr(self, '_workspace_metadata_request', None))
+        if getattr(self, 'read_only_observer', False) and not metadata_probe and method not in {
             'initialize', 'thread/read', 'thread/turns/list', 'thread/items/list',
         } and not (method == 'thread/list' and (params or {}).get('useStateDbOnly') is True):
             raise AppServerProtocolError('Read-only native observer cannot claim or mutate a thread')

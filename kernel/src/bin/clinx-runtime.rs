@@ -71,6 +71,27 @@ fn main() -> Result<(), String> {
         None
     };
     if !qualification {
+        let program = std::env::current_exe()
+            .map_err(|_| "WORKSPACE_OBSERVER_UNAVAILABLE")?
+            .parent()
+            .ok_or("WORKSPACE_OBSERVER_UNAVAILABLE")?
+            .join("control/rust_workspace_probe.py");
+        let info = program
+            .symlink_metadata()
+            .map_err(|_| "WORKSPACE_OBSERVER_UNAVAILABLE")?;
+        if !info.is_file() || info.uid() != 0 || info.mode() & 0o022 != 0 {
+            return Err("ROOT_CONTROLLED_WORKSPACE_OBSERVER_REQUIRED".into());
+        }
+        clinx_decision_kernel::business::workspace_observer::configure(
+            program,
+            policy
+                .as_ref()
+                .and_then(|p| p.endpoints.first())
+                .ok_or("BUSINESS_POLICY_REQUIRED")?
+                .clone(),
+        )?;
+    }
+    if !qualification {
         // Protect the path's parent identities, not merely the current inode.
         for ancestor in state.ancestors() {
             let m = ancestor.symlink_metadata().map_err(|e| e.to_string())?;

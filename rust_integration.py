@@ -78,10 +78,32 @@ class RustIntegration:
         # transport evidence rights or start a local completion worker.
         self.dispatcher = None
 
+    def _native_cwd(self, thread_id):
+        from native_provider import existing_client, endpoints
+        with existing_client(endpoints(self.cfg)[0], self.cfg.app_server.request_timeout_seconds) as client:
+            client.initialize(client_name=self.cfg.app_server.client_name, client_title=self.cfg.app_server.client_title,
+                              client_version=self.cfg.app_server.client_version)
+            native = client.thread_read(thread_id)
+        if native.get('id') != thread_id:
+            raise RustAuthorityError('NATIVE_OBSERVATION_IDENTITY_CONFLICT')
+        cwd = native.get('cwd')
+        if not isinstance(cwd, str) or not cwd.startswith('/') or '\0' in cwd:
+            raise RustAuthorityError('WORKSPACE_CWD_UNREADABLE')
+        return cwd
+
     def adopt_conversation(self, *, host=None, project=None, thread_id=None, title=None,
                            summary=None, conversation_ref=None, query=None, codex_uri=None, exact_turn_id=None, workspace_contract=None):
-        if conversation_ref or query or codex_uri or not thread_id or not project:
+        if codex_uri is not None:
+            from thread_identity import resolve_selector, ThreadLookupError
+            try:
+                thread_id, host, _ = resolve_selector(self.cfg, thread_id=thread_id, codex_uri=codex_uri, host=host)
+            except ThreadLookupError as exc:
+                raise RustAuthorityError(exc.code) from None
+        if conversation_ref or query or not thread_id or not project:
             raise RustAuthorityError('EXACT_NATIVE_THREAD_AND_PROJECT_REQUIRED')
+        if host not in (None, self.cfg.runtime_host):
+            raise RustAuthorityError('NATIVE_HOST_UNAVAILABLE')
+        workspace_contract = dict(cwd=self._native_cwd(thread_id))
         result = self.commands.call('adopt', dict(host=host or self.cfg.runtime_host,
             project=project, thread_id=thread_id, title=title or summary or 'Native Codex conversation',
             workspace_contract=workspace_contract, exact_turn_id=exact_turn_id))
@@ -131,13 +153,31 @@ class RustIntegration:
                           workspace_contract=None, model=None, reasoning_effort=None, reasoning=None,
                           query=None, execution_mode='normal', network_access=None, execution_surface=None,
                           required_capabilities=None, operation_classes=None, production_mutation_intent=None,
-                          requested_operations=None, codex_uri=None):
-        if (query or codex_uri or execution_mode != 'normal' or network_access is not None
+                          requested_operations=None, codex_uri=None, thread_id=None):
+        if (query or execution_mode != 'normal' or network_access is not None
                 or execution_surface not in (None, 'CODEX_NATIVE', 'HOST_EXECUTOR')):
             raise RustAuthorityError('RUST_REQUEST_CAPABILITY_NOT_IMPLEMENTED')
-        if task_action not in (None, 'create', 'continue') or task_mode not in ('new', 'continue'):
+        if task_action not in (None, 'create', 'continue', 'reopen') or task_mode not in ('new', 'continue'):
             raise RustAuthorityError('RUST_TASK_ACTION_NOT_IMPLEMENTED')
         create = task_action == 'create' or task_mode == 'new'
+        if thread_id is not None or codex_uri is not None:
+            from thread_identity import resolve_selector, ThreadLookupError
+            try:
+                thread_id, resolved_host, _ = resolve_selector(self.cfg, thread_id=thread_id, codex_uri=codex_uri, host=host)
+            except ThreadLookupError as exc:
+                raise RustAuthorityError(exc.code) from None
+            if resolved_host != self.cfg.runtime_host:
+                raise RustAuthorityError('NATIVE_HOST_UNAVAILABLE')
+            host = resolved_host
+            matches = [t for t in self.registry.tasks() if t['thread_id'] == thread_id and t['host'] == host]
+            if len(matches) > 1:
+                raise RustAuthorityError('THREAD_IDENTITY_CONFLICT')
+            if matches:
+                if task_ref not in (None, matches[0]['task_id']):
+                    raise RustAuthorityError('TASK_ROUTE_MISMATCH')
+                task_ref, create = matches[0]['task_id'], False
+            elif task_ref is None:
+                create = True
         if create == bool(task_ref):
             raise RustAuthorityError('EXACT_TASK_OR_CREATE_REQUIRED')
         if task_ref:
@@ -145,6 +185,9 @@ class RustIntegration:
             if host not in (None, task.host) or project not in (None, task.project_alias):
                 raise RustAuthorityError('TASK_ROUTE_MISMATCH')
             host, project = task.host, task.project_alias
+            if thread_id not in (None, task.thread_id):
+                raise RustAuthorityError('TASK_ROUTE_MISMATCH')
+            thread_id = task.thread_id
         if not project:
             raise RustAuthorityError('EXACT_PROJECT_REQUIRED')
         if reasoning and reasoning_effort and reasoning != reasoning_effort:
@@ -159,18 +202,28 @@ class RustIntegration:
             execution_policy = self._policy(policy.as_dict())
         elif required_capabilities or operation_classes or production_mutation_intent:
             raise RustAuthorityError('EXACT_HOST_POLICY_REQUIRED')
+        if thread_id:
+            workspace_contract = dict(cwd=self._native_cwd(thread_id))
         result = self.commands.call('prepare', dict(prompt=prompt, approved=approved, project=project,
             host=host or self.cfg.runtime_host, task_ref=task_ref, title=title or summary or prompt[:120],
             workspace_contract=workspace_contract, model=model, reasoning_effort=reasoning_effort or reasoning,
-            execution_policy=execution_policy))
+            execution_policy=execution_policy, thread_id=thread_id))
         return dict({k: v for k, v in result.items() if k not in {'prompt', 'id', 'new_task'}},
                     execution_started=False, read_only=False)
 
     def start_execution(self, *, prepared_execution_ref, approved=False,
                         expected_request_hash=None, expected_task_ref=None):
         # A second start returns the existing execution and cannot enqueue another turn.
+        prepared = self.commands.call('get_prepared', dict(prepared_execution_ref=prepared_execution_ref))
+        native_cwd = None
+        if not prepared.get('execution_ref'):
+            tid = prepared.get('thread_id')
+            if not tid and not prepared.get('new_task', True):
+                tid = self.registry.get_task(prepared['task_ref']).thread_id
+            if tid:
+                native_cwd = self._native_cwd(tid)
         return self.commands.call('start', dict(prepared_execution_ref=prepared_execution_ref, approved=approved,
-            expected_request_hash=expected_request_hash, expected_task_ref=expected_task_ref))
+            expected_request_hash=expected_request_hash, expected_task_ref=expected_task_ref, native_cwd=native_cwd))
 
     def cancel_execution(self, *, execution_ref=None, task_ref=None, native_turn_id=None, approved=False):
         if not execution_ref or task_ref is not None or native_turn_id is not None:
@@ -256,7 +309,7 @@ class RustIntegration:
             client.initialize(client_name=self.cfg.app_server.client_name, client_title=self.cfg.app_server.client_title,
                               client_version=self.cfg.app_server.client_version)
             native = client.thread_read(tid)
-            if native.get('id') != tid or native.get('cwd') != task.workspace_contract['cwd']:
+            if native.get('id') != tid:
                 raise RustAuthorityError('NATIVE_OBSERVATION_IDENTITY_CONFLICT')
             page = None
             if context:
@@ -317,7 +370,9 @@ class RustIntegration:
                 execution_started=False, read_only=True)
         return dict(request_ref=request_ref, request_type='EXECUTION', request_hash=p['request_hash'],
                     request_state=p['status'], task_ref=p['task_ref'], execution_ref=p.get('execution_ref'),
-                    target=dict(project=p['project'], host=p['host'], workspace_contract=p['workspace_contract']),
+                    target=dict(project=p['project'], host=p['host'], workspace_contract=p['workspace_contract'],
+                                workspace_resolution=p.get('workspace_resolution'),
+                                requested_workspace_contract=p.get('requested_workspace_contract')),
                     prompt_sha256=hashlib.sha256(p['prompt'].encode()).hexdigest(), read_only=True)
 
     def find_task(self, *, task_ref=None, query=None, project=None, **unused):
@@ -331,7 +386,8 @@ class RustIntegration:
     @staticmethod
     def _task_public(task):
         return dict({k:v for k,v in task.items() if k in ('title', 'project', 'host', 'workspace_contract',
-            'thread_id', 'lifecycle', 'policy_hash', 'execution_policy', 'active_execution')},
+            'thread_id', 'lifecycle', 'policy_hash', 'execution_policy', 'active_execution',
+            'repository_identity', 'workspace_resolution')},
             task_ref=task['task_id'], read_only=True, authority='RUST')
 
     def list_projects(self, *, host=None, query=None):
