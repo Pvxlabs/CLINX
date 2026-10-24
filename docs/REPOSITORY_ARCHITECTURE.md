@@ -83,10 +83,14 @@ MCP 保持 `CLINX_AUTHORITY=rust` 与既有 socket/UID 配置契约。以上命�
 ## 未迁移边界
 
 Mac `CanonicalNodeExecutionAdapter` 仍构造 `clinx.compat` 中的 Registry、Dispatcher、M9。
-Rust node adapter 尚不支持 canonical handoff，Dispatcher 仍绑定本机 Desktop endpoint，
+Rust node adapter 已接入 canonical 身份与精确 predecessor adoption 契约，但仅在既有
+Authority/Provider 路由内完成资格验证；Dispatcher 仍绑定本机 Desktop endpoint，
 IPC 仍使用 Linux Unix socket/peer credentials。远端 Provider 证据、完成、取消和丢 ACK
 恢复必须先接入等价 Rust 契约，再移除旧实现；更改默认模式或信任节点自报不能完成迁移。
 
 Python MCP、Provider、Host、Transport、Node/Discovery 也仍是长期迁移工作，不能因为位于
 `clinx/` 而称作纯开发工具。本轮实质替换的是 stdio byte relay；其余结构/依赖调整不计作
 Rust 业务迁移。当前验收范围见[第五轮收敛报告](cleanup/REPOSITORY_CONVERGENCE_PHASE5.md)。
+
+后续业务契约进展及尚未切换的 Mac 路径见
+[Rust canonical handoff](RUST_CANONICAL_HANDOFF.md)。第五轮报告保留其当时的验收范围。

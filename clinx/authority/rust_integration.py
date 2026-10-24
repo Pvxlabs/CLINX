@@ -102,7 +102,8 @@ class RustIntegration:
         return cwd
 
     def adopt_conversation(self, *, host=None, project=None, thread_id=None, title=None,
-                           summary=None, conversation_ref=None, query=None, codex_uri=None, exact_turn_id=None, workspace_contract=None):
+                           summary=None, conversation_ref=None, query=None, codex_uri=None, exact_turn_id=None, workspace_contract=None,
+                           canonical_identity=None):
         if codex_uri is not None:
             from clinx.contracts.thread_identity import resolve_selector, ThreadLookupError
             try:
@@ -113,10 +114,21 @@ class RustIntegration:
             raise RustAuthorityError('EXACT_NATIVE_THREAD_AND_PROJECT_REQUIRED')
         if host not in (None, self.cfg.runtime_host):
             raise RustAuthorityError('NATIVE_HOST_UNAVAILABLE')
-        workspace_contract = dict(cwd=self._native_cwd(thread_id))
-        result = self.commands.call('adopt', dict(host=host or self.cfg.runtime_host,
+        if canonical_identity is None:
+            workspace_contract = dict(cwd=self._native_cwd(thread_id))
+        else:
+            # The envelope is only an intent. Transport independently verifies
+            # its exact cwd and predecessor turn before Rust creates the task.
+            # Durable adoption readback must not depend on a live Provider.
+            if not isinstance(canonical_identity, dict):
+                raise RustAuthorityError('CANONICAL_HANDOFF_IDENTITY_CONFLICT')
+            workspace_contract = dict(cwd=canonical_identity.get('cwd'))
+        payload = dict(host=host or self.cfg.runtime_host,
             project=project, thread_id=thread_id, title=title or summary or 'Native Codex conversation',
-            workspace_contract=workspace_contract, exact_turn_id=exact_turn_id))
+            workspace_contract=workspace_contract, exact_turn_id=exact_turn_id)
+        if canonical_identity is not None:
+            payload['canonical_identity'] = canonical_identity
+        result = self.commands.call('adopt', payload)
         return dict({k:v for k,v in result.items() if k in ('adoption_ref', 'adoption_status',
             'task_ref', 'thread_id', 'workspace_contract')}, read_only=False)
 

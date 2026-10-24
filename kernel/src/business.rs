@@ -1931,6 +1931,10 @@ fn control(
                     p,
                     "host project thread_id title workspace_contract exact_turn_id",
                 )
+                && !core::keys(
+                    p,
+                    "host project thread_id title workspace_contract exact_turn_id canonical_identity",
+                )
             {
                 return Err("INVALID_ADOPTION".into());
             }
@@ -1938,10 +1942,14 @@ fn control(
             let project = policy.project(string(p, "project")?, string(p, "host")?)?;
             string(p, "title")?;
             let seal = native_workspace(&project, &p["workspace_contract"])?;
+            let canonical = handoff::adoption_identity(p)?;
             for t in rows(c, "task")? {
                 if t["thread_id"] == thread && t["host"] == p["host"] {
                     if t["project"] != p["project"]
-                        || (!p["exact_turn_id"].is_null()
+                        || (canonical.is_some()
+                            && t["canonical_handoff"] != canonical.as_ref().unwrap().clone())
+                        || (canonical.is_none()
+                            && !p["exact_turn_id"].is_null()
                             && t["native_checkpoint"]["turn"]["id"] != p["exact_turn_id"])
                     {
                         return Err("ADOPTION_IDENTITY_CONFLICT".into());
@@ -1961,12 +1969,26 @@ fn control(
             }
             let ref_id = format!("adopt_{}", core::digest(&json!([p["host"], thread])));
             if let Ok(old) = row(c, "prepared", &ref_id) {
-                if old["project"] != p["project"] || old["exact_turn_id"] != p["exact_turn_id"] {
+                if old["project"] != p["project"]
+                    || old["exact_turn_id"] != p["exact_turn_id"]
+                    || old["canonical_handoff"] != canonical.clone().unwrap_or(Value::Null)
+                {
                     return Err("ADOPTION_IDENTITY_CONFLICT".into());
                 }
                 return Ok(old);
             }
-            let result = json!({"id":ref_id,"adoption_ref":ref_id,"kind":"ADOPTION","exact_turn_id":p["exact_turn_id"],"status":"PENDING","adoption_status":"PENDING","host":p["host"],"project":p["project"],"thread_id":thread,"title":p["title"],"workspace_contract":seal,"task_ref":format!("task_{}",&random_id()?[..32]),"request_hash":hash});
+            let task_ref = if let Some(identity) = &canonical {
+                string(&identity["identity"], "task_id")?.to_owned()
+            } else {
+                format!("task_{}", &random_id()?[..32])
+            };
+            if row(c, "task", &task_ref).is_ok() {
+                return Err("ADOPTION_IDENTITY_CONFLICT".into());
+            }
+            let mut result = json!({"id":ref_id,"adoption_ref":ref_id,"kind":"ADOPTION","exact_turn_id":p["exact_turn_id"],"status":"PENDING","adoption_status":"PENDING","host":p["host"],"project":p["project"],"thread_id":thread,"title":p["title"],"workspace_contract":seal,"task_ref":task_ref,"request_hash":hash});
+            if let Some(identity) = canonical {
+                result["canonical_handoff"] = identity;
+            }
             put(c, "prepared", &ref_id, &result, changes)?;
             Ok(result)
         }
@@ -2032,6 +2054,8 @@ fn control(
                 }
                 let t = &observation["thread"];
                 if t["id"] != a["thread_id"]
+                    || (!a["canonical_handoff"].is_null()
+                        && t["cwd"] != a["canonical_handoff"]["identity"]["cwd"])
                     || observations
                         .iter()
                         .any(|other| other["thread"]["cwd"] != t["cwd"])
@@ -2056,10 +2080,16 @@ fn control(
                 return Err("THREAD_ALREADY_BOUND".into());
             }
             let task_id = string(&a, "task_ref")?.to_owned();
+            if row(c, "task", &task_id).is_ok() {
+                return Err("ADOPTION_IDENTITY_CONFLICT".into());
+            }
             let execution_policy = native_policy();
             let mut task = json!({"id":task_id,"task_id":task_id,"project":a["project"],"host":a["host"],"title":a["title"],"workspace_contract":a["workspace_contract"],"thread_id":a["thread_id"],"lifecycle":"OPEN","version":0,"execution_policy":execution_policy,"policy_hash":core::digest(&execution_policy),"adoption_evidence":observations});
             task["repository_identity"] = resolution["repository_identity"].clone();
             task["workspace_resolution"] = resolution;
+            if !a["canonical_handoff"].is_null() {
+                task["canonical_handoff"] = a["canonical_handoff"].clone();
+            }
             if !a["exact_turn_id"].is_null() {
                 task["native_checkpoint"] = json!({"endpoint":observations[0]["endpoint"],"thread_id":a["thread_id"],"turn":observations[0]["turn"],"adoption_ref":ref_id});
             }

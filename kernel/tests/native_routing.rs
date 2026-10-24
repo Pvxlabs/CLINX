@@ -1042,3 +1042,331 @@ fn legacy_guard_reconciliation_rejects_ambiguous_or_mutating_evidence() {
         assert_eq!(r["resource_state"],"HELD");
     }
 }
+
+fn canonical_adoption(f: &Fixture) -> Value {
+    json!({"host":"p620","project":"orion","thread_id":"11111111-2222-3333-4444-555555555555",
+        "title":"Canonical fixture","workspace_contract":{"cwd":f.policy.projects[0].cwd},
+        "exact_turn_id":"predecessor-exact",
+        "canonical_identity":{"node_id":"p620","host":"p620","provider":"codex_app_server",
+            "thread_id":"11111111-2222-3333-4444-555555555555","user_scope":"fixture-user",
+            "task_id":"task_d27791080a11520a81245bad9430ea46","origin":"CODEX_NATIVE",
+            "title":"Canonical fixture","cwd":f.policy.projects[0].cwd,
+            "first_provenance_json":json!({"node":"p620","node_fingerprint":"fixture-fingerprint",
+                "observation_id":"fixture-observation","digest":"fixture-digest"}).to_string()}})
+}
+
+fn canonical_evidence(f: &mut Fixture, pending: &Value) -> Value {
+    let challenge = f
+        .call(
+            Role::Transport,
+            "adoption_begin",
+            json!({"adoption_ref":pending["adoption_ref"]}),
+        )
+        .unwrap();
+    json!({"adoption_ref":pending["adoption_ref"],"nonce":challenge["nonce"],"observations":[{
+        "endpoint":"/fixture/provider.sock",
+        "thread":{"id":pending["thread_id"],"cwd":f.policy.projects[0].cwd,"status":{"type":"idle"}},
+        "turn":{"id":"predecessor-exact","status":"completed","items":[
+            {"id":"exact-result","type":"agentMessage","text":"Preserve predecessor evidence"}]}}]})
+}
+
+fn restart_fixture(f: &mut Fixture) {
+    let parking = f.root.join("parking-state");
+    let fresh = !parking.exists();
+    if fresh {
+        fs::create_dir(&parking).unwrap();
+        fs::set_permissions(&parking, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let old = std::mem::replace(&mut f.store, Store::open(&parking, fresh).unwrap());
+    drop(old);
+    // Other parallel fixtures spawn Git. A concurrent fork can briefly inherit
+    // this process's lock FD until exec closes it; wait for that child, without
+    // changing the production writer fence or accepting any other open error.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    f.store = loop {
+        match Store::open(&f.root.join("state"), false) {
+            Ok(store) => break store,
+            Err(error)
+                if error == "WRITER_ALREADY_ACTIVE" && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(error) => panic!("fixture reopen failed: {error}"),
+        }
+    };
+    f.store.configure_business(&f.policy, false).unwrap();
+}
+
+#[test]
+fn canonical_adoption_preserves_identity_checkpoint_and_lost_ack_receipt_after_restart() {
+    let mut f = Fixture::new();
+    let request = canonical_adoption(&f);
+    let pending = f.call(Role::Api, "adopt", request.clone()).unwrap();
+    assert_eq!(
+        pending["task_ref"],
+        request["canonical_identity"]["task_id"]
+    );
+    assert_eq!(
+        f.call(Role::Api, "list_tasks", json!({})).unwrap()["tasks"],
+        json!([])
+    );
+    assert_eq!(
+        f.call(Role::Api, "adopt", request.clone()).unwrap(),
+        pending
+    );
+    let stale = canonical_evidence(&mut f, &pending);
+    restart_fixture(&mut f);
+    let evidence = canonical_evidence(&mut f, &pending);
+    assert_eq!(
+        f.call(Role::Transport, "adoption_commit", stale)
+            .unwrap_err(),
+        "ADOPTION_OBSERVATION_FENCED"
+    );
+    assert_eq!(
+        f.call(Role::Api, "adoption_commit", evidence.clone())
+            .unwrap_err(),
+        "TRANSPORT_PEER_REQUIRED"
+    );
+    // Simulate a committed response lost before the caller sees the ACK.
+    let adopted = f
+        .store
+        .business(
+            Role::Transport,
+            &f.policy,
+            "adoption_commit",
+            "lost-adoption-ack",
+            &evidence,
+        )
+        .unwrap();
+    restart_fixture(&mut f);
+    assert_eq!(
+        f.store
+            .business(
+                Role::Transport,
+                &f.policy,
+                "adoption_commit",
+                "lost-adoption-ack",
+                &evidence
+            )
+            .unwrap(),
+        adopted
+    );
+    let tasks = f.call(Role::Api, "list_tasks", json!({})).unwrap();
+    assert_eq!(tasks["tasks"].as_array().unwrap().len(), 1);
+    assert_eq!(tasks["tasks"][0]["task_id"], pending["task_ref"]);
+    assert_eq!(
+        tasks["tasks"][0]["native_checkpoint"]["turn"],
+        evidence["observations"][0]["turn"]
+    );
+    let prepared = f
+        .call(
+            Role::Api,
+            "prepare",
+            json!({"host":"p620","project":"orion","task_ref":pending["task_ref"],
+        "title":"Continue canonical identity","prompt":"Fixture continuation","approved":true}),
+        )
+        .unwrap();
+    let execution = f.start(&prepared);
+    let sent = f.send(&execution, &json!(f.policy.projects[0].cwd), true);
+    assert_eq!(sent["thread_id"], request["thread_id"]);
+    assert_eq!(
+        f.observe(&sent, "idle", "completed", "Canonical completion")["resource_state"],
+        "RELEASED"
+    );
+    // A later execution advances the current checkpoint, but must not change
+    // the immutable adoption identity or break a delayed adoption retry.
+    assert_eq!(
+        f.call(Role::Api, "adopt", request).unwrap()["task_ref"],
+        pending["task_ref"]
+    );
+    f.store.verify_business().unwrap();
+}
+
+#[test]
+fn canonical_adoption_rejects_selector_provenance_and_provider_conflicts_atomically() {
+    let mut f = Fixture::new();
+    let request = canonical_adoption(&f);
+    for (field, value) in [
+        ("host", json!("air")),
+        ("provider", json!("other")),
+        ("task_id", json!("task_forged")),
+        ("thread_id", json!("not-a-uuid")),
+        ("cwd", json!("/other")),
+        ("first_provenance_json", json!("[]")),
+    ] {
+        let mut invalid = request.clone();
+        invalid["canonical_identity"][field] = value;
+        assert!(f.call(Role::Api, "adopt", invalid).is_err(), "{field}");
+    }
+    let mut invalid = request.clone();
+    invalid["exact_turn_id"] = Value::Null;
+    assert_eq!(
+        f.call(Role::Api, "adopt", invalid).unwrap_err(),
+        "EXACT_PREDECESSOR_TURN_REQUIRED"
+    );
+    let pending = f.call(Role::Api, "adopt", request.clone()).unwrap();
+    let mut conflict = request.clone();
+    conflict["canonical_identity"]["user_scope"] = json!("another-user");
+    assert_eq!(
+        f.call(Role::Api, "adopt", conflict).unwrap_err(),
+        "ADOPTION_IDENTITY_CONFLICT"
+    );
+    let evidence = canonical_evidence(&mut f, &pending);
+    for (field, value) in [("id", json!("other-turn")), ("status", json!("inProgress"))] {
+        let mut invalid = evidence.clone();
+        invalid["observations"][0]["turn"][field] = value;
+        assert_eq!(
+            f.call(Role::Transport, "adoption_commit", invalid)
+                .unwrap_err(),
+            "EXACT_ADOPTION_TURN_CONFLICT"
+        );
+    }
+    let mut invalid = evidence.clone();
+    invalid["observations"][0]["thread"]["cwd"] = json!("/other");
+    assert_eq!(
+        f.call(Role::Transport, "adoption_commit", invalid)
+            .unwrap_err(),
+        "NATIVE_ADOPTION_NOT_IDLE_OR_IDENTITY_CONFLICT"
+    );
+    assert_eq!(
+        f.call(Role::Api, "list_tasks", json!({})).unwrap()["tasks"],
+        json!([])
+    );
+    assert_eq!(
+        f.call(Role::Transport, "adoption_commit", evidence)
+            .unwrap()["task_ref"],
+        pending["task_ref"]
+    );
+    f.store.verify_business().unwrap();
+}
+
+#[test]
+fn canonical_predecessor_checkpoint_drives_once_only_successor_permit() {
+    let mut f = Fixture::new();
+    let request = canonical_adoption(&f);
+    let pending = f.call(Role::Api, "adopt", request).unwrap();
+    let evidence = canonical_evidence(&mut f, &pending);
+    f.call(Role::Transport, "adoption_commit", evidence.clone())
+        .unwrap();
+    let task = f.call(Role::Api, "list_tasks", json!({})).unwrap()["tasks"][0].clone();
+    let policy =
+        json!({"execution_surface":"HOST_EXECUTOR","operation_scopes":f.policy.host_operations});
+    let change = f
+        .call(
+            Role::Api,
+            "prepare_policy",
+            json!({"task_ref":task["task_id"],"expected_policy_hash":task["policy_hash"],
+        "target_policy":policy,"reason":"Existing Host continuation contract","approved":true}),
+        )
+        .unwrap();
+    f.call(Role::Api,"apply_policy",json!({"prepared_reauthorization_ref":change["prepared_reauthorization_ref"],
+        "expected_request_hash":change["request_hash"],"expected_task_ref":task["task_id"],"approved":true})).unwrap();
+    let prepared = f.call(Role::Api,"prepare",json!({"host":"p620","project":"orion","task_ref":task["task_id"],
+        "title":"Successor","prompt":"Keep exact predecessor","execution_policy":policy,"approved":true})).unwrap();
+    let execution = f.start(&prepared);
+    let take = f
+        .call(
+            Role::Transport,
+            "take_dispatch",
+            json!({"execution_ref":execution["execution_ref"]}),
+        )
+        .unwrap();
+    let scope = json!({"execution_ref":take["execution_ref"],"epoch":take["epoch"],"ticket":take["ticket"]});
+    let handoff = f
+        .call(Role::Transport, "successor_begin", scope.clone())
+        .unwrap();
+    assert_eq!(
+        handoff["source"]["turn"],
+        evidence["observations"][0]["turn"]
+    );
+    let mut permit = scope.clone();
+    permit["nonce"] = handoff["nonce"].clone();
+    permit["observations"] = evidence["observations"].clone();
+    let mut bad = permit.clone();
+    bad["observations"][0]["turn"]["items"] = json!([]);
+    assert_eq!(
+        f.call(Role::Transport, "successor_take", bad).unwrap_err(),
+        "EXACT_HANDOFF_OBSERVATION_CONFLICT"
+    );
+    assert_eq!(
+        f.call(Role::Transport, "successor_take", permit.clone())
+            .unwrap()["send_permitted"],
+        true
+    );
+    restart_fixture(&mut f);
+    assert_eq!(
+        f.call(Role::Transport, "successor_take", permit)
+            .unwrap_err(),
+        "HANDOFF_PERMIT_UNAVAILABLE"
+    );
+    let mut commit = scope;
+    commit["nonce"] = handoff["nonce"].clone();
+    commit["endpoint"] = json!("/fixture/provider.sock");
+    commit["thread"] =
+        json!({"id":"successor-fixture","cwd":f.policy.projects[0].cwd,"status":{"type":"idle"}});
+    assert_eq!(
+        f.call(Role::Transport, "successor_commit", commit).unwrap()["successor_thread_id"],
+        "successor-fixture"
+    );
+    f.store.verify_business().unwrap();
+}
+
+#[test]
+fn canonical_tasks_share_workspace_but_not_execution_or_cancellation_identity() {
+    let mut f = Fixture::new();
+    let first = canonical_adoption(&f);
+    let mut second = first.clone();
+    second["thread_id"] = json!("11111111-2222-3333-4444-555555555556");
+    second["canonical_identity"]["thread_id"] = second["thread_id"].clone();
+    second["canonical_identity"]["task_id"] = json!("task_183c46624f7951a9bfd3cff11028156a");
+    let mut executions = vec![];
+    for request in [first, second] {
+        let pending = f.call(Role::Api, "adopt", request).unwrap();
+        let evidence = canonical_evidence(&mut f, &pending);
+        f.call(Role::Transport, "adoption_commit", evidence)
+            .unwrap();
+        let prepare = json!({"host":"p620","project":"orion","task_ref":pending["task_ref"],
+            "title":"Concurrent canonical fixture","prompt":"Independent input","approved":true});
+        let prepared = f.call(Role::Api, "prepare", prepare.clone()).unwrap();
+        let execution = f.start(&prepared);
+        // A distinct preparation cannot create a second active execution for
+        // the same canonical task, even though other native tasks can run.
+        let another = f.call(Role::Api, "prepare", prepare).unwrap();
+        assert_eq!(
+            f.call(
+                Role::Api,
+                "start",
+                json!({"prepared_execution_ref":another["prepared_execution_ref"],
+            "approved":true})
+            )
+            .unwrap_err(),
+            "RESOURCE_STILL_HELD"
+        );
+        executions.push(execution);
+    }
+    assert_ne!(executions[0]["task_ref"], executions[1]["task_ref"]);
+    assert_ne!(
+        executions[0]["execution_ref"],
+        executions[1]["execution_ref"]
+    );
+    assert_eq!(
+        f.call(
+            Role::Api,
+            "cancel",
+            json!({"execution_ref":executions[0]["execution_ref"],
+        "approved":true})
+        )
+        .unwrap()["resource_state"],
+        "RELEASED"
+    );
+    assert_eq!(
+        f.call(
+            Role::Api,
+            "get_status",
+            json!({"execution_ref":executions[1]["execution_ref"]})
+        )
+        .unwrap()["resource_state"],
+        "HELD"
+    );
+    f.store.verify_business().unwrap();
+}

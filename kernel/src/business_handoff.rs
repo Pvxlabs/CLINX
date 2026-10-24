@@ -2,6 +2,74 @@
 //! authority transaction as task/execution binding. No latest-turn selection.
 use super::*;
 
+/// Canonical identity is a routing assertion, never Provider outcome evidence.
+/// Node RPC verifies its paired owner; the authority still requires a fresh
+/// Transport observation before creating any task or predecessor checkpoint.
+pub(super) fn adoption_identity(p: &Value) -> Result<Option<Value>> {
+    let Some(identity) = p.get("canonical_identity") else {
+        return Ok(None);
+    };
+    if !core::keys(
+        identity,
+        "node_id provider thread_id user_scope task_id host origin first_provenance_json title cwd",
+    ) {
+        return Err("CANONICAL_HANDOFF_IDENTITY_CONFLICT".into());
+    }
+    let thread = string(identity, "thread_id")?;
+    let valid_thread = thread.len() == 36
+        && thread.bytes().enumerate().all(|(i, b)| {
+            if [8, 13, 18, 23].contains(&i) {
+                b == b'-'
+            } else {
+                b.is_ascii_digit() || (b'a'..=b'f').contains(&b)
+            }
+        });
+    let node = string(identity, "node_id")?;
+    let proof: Value = serde_json::from_str(string(identity, "first_provenance_json")?)
+        .map_err(|_| "CANONICAL_HANDOFF_IDENTITY_CONFLICT")?;
+    string(identity, "user_scope")?;
+    string(&proof, "node_fingerprint")?;
+    string(&proof, "observation_id")?;
+    string(&proof, "digest")?;
+    if !valid_thread
+        || identity["host"] != node
+        || p["host"] != node
+        || identity["provider"] != "codex_app_server"
+        || identity["origin"] != "CODEX_NATIVE"
+        || p["thread_id"] != thread
+        || proof["node"] != node
+        || identity["cwd"] != p["workspace_contract"]["cwd"]
+        || identity["task_id"] != canonical_task_id(node, thread)
+    {
+        return Err("CANONICAL_HANDOFF_IDENTITY_CONFLICT".into());
+    }
+    string(p, "exact_turn_id").map_err(|_| "EXACT_PREDECESSOR_TURN_REQUIRED")?;
+    Ok(Some(
+        json!({"identity":identity,"predecessor_turn_id":p["exact_turn_id"]}),
+    ))
+}
+
+fn canonical_task_id(node: &str, thread: &str) -> String {
+    use sha1::{Digest, Sha1};
+    // UUIDv5 URL namespace, identical to the deployed Python identity contract.
+    let mut hash = Sha1::new();
+    hash.update([
+        0x6b, 0xa7, 0xb8, 0x11, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30,
+        0xc8,
+    ]);
+    hash.update(core::canonical(&json!([node, "codex_app_server", thread])));
+    let mut bytes = hash.finalize();
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    format!(
+        "task_{}",
+        bytes[..16]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    )
+}
+
 pub(super) fn needed(task: &Value, prepared: &Value) -> bool {
     task["thread_id"].is_string()
         && prepared["execution_policy"]["execution_surface"] == "HOST_EXECUTOR"

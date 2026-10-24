@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 
 from clinx.nodes.node_protocol import NodeProtocolError
 
@@ -15,7 +16,7 @@ class RustNodeExecutionAdapter:
 
     def _target(self, request, *, new=False, cancel=False):
         if request.get('canonical_identity'):
-            raise NodeProtocolError('RUST_NATIVE_ADOPTION_NOT_IMPLEMENTED', 'Legacy canonical handoff is not imported')
+            raise NodeProtocolError('CANONICAL_HANDOFF_REQUIRES_ADOPTION', 'Use the exact canonical adoption contract')
         if request.get('host') not in (None, self.node_id):
             raise NodeProtocolError('NODE_TARGET_MISMATCH', 'Authenticated host differs')
         project, thread = request.get('project'), request.get('thread_id')
@@ -34,7 +35,49 @@ class RustNodeExecutionAdapter:
                 and (not request.get('task_ref') or self.allowed_new_projects is None or not permits(self.allowed_new_projects))):
             raise NodeProtocolError('EXECUTION_TARGET_DENIED', 'Thread outside approved scope')
 
+    def _canonical_adoption(self, request):
+        """Map the existing authenticated Node envelope; never write local state.
+
+        Provenance only identifies the route. Rust Transport must independently
+        read the exact Provider turn before the authority can commit adoption.
+        """
+        envelope, owner = request.get('canonical_identity'), request.get('_canonical_owner')
+        if not isinstance(envelope, dict) or not isinstance(owner, dict):
+            raise NodeProtocolError('CANONICAL_HANDOFF_SCOPE_DENIED', 'Authenticated owner scope is required')
+        try:
+            proof = json.loads(envelope['first_provenance_json'])
+        except (KeyError, TypeError, ValueError):
+            raise NodeProtocolError('CANONICAL_HANDOFF_IDENTITY_CONFLICT', 'Invalid provenance') from None
+        if (not isinstance(proof, dict) or owner.get('owner') != self.node_id
+                or envelope.get('node_id') != self.node_id or envelope.get('host') != self.node_id
+                or envelope.get('user_scope') != owner.get('user') or not owner.get('user')
+                or not owner.get('fingerprint') or proof.get('node_fingerprint') != owner['fingerprint']
+                or proof.get('node') != self.node_id
+                or request.get('host') not in (None, self.node_id)
+                or request.get('thread_id') not in (None, envelope.get('thread_id'))
+                or request.get('task_ref') not in (None, envelope.get('task_id'))):
+            raise NodeProtocolError('CANONICAL_HANDOFF_IDENTITY_CONFLICT', 'Paired owner or selector differs')
+        projects = [p for p in self.integration.cfg.projects if str(p.repo) == envelope.get('cwd')]
+        if len(projects) != 1:
+            raise NodeProtocolError('EXECUTION_TARGET_DENIED', 'Exact native cwd must map to one configured project')
+        project = projects[0].project_alias
+        if request.get('project') is not None and request['project'].casefold() != project.casefold():
+            raise NodeProtocolError('EXECUTION_TARGET_DENIED', 'Project selector differs')
+        target = dict(host=self.node_id, project=project, thread_id=envelope.get('thread_id'))
+        self._target(target)
+        turn = request.get('exact_turn_id')
+        if not isinstance(turn, str) or not turn or request.get('native_turn_id') not in (None, turn):
+            raise NodeProtocolError('EXACT_PREDECESSOR_TURN_REQUIRED', 'An exact predecessor turn is required')
+        return self.integration.adopt_conversation(**target, title=envelope.get('title'),
+            exact_turn_id=turn, canonical_identity=envelope)
+
     def prepare(self, **request):
+        if request.get('canonical_identity') is not None:
+            adoption = self._canonical_adoption(request)
+            if adoption.get('adoption_status') != 'ADOPTED':
+                raise NodeProtocolError('CANONICAL_ADOPTION_PENDING', 'Read adoption until Transport has committed exact Provider evidence')
+            request = dict(request, task_ref=adoption['task_ref'])
+            request.pop('canonical_identity')
         self._target(request, new=not request.get('task_ref'))
         fields = inspect.signature(self.integration.prepare_execution).parameters
         arguments = {k: v for k, v in request.items() if k in fields}
@@ -88,6 +131,8 @@ class RustNodeExecutionAdapter:
         return dict(self.integration.get_context(**{k: v for k, v in request.items() if k in fields}), node_id=self.node_id)
 
     def adopt(self, **request):
+        if request.get('canonical_identity') is not None:
+            return dict(self._canonical_adoption(request), node_id=self.node_id)
         self._target(request, new=True)
         fields = inspect.signature(self.integration.adopt_conversation).parameters
         result = self.integration.adopt_conversation(**{k: v for k, v in request.items() if k in fields})

@@ -36,7 +36,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+      "reason": "Python request/read mapping to Rust IPC, including canonical adoption; currently uses same-host Provider and Linux peer credentials"
     },
     {
       "path": "clinx/authority/rust_reads.py",
@@ -626,7 +626,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+      "reason": "Node protocol mapping to Rust, including canonical identity and exact predecessor adoption; no local business state; cross-device Authority/Provider routing remains unimplemented"
     },
     {
       "path": "clinx/provider/__init__.py",
