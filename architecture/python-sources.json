@@ -367,21 +367,15 @@
     },
     {
       "path": "clinx/host/host_contract.py",
-      "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "rust",
-        "monitor"
-      ],
-      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Frozen Python command catalog reference for migration qualification; not loaded by runtime."
     },
     {
       "path": "clinx/host/host_executor.py",
-      "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "rust",
-        "monitor"
-      ],
-      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Replaced by Rust Host executor, exact Provider sessions and existing Authority delivery transactions; no Python dispatcher/runner fallback."
     },
     {
       "path": "clinx/host/production_workflows.py",
@@ -394,21 +388,15 @@
     },
     {
       "path": "clinx/host/rust_host.py",
-      "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "rust",
-        "monitor"
-      ],
-      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Replaced by Rust Host executor, exact Provider sessions and existing Authority delivery transactions; no Python dispatcher/runner fallback."
     },
     {
       "path": "clinx/host/tool_delivery.py",
-      "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "rust",
-        "monitor"
-      ],
-      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Replaced by Rust Host executor, exact Provider sessions and existing Authority delivery transactions; no Python dispatcher/runner fallback."
     },
     {
       "path": "clinx/mcp/__init__.py",
@@ -669,12 +657,9 @@
     },
     {
       "path": "clinx/transport/rust_transport.py",
-      "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "rust",
-        "monitor"
-      ],
-      "reason": "Host dynamic-tool execution and Rust native worker supervision; direct native Python methods still used by compatibility/qualification callers pending retirement"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Replaced by Rust Host executor, exact Provider sessions and existing Authority delivery transactions; no Python dispatcher/runner fallback."
     },
     {
       "path": "clinx/transport/tunnel_reliability.py",
@@ -958,6 +943,27 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Verify release inheritance whitelist and incremental Monitor source retirement"
+    },
+    {
+      "path": "clinx/contracts/host_config.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Host configuration values required by remaining Python TOML readers; no process or state implementation."
+    },
+    {
+      "path": "tools/build/host_runtime_config.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Build/install conversion of existing Host TOML configuration to Rust worker JSON."
+    },
+    {
+      "path": "fixtures/test_rust_host_runtime.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Real Rust Authority/Host worker processes and isolated Provider protocol fault qualification."
     }
   ]
 }

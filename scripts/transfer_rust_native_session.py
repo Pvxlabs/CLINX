@@ -68,10 +68,10 @@ def main():
 
     source_code = '''import json,sys
 from clinx.provider.native_provider import existing_client
-from clinx.transport.rust_transport import RustDispatcher
+from clinx.provider.native_provider import exact_turn
 with existing_client(sys.argv[1],20,read_only=False) as c:
  c.initialize(client_name='clinx-exact-native-transfer',client_title='Clinx',client_version='1')
- t=c.thread_read(sys.argv[2]);turn=RustDispatcher.exact_turn(c,sys.argv[2],sys.argv[3])
+ t=c.thread_read(sys.argv[2]);turn=exact_turn(c,sys.argv[2],sys.argv[3])
  assert t['id']==sys.argv[2] and t['status']['type']=='idle' and turn['status']=='completed'
  result=dict(thread=t,turn=turn)
  if sys.argv[4]=='archive':
@@ -125,13 +125,13 @@ with existing_client(sys.argv[1],20,read_only=False) as c:
         save()
         destination_code = '''import json,sys
 from clinx.provider.native_provider import existing_client
-from clinx.transport.rust_transport import RustDispatcher
+from clinx.provider.native_provider import exact_turn
 with existing_client('/run/clinx-rust-provider/provider.sock',20,read_only=False) as c:
  c.initialize(client_name='clinx-exact-native-import',client_title='Clinx',client_version='1')
  r=c._request('thread/resume',dict(threadId=sys.argv[1],excludeTurns=True))
  t=r['thread']
  assert t['id']==sys.argv[1] and t['cwd']==sys.argv[4]
- turn=RustDispatcher.exact_turn(c,sys.argv[1],sys.argv[2])
+ turn=exact_turn(c,sys.argv[1],sys.argv[2])
  print(json.dumps(dict(thread=t,turn=turn)))
 '''
         destination = python('clinx-transport', destination_code, tid, turn_id, str(target),

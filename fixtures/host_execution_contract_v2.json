@@ -1,0 +1,2232 @@
+{
+  "provenance": "Python HostExecutor at ccd7e18; command construction only; no target operations executed",
+  "config": {
+    "enabled": true,
+    "host": "p620",
+    "default_timeout_seconds": 30.0,
+    "max_timeout_seconds": 120.0,
+    "max_output_bytes": 65536,
+    "services": [
+      {
+        "alias": "fixture.service",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "dns_name": null,
+        "url": null,
+        "commands": []
+      }
+    ],
+    "ssh_targets": [
+      {
+        "alias": "fixture-host",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "dns_name": null,
+        "url": null,
+        "commands": [
+          [
+            "custom",
+            [
+              "printf",
+              "fixed"
+            ]
+          ]
+        ]
+      }
+    ],
+    "network_targets": [
+      {
+        "alias": "fixture-network",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "dns_name": "example.invalid",
+        "url": "https://example.invalid",
+        "commands": []
+      }
+    ],
+    "local_commands": [
+      {
+        "alias": "fixture-command",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "dns_name": null,
+        "url": null,
+        "commands": [
+          [
+            "fixture-command",
+            [
+              "/usr/bin/true"
+            ]
+          ]
+        ]
+      }
+    ],
+    "trusted_workspace_roots": [
+      "${ROOT}"
+    ],
+    "workflows": [
+      {
+        "identity": "controller",
+        "target": "dev",
+        "action": "inspect",
+        "operation_class": "PRODUCTION_READ_ONLY",
+        "argv": [
+          "/usr/bin/true",
+          "{name}"
+        ],
+        "parameters": [
+          [
+            "name",
+            "identity",
+            []
+          ]
+        ],
+        "resource": "dev-controller"
+      }
+    ]
+  },
+  "catalog": {
+    "LOCAL_HOST_PROCESS": {
+      "host_identity": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "host_identity",
+        "description": "host identity; NONE",
+        "target_kind": "LOCAL_HOST",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "user_identity": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "user_identity",
+        "description": "user identity; NONE",
+        "target_kind": "LOCAL_HOST",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "working_directory": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "working_directory",
+        "description": "working directory; NONE",
+        "target_kind": "LOCAL_HOST",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "uptime": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "uptime",
+        "description": "uptime; NONE",
+        "target_kind": "LOCAL_HOST",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "service_process": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "service_process",
+        "description": "service process; NONE",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "registered_targets": [
+          {
+            "identity": "fixture.service",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "development_command": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "development_command",
+        "description": "development command; TRUSTED_WORKSPACE_DEVELOPMENT",
+        "target_kind": "TRUSTED_WORKSPACE",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "argv"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "operation_classes": [
+          "DEVELOPMENT_MUTATION"
+        ],
+        "required_arguments": [
+          "argv"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "TRUSTED_WORKSPACE_DEVELOPMENT",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "registered_command:fixture-command": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "registered_command:fixture-command",
+        "description": "registered command:fixture-command; REGISTERED_LOCAL_COMMAND",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "REGISTERED_LOCAL_COMMAND",
+        "registered_targets": [
+          {
+            "identity": "fixture-command",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "workflow:controller:inspect": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "workflow:controller:inspect",
+        "description": "workflow:controller:inspect; CONTROLLER_OWNED_WORKFLOW",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target",
+            "parameters"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parameters": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "PRODUCTION_READ_ONLY",
+        "operation_classes": [
+          "PRODUCTION_READ_ONLY"
+        ],
+        "required_arguments": [
+          "target",
+          "parameters"
+        ],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "CONTROLLER_OWNED_WORKFLOW",
+        "registered_targets": [
+          {
+            "identity": "dev",
+            "operation_classes": [
+              "PRODUCTION_READ_ONLY"
+            ],
+            "workflow": "controller",
+            "parameter_schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+                }
+              }
+            },
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      }
+    },
+    "SYSTEMD_USER": {
+      "service_is_active": {
+        "capability": "SYSTEMD_USER",
+        "operation": "service_is_active",
+        "description": "service is active; NONE",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "registered_targets": [
+          {
+            "identity": "fixture.service",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "service_status": {
+        "capability": "SYSTEMD_USER",
+        "operation": "service_status",
+        "description": "service status; NONE",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "registered_targets": [
+          {
+            "identity": "fixture.service",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "service_journal": {
+        "capability": "SYSTEMD_USER",
+        "operation": "service_journal",
+        "description": "service journal; NONE",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lines": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [
+          "lines"
+        ],
+        "mutating": false,
+        "side_effects": "NONE",
+        "registered_targets": [
+          {
+            "identity": "fixture.service",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "service_restart": {
+        "capability": "SYSTEMD_USER",
+        "operation": "service_restart",
+        "description": "service restart; SERVICE_RESTART",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "operation_classes": [
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "SERVICE_RESTART",
+        "registered_targets": [
+          {
+            "identity": "fixture.service",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "development_command": {
+        "capability": "SYSTEMD_USER",
+        "operation": "development_command",
+        "description": "development command; TRUSTED_WORKSPACE_DEVELOPMENT",
+        "target_kind": "TRUSTED_WORKSPACE",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "argv"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "operation_classes": [
+          "DEVELOPMENT_MUTATION"
+        ],
+        "required_arguments": [
+          "argv"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "TRUSTED_WORKSPACE_DEVELOPMENT",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      }
+    },
+    "OUTBOUND_NETWORK": {
+      "dns_lookup": {
+        "capability": "OUTBOUND_NETWORK",
+        "operation": "dns_lookup",
+        "description": "dns lookup; NONE",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "registered_targets": [
+          {
+            "identity": "fixture-network",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "https_head": {
+        "capability": "OUTBOUND_NETWORK",
+        "operation": "https_head",
+        "description": "https head; NONE",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "registered_targets": [
+          {
+            "identity": "fixture-network",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      }
+    },
+    "SSH": {
+      "custom": {
+        "capability": "SSH",
+        "operation": "custom",
+        "description": "custom; REGISTERED_REMOTE_COMMAND",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "REGISTERED_REMOTE_COMMAND",
+        "registered_targets": [
+          {
+            "identity": "fixture-host",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "remote_hostname": {
+        "capability": "SSH",
+        "operation": "remote_hostname",
+        "description": "remote hostname; REGISTERED_REMOTE_COMMAND",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "REGISTERED_REMOTE_COMMAND",
+        "registered_targets": [
+          {
+            "identity": "fixture-host",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "remote_true": {
+        "capability": "SSH",
+        "operation": "remote_true",
+        "description": "remote true; REGISTERED_REMOTE_COMMAND",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "REGISTERED_REMOTE_COMMAND",
+        "registered_targets": [
+          {
+            "identity": "fixture-host",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "remote_uptime": {
+        "capability": "SSH",
+        "operation": "remote_uptime",
+        "description": "remote uptime; REGISTERED_REMOTE_COMMAND",
+        "target_kind": "REGISTERED_TARGET",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "target"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "REGISTERED_REMOTE_COMMAND",
+        "registered_targets": [
+          {
+            "identity": "fixture-host",
+            "operation_classes": [
+              "READ_ONLY_HOST",
+              "DEVELOPMENT_MUTATION",
+              "PRODUCTION_READ_ONLY",
+              "PRODUCTION_MUTATION"
+            ],
+            "task_target_authorized": null
+          }
+        ],
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      }
+    },
+    "HOST_FILESYSTEM": {
+      "git_head": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "git_head",
+        "description": "git head; NONE",
+        "target_kind": "REGISTERED_PROJECT",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "git_status": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "git_status",
+        "description": "git status; NONE",
+        "target_kind": "REGISTERED_PROJECT",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "path_read": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "path_read",
+        "description": "path read; NONE",
+        "target_kind": "TRUSTED_WORKSPACE",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lines": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [
+          "path"
+        ],
+        "optional_arguments": [
+          "lines"
+        ],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "marker_create": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "marker_create",
+        "description": "marker create; PROJECT_MARKER",
+        "target_kind": "REGISTERED_PROJECT",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "operation_classes": [
+          "DEVELOPMENT_MUTATION"
+        ],
+        "required_arguments": [
+          "name"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "PROJECT_MARKER",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "marker_remove": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "marker_remove",
+        "description": "marker remove; PROJECT_MARKER",
+        "target_kind": "REGISTERED_PROJECT",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "operation_classes": [
+          "DEVELOPMENT_MUTATION"
+        ],
+        "required_arguments": [
+          "name"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "PROJECT_MARKER",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "development_command": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "development_command",
+        "description": "development command; TRUSTED_WORKSPACE_DEVELOPMENT",
+        "target_kind": "TRUSTED_WORKSPACE",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "argv"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "operation_classes": [
+          "DEVELOPMENT_MUTATION"
+        ],
+        "required_arguments": [
+          "argv"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "TRUSTED_WORKSPACE_DEVELOPMENT",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      }
+    },
+    "AWS_CLI": {},
+    "CLOUDFLARE_CLI": {},
+    "CLOUD_API": {},
+    "GIT": {
+      "head": {
+        "capability": "GIT",
+        "operation": "head",
+        "description": "head; NONE",
+        "target_kind": "REGISTERED_PROJECT",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "status": {
+        "capability": "GIT",
+        "operation": "status",
+        "description": "status; NONE",
+        "target_kind": "REGISTERED_PROJECT",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "remote_main_head": {
+        "capability": "GIT",
+        "operation": "remote_main_head",
+        "description": "remote main head; NONE",
+        "target_kind": "REGISTERED_PROJECT",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "ahead_behind": {
+        "capability": "GIT",
+        "operation": "ahead_behind",
+        "description": "ahead behind; NONE",
+        "target_kind": "REGISTERED_PROJECT",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": false,
+        "side_effects": "NONE",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "fetch_origin": {
+        "capability": "GIT",
+        "operation": "fetch_origin",
+        "description": "fetch origin; LOCAL_OBJECTS_AND_REMOTE_TRACKING_REFS_ONLY",
+        "target_kind": "REGISTERED_PROJECT",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "operation_class": "READ_ONLY_HOST",
+        "operation_classes": [
+          "READ_ONLY_HOST",
+          "DEVELOPMENT_MUTATION",
+          "PRODUCTION_READ_ONLY",
+          "PRODUCTION_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "LOCAL_OBJECTS_AND_REMOTE_TRACKING_REFS_ONLY",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "push_current_branch": {
+        "capability": "GIT",
+        "operation": "push_current_branch",
+        "description": "push current branch; REGISTERED_ORIGIN_NON_FORCE_CURRENT_BRANCH",
+        "target_kind": "TASK_OWNED_GIT_WORKTREE",
+        "argument_schema": {
+          "type": "object",
+          "required": [],
+          "properties": {
+            "remote": {
+              "type": "string",
+              "minLength": 1
+            },
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "operation_classes": [
+          "DEVELOPMENT_MUTATION"
+        ],
+        "required_arguments": [],
+        "optional_arguments": [
+          "remote",
+          "target"
+        ],
+        "mutating": true,
+        "side_effects": "REGISTERED_ORIGIN_NON_FORCE_CURRENT_BRANCH",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      },
+      "development_command": {
+        "capability": "GIT",
+        "operation": "development_command",
+        "description": "development command; TRUSTED_WORKSPACE_DEVELOPMENT",
+        "target_kind": "TRUSTED_WORKSPACE",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "argv"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "operation_classes": [
+          "DEVELOPMENT_MUTATION"
+        ],
+        "required_arguments": [
+          "argv"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "TRUSTED_WORKSPACE_DEVELOPMENT",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      }
+    },
+    "DOCKER": {
+      "development_command": {
+        "capability": "DOCKER",
+        "operation": "development_command",
+        "description": "development command; TRUSTED_WORKSPACE_DEVELOPMENT",
+        "target_kind": "TRUSTED_WORKSPACE",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "argv"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "operation_classes": [
+          "DEVELOPMENT_MUTATION"
+        ],
+        "required_arguments": [
+          "argv"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "TRUSTED_WORKSPACE_DEVELOPMENT",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      }
+    },
+    "POSTGRES": {
+      "development_command": {
+        "capability": "POSTGRES",
+        "operation": "development_command",
+        "description": "development command; TRUSTED_WORKSPACE_DEVELOPMENT",
+        "target_kind": "TRUSTED_WORKSPACE",
+        "argument_schema": {
+          "type": "object",
+          "required": [
+            "argv"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "operation_classes": [
+          "DEVELOPMENT_MUTATION"
+        ],
+        "required_arguments": [
+          "argv"
+        ],
+        "optional_arguments": [],
+        "mutating": true,
+        "side_effects": "TRUSTED_WORKSPACE_DEVELOPMENT",
+        "implemented": true,
+        "client_exposed": "NOT_OBSERVED",
+        "runtime_health": "NOT_PROBED",
+        "task_authorized": null
+      }
+    },
+    "TAILSCALE": {}
+  },
+  "vectors": [
+    {
+      "scope": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "host_identity",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "hostname"
+        ],
+        "target": null,
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "user_identity",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "whoami"
+        ],
+        "target": null,
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "working_directory",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "pwd"
+        ],
+        "target": null,
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "uptime",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "uptime"
+        ],
+        "target": null,
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "service_process",
+        "operation_class": "READ_ONLY_HOST",
+        "target": "fixture.service"
+      },
+      "arguments": {
+        "target": "fixture.service"
+      },
+      "expected": {
+        "argv": [
+          "systemctl",
+          "--user",
+          "show",
+          "fixture.service",
+          "--property=MainPID",
+          "--property=ExecStart",
+          "--no-pager"
+        ],
+        "target": "fixture.service",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "development_command",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": ""
+      },
+      "arguments": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ]
+      },
+      "expected": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ],
+        "target": "fixture",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "registered_command:fixture-command",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "/usr/bin/true"
+        ],
+        "target": "fixture-command",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "LOCAL_HOST_PROCESS",
+        "operation": "workflow:controller:inspect",
+        "operation_class": "PRODUCTION_READ_ONLY",
+        "target": "dev"
+      },
+      "arguments": {
+        "target": "dev",
+        "parameters": {
+          "name": "fixture"
+        }
+      },
+      "expected": {
+        "argv": [
+          "/usr/bin/true",
+          "fixture"
+        ],
+        "target": "dev",
+        "mutating": false,
+        "resource": "dev-controller",
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "SYSTEMD_USER",
+        "operation": "service_is_active",
+        "operation_class": "READ_ONLY_HOST",
+        "target": "fixture.service"
+      },
+      "arguments": {
+        "target": "fixture.service"
+      },
+      "expected": {
+        "argv": [
+          "systemctl",
+          "--user",
+          "is-active",
+          "fixture.service"
+        ],
+        "target": "fixture.service",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "SYSTEMD_USER",
+        "operation": "service_status",
+        "operation_class": "READ_ONLY_HOST",
+        "target": "fixture.service"
+      },
+      "arguments": {
+        "target": "fixture.service"
+      },
+      "expected": {
+        "argv": [
+          "systemctl",
+          "--user",
+          "status",
+          "fixture.service",
+          "--no-pager"
+        ],
+        "target": "fixture.service",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "SYSTEMD_USER",
+        "operation": "service_journal",
+        "operation_class": "READ_ONLY_HOST",
+        "target": "fixture.service"
+      },
+      "arguments": {
+        "target": "fixture.service"
+      },
+      "expected": {
+        "argv": [
+          "journalctl",
+          "--user",
+          "-u",
+          "fixture.service",
+          "-n",
+          "50",
+          "--no-pager"
+        ],
+        "target": "fixture.service",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "SYSTEMD_USER",
+        "operation": "service_restart",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": "fixture.service"
+      },
+      "arguments": {
+        "target": "fixture.service"
+      },
+      "expected": {
+        "argv": [
+          "systemctl",
+          "--user",
+          "restart",
+          "fixture.service"
+        ],
+        "target": "fixture.service",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "SYSTEMD_USER",
+        "operation": "development_command",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": ""
+      },
+      "arguments": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ]
+      },
+      "expected": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ],
+        "target": "fixture",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "OUTBOUND_NETWORK",
+        "operation": "dns_lookup",
+        "operation_class": "READ_ONLY_HOST",
+        "target": "fixture-network"
+      },
+      "arguments": {
+        "target": "fixture-network"
+      },
+      "expected": {
+        "argv": [
+          "getent",
+          "hosts",
+          "example.invalid"
+        ],
+        "target": "fixture-network",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "OUTBOUND_NETWORK",
+        "operation": "https_head",
+        "operation_class": "READ_ONLY_HOST",
+        "target": "fixture-network"
+      },
+      "arguments": {
+        "target": "fixture-network"
+      },
+      "expected": {
+        "argv": [
+          "curl",
+          "--head",
+          "--location",
+          "--silent",
+          "--show-error",
+          "--max-time",
+          "20",
+          "https://example.invalid"
+        ],
+        "target": "fixture-network",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "SSH",
+        "operation": "custom",
+        "operation_class": "READ_ONLY_HOST",
+        "target": "fixture-host"
+      },
+      "arguments": {
+        "target": "fixture-host"
+      },
+      "expected": {
+        "argv": [
+          "ssh",
+          "-T",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "ConnectTimeout=30",
+          "--",
+          "fixture-host",
+          "printf",
+          "fixed"
+        ],
+        "target": "fixture-host",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "SSH",
+        "operation": "remote_hostname",
+        "operation_class": "READ_ONLY_HOST",
+        "target": "fixture-host"
+      },
+      "arguments": {
+        "target": "fixture-host"
+      },
+      "expected": {
+        "argv": [
+          "ssh",
+          "-T",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "ConnectTimeout=30",
+          "--",
+          "fixture-host",
+          "hostname"
+        ],
+        "target": "fixture-host",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "SSH",
+        "operation": "remote_true",
+        "operation_class": "READ_ONLY_HOST",
+        "target": "fixture-host"
+      },
+      "arguments": {
+        "target": "fixture-host"
+      },
+      "expected": {
+        "argv": [
+          "ssh",
+          "-T",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "ConnectTimeout=30",
+          "--",
+          "fixture-host",
+          "true"
+        ],
+        "target": "fixture-host",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "SSH",
+        "operation": "remote_uptime",
+        "operation_class": "READ_ONLY_HOST",
+        "target": "fixture-host"
+      },
+      "arguments": {
+        "target": "fixture-host"
+      },
+      "expected": {
+        "argv": [
+          "ssh",
+          "-T",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "ConnectTimeout=30",
+          "--",
+          "fixture-host",
+          "uptime"
+        ],
+        "target": "fixture-host",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "git_head",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "target": "fixture",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "git_status",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "git",
+          "status",
+          "--short",
+          "--branch"
+        ],
+        "target": "fixture",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "path_read",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {
+        "path": "README.md"
+      },
+      "expected": {
+        "argv": [
+          "head",
+          "-n",
+          "100",
+          "--",
+          "${ROOT}/README.md"
+        ],
+        "target": "README.md",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "marker_create",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": ""
+      },
+      "arguments": {
+        "name": ".clinx-host-executor-fixture"
+      },
+      "expected": {
+        "argv": [
+          "touch",
+          "--",
+          "${ROOT}/.clinx-host-executor-fixture"
+        ],
+        "target": ".clinx-host-executor-fixture",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "marker_remove",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": ""
+      },
+      "arguments": {
+        "name": ".clinx-host-executor-fixture"
+      },
+      "expected": {
+        "argv": [
+          "rm",
+          "-f",
+          "--",
+          "${ROOT}/.clinx-host-executor-fixture"
+        ],
+        "target": ".clinx-host-executor-fixture",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "HOST_FILESYSTEM",
+        "operation": "development_command",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": ""
+      },
+      "arguments": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ]
+      },
+      "expected": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ],
+        "target": "fixture",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "GIT",
+        "operation": "head",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "target": null,
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "GIT",
+        "operation": "status",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "git",
+          "status",
+          "--short",
+          "--branch"
+        ],
+        "target": null,
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "GIT",
+        "operation": "remote_main_head",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "git",
+          "-c",
+          "core.hooksPath=/dev/null",
+          "-c",
+          "protocol.ext.allow=never",
+          "ls-remote",
+          "--exit-code",
+          "--refs",
+          "origin",
+          "refs/heads/feature/fixture"
+        ],
+        "target": "origin",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "GIT",
+        "operation": "ahead_behind",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "git",
+          "rev-list",
+          "--left-right",
+          "--count",
+          "refs/heads/feature/fixture...refs/remotes/origin/feature/fixture",
+          "--"
+        ],
+        "target": "origin",
+        "mutating": false,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "GIT",
+        "operation": "fetch_origin",
+        "operation_class": "READ_ONLY_HOST",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "git",
+          "-c",
+          "core.hooksPath=/dev/null",
+          "-c",
+          "protocol.ext.allow=never",
+          "fetch",
+          "--no-tags",
+          "--no-recurse-submodules",
+          "origin",
+          "refs/heads/feature/fixture:refs/remotes/origin/feature/fixture"
+        ],
+        "target": "origin",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "GIT",
+        "operation": "push_current_branch",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": ""
+      },
+      "arguments": {},
+      "expected": {
+        "argv": [
+          "git",
+          "-c",
+          "core.hooksPath=/dev/null",
+          "-c",
+          "protocol.ext.allow=never",
+          "-c",
+          "remote.origin.mirror=false",
+          "-c",
+          "push.followTags=false",
+          "push",
+          "--no-verify",
+          "--no-force",
+          "origin",
+          "refs/heads/feature/fixture:refs/heads/feature/fixture"
+        ],
+        "target": "",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "GIT",
+        "operation": "development_command",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": ""
+      },
+      "arguments": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ]
+      },
+      "expected": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ],
+        "target": "fixture",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "DOCKER",
+        "operation": "development_command",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": ""
+      },
+      "arguments": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ]
+      },
+      "expected": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ],
+        "target": "fixture",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    },
+    {
+      "scope": {
+        "capability": "POSTGRES",
+        "operation": "development_command",
+        "operation_class": "DEVELOPMENT_MUTATION",
+        "target": ""
+      },
+      "arguments": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ]
+      },
+      "expected": {
+        "argv": [
+          "git",
+          "status",
+          "--short"
+        ],
+        "target": "fixture",
+        "mutating": true,
+        "resource": null,
+        "cwd": "${ROOT}"
+      }
+    }
+  ]
+}

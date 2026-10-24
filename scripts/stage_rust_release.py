@@ -11,7 +11,27 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.build.runtime_sources import source_paths
+from tools.build.runtime_sources import inventory, source_paths
+
+
+def inherited_native_files(files, source):
+    """Dependency overlays cannot carry a second copy of CLINX runtime code."""
+    dead_paths = {row['path'] for row in inventory(source) if row['role'] == 'DEAD'}
+    moves = json.loads((source / 'architecture/module-moves.json').read_text())['modules']
+    # Only historical flat import names identify retired top-level modules.
+    # A nested dead __init__/model file must never prune a third-party package.
+    retired = {old for old, target in moves.items()
+               if '.' not in old and target.replace('.', '/') + '.py' in dead_paths}
+    result = {}
+    for name, digest in files.items():
+        path = Path(name)
+        if name == 'host-worker':
+            result[name] = digest
+        elif (name.startswith('deps/') and 'clinx' not in path.parts
+              and not (path.suffix in {'.py', '.pyc'}
+                       and path.name.split('.')[0] in retired)):
+            result[name] = digest
+    return result
 
 
 def stage_desktop(args, source):
@@ -36,8 +56,7 @@ def stage_desktop(args, source):
     # Preserve only native dependencies from the old artifact. Python sources
     # always come from the current profile, even if an older release placed
     # retired modules outside control/. Never inherit an old business core.
-    files = {name: digest for name, digest in manifest['files'].items()
-             if name == 'host-worker' or name.startswith('deps/')}
+    files = inherited_native_files(manifest['files'], source)
     # Package a coherent source closure, including the newly separated shared
     # contracts. Mixing old adapter imports with a pruned package is invalid.
     replacements = {name: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -75,7 +94,7 @@ def stage_desktop(args, source):
     (release / 'host-worker').chmod(0o4750)
     result = dict(version=version, source_cwd=str(source),
                   head=subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip(),
-                  base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1',
+                  base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1', host_transport='RUST_HOST_V1',
                   source_replacements=replacements, runtime_source_profile='rust', source_layout='qualified-clinx-v1',
                   retired_files=sorted(set(manifest['files']) - set(files)),
                   files=files, status='STAGED_NOT_SELECTED')

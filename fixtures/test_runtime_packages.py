@@ -70,3 +70,17 @@ def test_incremental_monitor_copy_removes_legacy_and_matches_declared_closure(tm
     assert not (resources/'clinx/compat').exists()
     assert not (resources/'bridge.py').exists() and not (resources/'Discovery').exists()
     assert runtime.read_text() == 'interpreter'
+
+
+def test_dependency_overlay_cannot_smuggle_retired_host_or_second_clinx_package():
+    spec = importlib.util.spec_from_file_location('stage_host_dependency_fixture', SOURCE_ROOT/'scripts/stage_rust_release.py')
+    stage = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(stage)
+    files = {name: 'digest' for name in (
+        'host-worker', 'deps/keep.dat', 'deps/httpx/client.py', 'deps/httpx/__init__.py',
+        'deps/httpx/_model.py',
+        'deps/clinx/host/host_executor.py', 'deps/site-packages/clinx/transport/rust_transport.py',
+        'deps/site-packages/task_registry.py', 'deps/__pycache__/bridge.cpython-313.pyc')}
+    assert set(stage.inherited_native_files(files, SOURCE_ROOT)) == {
+        'host-worker', 'deps/keep.dat', 'deps/httpx/client.py', 'deps/httpx/__init__.py',
+        'deps/httpx/_model.py'}

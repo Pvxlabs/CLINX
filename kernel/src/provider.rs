@@ -122,8 +122,41 @@ pub struct Client {
     stream: UnixStream,
     timeout: Duration,
     sequence: u64,
+    pub last_error: Option<Value>,
 }
 impl Client {
+    /// Host sessions own their exact dynamic-tool calls. Observer/native
+    /// request() retains its rule of never answering unsolicited requests.
+    pub fn send_message(&mut self, message: &Value) -> Result<()> {
+        self.send(message, Instant::now() + self.timeout)
+    }
+    pub fn receive_message(&mut self, timeout: Duration) -> Result<Value> {
+        self.receive(Instant::now() + timeout)
+    }
+    pub fn poll_message(&mut self, timeout: Duration) -> Result<Option<Value>> {
+        let mut fds = [rustix::event::PollFd::new(
+            &self.stream,
+            rustix::event::PollFlags::IN,
+        )];
+        let at = rustix::event::Timespec {
+            tv_sec: timeout.as_secs() as i64,
+            tv_nsec: timeout.subsec_nanos() as i64,
+        };
+        if rustix::event::poll(&mut fds, Some(&at)).map_err(|_| "PROVIDER_DELIVERY_UNKNOWN")? == 0 {
+            return Ok(None);
+        }
+        // Once any frame begins, a timeout is fatal. Never continue parsing a
+        // partially consumed WebSocket frame as a new frame.
+        self.receive_message(self.timeout).map(Some)
+    }
+    pub fn request_collect(
+        &mut self,
+        method: &str,
+        params: Value,
+        events: &mut Vec<Value>,
+    ) -> Result<Value> {
+        self.rpc(method, params, Some(events))
+    }
     pub fn connect(endpoint: &Path, timeout: Duration) -> Result<Self> {
         if !endpoint.is_absolute() || timeout.is_zero() {
             return Err("PROVIDER_ENDPOINT_INVALID".into());
@@ -133,6 +166,7 @@ impl Client {
             stream,
             timeout,
             sequence: 0,
+            last_error: None,
         };
         let key = base64(&random::<16>()?);
         let request = format!(
@@ -304,6 +338,17 @@ impl Client {
 }
 impl Provider for Client {
     fn request(&mut self, method: &str, params: Value) -> Result<Value> {
+        self.rpc(method, params, None)
+    }
+}
+impl Client {
+    fn rpc(
+        &mut self,
+        method: &str,
+        params: Value,
+        mut events: Option<&mut Vec<Value>>,
+    ) -> Result<Value> {
+        self.last_error = None;
         self.sequence += 1;
         let id = json!(format!("clinx-rust-{}", self.sequence));
         let deadline = Instant::now() + self.timeout;
@@ -313,12 +358,19 @@ impl Provider for Client {
         for _ in 0..4096 {
             let message = self.receive(deadline)?;
             if message.get("method").is_some() {
+                if let Some(events) = events.as_deref_mut() {
+                    if events.len() >= 256 {
+                        return Err("PROVIDER_NOTIFICATION_CAPACITY_EXCEEDED".into());
+                    }
+                    events.push(message);
+                }
                 continue;
             }
             if message["id"] != id {
                 return Err("PROVIDER_RESPONSE_IDENTITY_CONFLICT".into());
             }
             if let Some(error) = message.get("error") {
+                self.last_error = Some(error.clone());
                 if method == "thread/read"
                     && error["code"] == -32600
                     && params["threadId"]

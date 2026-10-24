@@ -10,8 +10,12 @@ import json
 import os
 import pwd
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.build.host_runtime_config import compile_config
 
 ROOT = Path("/var/lib/clinx-rust")
 
@@ -63,6 +67,8 @@ def main():
     manifest = json.loads((release / "manifest.json").read_text())
     if manifest.get('source_layout') != 'qualified-clinx-v1':
         raise RuntimeError('QUALIFIED_PACKAGE_LAYOUT_REQUIRED')
+    if manifest.get('host_transport') != 'RUST_HOST_V1':
+        raise RuntimeError('QUALIFIED_RUST_HOST_WORKER_REQUIRED')
     if release.name != manifest["version"]:
         raise RuntimeError("RELEASE_IDENTITY_MISMATCH")
     import hashlib
@@ -101,6 +107,7 @@ def main():
     config["runtime"].pop("task_db_path", None)
     # Preserve configured routes and Host command definitions; no legacy DB path.
     (cfgdir / "bridge.toml").write_text("\n".join(toml(config)) + "\n")
+    (cfgdir / "host-runtime.json").write_text(json.dumps(compile_config(cfgdir / "bridge.toml"), indent=2) + "\n")
     policy = dict(
         projects=[
             dict(alias=k, host="p620", cwd=v["cwd"])
@@ -161,7 +168,7 @@ CapabilityBoundingSet=
 {common.replace("ProcSubset=pid", "")}
 """,
         "clinx-rust-dispatcher.service": f"""[Unit]
-Description=CLINX Rust authority transport adapter
+Description=CLINX Rust native and Host execution transport
 After=clinx-rust-authority.service
 Requires=clinx-rust-authority.service
 [Service]
@@ -170,7 +177,7 @@ Group=clinx-transport
 SupplementaryGroups=clinx-ipc
 {env}Environment=CLINX_RUST_NATIVE_TRANSPORT={release}/clinx-native-transport
 Environment=CLINX_RUST_WORKER_LAUNCHER={release}/host-worker
-ExecStart=/usr/bin/python3 -m clinx.transport.rust_transport --config {cfgdir}/bridge.toml
+ExecStart={release}/clinx-native-transport --socket /run/clinx-rust/authority.sock --authority-uid {a.pw_uid} --host-config {cfgdir}/host-runtime.json
 BindReadOnlyPaths={desktop_socket.parent}:/tmp/codex-daemon-{worker.pw_uid}
 ReadWritePaths={ROOT}/transport
 InaccessiblePaths={ROOT}/authority /run/clinx-rust-api /run/user/1001 -/run/docker.sock -/run/containerd

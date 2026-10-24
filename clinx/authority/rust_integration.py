@@ -89,7 +89,7 @@ class RustIntegration:
         self.dispatcher = None
 
     def _native_cwd(self, thread_id):
-        from clinx.provider.native_provider import existing_client, endpoints
+        from clinx.provider.native_provider import endpoints, existing_client
         with existing_client(endpoints(self.cfg)[0], self.cfg.app_server.request_timeout_seconds) as client:
             client.initialize(client_name=self.cfg.app_server.client_name, client_title=self.cfg.app_server.client_title,
                               client_version=self.cfg.app_server.client_version)
@@ -105,7 +105,7 @@ class RustIntegration:
                            summary=None, conversation_ref=None, query=None, codex_uri=None, exact_turn_id=None, workspace_contract=None,
                            canonical_identity=None):
         if codex_uri is not None:
-            from clinx.contracts.thread_identity import resolve_selector, ThreadLookupError
+            from clinx.contracts.thread_identity import ThreadLookupError, resolve_selector
             try:
                 thread_id, host, _ = resolve_selector(self.cfg, thread_id=thread_id, codex_uri=codex_uri, host=host)
             except ThreadLookupError as exc:
@@ -183,7 +183,7 @@ class RustIntegration:
             raise RustAuthorityError('RUST_TASK_ACTION_NOT_IMPLEMENTED')
         create = task_action == 'create' or task_mode == 'new'
         if thread_id is not None or codex_uri is not None:
-            from clinx.contracts.thread_identity import resolve_selector, ThreadLookupError
+            from clinx.contracts.thread_identity import ThreadLookupError, resolve_selector
             try:
                 thread_id, resolved_host, _ = resolve_selector(self.cfg, thread_id=thread_id, codex_uri=codex_uri, host=host)
             except ThreadLookupError as exc:
@@ -260,7 +260,7 @@ class RustIntegration:
 
     def _read_target(self, *, execution_ref=None, task_ref=None, thread_id=None, codex_uri=None,
                      host=None, project=None, node_id=None, query=None):
-        from clinx.contracts.thread_identity import resolve_selector, ThreadLookupError
+        from clinx.contracts.thread_identity import ThreadLookupError, resolve_selector
         if query is not None:
             raise RustAuthorityError('EXACT_THREAD_SELECTOR_REQUIRED')
         selected = None
@@ -322,14 +322,13 @@ class RustIntegration:
         if not tid or not turn_id:
             return result
         from clinx.provider.app_server import AppServerError
-        from clinx.provider.native_provider import existing_client, endpoints
-        from clinx.transport.rust_transport import RustDispatcher
+        from clinx.provider.native_provider import endpoints, exact_turn, existing_client
         try:
             with existing_client(endpoints(self.cfg)[0], self.cfg.app_server.request_timeout_seconds) as client:
                 client.initialize(client_name=self.cfg.app_server.client_name,
                                   client_title=self.cfg.app_server.client_title,
                                   client_version=self.cfg.app_server.client_version)
-                turn = RustDispatcher.exact_turn(client, tid, turn_id)
+                turn = exact_turn(client, tid, turn_id)
             return self._native_host_readback(result, turn)
         except (AppServerError, RustAuthorityError, OSError, ValueError, KeyError):
             return result
@@ -373,8 +372,8 @@ class RustIntegration:
             if project is not None and project != result.get('project'):
                 raise RustAuthorityError('THREAD_SCOPE_MISMATCH')
             return result
-        from clinx.provider.native_provider import existing_client, endpoints
         from clinx.provider.native_history import context_result
+        from clinx.provider.native_provider import endpoints, existing_client
         exact = selected.get('native_turn_id') if selected else None
         if selected and context and not exact:
             raise RustAuthorityError('EXACT_NATIVE_TURN_UNAVAILABLE')
@@ -391,8 +390,8 @@ class RustIntegration:
             page = None
             if context:
                 if exact:
-                    from clinx.transport.rust_transport import RustDispatcher
-                    page = dict(data=[RustDispatcher.exact_turn(client, tid, exact)], nextCursor=None)
+                    from clinx.provider.native_provider import exact_turn
+                    page = dict(data=[exact_turn(client, tid, exact)], nextCursor=None)
                 else:
                     page = client.thread_turns_list(tid, limit=recent_turns, items_view='full', cursor=cursor)
         state = native.get('status', {}).get('type', 'UNKNOWN')

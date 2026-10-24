@@ -1295,8 +1295,10 @@ impl Store {
                             || !e["thread_id"].is_null()
                             || !e["predecessor_thread_id"].is_null()
                             || !e["native_create_state"].is_null()
-                            || prepared_route["execution_policy"]["execution_surface"]
-                                != "CODEX_NATIVE"
+                            || !matches!(
+                                prepared_route["execution_policy"]["execution_surface"].as_str(),
+                                Some("CODEX_NATIVE" | "HOST_EXECUTOR")
+                            )
                         {
                             return Err("NATIVE_CREATE_ACK_UNKNOWN".into());
                         }

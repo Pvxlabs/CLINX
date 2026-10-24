@@ -1624,4 +1624,6 @@ mod authority_state;
 pub mod native_transport;
 pub mod provider;
 
+pub mod host_executor;
+pub mod host_transport;
 pub mod remote_provider;

@@ -1,0 +1,181 @@
+{
+  "schema": "CLINX_RUST_HOST_RUNTIME_MIGRATION_V1",
+  "base_head": "ccd7e1897be92a4d7325b03fcd83860d61df619a",
+  "scope": "Rust Host execution and exact Provider sessions; Python Dispatcher retirement",
+  "status": "PASS_SCOPED_NOT_DEPLOYED",
+  "python_below_25_percent": "NOT_ACHIEVED",
+  "deleted_files": [
+    {
+      "path": "clinx/host/host_executor.py",
+      "lines": 957,
+      "bytes": 45004
+    },
+    {
+      "path": "clinx/host/rust_host.py",
+      "lines": 175,
+      "bytes": 8824
+    },
+    {
+      "path": "clinx/host/tool_delivery.py",
+      "lines": 445,
+      "bytes": 29411
+    },
+    {
+      "path": "clinx/transport/rust_transport.py",
+      "lines": 485,
+      "bytes": 27638
+    }
+  ],
+  "deleted_file_lines": 2062,
+  "language_scale": {
+    "before": {
+      ".swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      ".py": {
+        "files": 103,
+        "lines": 24129,
+        "bytes": 1206381
+      },
+      ".rs": {
+        "files": 29,
+        "lines": 12297,
+        "bytes": 494222
+      }
+    },
+    "after": {
+      ".swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      ".py": {
+        "files": 102,
+        "lines": 21969,
+        "bytes": 1084599
+      },
+      ".rs": {
+        "files": 31,
+        "lines": 14788,
+        "bytes": 594303
+      }
+    },
+    "github_before": {
+      "Python": 1206381,
+      "Swift": 525634,
+      "Rust": 494222,
+      "Go": 26718,
+      "Shell": 9994,
+      "C": 2345
+    },
+    "estimated_after_language_bytes": {
+      "Python": 1084599,
+      "Swift": 525634,
+      "Rust": 594303,
+      "Go": 26718,
+      "Shell": 9994,
+      "C": 2345
+    },
+    "estimated_after_python_percent": 48.34205669210057,
+    "before_python_percent": 53.25494174266122
+  },
+  "python_roles": {
+    "ACTIVE_RUNTIME": {
+      "files": 56,
+      "lines": 14321,
+      "bytes": 727514
+    },
+    "QUALIFICATION": {
+      "files": 27,
+      "lines": 5177,
+      "bytes": 247059
+    },
+    "COMPAT": {
+      "files": 2,
+      "lines": 510,
+      "bytes": 24940
+    },
+    "DEVOPS": {
+      "files": 17,
+      "lines": 1961,
+      "bytes": 85086
+    }
+  },
+  "checks": {
+    "rust_release_build": "PASS",
+    "rust_all_tests": {
+      "status": "PASS",
+      "passed": 69,
+      "failed": 0
+    },
+    "tracked_release_fixtures": {
+      "status": "PASS",
+      "passed": 60,
+      "failed": 0
+    },
+    "golden_commands": 34,
+    "python_full_collection": {
+      "status": "BLOCKED_EXISTING",
+      "before_errors": 109,
+      "after_errors": 109,
+      "changed_error_files": []
+    },
+    "existing_collectable_tests": {
+      "before": {
+        "passed": 69,
+        "failed": 25,
+        "errors": 2
+      },
+      "after": {
+        "passed": 69,
+        "failed": 25,
+        "errors": 2
+      },
+      "changed_outcomes": []
+    },
+    "retained_python_tests": {
+      "source_files": 121,
+      "all_source_hashes_unchanged": true,
+      "pytest_cache_changed": [
+        "tests/.pytest_cache/v/cache/lastfailed"
+      ]
+    },
+    "packaged_imports": {
+      "rust": {
+        "returncode": 0,
+        "output": "{\"status\": \"PASS\", \"imported\": 53}\n",
+        "stderr": ""
+      },
+      "monitor": {
+        "returncode": 0,
+        "output": "{\"status\": \"PASS\", \"imported\": 51}\n",
+        "stderr": ""
+      }
+    },
+    "source_structure": "PASS",
+    "ruff": "PASS",
+    "systemd_template_verify": "PASS",
+    "retired_package_residue": "PASS",
+    "real_mac_build": "NOT_RUN",
+    "real_production_provider_host_execution": "NOT_RUN",
+    "deployment": "NOT_PERFORMED"
+  },
+  "release_binaries": {
+    "clinx-runtime": {
+      "sha256": "1ca7e6bab682c8fdcd0bbbd8bd3e845bb091fa068a84e7a950b57b6a8d192677",
+      "bytes": 4353872
+    },
+    "clinx-native-transport": {
+      "sha256": "fe613f9649030238e31ff84062b05fd6f7cb90ab57258399ba264050d7004d8e",
+      "bytes": 4160088
+    },
+    "clinx-mcp-relay": {
+      "sha256": "6397887f6d22d2f4923d407f44fc41f42374e97bb9982969b0f3c936b4e98200",
+      "bytes": 525288
+    }
+  },
+  "evidence_directory": "/data/artifacts/clinx-host-rust-20261025",
+  "source_git_integration": "recorded in task git-integration.json after commit; no production activation"
+}

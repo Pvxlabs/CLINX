@@ -386,6 +386,14 @@ pub struct Journal {
     previous: String,
     poisoned: bool,
 }
+impl Drop for Journal {
+    fn drop(&mut self) {
+        // Closing the owner's FD alone leaves flock held by a concurrently
+        // forked child until exec. Release this journal's lock explicitly;
+        // no journal operation is possible once its owner is being dropped.
+        let _ = self.file.unlock();
+    }
+}
 impl Journal {
     pub fn open(dir: &Path, initialize: bool) -> Result<Self, String> {
         if initialize {
@@ -551,6 +559,25 @@ impl Journal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn journal_drop_releases_lock_even_while_a_child_inherits_the_fd() {
+        let parent = tempfile::tempdir().unwrap();
+        let dir = parent.path().join("journal");
+        let journal = Journal::open(&dir, true).unwrap();
+        // Deterministically extend the fork-to-exec inheritance window which
+        // parallel command-construction tests can otherwise hit transiently.
+        rustix::io::fcntl_setfd(&journal.file, rustix::io::FdFlags::empty()).unwrap();
+        let mut child = std::process::Command::new("sleep")
+            .arg("2")
+            .spawn()
+            .unwrap();
+        drop(journal);
+        let reopened = Journal::open(&dir, false);
+        let _ = child.kill();
+        child.wait().unwrap();
+        assert!(reopened.is_ok(), "journal writer lock outlived its owner");
+    }
+
     fn admission() -> Value {
         json!({"object":"Execution","id":"e1","from":"REQUESTED","to":"ADMITTED",
             "action":"admit","actor":"command","version":0,"next_version":1,

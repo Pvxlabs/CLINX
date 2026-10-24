@@ -220,6 +220,18 @@ pub(super) fn command(
         e["handoff"]["endpoint"] = p["endpoint"].clone();
         e["thread_id"] = json!(successor);
         e["endpoint"] = p["endpoint"].clone();
+        // A newly created Host successor needs the same durable title
+        // publication as a fresh native thread. Never rely on the retired
+        // Python dispatcher's best-effort name/set side effect.
+        if e["metadata_publication"].is_null()
+            && prepared["title"]
+                .as_str()
+                .is_some_and(|t| !t.is_empty() && t.chars().count() <= 200)
+        {
+            e["metadata_publication"] = json!({"state":"PENDING","attempts":0,
+                "thread_id":successor,"endpoint":p["endpoint"],"cwd":p["thread"]["cwd"],
+                "title":prepared["title"],"task_ref":e["task_ref"]});
+        }
         task["thread_id"] = json!(successor);
         task["provider_policy_hash"] = prepared["policy_hash"].clone();
         if task["lineage"].is_null() {

@@ -151,8 +151,10 @@ transactions, as qualified below. Legacy policies are not silently inherited.
 
 The Host dynamic-tool ledger now lives inside the Rust execution. Receipt,
 once-only take/begin permission, process completion, response delivery, native
-ACK readback and Finalizer checks all use Rust commands. Python's HostExecutor
-retains its command validation and subprocess runner without Python ledger writes.
+ACK readback and Finalizer checks all use Rust commands. Command validation,
+subprocess supervision and exact Provider Host sessions now also run in Rust
+(`host_executor.rs`, `host_transport.rs`); the Python runner and Dispatcher have
+been deleted. See [Host migration verification](RUST_HOST_RUNTIME_MIGRATION.md).
 Unknown Host side effects remain HELD. A lost ACK does not authorize reexecution.
 
 ## Dedicated identities and caller wiring

@@ -7,6 +7,10 @@
 Owner、Registry、实验包和独立 Provider。必须同时提供已验证的 Authority、Rust relay 和 native Transport binary；
 `--replace-source` 仅保留为清单成员校验兼容参数，不再代表部分源码覆盖。
 该命令只生成候选，不选择或启动服务。独立 Provider 的旧 bootstrap 打包分支已退役。
+候选标记 `host_transport=RUST_HOST_V1`。服务模板直接执行 Rust native/Host worker；
+`python -m tools.build.host_runtime_config --config <toml> --output <new-json>`
+仅在构建/安装时编译 Host 配置。Python Dispatcher、Host runner 及投递账本实现已删除；
+`deps/` 继承同样排除重复 CLINX 包和已退役的平铺模块。
 
 macOS Helper 默认经既有配对 mTLS 调用 Rust Authority 和远端 Provider，不再构造本地
 Registry/Dispatcher/M9。Rust 与 Monitor profile 均禁止 COMPAT 源码。

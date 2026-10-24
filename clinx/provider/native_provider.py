@@ -4,12 +4,18 @@ Endpoints come from host configuration, never a selector. No discovery scan,
 proxy startup, resume, unsubscribe or dynamic-tool response on the read plane.
 """
 import os
-from pathlib import Path
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 
-from clinx.provider.app_server import AppServerError, AppServerProtocolError, AppServerRemoteError, CodexAppServerClient, UnixSocketTransport
+from clinx.provider.app_server import (
+    AppServerError,
+    AppServerProtocolError,
+    AppServerRemoteError,
+    CodexAppServerClient,
+    UnixSocketTransport,
+)
 
 
 class NativeWriterError(AppServerProtocolError):
@@ -34,10 +40,26 @@ def endpoints(cfg):
 
 def existing_client(endpoint, timeout=3, *, read_only=True):
     client = CodexAppServerClient(UnixSocketTransport(endpoint, timeout_seconds=timeout),
-        timeout_seconds=timeout, strict_dynamic_tool_binding=True)
+        timeout_seconds=timeout)
     client.provider_endpoint = endpoint
     client.read_only_observer = read_only
     return client
+
+
+def exact_turn(client, thread_id, turn_id):
+    """Bounded exact history read for remaining Python read/maintenance callers."""
+    cursor, seen = None, set()
+    for _ in range(100):
+        page = client.thread_turns_list(thread_id, limit=20, items_view='full',
+            **({'cursor': cursor} if cursor else {}))
+        matches = [turn for turn in page['data'] if turn.get('id') == turn_id]
+        if len(matches) == 1:
+            return matches[0]
+        cursor = page.get('nextCursor')
+        if matches or not cursor or cursor in seen:
+            break
+        seen.add(cursor)
+    raise AppServerProtocolError('EXACT_NATIVE_TURN_UNAVAILABLE')
 
 
 def new_desktop_client(cfg, cwd):
@@ -135,11 +157,14 @@ def observe_native_writer(root, tid, turn_id, project):
                                 capture_output=True, text=True, timeout=2)
         if result.returncode or len(result.stdout) > 32768:
             return unknown
-        processes = []; current = None; access = None
+        processes = []
+        current = None
+        access = None
         for line in result.stdout.splitlines():
             key, value = line[:1], line[1:]
             if key == 'p':
-                current = {'pid': int(value), 'files': set()}; processes.append(current)
+                current = {'pid': int(value), 'files': set()}
+                processes.append(current)
             elif current is not None:
                 if key in ('c', 'u'):
                     current[key] = value

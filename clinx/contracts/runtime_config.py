@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import dataclasses
 import socket
+import tomllib
 from pathlib import Path
 from typing import Any
 
-import tomllib
-
-from clinx.host.host_executor import HostExecutorConfig, RegisteredTarget
-from clinx.host.production_workflows import load_workflows
+from clinx.contracts.host_config import HostExecutorConfig, RegisteredTarget
 from clinx.contracts.runtime_contracts import BridgeError
+from clinx.host.production_workflows import load_workflows
 
 BRIDGE_VERSION = "1.0.0-m6"
 

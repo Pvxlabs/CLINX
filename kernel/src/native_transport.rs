@@ -20,6 +20,7 @@ use std::{
 pub trait Authority {
     fn call(&mut self, operation: &str, payload: Value, id: &str) -> Result<Value>;
 }
+#[derive(Clone)]
 pub struct UnixAuthority {
     pub endpoint: PathBuf,
     pub uid: u32,
@@ -46,7 +47,12 @@ impl Authority for UnixAuthority {
         {
             return Err("AUTHORITY_ENDPOINT_UNTRUSTED".into());
         }
-        let mut wire = serde_json::to_vec(&json!({"protocol_version":PROTOCOL,"operation":format!("business.{operation}"),"request_id":id,"payload":payload})).map_err(|_| "INVALID_REQUEST")?;
+        let operation = if operation == "health" {
+            "health".to_owned()
+        } else {
+            format!("business.{operation}")
+        };
+        let mut wire = serde_json::to_vec(&json!({"protocol_version":PROTOCOL,"operation":operation,"request_id":id,"payload":payload})).map_err(|_| "INVALID_REQUEST")?;
         wire.push(b'\n');
         if wire.len() > MAX_FRAME_BYTES {
             return Err("REQUEST_TOO_LARGE".into());
@@ -220,6 +226,12 @@ impl<A: Authority, P: Providers> NativeTransport<A, P> {
         self.call("input_commit",json!({"execution_ref":eid,"nonce":challenge["nonce"],"endpoint":challenge["endpoint"],"thread_id":tid,"turn_id":turn_id,"item":item}))
     }
     pub fn observe(&mut self, eid: &str) -> Result<Value> {
+        self.observe_inner(eid, false)
+    }
+    pub fn observe_host(&mut self, eid: &str) -> Result<Value> {
+        self.observe_inner(eid, true)
+    }
+    fn observe_inner(&mut self, eid: &str, host: bool) -> Result<Value> {
         let challenge = self.call("observe_begin", json!({"execution_ref":eid}))?;
         if challenge.get("nonce").is_none() {
             return Ok(challenge);
@@ -257,6 +269,21 @@ impl<A: Authority, P: Providers> NativeTransport<A, P> {
         } else {
             json!({})
         };
+        if host && turn.is_object() {
+            let rows = self.call("host_rows", json!({"execution_ref":eid}))?;
+            for item in turn["items"].as_array().into_iter().flatten() {
+                let Some(row) = rows["rows"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|r| r["call_id"] == item["id"] && r["delivery_state"] != "DELIVERED")
+                else {
+                    continue;
+                };
+                if row["call_state"]=="RUNNING"&&row["delivery_state"]=="FAILED"&&item["success"]==false && self.call("host_reconcile_rejected",json!({"execution_ref":eid,"call_id":item["id"],"endpoint":challenge["endpoints"][0],"turn":turn})).is_ok() {continue;}
+                self.call("host_ack",json!({"execution_ref":eid,"call_id":item["id"],"message":{"method":"item/completed","params":{"threadId":tid,"turnId":turn_id,"item":item}}}))?;
+            }
+        }
         self.call("observe_commit",json!({"execution_ref":eid,"nonce":challenge["nonce"],"observations":observations,"turn":turn}))
     }
     pub fn dispatch(&mut self, eid: &str, resume: bool) -> Result<Value> {

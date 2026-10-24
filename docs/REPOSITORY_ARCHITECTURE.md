@@ -4,22 +4,23 @@
 Host、Transport、Node 与 Discovery 的长期核心；Swift 负责 macOS UI；Python 最终仅保留
 必要的开发、构建、资格验证和维护工具。**
 
-当前实现尚未达到这一目标。Rust 已接管 P620 任务权威；大量协议、Provider、Host 和节点
-实现仍是 Python。本轮已删除 Mac 的旧 Bridge/Registry/M9 核心；正常原生执行由 Rust worker 驱动。
+当前实现尚未达到这一目标。Rust 已接管 P620 任务权威、原生执行及 Host 动态工具执行；
+Mac 的旧 Bridge/Registry/M9 核心和 Python Dispatcher/Host runner 已删除。
+MCP、Node/Discovery 网络协议、Provider 网络桥及监控读取仍有 Python 运行时。
 
 ## 布局
 
 | 位置 | 当前职责 | 分类与目标 |
 | --- | --- | --- |
-| `kernel/` | Rust Authority、原生执行/Provider worker、状态/持久化/幂等/恢复、stdio byte relay | ACTIVE_RUNTIME；长期核心 |
+| `kernel/` | Rust Authority、原生与 Host 执行/Provider worker、状态/持久化/幂等/恢复、stdio byte relay | ACTIVE_RUNTIME；长期核心 |
 | `native/opaque_pairing/` | Rust OPAQUE 原生配对依赖 | ACTIVE_RUNTIME |
 | `MonitorApp/` | Swift macOS UI、App 构建入口、Helper shell launcher | ACTIVE_RUNTIME；UI 留在 Swift |
 | `clinx/contracts/` | 公共配置、身份选择、策略与响应契约 | ACTIVE_RUNTIME；运行职责待迁 Rust |
 | `clinx/authority/` | 当前 Python Rust IPC 客户端、请求映射、状态读取 | ACTIVE_RUNTIME；不等于 Rust Authority 实现 |
 | `clinx/mcp/` | 当前 Python MCP framing/schema | ACTIVE_RUNTIME；待迁 Rust |
 | `clinx/provider/` | Codex 协议、原生历史、精确证据读取和观测判断 | ACTIVE_RUNTIME；待迁 Rust |
-| `clinx/host/` | Host 子进程执行、操作契约和工具投递 | ACTIVE_RUNTIME；待迁 Rust |
-| `clinx/transport/` | 当前 Python Dispatcher transport、Tunnel supervisor | ACTIVE_RUNTIME；待迁 Rust |
+| `clinx/host/` | 安装配置的 workflow schema；冻结的操作目录参考仅用于资格验证 | 配置解析仍 ACTIVE_RUNTIME；执行、投递、恢复已迁 Rust |
+| `clinx/transport/` | Tunnel supervisor | ACTIVE_RUNTIME；待迁 Rust；Python Dispatcher 已删除 |
 | `clinx/nodes/`、`clinx/discovery/` | Node 路由、注册、Helper、mDNS/配对 | ACTIVE_RUNTIME；待迁 Rust |
 | `clinx/monitor/` | 监控与观察投影、只读历史 association | ACTIVE_RUNTIME；运行职责待迁 Rust |
 | `clinx/compat/`（已删除） | 旧 Mac Bridge/Registry/M9 及 completion/recovery/outbox | DEAD；由 Rust Authority 事务与 native Transport 替代 |
@@ -51,7 +52,9 @@ Monitor profile 同样禁止 COMPAT；新增文件不会通过目录 glob 自动
 
 `scripts/stage_rust_release.py` 需要匹配新布局、已测试的 `--runtime-binary` 和
 `--mcp-relay-binary`、`--native-transport-binary`。不能只更换 Python 文件再继承引用旧路径的 Authority binary。
-清单标记 `source_layout=qualified-clinx-v1`；新服务模板仅接受该布局。
+清单标记 `source_layout=qualified-clinx-v1`、`host_transport=RUST_HOST_V1`；新服务模板仅接受该布局。
+服务直接启动 Rust worker，安装工具把现有 TOML Host 配置编译为 `host-runtime.json`。
+继承的 `deps/` 禁止夹带另一份 `clinx` 包或已退役的平铺 Python 核心。
 候选发布仍为 STAGED_NOT_SELECTED，构建不会选择 production target。
 
 旧 forwarding builder / control overlay 只服务历史平铺产物的证据恢复：对当前源码明确拒绝，
@@ -63,7 +66,9 @@ Monitor profile 同样禁止 COMPAT；新增文件不会通过目录 glob 自动
 ```sh
 # 从源码根目录运行；配置和 socket 必须属于指定的开发/资格环境。
 python -m clinx.mcp.mcp_server --config <config> --stdio
-python -m clinx.transport.rust_transport --config <config>
+# 安装/构建时编译配置，运行时直接启动 Rust；以下均使用独立开发环境。
+python -m tools.build.host_runtime_config --config <config> --output <new-host-json>
+clinx-native-transport --socket <authority-socket> --authority-uid <uid> --host-config <new-host-json>
 python -m clinx.nodes.node_centre_entrypoint --help
 bin/clinx-observer
 bin/clinx --help
@@ -97,11 +102,16 @@ NodeRegistry 只保留设备/范围、分页与协议去重，不承担 Rust tas
 本轮真实 Mac→P620 Rust→Mac Provider、丢 ACK、重启、取消与 canonical handoff 的证据和限制见
 [Rust native 核心退役验证](RUST_NATIVE_CORE_RETIREMENT.md)。既有第五至七轮报告保留其当时状态。
 
+Host 命令校验/构造、子进程、取消/超时、输出取证、工具 ACK 队列及重启恢复已在
+`kernel/src/host_executor.rs`、`host_transport.rs` 实现。它们复用现有 Authority 的
+take/begin/complete/ACK、successor checkpoint 和取消许可，不持有数据库。
+生产子进程继续经过原有 root-controlled `host-worker`；资格直启只由 Authority health 决定。
+未知输入、未知创建 ACK 或未知子进程结果均不重放。验证范围见
+[Rust Host 迁移报告](RUST_HOST_RUNTIME_MIGRATION.md)。
+
 **仍是 Python 运行时**：MCP framing/schema、Node/Discovery 注册配对与网络协议、Provider 网络桥、
-历史读取与监控投影、Host 动态工具执行、Host 路径的 Dispatcher/恢复。这些不是纯开发工具。
-`rust_transport.py` 的默认服务启动 Rust native worker，Python tick 仅处理 HOST_EXECUTOR；
-直接调用旧 Python `RustDispatcher` 的 native API 仍可用于历史调用者/资格测试，尚待删除该重复边界。
-Rust 原生 worker 不处理 Host 动态工具，不能宣称所有执行语言迁移完成。
+workspace probe、历史读取与监控投影及公共请求/配置映射。这些不是纯开发工具，仍需后续迁移。
+Python 的 `host_contract.py` 仅作为冻结资格参考保留，不进入 Rust release 或 Helper 包。
 
 ## 远端路由配置契约
 

@@ -9,7 +9,10 @@ The old Mac business core has been retired from source and new release profiles.
 Start with [the repository architecture and layout](docs/REPOSITORY_ARCHITECTURE.md).
 `kernel/` is Rust, `MonitorApp/` is Swift, `clinx/` contains the current Python
 runtime grouped by responsibility. The old `clinx/compat/` Mac business core has been deleted;
-native execution uses the Rust Authority and native Transport worker. `tools/` contains build/maintenance/qualification code.
+native and Host execution use the Rust Authority and Rust Transport worker;
+the Python Dispatcher and Host runner have been deleted. See the
+[Host migration verification](docs/RUST_HOST_RUNTIME_MIGRATION.md).
+`tools/` contains build/maintenance/qualification code.
 There are no root Python modules or flat import shims.
 
 **AI Task Routing & Execution Infrastructure**

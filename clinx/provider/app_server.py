@@ -1,4 +1,4 @@
-"""Minimal Codex app-server JSON-RPC client used by Dispatcher V1.
+"""Codex JSON-RPC client for remaining observation and Node relay paths.
 
 Codex's ``app-server proxy`` forwards raw bytes to the existing control
 socket.  The control socket is a Unix-domain WebSocket endpoint, so the bridge
@@ -9,21 +9,18 @@ here. Dispatch callers must provide an exact durable thread id.
 
 from __future__ import annotations
 
-import dataclasses
 import base64
+import dataclasses
 import hashlib
 import json
-import logging
 import os
 import re
 import select
 import socket
 import struct
 import subprocess
-import threading
 import time
 import uuid
-from collections import deque
 from typing import Any, Callable, Protocol
 
 
@@ -64,17 +61,6 @@ class AppServerWriterConflict(AppServerRemoteError):
     side_effect = "NONE"
 
 
-@dataclasses.dataclass
-class _ServerRequestRecord:
-    """Admission and response state for one typed server-request id."""
-
-    key: tuple[type[Any], Any]
-    fingerprint: str
-    request: dict[str, Any]
-    state: str = "admitted"
-    response: dict[str, Any] | None = None
-
-
 def _is_transport_timeout(exc: AppServerTransportError) -> bool:
     """Distinguish an empty non-blocking poll from a closed transport."""
     return "timed out" in str(exc).casefold() or "timeout" in str(exc).casefold()
@@ -99,7 +85,6 @@ def _terminate_process_group(process: Any) -> int | None:
             return pgid
         except (OSError, ProcessLookupError):
             pass
-    pid = getattr(process, "pid", None)
     terminate = getattr(process, "terminate", None)
     if terminate:
         terminate()
@@ -656,14 +641,11 @@ class CodexAppServerClient:
         *,
         max_received_events: int = 256,
         max_method_history: int = 256,
-        strict_dynamic_tool_binding: bool = False,
     ):
         if not isinstance(max_received_events, int) or isinstance(max_received_events, bool) or max_received_events < 1:
             raise AppServerProtocolError("max_received_events must be a positive integer")
         if not isinstance(max_method_history, int) or isinstance(max_method_history, bool) or max_method_history < 1:
             raise AppServerProtocolError("max_method_history must be a positive integer")
-        if not isinstance(strict_dynamic_tool_binding, bool):
-            raise AppServerProtocolError("strict_dynamic_tool_binding must be boolean")
         self.transport = transport
         self.timeout_seconds = timeout_seconds
         self.events: list[str] = []
@@ -675,66 +657,15 @@ class CodexAppServerClient:
         self.received_events: list[dict[str, Any]] = []
         self.max_received_events = max_received_events
         self.max_method_history = max_method_history
-        # The provider adapter opts into this mode.  V1 callers retain the
-        # historical provisional behavior unless they explicitly request the
-        # stricter callback admission contract.
-        self.strict_dynamic_tool_binding = strict_dynamic_tool_binding
         self._received_event_overflow = False
         self.initialize_info: InitializeInfo | None = None
-        self._dynamic_tool_handler: Callable[[dict[str, Any]], dict[str, Any]] | None = None
-        self._dynamic_tool_namespace: str | None = None
-        self._dynamic_tool_name: str | None = None
-        self._dynamic_thread_id: str | None = None
-        self._dynamic_turn_id: str | None = None
-        self._dynamic_previous_turn_id: str | None = None
-        self._dynamic_provisional_turn_id: str | None = None
-        self._dynamic_operation_id: str | None = None
-        self._dynamic_connection_generation: int | None = None
-        self._dynamic_staged_requests: list[tuple[_ServerRequestRecord | None, dict[str, Any]]] = []
-        self._dynamic_retired_turn_ids: deque[str] = deque(maxlen=max_received_events)
-        self._server_request_records: dict[tuple[type[Any], Any], _ServerRequestRecord] = {}
-        self._served_server_request_ids: list[Any] = []
-        self._detached = False
-        self._supervisor: threading.Thread | None = None
-        self._completion_handoff: Callable[[dict[str, Any]], None] | None = None
-        self._completion_identity: tuple[str, str] | None = None
-        self.connection_id = uuid.uuid4().hex
-        self._dynamic_listener_id: str | None = None
-        self._dynamic_registry_generation = 0
-        self._delivery_ledger = None
         self.provider_endpoint: str | None = None
-        self._delivery_waiting_requests = []
-        self._flushing_delivery_waiters = False
         self._owned_thread_ids: set[str] = set()
         self._owned_turns: dict[str, str] = {}
         self.writer_release: dict[str, str] = {}
 
-    def _endpoint_identity(self) -> dict[str, Any] | None:
-        if self.provider_endpoint is None:
-            return None
-        try:
-            info = os.stat(self.provider_endpoint)
-            return {"path": self.provider_endpoint, "device": info.st_dev,
-                    "inode": info.st_ino, "created_ns": info.st_ctime_ns}
-        except OSError:
-            return {"path": self.provider_endpoint, "unavailable": True}
 
     def _record_event(self, message: dict[str, Any]) -> None:
-        if self._delivery_ledger is not None:
-            params = message.get('params', {})
-            item = params.get('item', {}) if isinstance(params, dict) else {}
-            if (not getattr(self, 'read_only_observer', False)
-                    and message.get('method') == 'item/started'
-                    and isinstance(item, dict)
-                    and item.get('type') in {'dynamicToolCall', 'DynamicToolCall'}
-                    and params.get('threadId') == self._dynamic_thread_id
-                    and params.get('turnId') == self._dynamic_turn_id):
-                request = {'id': None, 'params': {
-                    'threadId': params['threadId'], 'turnId': params['turnId'],
-                    'callId': item.get('id'), 'namespace': item.get('namespace'),
-                    'tool': item.get('tool'), 'arguments': item.get('arguments')}}
-                self._delivery_ledger.receive(request, self._dynamic_identity(request['params']))
-            self._delivery_ledger.observe(message, owner=self._delivery_owner())
         method = message.get("method")
         if isinstance(method, str):
             self.events.append(method)
@@ -744,7 +675,6 @@ class CodexAppServerClient:
         # bounded while still making loss visible to an adapter.
         if len(self.received_events) < self.max_received_events - 1 and not self._received_event_overflow:
             self.received_events.append(dict(message))
-            self._flush_delivery_waiters()
             return
         if not self._received_event_overflow:
             self._received_event_overflow = True
@@ -755,61 +685,9 @@ class CodexAppServerClient:
                 }
             )
 
-    def _delivery_owner(self):
-        return {"connection_id": self.connection_id, "listener_id": self._dynamic_listener_id,
-                "registry_generation": self._dynamic_registry_generation}
-
-    def _dynamic_identity(self, params):
-        transport = self.transport
-        return {**self._delivery_owner(),
-            'thread_id': params.get('threadId'), 'turn_id': params.get('turnId'),
-            'namespace': params.get('namespace'), 'tool': params.get('tool'),
-            'client_pid': os.getpid(),
-            'provider_version': getattr(self.initialize_info, 'server_version', None),
-            'provider_user_agent': getattr(self.initialize_info, 'user_agent', None),
-            'provider_endpoint': self._endpoint_identity(),
-            'transport_child_pid': getattr(getattr(getattr(transport, '_byte_transport', None), '_process', None), 'pid', None)}
-
-    def _pending_owned_deliveries(self):
-        if self._delivery_ledger is None:
-            return []
-        from clinx.host.tool_delivery import ack_in_flight
-        owner = self._delivery_owner()
-        return [row for row in self._delivery_ledger.records(
-            self._delivery_ledger.registry, self._delivery_ledger.execution_ref)
-            if ack_in_flight(row) and all(json.loads(row['identity_json']).get(k) == v
-                                         for k, v in owner.items())]
-
-    def _flush_delivery_waiters(self):
-        if not self._delivery_waiting_requests or self._flushing_delivery_waiters or self._pending_owned_deliveries():
-            return
-        self._flushing_delivery_waiters = True
-        try:
-            while self._delivery_waiting_requests and not self._pending_owned_deliveries():
-                request, record = self._delivery_waiting_requests.pop(0)
-                self._execute_dynamic_tool(request, record)
-        finally:
-            self._flushing_delivery_waiters = False
 
     def _receive(self, timeout_seconds):
-        # The single reader continues consuming ACKs. New Host calls are staged,
-        # never waited on inside a callback and never dispatched speculatively.
-        pending = self._pending_owned_deliveries()
-        remaining = min((row['response_sent_at'] + self.timeout_seconds - time.time()
-                         for row in pending), default=timeout_seconds)
-        if pending and remaining <= 0:
-            for row in pending:
-                self._delivery_ledger.failed(row['tool_call_id'])
-            self._flush_delivery_waiters()
-            raise AppServerTransportError("provider ACK deadline expired after Host execution")
-        try:
-            return self.transport.receive(min(timeout_seconds, max(0.0, remaining)))
-        except AppServerTransportError:
-            if pending and remaining <= timeout_seconds:
-                for row in pending:
-                    self._delivery_ledger.failed(row['tool_call_id'])
-                self._flush_delivery_waiters()
-            raise
+        return self.transport.receive(timeout_seconds)
 
     def __enter__(self) -> "CodexAppServerClient":
         connect = getattr(self.transport, "connect", None)
@@ -818,30 +696,11 @@ class CodexAppServerClient:
         return self
 
     def __exit__(self, _exc_type, _exc, _tb) -> None:
-        if not self._detached:
-            self.close()
+        self.close()
 
     def close(self) -> None:
-        # Only a successfully claimed, not-running subscription belongs here.
-        # An uncertain active turn is never interrupted or unsubscribed by cleanup.
         for thread_id in tuple(self._owned_thread_ids - self._owned_turns.keys()):
             self._release_owned_subscription(thread_id)
-        self._dynamic_registry_generation += 1
-        self._dynamic_listener_id = None
-        if self._delivery_ledger is not None:
-            self._delivery_ledger.disconnected()
-        self._retire_dynamic_turns()
-        self._dynamic_staged_requests.clear()
-        self._delivery_waiting_requests.clear()
-        self._dynamic_tool_handler = None
-        self._dynamic_tool_namespace = None
-        self._dynamic_tool_name = None
-        self._dynamic_thread_id = None
-        self._dynamic_turn_id = None
-        self._dynamic_provisional_turn_id = None
-        self._dynamic_operation_id = None
-        self._dynamic_connection_generation = None
-        self._server_request_records.clear()
         self.transport.close()
 
     def _release_owned_subscription(self, thread_id: str) -> None:
@@ -859,604 +718,12 @@ class CodexAppServerClient:
             # No blind RPC retry on close; transport teardown is connection-local.
             self._owned_thread_ids.discard(thread_id)
 
-    @staticmethod
-    def _server_request_key(request_id: Any) -> tuple[type[Any], Any] | None:
-        # JSON-RPC permits string and number ids.  Keep their Python types in
-        # the key so integer 1 and string "1" cannot alias one another.
-        if isinstance(request_id, (str, int)):
-            return (type(request_id), request_id)
-        return None
-
-    @staticmethod
-    def _server_request_fingerprint(request: dict[str, Any]) -> str:
-        try:
-            return json.dumps(
-                {key: value for key, value in request.items() if key != "id"},
-                sort_keys=True,
-                separators=(",", ":"),
-                default=repr,
-            )
-        except (TypeError, ValueError):
-            return repr({key: value for key, value in request.items() if key != "id"})
-
-    def _send_cached_server_response(self, record: _ServerRequestRecord) -> None:
-        if record.response is None or record.state == "responded":
-            return
-        # Keep the response pending when transport.send raises.  A later
-        # duplicate can retry delivery, but it can never re-enter the handler.
-        record.state = "response_pending"
-        self.transport.send(dict(record.response))
-        record.state = "responded"
-        if record.key not in self._served_server_request_ids:
-            self._served_server_request_ids.append(record.key)
-            if len(self._served_server_request_ids) > self.max_received_events:
-                del self._served_server_request_ids[: len(self._served_server_request_ids) - self.max_received_events]
-
-    def _cache_and_send_server_response(
-        self,
-        request_id: Any,
-        response: dict[str, Any],
-        record: _ServerRequestRecord | None,
-    ) -> None:
-        if record is None:
-            self.transport.send({"id": request_id, "result": response})
-            return
-        record.response = {"id": request_id, "result": response}
-        self._send_cached_server_response(record)
-
-    def _dynamic_failure_response(self, exc: Exception) -> dict[str, Any]:
-        code = getattr(exc, "code", "HOST_EXECUTOR_ERROR")
-        state = getattr(exc, "execution_state", "COMMAND_NOT_DISPATCHED")
-        safe = state == "COMMAND_NOT_DISPATCHED"
-        known = state in {"COMMAND_EXECUTED_RESULT_DELIVERED", "COMMAND_EXECUTION_FAILED", "COMMAND_EXECUTED_RESULT_DELIVERY_FAILED"}
-        unresolved = getattr(exc, "reconciliation_required", not safe)
-        return {
-            "success": False,
-            "contentItems": [{"type": "inputText", "text": json.dumps({
-                "result_state": str(code), "error": str(exc)[:2000], "execution_state": state,
-                "failure_stage": "PRE_DISPATCH_VALIDATION" if safe else "RESULT_DELIVERY",
-                "host_dispatched": False if safe else True if known else None,
-                "side_effect_certainty": "NOT_EXECUTED" if safe else "EXECUTED" if known and not unresolved else "EXECUTED_OR_POSSIBLY_EXECUTED" if known else "UNKNOWN",
-                "delivery_state": "PENDING", "continuation_state": "RECONCILIATION_REQUIRED" if unresolved else "SAFE_TO_CONTINUE",
-                "retry_allowed": False, "retry_required": False,
-                "reconciliation_required": unresolved, "execution_can_continue": not unresolved,
-            }, sort_keys=True, separators=(",", ":"))}],
-        }
-
-    def _validate_dynamic_tool_params(self, params: Any) -> tuple[dict[str, Any], str]:
-        if not isinstance(params, dict):
-            raise AppServerProtocolError("dynamic tool params must be an object")
-        if self._delivery_ledger is not None and (
-                not isinstance(params.get('callId'), str) or not params['callId'].strip()):
-            raise AppServerProtocolError('dynamic tool callId is required')
-        if params.get("namespace") != self._dynamic_tool_namespace:
-            raise AppServerProtocolError("dynamic tool namespace is not registered")
-        if params.get("tool") != self._dynamic_tool_name:
-            raise AppServerProtocolError("dynamic tool name is not registered")
-        if params.get("threadId") != self._dynamic_thread_id:
-            raise AppServerProtocolError("dynamic tool thread identity changed")
-        supplied_turn = params.get("turnId")
-        if not isinstance(supplied_turn, str) or not supplied_turn.strip():
-            raise AppServerProtocolError("dynamic tool turn identity is missing")
-        if self._dynamic_operation_id is not None:
-            supplied_operation = params.get("operationId") or params.get("operation_id")
-            if supplied_operation is not None and supplied_operation != self._dynamic_operation_id:
-                raise AppServerProtocolError("dynamic tool operation identity changed")
-        if self._dynamic_connection_generation is not None:
-            supplied_generation = params.get("connectionGeneration")
-            if supplied_generation is not None and supplied_generation != self._dynamic_connection_generation:
-                raise AppServerProtocolError("dynamic tool connection generation changed")
-        return params, supplied_turn
-
-    def _execute_dynamic_tool(
-        self,
-        request: dict[str, Any],
-        record: _ServerRequestRecord | None,
-    ) -> None:
-        params, _supplied_turn = self._validate_dynamic_tool_params(request.get("params"))
-        if self._dynamic_turn_id is not None and _supplied_turn != self._dynamic_turn_id:
-            raise AppServerProtocolError("dynamic tool turn identity changed")
-        if record is not None:
-            record.state = "executing"
-        ledger = self._delivery_ledger
-        call_id = None
-        transport = self.transport
-        generation = self._dynamic_registry_generation
-        listener = self._dynamic_listener_id
-        endpoint_identity = self._endpoint_identity()
-        try:
-            handler = self._dynamic_tool_handler
-            if handler is None:
-                raise AppServerProtocolError("dynamic tool handler is not configured")
-            if ledger is not None:
-                ledger.receive(request, self._dynamic_identity(params))
-                pending = self._pending_owned_deliveries()
-                if pending and params.get("callId") not in {r['tool_call_id'] for r in pending}:
-                    if len(self._delivery_waiting_requests) >= self.max_received_events:
-                        raise AppServerProtocolError("dynamic tool ACK queue capacity exhausted")
-                    self._delivery_waiting_requests.append((request, record))
-                    if record is not None:
-                        record.state = "awaiting_prior_ack"
-                    return
-                call_id = ledger.admit(request, {
-                    "connection_id": self.connection_id,
-                    "listener_id": listener, "registry_generation": generation,
-                    "thread_id": params.get("threadId"), "turn_id": params.get("turnId"),
-                    "namespace": params.get("namespace"), "tool": params.get("tool"),
-                    "client_pid": os.getpid(),
-                    "provider_version": getattr(self.initialize_info, "server_version", None),
-                    "provider_user_agent": getattr(self.initialize_info, "user_agent", None),
-                    "provider_endpoint": endpoint_identity,
-                    "transport_child_pid": getattr(getattr(getattr(transport, "_byte_transport", None), "_process", None), "pid", None),
-                })
-            result = handler(params)
-            if ledger is not None:
-                ledger.host_result(call_id, result)
-            completed = result.get("exit_code") is not None
-            result = {**result,
-                "execution_state": ("COMMAND_DISPATCHED" if not completed else
-                    "COMMAND_EXECUTION_FAILED" if result["exit_code"] != 0 else
-                    "COMMAND_EXECUTED_RESULT_DELIVERY_PENDING"),
-                "failure_code": ("HOST_TRANSPORT_FAILED" if not completed else
-                                 "COMMAND_FAILED" if result["exit_code"] != 0 else None),
-                "failure_stage": ("HOST_TRANSPORT" if not completed else
-                                  "HOST_EXECUTION" if result["exit_code"] != 0 else None),
-                "host_dispatched": True if completed else None,
-                "result_certainty": "KNOWN" if completed else "UNKNOWN",
-                "side_effect_certainty": "EXECUTED" if completed else "UNKNOWN",
-                "delivery_state": "PENDING",
-                "delivery_state_scope": "RESPONSE_SNAPSHOT",
-                "ack_tracking": "CLINX_TRANSPORT_LEDGER",
-                "continuation_state": "SAFE_TO_CONTINUE" if completed else "RECONCILIATION_REQUIRED",
-                "execution_can_continue": completed, "reconciliation_required": not completed,
-                "next_call_admission": "PERSISTED_LEDGER",
-                "retry_scope": "ORIGINAL_OPERATION",
-                "retry_allowed": False, "retry_required": False}
-            response = {
-                "success": True,
-                "contentItems": [{
-                    "type": "inputText",
-                    "text": json.dumps(result, sort_keys=True, separators=(",", ":")),
-                }],
-            }
-        except Exception as exc:
-            if getattr(exc, 'execution_state', None) == 'RECONCILIATION_REQUIRED':
-                exc.reconciliation_required = True
-            if ledger is not None and call_id is None:
-                call_id = ledger.reject_received(request, getattr(exc, 'code', 'INVALID_ARGUMENTS'))
-            if ledger is not None and call_id is not None:
-                exc.execution_state = ledger.failed(call_id,
-                    not_dispatched=getattr(exc, "command_not_dispatched", False),
-                    failure_code=getattr(exc, "code", "INVALID_ARGUMENTS"))
-                if exc.execution_state != "COMMAND_NOT_DISPATCHED":
-                    exc.code = ("RESULT_DELIVERY_FAILED_AFTER_EXECUTION"
-                                if exc.execution_state != "COMMAND_DISPATCHED"
-                                else "RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH")
-            response = self._dynamic_failure_response(exc)
-        try:
-            if (self.transport is not transport or self._dynamic_registry_generation != generation
-                    or self._dynamic_listener_id != listener or self._endpoint_identity() != endpoint_identity):
-                raise AppServerTransportError("dynamic tool delivery owner changed after dispatch")
-            self._cache_and_send_server_response(request.get("id"), response, record)
-            if ledger is not None and call_id is not None:
-                ledger.sent(call_id, request.get("id"))
-        except Exception:
-            if ledger is not None and call_id is not None:
-                ledger.failed(call_id)
-            raise
 
     def _send_server_response(self, request: dict[str, Any]) -> None:
-        if getattr(self, 'shared_desktop_daemon', False):
-            params = request.get('params')
-            # Desktop broadcasts server requests to attached clients. Handle
-            # only this execution's registered dynamic tool; never answer its
-            # approvals, user-input prompts, or another thread's tool calls.
-            if (request.get('method') != 'item/tool/call'
-                    or not isinstance(params, dict)
-                    or self._dynamic_tool_handler is None
-                    or params.get('threadId') != self._dynamic_thread_id
-                    or (self._dynamic_turn_id is not None
-                        and params.get('turnId') != self._dynamic_turn_id)):
-                return
-        if (getattr(self, 'read_only_observer', False)
-                or getattr(self, 'shared_native_writer', False)
-                or getattr(self, 'native_forwarding_thread_id', None)):
-            # Desktop continues to own approvals, user input and its dynamic
-            # tools. A relay must not race it with an unsupported response.
-            return
-        if request.get("method") == "item/tool/call":
-            params = request.get("params", {})
-            if not isinstance(params, dict) or self._dynamic_tool_handler is None or (
-                isinstance(params, dict) and params.get("threadId") != self._dynamic_thread_id
-            ) or (
-                isinstance(params, dict) and self._dynamic_turn_id is not None
-                and params.get('turnId') != self._dynamic_turn_id
-            ) or (
-                isinstance(params, dict) and params.get('turnId') in self._dynamic_retired_turn_ids
-            ):
-                # Shared providers broadcast to subscribers. An observer must
-                # never race the owning connection with an unsupported reply.
-                return
-            if (self._delivery_ledger is not None
-                    and (not self.strict_dynamic_tool_binding or self._dynamic_turn_id is not None)):
-                try:
-                    self._delivery_ledger.receive(request, self._dynamic_identity(params))
-                except Exception as exc:
-                    self.transport.send({'id': request.get('id'), 'result': self._dynamic_failure_response(exc)})
-                    return
-        request_id = request.get("id")
-        request_key = self._server_request_key(request_id)
-        record: _ServerRequestRecord | None = None
-        if request_key is not None:
-            fingerprint = self._server_request_fingerprint(request)
-            existing = self._server_request_records.get(request_key)
-            if existing is not None:
-                if existing.fingerprint != fingerprint:
-                    if request.get('method') == 'item/tool/call' and self._delivery_ledger is not None:
-                        exc = AppServerProtocolError('server request id was reused with different semantics')
-                        exc.code = 'TOOL_REQUEST_ID_CONFLICT'
-                        call_id = self._delivery_ledger.reject_received(request, exc.code)
-                        if call_id:
-                            self.transport.send({'id': request_id, 'result': self._dynamic_failure_response(exc)})
-                            self._delivery_ledger.sent(call_id, request_id)
-                            return
-                    self.transport.send({
-                        "id": request_id,
-                        "error": {
-                            "code": -32600,
-                            "message": "server request id was reused with different semantics",
-                        },
-                    })
-                    return
-                if existing.response is not None:
-                    self._send_cached_server_response(existing)
-                # An admitted, staged, or executing request is already owned;
-                # never enter its callback a second time.
-                return
-            if len(self._server_request_records) >= self.max_received_events:
-                if request.get('method') == 'item/tool/call' and self._delivery_ledger is not None:
-                    exc = AppServerProtocolError('server request admission capacity exhausted')
-                    exc.code = 'TOOL_ADMISSION_CAPACITY_EXHAUSTED'
-                    call_id = self._delivery_ledger.reject_received(request, exc.code)
-                    self.transport.send({'id': request_id, 'result': self._dynamic_failure_response(exc)})
-                    if call_id:
-                        self._delivery_ledger.sent(call_id, request_id)
-                    return
-                self.transport.send({
-                    "id": request_id,
-                    "error": {
-                        "code": -32001,
-                        "message": "server request admission capacity exhausted",
-                    },
-                })
-                return
-            record = _ServerRequestRecord(
-                request_key,
-                fingerprint,
-                dict(request),
-            )
-            self._server_request_records[request_key] = record
-        method = request.get("method")
-        if isinstance(method, str):
-            self._record_event(request)
-        if method == "item/tool/call" and self._dynamic_tool_handler is not None:
-            try:
-                params, supplied_turn = self._validate_dynamic_tool_params(request.get("params"))
-                if self.strict_dynamic_tool_binding and self._dynamic_turn_id is None:
-                    if supplied_turn in self._dynamic_retired_turn_ids:
-                        raise AppServerProtocolError("dynamic tool turn identity changed")
-                    staged_turns = {
-                        item[1].get("params", {}).get("turnId")
-                        for item in self._dynamic_staged_requests
-                        if isinstance(item[1].get("params"), dict)
-                    }
-                    if staged_turns and supplied_turn not in staged_turns:
-                        raise AppServerProtocolError("dynamic tool has multiple unconfirmed turns")
-                    if len(self._dynamic_staged_requests) >= self.max_received_events:
-                        raise AppServerProtocolError("dynamic tool staging capacity exhausted")
-                    if record is not None:
-                        record.state = "staged"
-                    self._dynamic_staged_requests.append((record, dict(request)))
-                    return
-                if self._dynamic_turn_id is None:
-                    # V1 compatibility mode retains the historical provisional
-                    # turn behavior; the provider adapter opts into strict mode.
-                    if self._dynamic_previous_turn_id is not None and supplied_turn == self._dynamic_previous_turn_id:
-                        raise AppServerProtocolError("dynamic tool turn identity changed")
-                    if self._dynamic_provisional_turn_id is None:
-                        self._dynamic_provisional_turn_id = supplied_turn
-                    elif supplied_turn != self._dynamic_provisional_turn_id:
-                        raise AppServerProtocolError("dynamic tool has multiple provisional turns")
-                self._execute_dynamic_tool(request, record)
-            except AppServerTransportError:
-                # A response delivery failure is deliberately visible to the
-                # caller; the request record already contains the completed
-                # callback result and remains pending for safe redelivery.
-                raise
-            except Exception as exc:
-                call_id = None
-                if self._delivery_ledger is not None:
-                    exc.code = getattr(exc, 'code', 'INVALID_TOOL_BINDING')
-                    call_id = self._delivery_ledger.reject_received(request, exc.code)
-                    if call_id:
-                        exc.execution_state = 'COMMAND_NOT_DISPATCHED'
-                    else:
-                        # A malformed duplicate cannot erase an earlier Host
-                        # side effect or claim that it was never dispatched.
-                        identity = self._delivery_ledger.ingress_id(request)
-                        previous = next((r for r in self._delivery_ledger.records(
-                            self._delivery_ledger.registry, self._delivery_ledger.execution_ref)
-                            if r['tool_call_id'] == identity), None)
-                        if previous:
-                            exc.execution_state = previous['execution_state']
-                            exc.reconciliation_required = previous['reconciliation_required']
-                self._cache_and_send_server_response(
-                    request_id,
-                    self._dynamic_failure_response(exc),
-                    record,
-                )
-                if self._delivery_ledger is not None and call_id:
-                    self._delivery_ledger.sent(call_id, request_id)
-            return
-        # Approval and user-input requests remain unsupported. Reply explicitly
-        # so no server request can leave the transport waiting indefinitely.
-        unsupported = {
-            "code": -32601,
-            "message": "linear-local-codex-bridge does not handle server requests",
-        }
-        if record is None:
-            self.transport.send({"id": request_id, "error": unsupported})
-        else:
-            record.response = {"id": request_id, "error": unsupported}
-            self._send_cached_server_response(record)
+        # Host dynamic tools are owned by Rust. Python observation/relay
+        # connections never answer Desktop approvals or dynamic-tool calls.
+        self._record_event(request)
 
-    def configure_dynamic_tool(
-        self,
-        *,
-        namespace: str,
-        name: str,
-        thread_id: str | None,
-        handler: Callable[[dict[str, Any]], dict[str, Any]],
-        operation_id: str | None = None,
-        connection_generation: int | None = None,
-        delivery_ledger: Any = None,
-    ) -> None:
-        if (
-            not isinstance(namespace, str)
-            or not namespace.strip()
-            or not isinstance(name, str)
-            or not name.strip()
-            or not isinstance(thread_id, str)
-            or not thread_id.strip()
-            or not callable(handler)
-            or (operation_id is not None and (not isinstance(operation_id, str) or not operation_id.strip()))
-            or (
-                connection_generation is not None
-                and (
-                    not isinstance(connection_generation, int)
-                    or isinstance(connection_generation, bool)
-                    or connection_generation < 1
-                )
-            )
-        ):
-            raise AppServerProtocolError("dynamic tool configuration is invalid")
-        if self._dynamic_tool_handler is not None or self._dynamic_staged_requests:
-            self._retire_dynamic_turns()
-        self._dynamic_tool_namespace = namespace.strip()
-        self._dynamic_registry_generation += 1
-        self._dynamic_listener_id = uuid.uuid4().hex
-        self._delivery_ledger = delivery_ledger
-        self._dynamic_tool_name = name.strip()
-        self._dynamic_thread_id = thread_id.strip()
-        self._dynamic_tool_handler = handler
-        self._dynamic_operation_id = operation_id.strip() if isinstance(operation_id, str) else None
-        self._dynamic_connection_generation = connection_generation
-        self._dynamic_turn_id = None
-        self._dynamic_provisional_turn_id = None
-        self._dynamic_staged_requests.clear()
-        self._delivery_waiting_requests.clear()
-        # Request IDs are scoped to the current binding. Retired turn ids stay
-        # in a bounded fence so a late request cannot enter the new handler.
-        self._server_request_records.clear()
-
-    def _retire_dynamic_turns(self) -> None:
-        turns: list[str] = []
-        if self._dynamic_turn_id is not None:
-            turns.append(self._dynamic_turn_id)
-        if self._dynamic_provisional_turn_id is not None:
-            turns.append(self._dynamic_provisional_turn_id)
-        for _record, request in self._dynamic_staged_requests:
-            params = request.get("params")
-            turn = params.get("turnId") if isinstance(params, dict) else None
-            if isinstance(turn, str):
-                turns.append(turn)
-        for turn in turns:
-            if turn not in self._dynamic_retired_turn_ids:
-                self._dynamic_retired_turn_ids.append(turn)
-
-    def clear_dynamic_tool(self) -> None:
-        """Remove a prior tool binding before the next operation."""
-        self._retire_dynamic_turns()
-        self._dynamic_registry_generation += 1
-        self._dynamic_listener_id = None
-        retired_turn = self._dynamic_turn_id or self._dynamic_provisional_turn_id
-        if retired_turn is not None:
-            self._dynamic_previous_turn_id = retired_turn
-        self._dynamic_tool_namespace = None
-        self._dynamic_tool_name = None
-        self._dynamic_thread_id = None
-        self._dynamic_turn_id = None
-        self._dynamic_provisional_turn_id = None
-        self._dynamic_operation_id = None
-        self._dynamic_connection_generation = None
-        self._dynamic_staged_requests.clear()
-        self._delivery_waiting_requests.clear()
-        self._server_request_records.clear()
-        self._dynamic_tool_handler = None
-
-    def attach_dynamic_tool_turn(self, thread_id: str, turn_id: str) -> None:
-        """Bind a configured dynamic tool to one exact turn.
-
-        Observation-loop owners use this guard without starting the separate
-        reader thread used by ``supervise_turn``.
-        """
-        if self._dynamic_tool_handler is None:
-            raise AppServerProtocolError("dynamic tool handler is not configured")
-        if (
-            not isinstance(thread_id, str)
-            or not thread_id.strip()
-            or not isinstance(turn_id, str)
-            or not turn_id.strip()
-        ):
-            raise AppServerProtocolError("dynamic tool turn attachment is invalid")
-        if self._dynamic_thread_id != thread_id:
-            raise AppServerProtocolError("dynamic tool thread identity changed")
-        self._dynamic_thread_id = thread_id
-        self._dynamic_turn_id = turn_id
-        self._dynamic_provisional_turn_id = None
-        if self.strict_dynamic_tool_binding:
-            self._flush_dynamic_staged_requests(turn_id)
-
-    def _flush_dynamic_staged_requests(self, turn_id: str) -> None:
-        """Process a staged batch without stranding its unprocessed tail.
-
-        Each request leaves the queue only when it has a cached response (or
-        an explicit failure response).  A response-send error therefore
-        removes only the request whose result is pending; later staged
-        requests remain available to a repeated attach or explicit retry.
-        """
-        # Recover cached results before entering any new callback.  This keeps
-        # a transport outage from turning an unresolved prior response into a
-        # speculative callback for the next staged request.
-        for record in tuple(self._server_request_records.values()):
-            if record.state == "response_pending" and record.response is not None:
-                self._send_cached_server_response(record)
-        while self._dynamic_staged_requests:
-            if not self._dynamic_transport_is_available():
-                # Keep the current request and its tail staged.  A caller
-                # must restore the same transport before any callback can run.
-                raise AppServerTransportError(
-                    "dynamic tool batch cannot continue on an unavailable transport"
-                )
-            record, request = self._dynamic_staged_requests[0]
-            params = request.get("params")
-            supplied_turn = params.get("turnId") if isinstance(params, dict) else None
-            if supplied_turn != turn_id or supplied_turn in self._dynamic_retired_turn_ids:
-                # The start response proved this is another turn's broadcast.
-                # Even an error response would race that turn's actual owner.
-                if record is not None:
-                    record.state = 'foreign_turn'
-                self._dynamic_staged_requests.pop(0)
-                continue
-            try:
-                self._execute_dynamic_tool(request, record)
-            except AppServerTransportError:
-                # The current request is response_pending in the registry;
-                # leave the remaining tail staged for a later attach.
-                self._dynamic_staged_requests.pop(0)
-                raise
-            except Exception as exc:
-                # Validation should already have happened at admission, but
-                # preserve a visible result if binding data changes before
-                # this staged request is flushed.
-                try:
-                    self._cache_and_send_server_response(
-                        request.get("id"), self._dynamic_failure_response(exc), record
-                    )
-                except AppServerTransportError:
-                    self._dynamic_staged_requests.pop(0)
-                    raise
-            self._dynamic_staged_requests.pop(0)
-
-    def _dynamic_transport_is_available(self) -> bool:
-        """Use transport lifecycle evidence before running a staged callback."""
-        state = transport_lifecycle_state(self.transport)
-        # Strict dynamic-tool admission is fail-closed when local evidence is
-        # unavailable. Legacy V1 callers do not enter this staged path.
-        return state == "available"
-
-    def configure_completion_handoff(
-        self, thread_id: str, turn_id: str,
-        handler: Callable[[dict[str, Any]], None],
-    ) -> None:
-        """Bind a durable delivery callback, not a second transport reader."""
-        if not thread_id or not turn_id or not callable(handler):
-            raise AppServerProtocolError("completion handoff requires exact identity")
-        self._completion_identity = (thread_id, turn_id)
-        self._completion_handoff = handler
-
-    def supervise_turn(self, thread_id: str, turn_id: str) -> None:
-        """Keep the initiating connection alive and deliver exact completion."""
-        if self._dynamic_tool_handler is not None:
-            self.attach_dynamic_tool_turn(thread_id, turn_id)
-        elif self._completion_handoff is None:
-            raise AppServerProtocolError("turn supervision requires a completion handoff or dynamic tool handler")
-        if self._completion_handoff is not None and self._completion_identity != (thread_id, turn_id):
-            raise AppServerProtocolError("completion handoff identity changed")
-        self._detached = True
-        handoff = self._completion_handoff
-        # _request(turn/start) may already have consumed a very fast terminal
-        # notification. Do not replay server requests: their Host callbacks
-        # have already been admitted/handled by _request.
-        buffered = tuple(message for message in self.received_events
-                         if "id" not in message and message.get("method") == "turn/completed")
-
-        def terminal(message: dict[str, Any]) -> bool:
-            params = message.get("params")
-            if message.get("method") != "turn/completed" or not isinstance(params, dict):
-                return False
-            turn = params.get("turn")
-            observed = turn.get("id") if isinstance(turn, dict) else params.get("turnId")
-            if params.get("threadId") != thread_id or observed != turn_id:
-                return False
-            if self._owned_turns.get(thread_id) == turn_id:
-                self._owned_turns.pop(thread_id)
-                self._release_owned_subscription(thread_id)
-            if handoff is not None:
-                handoff(message)  # persist/wake only; never re-enter this transport
-            return True
-
-        def supervise() -> None:
-            try:
-                if any(terminal(message) for message in buffered):
-                    return
-                while True:
-                    message = self._receive(max(self.timeout_seconds, 300.0))
-                    if "method" in message and "id" in message:
-                        self._send_server_response(message)
-                        continue
-                    if isinstance(message.get("method"), str):
-                        self._record_event(message)
-                    if terminal(message):
-                        break
-            except Exception as exc:
-                logging.getLogger(__name__).error(
-                    "managed turn observation interrupted: %s", type(exc).__name__
-                )
-                if handoff is not None:
-                    try:
-                        handoff({"method": "clinx/observation_error", "params": {
-                            "threadId": thread_id, "turnId": turn_id,
-                            "errorType": type(exc).__name__,
-                        }})
-                    except Exception as delivery_error:
-                        # The pre-registered durable job remains PENDING and
-                        # is retried by the service after restart as well.
-                        logging.getLogger(__name__).error(
-                            "completion wakeup failed: %s", type(delivery_error).__name__
-                        )
-            finally:
-                self._detached = False
-                self._completion_handoff = None
-                self._completion_identity = None
-                self.close()
-
-        self._supervisor = threading.Thread(
-            target=supervise,
-            name=f"clinx-app-server-{turn_id[:12]}",
-            daemon=True,
-        )
-        self._supervisor.start()
 
     def _request(self, method: str, params: dict[str, Any] | None = None) -> Any:
         # Reject before resume/start can subscribe, claim or create a thread.
@@ -1535,9 +802,9 @@ class CodexAppServerClient:
         """Drain bounded provider notifications from the current connection.
 
         A zero timeout is a non-blocking read of already buffered transport
-        data.  Server requests are handled using the existing dynamic-tool
-        handler and are also returned so an adapter can retain their request
-        identity.  No event is silently discarded when the bound is reached.
+        data. Server requests are retained for observation; these Python
+        connections never execute Host tools or answer Desktop approvals.
+        No event is silently discarded when the bound is reached.
         """
         if not isinstance(max_events, int) or isinstance(max_events, bool) or not 1 <= max_events <= 100:
             raise AppServerProtocolError("max_events must be an integer from 1 to 100")

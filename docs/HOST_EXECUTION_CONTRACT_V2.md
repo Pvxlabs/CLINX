@@ -1,5 +1,9 @@
 # CLINX Host Execution Contract v2
 
+当前命令构造、子进程和 Provider 工具会话已迁 Rust，见
+[Host 迁移验证](RUST_HOST_RUNTIME_MIGRATION.md)。下文保留 2026-10-01 的历史设计与验收证据；
+其中 Python 类名不再表示当前运行实现。
+
 ## RCA before implementation — 2026-10-01
 
 Source baseline: `65979aa017974e39ef81f8d2464488a6fb642f36`.

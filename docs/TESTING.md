@@ -19,6 +19,25 @@ The local `tests/README.md` index maps suites and naming conventions.
 
 ## Current Rust adapter and compatibility checks
 
+The current Host/Dispatcher migration is qualified by
+[Rust Host migration verification](RUST_HOST_RUNTIME_MIGRATION.md): 69 Rust tests
+and 60 tracked fixtures, including real isolated Host subprocesses and exact
+Provider ACK/restart evidence. Build into a task-owned LAB directory, then use:
+
+```sh
+cargo build --release --locked --manifest-path kernel/Cargo.toml --target-dir <task-target>
+CLINX_TEST_RUST_BIN_DIR=<task-target>/release \
+CLINX_MCP_RELAY=<task-target>/release/clinx-mcp-relay \
+  <qualification-python> -B -m pytest fixtures -q --tb=short -p no:cacheprovider \
+  --basetemp=/data/artifacts/<task>/pytest
+```
+
+Use a short task path for Unix socket fixtures. These tests never need a
+production Provider, task, database or service restart. The retained local suite
+has 109 collection errors on both sides of this migration; its 96 collectable
+tests remain 69 passed / 25 failed / 2 errors, with identical test identities and
+outcomes. The dated records below describe earlier baselines.
+
 The Python Authority, runtime_control and prototype Provider implementations were
 retired in [cleanup phase 2](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md). Their local
 test files and the local suite index were preserved byte for byte. Consequently,
