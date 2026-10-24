@@ -193,14 +193,20 @@ class RustIntegration:
         if reasoning and reasoning_effort and reasoning != reasoning_effort:
             raise RustAuthorityError('REASONING_CONFLICT')
         execution_policy = None
-        if execution_surface == 'HOST_EXECUTOR' or requested_operations:
+        # Explicit native forwarding treats legacy Host fields as context,
+        # just as native forwarding without those fields. They must not select
+        # a Host policy or be passed to the legacy surface parser. Leave the
+        # policy unset so Rust retains the task's current policy and grants.
+        if execution_surface != 'CODEX_NATIVE' and (
+                execution_surface == 'HOST_EXECUTOR' or requested_operations):
             from execution_policy import build_execution_policy
             policy = build_execution_policy(execution_surface=execution_surface,
                 required_capabilities=required_capabilities, operation_classes=operation_classes,
                 production_mutation_intent=bool(production_mutation_intent),
                 operation_scopes=requested_operations)
             execution_policy = self._policy(policy.as_dict())
-        elif required_capabilities or operation_classes or production_mutation_intent:
+        elif execution_surface != 'CODEX_NATIVE' and (
+                required_capabilities or operation_classes or production_mutation_intent):
             raise RustAuthorityError('EXACT_HOST_POLICY_REQUIRED')
         if thread_id:
             workspace_contract = dict(cwd=self._native_cwd(thread_id))

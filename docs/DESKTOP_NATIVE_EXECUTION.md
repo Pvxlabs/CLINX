@@ -8,6 +8,11 @@ Rust 继续保存唯一任务权威、发送许可、输入去重、Host 调用�
 动态工具只处理已绑定 Thread/Turn 的请求；Desktop 的审批、用户输入及其他任务
 的工具请求交给 Desktop。
 
+显式 `CODEX_NATIVE` 准备请求中的旧 Host capability、operation class 和
+`requested_operations` 字段不选择 Host 策略，也不授予 Host 权限；Rust 沿用既有
+任务策略，新任务使用原生默认策略。显式 `HOST_EXECUTOR` 及省略 surface 时由
+`requested_operations` 选择的 Host 路径，继续校验准确的 capability、class 和 scope。
+
 `desktop_socket.py` 通过现有聊天的精确 thread ID、socket inode 和内核 peer UID
 验证 Desktop 端点。`/run/clinx-rust-provider/provider.sock` 仅保留为历史账本使用的
 逻辑 socket 别名，直接指向 Desktop socket，不运行中间 daemon 或执行代理。
