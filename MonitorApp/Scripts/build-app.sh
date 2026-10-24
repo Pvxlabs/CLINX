@@ -35,7 +35,8 @@ cp ../network_observation.py ../observation_source.py "$app_dir/Contents/Resourc
 for canonical_module in \
     app_server.py bridge.py completion_runtime.py execution_liveness.py \
     execution_policy.py execution_semantics.py host_contract.py host_executor.py \
-    m9_integration.py native_provider.py prepared_requests.py production_workflows.py result_ingestion.py \
+    m9_integration.py native_provider.py native_writer_probe.py native_observation_bridge.py \
+    prepared_requests.py production_workflows.py result_ingestion.py \
     task_registry.py thread_identity.py tool_delivery.py native_lifecycle.py \
     desktop_publication.py derived_git_targets.py dispatch_errors.py execution_owner.py \
     authority_mapping.py authority_transactions.py authority_writer.py canonical_authority.py \
