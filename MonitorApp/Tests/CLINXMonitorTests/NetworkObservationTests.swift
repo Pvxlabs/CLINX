@@ -201,7 +201,8 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         XCTAssertEqual(store.lastSuccessfulFetch, successfulFetch)
         XCTAssertNotNil(store.errorCategory)
         if let row = store.allTasks.first(where: { $0.observationId == native.observationId }) {
-            XCTAssertEqual(store.status(of: row), .stale)
+            XCTAssertEqual(store.status(of: row), .running)
+            XCTAssertEqual(store.runtimeStatus, .offline)
             XCTAssertTrue(store.visibleTasks.contains { $0.observationId == native.observationId })
         }
 

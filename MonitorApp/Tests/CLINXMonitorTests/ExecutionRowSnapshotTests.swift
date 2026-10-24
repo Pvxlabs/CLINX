@@ -3,20 +3,21 @@ import SwiftUI
 import XCTest
 @testable import CLINXMonitor
 
-/// Exercise the AppKit view produced by SwiftUI, including recovery with identical
-/// task bytes. Model-only assertions cannot catch a retained stale glyph in a lazy row.
+/// Render real AppKit views across Observer expiry, failed reads and recovery.
+/// Connection problems must never turn a running execution into a task warning.
 final class ExecutionRowSnapshotTests: XCTestCase {
     @MainActor
-    func testDeferredRowsUseTheSameFreshnessAsTheirListHeader() async throws {
+    func testDeferredRowsKeepExecutionStateWhenConnectionSnapshotExpires() async throws {
         let source = SyntheticObserverService(scenario: .running)
         let page = try await source.tasks(active: true, offset: 0)
         let task = try XCTUnwrap(page.items.first { $0.monitorStatus == .running })
         let service = RowRecoveryService(health: try await source.health(), task: task)
-        let store = MonitorStore(service: service)
+        var now = Date()
+        let store = MonitorStore(service: service, now: { now }, lowPowerMode: { false })
         await store.refresh()
-        // Materialize the CURRENT header while lazy rows have not yet rendered.
+        // Materialize the list before lazy rows render.
         let snapshot = ExecutionListView(store: store, popover: .constant(nil)).body
-        try await Task.sleep(nanoseconds: 11_000_000_000)
+        now = now.addingTimeInterval(11)
         XCTAssertEqual(store.freshness, .stale, "Cross the real ten-second freshness boundary")
         let host = NSHostingView(rootView: snapshot)
         host.frame = NSRect(x: 0, y: 0, width: 420, height: 350)
@@ -29,12 +30,14 @@ final class ExecutionRowSnapshotTests: XCTestCase {
         XCTAssertEqual(spinnerCount(in: host), 1,
                        "Deferred rows must agree with the CURRENT header in their captured snapshot")
 
-        // A new presentation still enforces expiry; sharing the snapshot must not
-        // extend the freshness deadline or hide an unavailable Observer.
+        // A newly rendered list still shows the reported task state while the
+        // separate runtime indicator reports the expired connection snapshot.
         host.rootView = ExecutionListView(store: store, popover: .constant(nil)).body
         host.layoutSubtreeIfNeeded()
         try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertEqual(spinnerCount(in: host), 0)
+        XCTAssertEqual(spinnerCount(in: host), 1)
+        XCTAssertEqual(store.runtimeStatus, .stale)
+        XCTAssertEqual(store.groupedTasks.last?.title, "Running")
         await store.refresh()
         host.rootView = ExecutionListView(store: store, popover: .constant(nil)).body
         host.layoutSubtreeIfNeeded()
@@ -43,7 +46,7 @@ final class ExecutionRowSnapshotTests: XCTestCase {
     }
 
     @MainActor
-    func testListRecoversAfterFailedReadWithUnchangedTaskBytes() async throws {
+    func testListPreservesTaskStateAcrossFailedReadAndRecovery() async throws {
         let source = SyntheticObserverService(scenario: .running)
         let page = try await source.tasks(active: true, offset: 0)
         let task = try XCTUnwrap(page.items.first { $0.monitorStatus == .running })
@@ -57,15 +60,16 @@ final class ExecutionRowSnapshotTests: XCTestCase {
         window.contentView = host
         defer { window.contentView = nil }
 
-        for (unavailable, expected) in [(false, 1), (true, 0), (false, 1)] {
+        for (unavailable, expected) in [(false, 1), (true, 1), (false, 1)] {
             await service.setUnavailable(unavailable)
             await store.refresh()
             host.layoutSubtreeIfNeeded()
             try await Task.sleep(nanoseconds: 200_000_000)
             host.layoutSubtreeIfNeeded()
             XCTAssertEqual(store.freshness, unavailable ? .lastKnown : .current)
+            XCTAssertEqual(store.runtimeStatus, unavailable ? .offline : .live)
             XCTAssertEqual(spinnerCount(in: host), expected,
-                           "A successful read must replace the rendered stale glyph with a spinner")
+                           "Observer availability must not replace a running task with a warning")
             XCTAssertEqual(store.active.first?.executionIdentity, task.executionIdentity)
             XCTAssertEqual(store.active.first?.monitorStatus, .running)
         }
@@ -74,7 +78,7 @@ final class ExecutionRowSnapshotTests: XCTestCase {
     }
 
     @MainActor
-    func testSameExecutionRestoresSpinnerAfterSnapshotRecovers() async throws {
+    func testSameExecutionKeepsSpinnerAcrossConnectionFreshnessChanges() async throws {
         let service = SyntheticObserverService(scenario: .running)
         let page = try await service.tasks(active: true, offset: 0)
         let task = try XCTUnwrap(page.items.first { $0.monitorStatus == .running })
@@ -82,7 +86,7 @@ final class ExecutionRowSnapshotTests: XCTestCase {
         var archives = 0
         func row(_ freshness: Freshness, selected: Bool = false) -> some View {
             ExecutionRowView(task: task, status: task.status(freshness: freshness),
-                             selected: selected, dimmed: freshness != .current,
+                             selected: selected,
                              onSelect: { selections += 1 }, onArchive: { archives += 1 })
                 .id(task.executionIdentity)
         }
@@ -94,8 +98,8 @@ final class ExecutionRowSnapshotTests: XCTestCase {
         defer { window.contentView = nil }
 
         for (freshness, selected, expected) in [
-            (Freshness.stale, false, 0), (.current, false, 1),
-            (.lastKnown, true, 0), (.current, true, 1)
+            (Freshness.stale, false, 1), (.current, false, 1),
+            (.lastKnown, true, 1), (.current, true, 1)
         ] {
             host.rootView = row(freshness, selected: selected)
             host.layoutSubtreeIfNeeded()
@@ -111,7 +115,7 @@ final class ExecutionRowSnapshotTests: XCTestCase {
     }
 
     @MainActor
-    func testInspectorHeaderKeepsCapturedFreshnessAndRecoversWithIdenticalTask() async throws {
+    func testInspectorKeepsRunningStateAcrossExpiryFailureAndRecovery() async throws {
         let source = SyntheticObserverService(scenario: .running)
         let page = try await source.tasks(active: true, offset: 0)
         let task = try XCTUnwrap(page.items.first { $0.monitorStatus == .running })
@@ -119,7 +123,7 @@ final class ExecutionRowSnapshotTests: XCTestCase {
         var now = Date()
         let store = MonitorStore(service: service, now: { now }, lowPowerMode: { false })
         await store.refresh()
-        let snapshot = ExecutionHeaderView(task: task, freshness: store.freshness, stacked: false).body
+        let snapshot = ExecutionHeaderView(task: task, stacked: false).body
         now = now.addingTimeInterval(11)
         XCTAssertEqual(store.freshness, .stale)
         let host = NSHostingView(rootView: snapshot)
@@ -130,11 +134,11 @@ final class ExecutionRowSnapshotTests: XCTestCase {
         defer { window.contentView = nil }
         host.layoutSubtreeIfNeeded()
         try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertEqual(spinnerCount(in: host), 1, "Deferred header must keep its captured CURRENT snapshot")
-        host.rootView = ExecutionHeaderView(task: task, freshness: store.freshness, stacked: false).body
+        XCTAssertEqual(spinnerCount(in: host), 1, "Snapshot expiry must not replace execution state")
+        host.rootView = ExecutionHeaderView(task: task, stacked: false).body
         host.layoutSubtreeIfNeeded()
         try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertEqual(spinnerCount(in: host), 0, "A newly sampled expired snapshot must still warn")
+        XCTAssertEqual(spinnerCount(in: host), 1, "Snapshot expiry must not overwrite execution state")
 
         // Also exercise the real observing parent, including failed reads and
         // recovery while all task fields stay unchanged.
@@ -142,7 +146,7 @@ final class ExecutionRowSnapshotTests: XCTestCase {
         let inspector = NSHostingView(rootView: InspectorView(store: store, stacked: false))
         inspector.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
         window.contentView = inspector
-        for (unavailable, expected) in [(false, 1), (true, 0), (false, 1)] {
+        for (unavailable, expected) in [(false, 1), (true, 1), (false, 1)] {
             await service.setUnavailable(unavailable)
             await store.refresh()
             inspector.layoutSubtreeIfNeeded()
@@ -155,7 +159,7 @@ final class ExecutionRowSnapshotTests: XCTestCase {
     }
 
     @MainActor
-    func testPollingFreshnessUsesNormalAndLowPowerCadenceWithoutHidingFailures() async throws {
+    func testConnectionFreshnessUsesPollingCadenceAndKeepsFailuresInRuntimeStatus() async throws {
         let source = SyntheticObserverService(scenario: .running)
         let page = try await source.tasks(active: true, offset: 0)
         let task = try XCTUnwrap(page.items.first { $0.monitorStatus == .running })
@@ -173,7 +177,9 @@ final class ExecutionRowSnapshotTests: XCTestCase {
         XCTAssertEqual(store.connection, .connected)
         await service.setUnavailable(true)
         await store.refresh()
-        XCTAssertEqual(store.freshness, .lastKnown, "A real failed read must warn even inside the deadline")
+        XCTAssertEqual(store.freshness, .lastKnown, "Connection failure remains visible in runtime status")
+        XCTAssertEqual(store.runtimeStatus, .offline)
+        XCTAssertEqual(store.status(of: task), .running)
         await service.setUnavailable(false)
         lowPower = false
         await store.refresh()

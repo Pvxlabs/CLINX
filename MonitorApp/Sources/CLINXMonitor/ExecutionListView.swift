@@ -10,12 +10,9 @@ struct ExecutionListView: View {
     @Binding var popover: ListPopover?
 
     var body: some View {
-        // Lazy row bodies can be evaluated after the header. Capture freshness once
-        // so a wall-clock threshold cannot give one snapshot two different states.
-        let freshness = store.freshness
         VStack(spacing: 0) {
-            header(freshness: freshness)
-            content(freshness: freshness)
+            header
+            content
             pagination
         }
         .background(DS.Palette.surface)
@@ -23,7 +20,7 @@ struct ExecutionListView: View {
 
     // MARK: header
 
-    private func header(freshness: Freshness) -> some View {
+    private var header: some View {
         HStack(spacing: 8) {
             Text(store.view.label)
                 .interfaceFont(size: 13, weight: .medium)
@@ -32,7 +29,6 @@ struct ExecutionListView: View {
                 .font(DS.Font.meta)
                 .monospacedDigit()
                 .foregroundStyle(DS.Palette.textTertiary)
-            FreshnessTag(freshness: freshness)
             Spacer(minLength: 8)
 
             if let project = store.projectFilter {
@@ -85,7 +81,7 @@ struct ExecutionListView: View {
 
     // MARK: body
 
-    @ViewBuilder private func content(freshness: Freshness) -> some View {
+    @ViewBuilder private var content: some View {
         if store.visibleTasks.isEmpty {
             emptyState
         } else {
@@ -94,12 +90,12 @@ struct ExecutionListView: View {
                     ForEach(store.groupedTasks) { group in
                         if let title = group.title {
                             Section {
-                                rows(group.tasks, freshness: freshness)
+                                rows(group.tasks)
                             } header: {
                                 groupHeader(title, count: group.tasks.count)
                             }
                         } else {
-                            rows(group.tasks, freshness: freshness)
+                            rows(group.tasks)
                         }
                     }
                 }
@@ -117,12 +113,11 @@ struct ExecutionListView: View {
         }
     }
 
-    private func rows(_ tasks: [ObservedTask], freshness: Freshness) -> some View {
+    private func rows(_ tasks: [ObservedTask]) -> some View {
         ForEach(tasks, id: \.executionIdentity) { task in
             ExecutionRowView(task: task,
-                             status: task.status(freshness: freshness),
+                             status: task.monitorStatus,
                              selected: store.selectedRef == task.taskRef && store.selectedExecutionRef == task.executionRef,
-                             dimmed: freshness != .current,
                              onSelect: {
                 store.beginSelection(task.taskRef, executionRef: task.executionRef)
                 listFocused = true
@@ -197,7 +192,6 @@ struct ExecutionRowView: View {
     let task: ObservedTask
     let status: MonitorStatus
     let selected: Bool
-    let dimmed: Bool
     let onSelect: () -> Void
     let onArchive: () -> Void
 
@@ -261,7 +255,6 @@ struct ExecutionRowView: View {
             .background(selected ? DS.Palette.selection : (hovering ? DS.Palette.hover : .clear))
             // No status accent strip: the row reads its state from the status glyph, the
             // stage chip and the trailing label, never from a 2pt edge.
-            .opacity(dimmed && status == .stale ? 0.8 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -300,14 +293,11 @@ struct ExecutionRowView: View {
     }
 
     private var statusExplanation: String {
-        status == .stale
-            ? "Monitoring snapshot is stale. Last known execution: \(task.monitorStatus.label)."
-            : status.label
+        "Last reported execution state: \(status.label)"
     }
 
     private func tailColor(_ status: MonitorStatus) -> Color {
         if status.isAttention { return status.color }
-        if status == .stale { return DS.Palette.stale }
         return DS.Palette.textTertiary
     }
 

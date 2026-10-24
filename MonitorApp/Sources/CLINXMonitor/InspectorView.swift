@@ -23,10 +23,9 @@ struct InspectorView: View {
     }
 
     @ViewBuilder private func content(for task: ObservedTask) -> some View {
-        let freshness = store.freshness
-        let status = task.status(freshness: freshness)
+        let status = task.monitorStatus
         VStack(spacing: 0) {
-            ExecutionHeaderView(task: task, freshness: freshness, stacked: stacked)
+            ExecutionHeaderView(task: task, stacked: stacked)
             if store.selectedDetailIncomplete {
                 Text("当前 Observer 未提供该历史 execution 的 task 详情；保留精确列表快照，未用当前 execution 替代。")
                     .font(DS.Font.meta)
@@ -155,11 +154,9 @@ struct InspectorView: View {
 
 // MARK: - Execution header
 
-/// Value inputs keep the pill and freshness tag on the same presentation snapshot.
-/// This view must not independently observe the Store or resample its clock.
+/// Execution facts are independent of the Observer connection indicator.
 struct ExecutionHeaderView: View {
     let task: ObservedTask
-    let freshness: Freshness
     let stacked: Bool
 
     var body: some View {
@@ -175,10 +172,7 @@ struct ExecutionHeaderView: View {
             }
 
             HStack(spacing: 8) {
-                StatusPill(status: task.status(freshness: freshness))
-                if freshness != .current {
-                    FreshnessTag(freshness: freshness)
-                }
+                StatusPill(status: task.monitorStatus)
                 Spacer(minLength: 0)
             }
             .padding(.top, 8)

@@ -103,7 +103,7 @@ final class InspectorMetadataTests: XCTestCase {
         for width in [440, 900] {
             let host = NSHostingView(rootView: VStack(alignment: .leading, spacing: 20) {
                 Text("SYNTHETIC PREVIEW").font(DS.Font.meta).padding(.horizontal, 24)
-                ExecutionHeaderView(task: task, freshness: .current, stacked: width < 600)
+                ExecutionHeaderView(task: task, stacked: width < 600)
                 VStack(alignment: .leading, spacing: 12) {
                     SectionLabel(title: "OVERVIEW")
                     MetadataGrid(rows: task.overviewRows)

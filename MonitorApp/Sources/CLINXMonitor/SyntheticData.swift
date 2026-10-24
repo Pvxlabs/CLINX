@@ -79,7 +79,7 @@ enum SyntheticScenario: String, CaseIterable, Identifiable {
 
     var connectivityDetail: String? {
         switch self {
-        case .stale: return "Some execution events may be incomplete. Running states shown as Stale."
+        case .stale: return "Some execution events may be incomplete. Showing the last received execution states."
         case .offline: return "Last successful sync 12m ago (09:06:41). Showing last known data."
         default: return nil
         }

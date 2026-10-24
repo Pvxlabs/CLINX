@@ -74,7 +74,7 @@ final class FinalizedUIRuleTests: XCTestCase {
     func testStageBadgeToneFollowsTheRowStatus() {
         XCTAssertEqual(StageBadge.Tone.forStatus(.blocked), .warn)
         XCTAssertEqual(StageBadge.Tone.forStatus(.failed), .error)
-        for status in [MonitorStatus.running, .completed, .cancelled, .stale, .unknown] {
+        for status in [MonitorStatus.running, .completed, .cancelled, .unknown] {
             XCTAssertEqual(StageBadge.Tone.forStatus(status), .neutral)
         }
     }
@@ -110,7 +110,6 @@ final class FinalizedUIRuleTests: XCTestCase {
         XCTAssertTrue(MonitorStatus.blocked.isAttention)
         XCTAssertTrue(MonitorStatus.failed.isAttention)
         XCTAssertFalse(MonitorStatus.running.isAttention)
-        XCTAssertFalse(MonitorStatus.stale.isAttention)
         XCTAssertFalse(MonitorStatus.completed.isAttention)
     }
 }

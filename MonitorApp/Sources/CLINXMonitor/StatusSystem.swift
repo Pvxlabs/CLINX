@@ -6,11 +6,11 @@ import SwiftUI
 // page (status system) and the "Developer Handoff" page (Status mapping — observer → UI)
 // of `CLINX Monitor UI/UX Redesign`.
 //
-// One seven-state system is shared by row, pill, sidebar and inspector. Every state carries
+// One execution-state system is shared by row, pill, sidebar and inspector. Every state carries
 // a unique glyph so state never depends on colour alone.
 
 enum MonitorStatus: String, CaseIterable, Identifiable {
-    case running, blocked, failed, completed, cancelled, stale, unknown
+    case running, blocked, failed, completed, cancelled, unknown
 
     var id: String { rawValue }
 
@@ -21,7 +21,6 @@ enum MonitorStatus: String, CaseIterable, Identifiable {
         case .failed: return "Failed"
         case .completed: return "Completed"
         case .cancelled: return "Cancelled"
-        case .stale: return "Stale"
         case .unknown: return "Unknown"
         }
     }
@@ -33,7 +32,6 @@ enum MonitorStatus: String, CaseIterable, Identifiable {
         case .failed: return DS.Palette.error
         case .completed: return DS.Palette.success
         case .cancelled, .unknown: return DS.Palette.unknown
-        case .stale: return DS.Palette.stale
         }
     }
 
@@ -52,7 +50,6 @@ enum MonitorStatus: String, CaseIterable, Identifiable {
         case .failed: return .squareCross
         case .completed: return .circleCheck
         case .cancelled: return .slash
-        case .stale: return .triangle
         case .unknown: return .dashedRing
         }
     }
@@ -113,17 +110,10 @@ extension ObservedTask {
         return .unknown
     }
 
-    /// Staleness is a property of the snapshot, not of the task: `RUNNING + authority ≠ live`
-    /// must never keep claiming “Running”. Stale is applied to every non-terminal state.
-    func status(freshness: Freshness) -> MonitorStatus {
-        let status = monitorStatus
-        guard freshness != .current else { return status }
-        switch status {
-        case .running: return .stale
-        case .blocked, .failed, .completed, .cancelled, .unknown: return status
-        case .stale: return .stale
-        }
-    }
+    /// Show the last reported execution state. Observer availability belongs to
+    /// the runtime connection indicator and never changes a task into an alert.
+    func status(freshness _: Freshness) -> MonitorStatus { monitorStatus }
+
 }
 
 // MARK: - Freshness / authority
@@ -325,7 +315,7 @@ enum MonitorView: String, CaseIterable, Identifiable {
 
     func matches(_ status: MonitorStatus) -> Bool {
         switch self {
-        case .active: return status == .running || status == .blocked || status == .stale
+        case .active: return status == .running || status == .blocked
         case .blocked: return status == .blocked
         case .failed: return status == .failed
         case .recent: return true

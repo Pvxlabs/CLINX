@@ -1,7 +1,7 @@
 import XCTest
 @testable import CLINXMonitor
 
-/// View-model coverage for the UI/UX redesign: the seven-state system, freshness,
+/// View-model coverage for the UI/UX redesign: execution states, freshness,
 /// progress, view filters, synthetic acceptance data and the read-only boundary.
 final class RedesignStatusTests: XCTestCase {
 
@@ -83,11 +83,11 @@ final class RedesignStatusTests: XCTestCase {
         XCTAssertEqual(try task(record).monitorStatus, .failed)
     }
 
-    func testRunningBecomesStaleWhenAuthorityIsNotLive() throws {
+    func testConnectionFreshnessNeverOverridesReportedExecutionState() throws {
         let running = try task(try example("running_detail"))
         XCTAssertEqual(running.monitorStatus, .running)
-        XCTAssertEqual(running.status(freshness: .stale), .stale)
-        XCTAssertEqual(running.status(freshness: .lastKnown), .stale)
+        XCTAssertEqual(running.status(freshness: .stale), .running)
+        XCTAssertEqual(running.status(freshness: .lastKnown), .running)
         XCTAssertEqual(running.status(freshness: .current), .running)
     }
 
@@ -165,12 +165,12 @@ final class RedesignStatusTests: XCTestCase {
     }
 
     func testViewFiltersMatchTheHandoffTable() {
-        let statuses: [MonitorStatus] = [.running, .blocked, .failed, .completed, .cancelled, .stale, .unknown]
-        XCTAssertEqual(statuses.filter { MonitorView.active.matches($0) }, [.running, .blocked, .stale])
+        let statuses: [MonitorStatus] = [.running, .blocked, .failed, .completed, .cancelled, .unknown]
+        XCTAssertEqual(statuses.filter { MonitorView.active.matches($0) }, [.running, .blocked])
         XCTAssertEqual(statuses.filter { MonitorView.blocked.matches($0) }, [.blocked])
         XCTAssertEqual(statuses.filter { MonitorView.failed.matches($0) }, [.failed])
         XCTAssertEqual(statuses.filter { MonitorView.completed.matches($0) }, [.completed, .cancelled])
-        XCTAssertEqual(statuses.filter { MonitorView.recent.matches($0) }.count, 7)
+        XCTAssertEqual(statuses.filter { MonitorView.recent.matches($0) }.count, 6)
         XCTAssertEqual(MonitorView.allCases.map(\.shortcutIndex), [1, 2, 3, 4, 5])
     }
 
@@ -254,13 +254,15 @@ final class SyntheticAcceptanceTests: XCTestCase {
     }
 
     @MainActor
-    func testStaleScenarioStopsClaimingRunning() async throws {
+    func testStaleConnectionPreservesExecutionState() async throws {
         let store = MonitorStore()
         store.useSynthetic(.stale)
         await store.refresh()
         XCTAssertEqual(store.freshness, .stale)
-        XCTAssertTrue(store.allTasks.allSatisfy { store.status(of: $0) != .running })
-        XCTAssertTrue(store.allTasks.contains { store.status(of: $0) == .stale })
+        XCTAssertTrue(store.allTasks.allSatisfy { store.status(of: $0) == $0.monitorStatus })
+        XCTAssertTrue(store.allTasks.contains { store.status(of: $0) == .running })
+        XCTAssertEqual(store.runtimeStatus, .synthetic)
+        XCTAssertEqual(store.connection7, .degraded)
     }
 
     @MainActor

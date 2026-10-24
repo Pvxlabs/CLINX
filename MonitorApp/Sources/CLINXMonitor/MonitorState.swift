@@ -16,7 +16,7 @@ extension ObservedTask {
         case .completed: return resultPassed ? .passed : .idle
         case .cancelled: return .idle
         case .running: return .running
-        case .unknown, .stale: return state == "QUEUED" ? .idle : .unknown
+        case .unknown: return state == "QUEUED" ? .idle : .unknown
         }
     }
 
@@ -278,7 +278,7 @@ final class MonitorStore: ObservableObject {
         case .error: return lastSuccessfulFetch == nil
             ? "No snapshot has been observed yet."
             : "Showing last known data from \(syncText)."
-        case .degraded, .stale: return "Showing last known data. Running states are shown as Stale."
+        case .degraded, .stale: return "Showing the last received execution states."
         case .loading, .connected: return nil
         }
     }
@@ -360,7 +360,7 @@ final class MonitorStore: ObservableObject {
         var groups: [TaskGroup] = []
         if !attention.isEmpty { groups.append(TaskGroup(id: "attention", title: "Needs attention", tasks: attention)) }
         if !rest.isEmpty {
-            let title = isStaleSnapshot ? "Last known running" : "Running"
+            let title = "Running"
             groups.append(TaskGroup(id: "running", title: title, tasks: rest))
         }
         return groups

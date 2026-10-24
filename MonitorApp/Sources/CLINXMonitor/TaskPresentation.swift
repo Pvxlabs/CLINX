@@ -168,7 +168,6 @@ extension ObservedTask {
         case .failed: return "Failed \(lastProgressText)"
         case .completed: return "Done \(lastProgressText)"
         case .cancelled: return "Cancelled \(lastProgressText)"
-        case .stale: return "Snapshot stale"
         default: return lastProgressText
         }
     }
