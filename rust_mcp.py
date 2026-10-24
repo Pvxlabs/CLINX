@@ -9,10 +9,20 @@ def configure(tools):
     nullable = dict(type=['string', 'null'])
     boolean = dict(type='boolean')
     policy = dict(type='object')
-    seal = obj({k: string for k in ('cwd', 'branch', 'head')}, ('cwd', 'branch', 'head'))
+    seal = obj({
+        'cwd': dict(type='string', pattern=r'^/[^\x00]*$', maxLength=4096),
+        'branch': string, 'head': string,
+    }, ('cwd',))
+    seal['description'] = (
+        'Optional native working directory. An exact native thread takes priority. '
+        'Omission uses the project default for new threads. Repository identity is verified; '
+        'legacy branch/head strings are audit metadata and do not gate native forwarding. '
+        'HOST_EXECUTOR retains operation scope and exact receipt checks.'
+    )
     task = dict(task_ref=string, title=string, project=string, host=string, workspace_contract=seal,
                 thread_id=nullable, lifecycle=string, policy_hash=string, execution_policy=policy,
-                active_execution=nullable, read_only=boolean, authority=dict(const='RUST', type='string'))
+                active_execution=nullable, repository_identity=string, workspace_resolution=policy,
+                read_only=boolean, authority=dict(const='RUST', type='string'))
     execution = {
         **{k: string for k in ('execution_ref', 'task_ref', 'prepared_execution_ref', 'status',
                               'dispatch_state', 'resource_state', 'delivery_certainty')},
@@ -20,11 +30,14 @@ def configure(tools):
         'cancel_requested': boolean, 'execution_result': dict(type=['object', 'null']),
         'business_outcome': dict(type='string', const='NOT_ASSERTED'),
         'authority': dict(type='string', const='RUST'), 'read_only': boolean,
+        'workspace_contract': seal, 'workspace_resolution': dict(type=['object', 'null']),
     }
     outputs = {
         'clinx_prepare_execution': obj({**{k:string for k in ('prepared_execution_ref', 'task_ref', 'project',
             'host', 'title', 'status', 'request_hash', 'policy_hash')}, 'model':nullable, 'reasoning_effort':nullable,
-            'workspace_contract':seal, 'execution_policy':policy, 'execution_started':dict(type='boolean',const=False),
+            'workspace_contract':seal, 'workspace_resolution':dict(type=['object', 'null']),
+            'requested_workspace_contract':dict(type=['object', 'null']), 'thread_id':nullable,
+            'execution_policy':policy, 'execution_started':dict(type='boolean',const=False),
             'read_only':boolean}, ('prepared_execution_ref','task_ref','request_hash','workspace_contract','execution_started')),
         'clinx_start_execution': obj(execution, ('execution_ref','task_ref','status','resource_state','authority')),
         'clinx_cancel_execution': obj(execution, ('execution_ref','task_ref','status','resource_state','authority')),
@@ -56,7 +69,10 @@ def configure(tools):
         if name in outputs:
             tool['outputSchema'] = outputs[name]
         if name == 'clinx_prepare_execution':
-            tool['description'] = 'Persist a reviewed Rust execution request with exact cwd, branch and HEAD. Does not dispatch. HOST_EXECUTOR requires explicit operation scopes.'
+            tool['inputSchema']['properties']['workspace_contract'] = seal
+            from thread_identity import ID_PATTERN
+            tool['inputSchema']['properties']['thread_id'] = dict(type='string', pattern='^' + ID_PATTERN + '$')
+            tool['description'] = 'Prepare native Codex forwarding. An exact thread_id or codex_uri uses the live native cwd, verified against repository identity. Branch/HEAD snapshots do not gate native execution. Does not dispatch. HOST_EXECUTOR uses the same workspace resolver and retains operation scopes.'
         elif name == 'clinx_adopt_conversation':
             tool['inputSchema']['properties']['exact_turn_id'] = dict(type='string', minLength=1)
             tool['inputSchema']['properties']['workspace_contract'] = seal

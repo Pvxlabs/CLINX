@@ -14,12 +14,13 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--lab", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--source", type=Path, help="Exact committed checkout to package; defaults to this repository")
     p.add_argument("--provider-binary", type=Path, required=True)
     p.add_argument("--provider-vendor", type=Path, required=True, help="Matching version vendor directory; all Provider helpers come from this artifact")
     args = p.parse_args()
     if os.geteuid() != 0:
         raise SystemExit("ADMINISTRATOR_REQUIRED")
-    source = Path(__file__).resolve().parents[1]
+    source = (args.source or Path(__file__).resolve().parents[1]).resolve(strict=True)
     paths = sorted([*source.glob("*.py"), *source.glob("requirements*.txt")])
     for package in (
         "domain",

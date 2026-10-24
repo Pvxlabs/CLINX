@@ -8,7 +8,7 @@ use crate::{
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, path::Path, process::Command};
+use std::{collections::BTreeMap, os::unix::fs::MetadataExt, path::Path, process::Command};
 
 #[path = "business_handoff.rs"]
 mod handoff;
@@ -178,43 +178,106 @@ fn git(cwd: &str, args: &[&str]) -> Result<String> {
         .map(|s| s.trim().to_owned())
         .map_err(|_| "WORKSPACE_IDENTITY_UNAVAILABLE".into())
 }
-fn workspace(project: &Project, requested: &Value) -> Result<Value> {
+fn native_workspace(project: &Project, requested: &Value) -> Result<Value> {
+    // Historical branch/HEAD are audit inputs, never native admission facts.
     let cwd = if requested.is_null() {
         project.cwd.as_str()
     } else {
-        string(requested, "cwd")?
+        let fields = requested.as_object().ok_or("WORKSPACE_CONTRACT_INVALID")?;
+        if fields
+            .keys()
+            .any(|k| !matches!(k.as_str(), "cwd" | "branch" | "head"))
+            || fields.values().any(|v| !v.is_string())
+        {
+            return Err("WORKSPACE_CONTRACT_INVALID".into());
+        }
+        requested["cwd"]
+            .as_str()
+            .ok_or("WORKSPACE_CONTRACT_INVALID")?
     };
-    if !Path::new(cwd).is_absolute()
-        || Path::new(cwd)
-            .canonicalize()
-            .map_err(|_| "WORKSPACE_IDENTITY_UNAVAILABLE")?
-            != Path::new(cwd)
-    {
-        return Err("WORKSPACE_CONTRACT_MISMATCH".into());
+    if !Path::new(cwd).is_absolute() || cwd.contains('\0') || cwd.len() > 4096 {
+        return Err("WORKSPACE_CONTRACT_INVALID".into());
     }
-    if git(
-        &project.cwd,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    )? != git(
+    Ok(json!({"cwd":cwd}))
+}
+
+fn repository(cwd: &str) -> Result<String> {
+    let common = git(
         cwd,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    )? {
+    )?;
+    let metadata = std::fs::metadata(&common).map_err(|_| "WORKSPACE_IDENTITY_UNAVAILABLE")?;
+    if !metadata.is_dir() {
+        return Err("WORKSPACE_IDENTITY_UNAVAILABLE".into());
+    }
+    // Shared by linked worktrees, stable across a directory rename, and
+    // different when an unrelated repository replaces a former checkout path.
+    Ok(format!("git-common:{}:{}", metadata.dev(), metadata.ino()))
+}
+
+fn known_repository(c: &Connection, project: &Project, saved: &Value) -> Result<Value> {
+    if saved.is_string() {
+        return Ok(saved.clone());
+    }
+    let identities: std::collections::BTreeSet<String> = rows(c, "task")?
+        .iter()
+        .filter(|t| {
+            t["project"]
+                .as_str()
+                .is_some_and(|alias| alias.eq_ignore_ascii_case(&project.alias))
+                && t["host"] == project.host
+        })
+        .filter_map(|t| t["repository_identity"].as_str().map(str::to_owned))
+        .collect();
+    match identities.len() {
+        1 => Ok(json!(identities.into_iter().next().unwrap())),
+        0 => repository(&project.cwd)
+            .map(Value::from)
+            .map_err(|_| "PROJECT_REPOSITORY_UNAVAILABLE".into()),
+        _ => Err("PROJECT_REPOSITORY_AMBIGUOUS".into()),
+    }
+}
+
+fn native_resolution(project: &Project, requested: &Value, identity: &Value) -> Result<Value> {
+    let route = native_workspace(project, requested)?;
+    let cwd = Path::new(string(&route, "cwd")?)
+        .canonicalize()
+        .map_err(|_| "WORKSPACE_CWD_UNREADABLE")?;
+    if !cwd.is_dir() || std::fs::read_dir(&cwd).is_err() {
+        return Err("WORKSPACE_CWD_UNREADABLE".into());
+    }
+    let cwd = cwd.to_string_lossy().into_owned();
+    let common = repository(&cwd)?;
+    // Once a task has a proven repository identity, a retired registration path
+    // need not remain readable. Unknown identities still fail closed.
+    let expected = match identity.as_str() {
+        Some(s) => s.to_owned(),
+        None => repository(&project.cwd).map_err(|_| "PROJECT_REPOSITORY_UNAVAILABLE")?,
+    };
+    if common != expected {
         return Err("WORKSPACE_REPOSITORY_MISMATCH".into());
     }
-    let registered = git(&project.cwd, &["worktree", "list", "--porcelain"])?;
-    if !registered
-        .lines()
-        .any(|s| s.strip_prefix("worktree ") == Some(cwd))
-        || git(cwd, &["rev-parse", "--show-toplevel"])? != cwd
-    {
-        return Err("WORKSPACE_NOT_REGISTERED".into());
-    }
-    let actual = json!({"cwd":cwd,"branch":git(cwd,&["branch","--show-current"])? ,"head":git(cwd,&["rev-parse","HEAD"])?});
-    if actual["branch"] == "" || (!requested.is_null() && *requested != actual) {
-        return Err("WORKSPACE_CONTRACT_MISMATCH".into());
-    }
-    Ok(actual)
+    Ok(json!({"cwd":cwd,"repository_identity":common,
+        "repository_common_dir":git(&cwd, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?,
+        "repository_root":git(&cwd, &["rev-parse", "--show-toplevel"])?,
+        "worktree":git(&cwd, &["rev-parse", "--path-format=absolute", "--git-dir"])?,
+        "branch":git(&cwd, &["branch", "--show-current"])?,
+        "head":git(&cwd, &["rev-parse", "HEAD"])?}))
 }
+
+fn resolved_contract(resolution: &Value) -> Value {
+    json!({"cwd":resolution["cwd"],"branch":resolution["branch"],"head":resolution["head"]})
+}
+
+fn thread_bound(task: &Value, thread: &Value) -> bool {
+    task["thread_id"] == *thread
+        || task["lineage"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|h| h["source"]["thread_id"] == *thread || h["successor_thread_id"] == *thread)
+}
+
 fn utc() -> String {
     // Gregorian civil date from Unix days. Event timestamps are metadata; leases
     // and evidence freshness exclusively use BOOTTIME and the kernel boot ID.
@@ -296,7 +359,13 @@ fn terminal(e: &Value) -> bool {
     )
 }
 fn public(e: &Value) -> Value {
-    json!({"execution_ref":e["execution_ref"],"task_ref":e["task_ref"],"prepared_execution_ref":e["prepared_execution_ref"],"thread_id":e["thread_id"],"native_turn_id":e["turn_id"],"status":e["states"]["Execution"],"dispatch_state":e["dispatch_state"],"resource_state":e["states"]["ResourceAllocation"],"execution_started":e["dispatch_state"]=="ACKED","delivery_certainty":if e["dispatch_state"]=="SENDING" {"UNKNOWN"} else if e["dispatch_state"]=="ACKED" {"CONFIRMED"} else {"NOT_DISPATCHED"},"cancel_requested":e["cancel_requested"],"execution_result":e["execution_result"],"business_outcome":"NOT_ASSERTED","authority":"RUST","read_only":true})
+    let mut result = json!({"execution_ref":e["execution_ref"],"task_ref":e["task_ref"],"prepared_execution_ref":e["prepared_execution_ref"],"thread_id":e["thread_id"],"native_turn_id":e["turn_id"],"status":e["states"]["Execution"],"dispatch_state":e["dispatch_state"],"resource_state":e["states"]["ResourceAllocation"],"execution_started":e["dispatch_state"]=="ACKED","delivery_certainty":if e["dispatch_state"]=="SENDING" {"UNKNOWN"} else if e["dispatch_state"]=="ACKED" {"CONFIRMED"} else {"NOT_DISPATCHED"},"cancel_requested":e["cancel_requested"],"execution_result":e["execution_result"],"business_outcome":"NOT_ASSERTED","authority":"RUST","read_only":true});
+    for key in ["workspace_contract", "workspace_resolution"] {
+        if let Some(value) = e.get(key) {
+            result[key] = value.clone();
+        }
+    }
+    result
 }
 fn worker_fence(c: &Connection, e: &Value, p: &Value, boot: &str) -> Result<()> {
     if p["ticket"] != e["ticket"] || p["epoch"] != e["epoch"] || e["ticket"].is_null() {
@@ -317,6 +386,7 @@ struct Prepare {
     project: String,
     host: String,
     task_ref: Option<String>,
+    thread_id: Option<String>,
     title: String,
     workspace_contract: Option<Value>,
     model: Option<String>,
@@ -330,6 +400,7 @@ struct Start {
     approved: bool,
     expected_request_hash: Option<String>,
     expected_task_ref: Option<String>,
+    native_cwd: Option<String>,
 }
 
 impl Store {
@@ -601,20 +672,14 @@ impl Store {
                     }
                 }
                 if operation == "host_begin" {
-                    let resource = &p["evidence"]["resource_key"];
                     for other in rows(&tx, "execution")? {
                         for delivery in other["host_deliveries"]
                             .as_object()
                             .into_iter()
                             .flat_map(|m| m.values())
                         {
-                            if delivery["host_ref"] == p["host_ref"] && !p["host_ref"].is_null()
-                                || !resource.is_null()
-                                    && delivery["start_evidence"]["resource_key"] == *resource
-                                    && delivery["delivery_state"] != "DELIVERED"
-                                    && delivery["host_ref"].is_string()
-                            {
-                                return Err("HOST_RESOURCE_STILL_HELD".into());
+                            if delivery["host_ref"] == p["host_ref"] && !p["host_ref"].is_null() {
+                                return Err("HOST_EXECUTION_IDENTITY_CONFLICT".into());
                             }
                         }
                     }
@@ -670,7 +735,6 @@ impl Store {
                     .workspace_contract
                     .or_else(|| task.as_ref().map(|t| t["workspace_contract"].clone()))
                     .unwrap_or(Value::Null);
-                let seal = workspace(&project, &requested)?;
                 let task_policy = task
                     .as_ref()
                     .and_then(|t| t.get("execution_policy"))
@@ -681,11 +745,37 @@ impl Store {
                 if task.is_some() && execution_policy != task_policy {
                     return Err("POLICY_REAUTHORIZATION_REQUIRED".into());
                 }
+                if let Some(thread) = &r.thread_id {
+                    if thread.is_empty()
+                        || thread.len() > 4096
+                        || task.as_ref().is_some_and(|t| t["thread_id"] != *thread)
+                    {
+                        return Err("TASK_ROUTE_MISMATCH".into());
+                    }
+                    if rows(&tx, "task")?.iter().any(|t| {
+                        thread_bound(t, &json!(thread))
+                            && task
+                                .as_ref()
+                                .is_none_or(|selected| selected["id"] != t["id"])
+                    }) {
+                        return Err("THREAD_ALREADY_BOUND".into());
+                    }
+                }
+                let saved_identity = task
+                    .as_ref()
+                    .map(|t| t["repository_identity"].clone())
+                    .unwrap_or(Value::Null);
+                let resolution = native_resolution(
+                    &project,
+                    &requested,
+                    &known_repository(&tx, &project, &saved_identity)?,
+                )?;
+                let seal = resolved_contract(&resolution);
                 let prepared = format!("prepared_{}", &random_id()?[..32]);
                 let task_ref = r
                     .task_ref
                     .unwrap_or(format!("task_{}", &random_id()?[..32]));
-                let v = json!({"id":prepared,"prepared_execution_ref":prepared,"task_ref":task_ref,"new_task":task.is_none(),"project":r.project,"host":r.host,"prompt":r.prompt,"title":r.title,"model":r.model,"reasoning_effort":r.reasoning_effort,"workspace_contract":seal,"status":"PREPARED","request_hash":hash,"execution_policy":execution_policy,"policy_hash":core::digest(&execution_policy)});
+                let v = json!({"id":prepared,"prepared_execution_ref":prepared,"task_ref":task_ref,"new_task":task.is_none(),"project":r.project,"host":r.host,"prompt":r.prompt,"title":r.title,"model":r.model,"reasoning_effort":r.reasoning_effort,"workspace_contract":seal,"workspace_resolution":resolution,"requested_workspace_contract":requested,"thread_id":r.thread_id,"status":"PREPARED","request_hash":hash,"execution_policy":execution_policy,"policy_hash":core::digest(&execution_policy)});
                 put(&tx, "prepared", &prepared, &v, &mut changes)?;
                 v
             }
@@ -709,11 +799,24 @@ impl Store {
                 } else {
                     let project = policy
                         .project(string(&prepared, "project")?, string(&prepared, "host")?)?;
-                    workspace(&project, &prepared["workspace_contract"])?;
-                    let resource = core::digest(&json!([
-                        prepared["host"],
-                        prepared["workspace_contract"]["cwd"]
-                    ]));
+                    if let Some(cwd) = r.native_cwd {
+                        prepared["workspace_contract"] = json!({"cwd":cwd});
+                    }
+                    let resolution = native_resolution(
+                        &project,
+                        &prepared["workspace_contract"],
+                        &known_repository(
+                            &tx,
+                            &project,
+                            &prepared["workspace_resolution"]["repository_identity"],
+                        )?,
+                    )?;
+                    prepared["workspace_contract"] = resolved_contract(&resolution);
+                    prepared["workspace_resolution"] = resolution;
+                    let resource = core::digest(&json!([prepared["host"], prepared["task_ref"]]));
+                    // Leases fence attempts of this task. A shared cwd is not
+                    // an execution lock; independent tasks keep independent
+                    // resources, including when another delivery is unknown.
                     let prior = tx
                         .query_row(
                             "SELECT epoch FROM resources WHERE resource=?",
@@ -748,11 +851,28 @@ impl Store {
                     let owner = json!({"execution_id":eid,"attempt_id":aid,"assignment_id":format!("assignment_{eid}"),"worker_id":"native-transport","incarnation_id":self.identity,"resource_key":resource,"resource_epoch":epoch});
                     let task_id = string(&prepared, "task_ref")?.to_owned();
                     let mut task = if prepared["new_task"] == true {
-                        json!({"id":task_id,"task_id":task_id,"project":prepared["project"],"host":prepared["host"],"title":prepared["title"],"workspace_contract":prepared["workspace_contract"],"thread_id":null,"lifecycle":"OPEN","version":0})
+                        json!({"id":task_id,"task_id":task_id,"project":prepared["project"],"host":prepared["host"],"title":prepared["title"],"workspace_contract":prepared["workspace_contract"],"thread_id":prepared["thread_id"],"lifecycle":"OPEN","version":0})
                     } else {
                         row(&tx, "task", &task_id)?
                     };
-                    if prepared["new_task"] == true {
+                    if prepared["new_task"] != true
+                        && prepared["thread_id"].is_string()
+                        && prepared["thread_id"] != task["thread_id"]
+                    {
+                        return Err("TASK_ROUTE_MISMATCH".into());
+                    }
+                    if task["thread_id"].is_string()
+                        && rows(&tx, "task")?.iter().any(|other| {
+                            other["id"] != task["id"]
+                                && other["host"] == task["host"]
+                                && thread_bound(other, &task["thread_id"])
+                        })
+                    {
+                        return Err("THREAD_ALREADY_BOUND".into());
+                    }
+                    if prepared["new_task"] == true
+                        && prepared["execution_policy"]["execution_surface"] == "HOST_EXECUTOR"
+                    {
                         task["repository_origin"] = git(
                             string(&prepared["workspace_contract"], "cwd")?,
                             &["remote", "get-url", "--all", "origin"],
@@ -792,6 +912,8 @@ impl Store {
                         task["last_event"] = tr;
                     }
                     let mut e = json!({"id":eid,"execution_ref":eid,"task_ref":task_id,"prepared_execution_ref":r.prepared_execution_ref,"resource":resource,"epoch":epoch,"attempt_id":aid,"provider_session_id":format!("session_{eid}"),"owner_ref":self.identity,"owner":owner,"expires_ms":expires,"thread_id":task["thread_id"],"turn_id":null,"endpoint":null,"ticket":null,"dispatch_state":"READY","cancel_requested":false,"versions":{},"states":{},"host_deliveries":{},"created_at":utc()});
+                    e["workspace_contract"] = prepared["workspace_contract"].clone();
+                    e["workspace_resolution"] = prepared["workspace_resolution"].clone();
                     if handoff::needed(&task, &prepared) {
                         e["predecessor_thread_id"] = e["thread_id"].clone();
                         e["thread_id"] = Value::Null;
@@ -855,6 +977,11 @@ impl Store {
                     prepared["execution_ref"] = json!(eid);
                     task["active_execution"] = json!(eid);
                     task["workspace_contract"] = prepared["workspace_contract"].clone();
+                    if !prepared["workspace_resolution"].is_null() {
+                        task["repository_identity"] =
+                            prepared["workspace_resolution"]["repository_identity"].clone();
+                        task["workspace_resolution"] = prepared["workspace_resolution"].clone();
+                    }
                     put(
                         &tx,
                         "prepared",
@@ -903,18 +1030,41 @@ impl Store {
                         }
                         string(p, "thread_id")?;
                         let prepared = row(&tx, "prepared", string(&e, "prepared_execution_ref")?)?;
-                        if p["cwd"] != prepared["workspace_contract"]["cwd"] {
-                            return Err("WORKSPACE_CONTRACT_MISMATCH".into());
-                        }
+                        let project = policy
+                            .project(string(&prepared, "project")?, string(&prepared, "host")?)?;
+                        let resolution = native_resolution(
+                            &project,
+                            &json!({"cwd":p["cwd"]}),
+                            &known_repository(
+                                &tx,
+                                &project,
+                                &prepared["workspace_resolution"]["repository_identity"],
+                            )?,
+                        )?;
+                        e["workspace_contract"] = resolved_contract(&resolution);
+                        e["workspace_resolution"] = resolution;
                         e["thread_id"] = p["thread_id"].clone();
                         e["endpoint"] = p["endpoint"].clone();
                         let tid = string(&e, "task_ref")?;
                         let mut t = row(&tx, "task", tid)?;
+                        if rows(&tx, "task")?.iter().any(|other| {
+                            other["id"] != t["id"]
+                                && other["host"] == t["host"]
+                                && thread_bound(other, &e["thread_id"])
+                        }) {
+                            return Err("THREAD_ALREADY_BOUND".into());
+                        }
                         if handoff::needed(&t, &prepared) {
                             return Err("EXACT_HOST_THREAD_HANDOFF_REQUIRED".into());
                         }
                         t["provider_policy_hash"] = prepared["policy_hash"].clone();
                         t["thread_id"] = e["thread_id"].clone();
+                        if !e["workspace_resolution"].is_null() {
+                            t["repository_identity"] =
+                                e["workspace_resolution"]["repository_identity"].clone();
+                            t["workspace_contract"] = e["workspace_contract"].clone();
+                            t["workspace_resolution"] = e["workspace_resolution"].clone();
+                        }
                         put(&tx, "task", tid, &t, &mut changes)?;
                         result = public(&e);
                     }
@@ -937,7 +1087,17 @@ impl Store {
                         let prepared = row(&tx, "prepared", string(&e, "prepared_execution_ref")?)?;
                         let project = policy
                             .project(string(&prepared, "project")?, string(&prepared, "host")?)?;
-                        workspace(&project, &prepared["workspace_contract"])?;
+                        let resolution = native_resolution(
+                            &project,
+                            &e["workspace_contract"],
+                            &known_repository(
+                                &tx,
+                                &project,
+                                &e["workspace_resolution"]["repository_identity"],
+                            )?,
+                        )?;
+                        e["workspace_contract"] = resolved_contract(&resolution);
+                        e["workspace_resolution"] = resolution;
                         let mut f = base_facts(&e, clock());
                         f["dispatch_certainty"] = json!("NOT_DISPATCHED");
                         f["non_dispatch_proof"] = json!({"source":"dispatch_boundary","boundary":"PRE_SEND","evidence_ref":id,"execution_id":eid,"attempt_id":e["attempt_id"]});
@@ -971,7 +1131,10 @@ impl Store {
                         let nonce = random_id()?;
                         e["input_observation"] =
                             json!({"nonce":nonce,"boot":self.boot,"deadline":clock()+30000});
-                        result = json!({"execution_ref":eid,"thread_id":e["thread_id"],"endpoint":e["endpoint"],"workspace_contract":prepared["workspace_contract"],"prompt":prepared["prompt"],"client_message_id":native_client_id(string(&e,"thread_id")?,&eid),"nonce":nonce});
+                        let actual = e
+                            .get("workspace_contract")
+                            .unwrap_or(&prepared["workspace_contract"]);
+                        result = json!({"execution_ref":eid,"thread_id":e["thread_id"],"endpoint":e["endpoint"],"workspace_contract":actual,"prompt":prepared["prompt"],"client_message_id":native_client_id(string(&e,"thread_id")?,&eid),"nonce":nonce});
                     }
                     "input_commit" => {
                         if !core::keys(p, "execution_ref nonce endpoint thread_id turn_id item") {
@@ -1648,11 +1811,10 @@ fn control(
             let thread = string(p, "thread_id")?;
             let project = policy.project(string(p, "project")?, string(p, "host")?)?;
             string(p, "title")?;
-            let seal = workspace(&project, &p["workspace_contract"])?;
+            let seal = native_workspace(&project, &p["workspace_contract"])?;
             for t in rows(c, "task")? {
                 if t["thread_id"] == thread && t["host"] == p["host"] {
                     if t["project"] != p["project"]
-                        || t["workspace_contract"] != seal
                         || (!p["exact_turn_id"].is_null()
                             && t["native_checkpoint"]["turn"]["id"] != p["exact_turn_id"])
                     {
@@ -1673,10 +1835,7 @@ fn control(
             }
             let ref_id = format!("adopt_{}", core::digest(&json!([p["host"], thread])));
             if let Ok(old) = row(c, "prepared", &ref_id) {
-                if old["project"] != p["project"]
-                    || old["workspace_contract"] != seal
-                    || old["exact_turn_id"] != p["exact_turn_id"]
-                {
+                if old["project"] != p["project"] || old["exact_turn_id"] != p["exact_turn_id"] {
                     return Err("ADOPTION_IDENTITY_CONFLICT".into());
                 }
                 return Ok(old);
@@ -1747,14 +1906,23 @@ fn control(
                 }
                 let t = &observation["thread"];
                 if t["id"] != a["thread_id"]
-                    || t["cwd"] != a["workspace_contract"]["cwd"]
+                    || observations
+                        .iter()
+                        .any(|other| other["thread"]["cwd"] != t["cwd"])
                     || t["status"]["type"] != "idle"
                 {
                     return Err("NATIVE_ADOPTION_NOT_IDLE_OR_IDENTITY_CONFLICT".into());
                 }
             }
             let project = policy.project(string(&a, "project")?, string(&a, "host")?)?;
-            workspace(&project, &a["workspace_contract"])?;
+            let resolution = native_resolution(
+                &project,
+                &json!({"cwd":observations[0]["thread"]["cwd"]}),
+                &known_repository(c, &project, &Value::Null)?,
+            )?;
+            a["requested_workspace_contract"] = a["workspace_contract"].clone();
+            a["workspace_contract"] = resolved_contract(&resolution);
+            a["workspace_resolution"] = resolution.clone();
             if rows(c, "task")?
                 .iter()
                 .any(|t| t["host"] == a["host"] && t["thread_id"] == a["thread_id"])
@@ -1764,14 +1932,8 @@ fn control(
             let task_id = string(&a, "task_ref")?.to_owned();
             let execution_policy = native_policy();
             let mut task = json!({"id":task_id,"task_id":task_id,"project":a["project"],"host":a["host"],"title":a["title"],"workspace_contract":a["workspace_contract"],"thread_id":a["thread_id"],"lifecycle":"OPEN","version":0,"execution_policy":execution_policy,"policy_hash":core::digest(&execution_policy),"adoption_evidence":observations});
-            task["repository_origin"] = git(
-                string(&a["workspace_contract"], "cwd")?,
-                &["remote", "get-url", "--all", "origin"],
-            )
-            .ok()
-            .filter(|s| !s.is_empty() && !s.contains('\n'))
-            .map(Value::from)
-            .unwrap_or(Value::Null);
+            task["repository_identity"] = resolution["repository_identity"].clone();
+            task["workspace_resolution"] = resolution;
             if !a["exact_turn_id"].is_null() {
                 task["native_checkpoint"] = json!({"endpoint":observations[0]["endpoint"],"thread_id":a["thread_id"],"turn":observations[0]["turn"],"adoption_ref":ref_id});
             }

@@ -512,7 +512,7 @@ MCP_INSTRUCTIONS = (
     "The user's request to send or continue work supplies approval; use approved=true "
     "without asking for the same approval again. Prepare once, then call clinx_start_execution "
     "with the returned prepared_execution_ref and approved=true. "
-    "Execution stays native Codex. Supply workspace_contract with absolute cwd, branch and full head for an isolated worktree; do not put routing requirements only in prompt. Native tasks use full access with no CLINX network gate or filesystem sandbox; legacy network_access flags do not restrict execution. "
+    "Execution stays native Codex. On the Rust connector, an exact thread uses its live native cwd; workspace_contract can otherwise supply an absolute cwd in the target repository. Branch and HEAD snapshots do not gate native forwarding. Independent tasks may share a cwd. Do not put routing requirements only in prompt. Native tasks use full access with no CLINX network gate or filesystem sandbox; legacy network_access flags do not restrict execution. "
     "Do not routinely call clinx_get_prepared_request between prepare and start. "
     "After a lost response, inspect the ORIGINAL prepared request or exact execution before retrying; "
     "never submit another preparation blindly. QUEUED is not Provider running: report execution_started "
@@ -1056,10 +1056,11 @@ def _public_json(value: Any, *, native_identity: bool = False) -> Any:
         forbidden -= {'thread_id', 'threadId', 'session_id', 'sessionId', 'turn_id', 'turnId', 'cwd'}
     if isinstance(value, dict):
         return {
-            # The exact three-field workspace seal is a public contract. Keep
-            # cwd/branch here while continuing to scrub internal routing fields.
+            # Both native cwd routes and historical Git seals are public.
             key: (dict(item) if key == 'workspace_contract' and isinstance(item, dict)
-                  and set(item) == {'cwd', 'branch', 'head'}
+                  and 'cwd' in item and set(item) <= {'cwd', 'branch', 'head'}
+                  or key == 'workspace_resolution' and isinstance(item, dict)
+                  and set(item) <= {'cwd', 'branch', 'head', 'repository_identity', 'repository_root', 'repository_common_dir', 'worktree'}
                   else _public_json(item, native_identity=native_identity))
             for key, item in value.items()
             if key not in forbidden
@@ -1134,7 +1135,8 @@ class ClinxMCPServer:
         elif name == "clinx_revoke_derived_git_target":
             result = self.integration.revoke_derived_git_target(**arguments)
         elif name == "clinx_prepare_execution":
-            if 'workspace_contract' in arguments:
+            if ('workspace_contract' in arguments
+                    and not getattr(self.integration, 'rust_authority', False)):
                 from workspace_contract import validate_workspace_contract
                 validate_workspace_contract(arguments['workspace_contract'])
             result = self.integration.prepare_execution(**arguments)
