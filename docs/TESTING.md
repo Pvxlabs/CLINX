@@ -22,6 +22,15 @@ These profiles are historical evidence, not current passing gates. Do not add a
 skip hook, weaken assertions or delete the retained tests to hide this result.
 The phase 2 record lists all affected modules and the exact baseline comparison.
 
+[Cleanup phase 3](cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md) also retires the
+standalone Linear `Bridge`/V1 Dispatcher, its contract parser and `run/once/doctor`
+commands. Their local tests are preserved and now fail on the removed symbols
+or commands. The 20-module comparison changed from 492 passed / 21 failed to
+454 passed / 66 failed; all 39 changed JUnit node outcomes refer to these retired
+interfaces, and other outcomes are unchanged. This is not a passing full suite.
+Fresh Rust builds, copied-package request/routing tests and the isolated Rust
+MCP/Dispatcher/recovery chain are recorded separately in the phase 3 report.
+
 For the existing public request and native routing fixtures:
 
 ```sh

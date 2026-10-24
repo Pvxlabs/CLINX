@@ -2,7 +2,12 @@
 
 源码清理及新的发布集合见 [2026-10-24 清理记录](cleanup/RUST_MIGRATION_CLEANUP.md)。
 Python Authority 实验退役及实际 macOS 兼容依赖见[第二轮清理记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md)。
+旧 Linear 轮询器、源码启动器收口和干净产物验证见[第三轮记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md)。
 该源码提交未部署；实际服务可能继续使用不同的已选 release。
+
+当前状态是 Rust 接管 P620 业务状态权威，旧 Python 核心尚未完全退役。
+`kernel/src/runtime_lab.rs` 的 `State` 仍被 `authority_state.rs` 复用；它是现役共享状态实现。
+同文件的 Journal 和 Python `runtime_lab/` reference 属于资格用途，不能按目录名整包删除。
 
 ## Terminal receipt capacity repair, 2026-10-24
 

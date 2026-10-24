@@ -194,54 +194,32 @@ On P620 put developer environments and build outputs in your task-owned LAB path
 The retained local `basic`, `owner` and `recovery` profiles still include tests of
 retired Python experiments. Full collection currently reports nine import errors;
 see the [phase 2 cleanup record](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md) for
-the exact impact and preserved baseline failures.
+the exact impact and preserved baseline failures. The later removal of the old
+Linear Bridge/Dispatcher and CLI also leaves explicit historical-test failures;
+see the [phase 3 comparison](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md).
 
-## Getting started
+## Runtime entry points
 
+P620 business state is owned by the deployed Rust Authority. Source code, staged
+release manifests and running services are separate identities; see
+[Rust authority](docs/RUST_AUTHORITY.md) and the [cleanup record](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md).
 
-Runtime requirements: macOS or Linux, Python 3.11+, Git, a configured Codex
-app-server/proxy transport, Linear MCP for the bridge workflow, and a Linear
-personal API key. The legacy bridge has no required Python packages; optional device discovery uses
-`requirements-discovery.txt`.
+`bin/clinx` defaults to device discovery. Its `devices`, `pair` and `serve`
+commands use the discovery CLI directly, without importing the Python execution
+core. Explicit task/history/recovery utilities still serve the configured local
+device compatibility route. The old Linear polling `run`, `once` and `doctor`
+commands and the separate V1/M3 Dispatcher have been retired.
 
-`bridge.toml` records the existing operator deployment. Configure your own local
-paths, project identities, Provider transport and private registry before running
-these service commands. Offline development tests above supply their own state.
+For a configured Rust MCP development or qualification environment, use
+`mcp_server.py --config <config> --stdio` with the existing `CLINX_AUTHORITY=rust`,
+`CLINX_RUST_SOCKET` and `CLINX_RUST_UID` settings. These must identify the intended
+existing authority; the adapter does not create or migrate its database. A fresh
+clone does not configure an authority or reproduce an installed service.
 
-Start the bounded MCP adapter locally:
-
-```bash
-python3 mcp_server.py --config bridge.toml --stdio
-```
-
-For the existing deployment configuration, first run the repository doctor:
-
-```bash
-python3 bridge.py --config bridge.toml doctor
-```
-
-The bridge reads `LINEAR_API_KEY` from the process environment. Do not put the
-key in this repository or in `bridge.toml`.
-
-After the selected project identity and app-server transport are configured,
-run one polling cycle:
-
-```bash
-python3 bridge.py --config bridge.toml once
-```
-
-Use the continuous loop only when the deployment is intentionally operated as
-a local service:
-
-```bash
-python3 bridge.py --config bridge.toml run
-```
-
-Task discovery and context reads are bounded and do not start a provider turn.
-Execution uses the preparation/start flow authorized by the user's task request;
-private thread,
-session, turn, cwd, repository-origin, and credential values remain internal
-registry data.
+macOS Helper still has a configured local Python execution route. Its required
+capabilities and remaining retirement blockers are recorded separately from the
+P620 Rust release. Task identity, native thread, input ACK and recovery contracts
+must be preserved when this last execution route is migrated.
 
 ## Boundaries and status
 

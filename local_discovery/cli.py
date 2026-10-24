@@ -1,4 +1,4 @@
-"""Device commands integrated into the existing bridge argparse entry point."""
+"""Device discovery CLI with a lazy boundary to local execution utilities."""
 
 from __future__ import annotations
 
@@ -14,6 +14,21 @@ from pathlib import Path
 from typing import Any
 
 COMMANDS = {"devices", "pair", "serve"}
+
+
+def main() -> int:
+    selector = argparse.ArgumentParser(add_help=False)
+    selector.add_argument("--config", default="bridge.toml")
+    selector.add_argument("command", nargs="?")
+    selected, _ = selector.parse_known_args()
+    if selected.command not in COMMANDS:
+        from bridge import main as compatibility_main
+
+        return compatibility_main()
+    parser = argparse.ArgumentParser(prog="clinx", description="Discover and pair CLINX devices")
+    parser.add_argument("--config", default="bridge.toml", help="Path to TOML config")
+    add_commands(parser.add_subparsers(dest="command", required=True))
+    return handle(parser.parse_args())
 
 
 def add_commands(sub: Any) -> None:
@@ -47,7 +62,7 @@ def add_commands(sub: Any) -> None:
 
 
 def _settings(args: argparse.Namespace) -> tuple[Path, str]:
-    from bridge import detect_runtime_host
+    from runtime_config import detect_runtime_host
 
     config_path = Path(args.config).expanduser()
     raw = tomllib.loads(config_path.read_text()) if config_path.exists() else {}

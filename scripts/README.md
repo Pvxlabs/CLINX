@@ -9,7 +9,7 @@ Owner、Registry、实验包和独立 Provider。`--runtime-binary` 可指定已
 该命令只生成候选，不选择或启动服务。独立 Provider 的旧 bootstrap 打包分支已退役。
 
 macOS Helper 仍保留可配置的本地 Python 执行兼容路径，因此其清单比 Rust release 大。
-依赖分类、设备验证和未解除的兼容边界见[第二轮清理记录](../docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md)。
+依赖分类、设备验证和未解除的兼容边界见[第三轮清理记录](../docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md)。
 Python Authority 实验和 `--authority-transport` 已移除；普通设备本地执行路径仍保留。
 
 pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它；运行器也位于该目录。
@@ -37,7 +37,9 @@ pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它�
 
 源码启动器：[CLI](../bin/clinx)、[MCP](../bin/clinx-context-mcp)、
 [节点中心](../bin/clinx-node-centre)、
-[Observer](../bin/clinx-observer)。这些入口可能写状态或启动服务；已安装服务通常
+[Observer](../bin/clinx-observer)。设备发现 CLI 已与旧业务核心解耦；旧 Linear `run/once/doctor` 已移除。
+MCP 源码启动器只执行 `rust_stdio.py`，连接现有 Rust MCP Unix socket，不创建 Python 后端。
+这些入口可能写状态或启动服务；已安装服务通常
 使用独立的 release，不因编辑源码而升级。
 
 一次性实验资格器随对应实验退役。本地旧测试文件保持原字节，因此全量收集会显示

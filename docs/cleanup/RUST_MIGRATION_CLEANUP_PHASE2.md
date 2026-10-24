@@ -1,5 +1,8 @@
 # Rust 迁移后第二轮源码清理（2026-10-24）
 
+> 本文保留第二轮基线。第三轮进一步删除旧 Linear 轮询/Dispatcher、收口源码入口，
+> 并补做干净 Rust 和 macOS 构建；当前结果见[第三轮记录](RUST_MIGRATION_CLEANUP_PHASE3.md)。
+
 基准 `94f1ef96495b3b20547a41d1000582705a52344f`，canonical 仓库
 `/home/pvxlabs/dev/clinx`，分支 `main`。开始时受控工作区干净。本轮在第一轮发布边界
 清理之上，实际删除 Python Authority、allocator、事务叠加层及 prototype Provider。

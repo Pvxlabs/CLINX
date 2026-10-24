@@ -91,15 +91,7 @@ def recover(dispatcher, execution_ref):
     arguments = dict(execution_ref=execution_ref, prepared_ref=prepared_ref,
         task_snapshot=dataclasses.asdict(task), binding_snapshot=dataclasses.asdict(binding),
         integrity_hash=prepared.integrity_hash, receipt=receipt)
-    owner = getattr(registry, '_execution_owner', None)
-    token = owner._execution_token(dict(execution_ref=execution_ref)) if owner else None
-    if token is not None:
-        _, (resource, epoch, _) = token
-        operation_id = 'native-input-readback:' + execution_ref + ':' + receipt['native_item_id']
-        result = owner._submit(resource, epoch, 'native_input',
-            operation_id=operation_id, args=arguments)
-    else:
-        result = commit_receipt(registry, **arguments)
+    result = commit_receipt(registry, **arguments)
     # The ordinary completion observer/finalizer remains the only terminal authority.
     runtime.register(CompletionIdentity(execution_ref, task.task_id, binding.thread_id, receipt['turn_id']))
     return {**result, 'completion': dispatcher.reconcile_execution(execution_ref, reclaim_stale=False)}
@@ -127,7 +119,7 @@ def recover_pending(dispatcher):
 
 def commit_receipt(registry, *, execution_ref, prepared_ref, task_snapshot,
                    binding_snapshot, integrity_hash, receipt):
-    """SQLite part only: borrow the existing canonical commit when enrolled."""
+    """Commit exact native input evidence in the existing compatibility transaction."""
     from task_registry import ConversationBinding, TaskRecord
     task = TaskRecord(**task_snapshot)
     binding = ConversationBinding(**binding_snapshot)
