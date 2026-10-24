@@ -726,6 +726,8 @@ class HostExecutor:
             if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
                 raise InvalidArguments("timeout_seconds must be finite and positive")
             timeout = min(float(timeout), self.config.max_timeout_seconds)
+            spawn_argv = (self.registry.spawn_argv(command.argv) if getattr(self.registry, "rust_authority", False)
+                          else list(command.argv))
         except Exception as exc:
             # Positive proof: no begin_host_execution/process dispatch has occurred.
             # Missing Host evidence after an arbitrary handler crash is NOT this proof.
@@ -774,8 +776,7 @@ class HostExecutor:
                         if request.tool_call_id and not getattr(self.registry, "rust_authority", False):
                             ToolDeliveryLedger.running(self.registry, request.execution_ref, request.tool_call_id)
                         process = subprocess.Popen(
-                            (self.registry.spawn_argv(command.argv) if getattr(self.registry, "rust_authority", False)
-                             else list(command.argv)),
+                            spawn_argv,
                             cwd=str(command.cwd or request.project_root),
                             env=self._clean_environment(),
                             stdin=subprocess.DEVNULL,

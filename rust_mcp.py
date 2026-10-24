@@ -31,6 +31,8 @@ def configure(tools):
         'business_outcome': dict(type='string', const='NOT_ASSERTED'),
         'authority': dict(type='string', const='RUST'), 'read_only': boolean,
         'workspace_contract': seal, 'workspace_resolution': dict(type=['object', 'null']),
+        'host_executions': dict(type='array', items=policy),
+        'reconciliation_required': boolean, 'current_stage': string, 'failure_code': nullable,
     }
     outputs = {
         'clinx_prepare_execution': obj({**{k:string for k in ('prepared_execution_ref', 'task_ref', 'project',

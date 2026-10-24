@@ -98,7 +98,7 @@ def observe_thread(cfg, tid):
 
 
 def observe_native_writer(root, tid, turn_id, project):
-    """Observe a same-user macOS Desktop writer without connecting to its RPC.
+    """Observe a same-user native writer without connecting to its RPC.
 
     Both the exact thread lock and its indexed rollout must be open for writing
     by one Codex app-server. Recheck the exact unfinished native turn afterwards.
@@ -106,7 +106,7 @@ def observe_native_writer(root, tid, turn_id, project):
     """
     from native_history import NativeHistory, ThreadLookupError
     unknown = {'liveness': 'UNKNOWN', 'reason': 'NATIVE_WRITER_UNPROVEN'}
-    if sys.platform != 'darwin':
+    if sys.platform not in ('darwin', 'linux'):
         return unknown
     history = NativeHistory(root)
     try:
@@ -120,6 +120,16 @@ def observe_native_writer(root, tid, turn_id, project):
         lock = history.root / 'thread-writer-locks' / (tid + '.lock')
         if not lock.is_file() or lock.is_symlink():
             return unknown
+        if sys.platform == 'linux':
+            pid = _linux_native_writer(lock, rollout)
+            if pid is None:
+                return unknown
+            current_metadata = history.metadata(tid)
+            if (not current_metadata or any(current_metadata.get(k) != metadata.get(k)
+                    for k in ('id', 'cwd', 'rollout_path', 'history_mode'))
+                    or history.status(tid, metadata) != before):
+                return unknown
+            return {'liveness': 'LIVE', 'reason': 'NATIVE_WRITER_PROCESS', 'writer_pid': pid}
         expected = {str(lock.resolve()), str(rollout)}
         result = subprocess.run(['/usr/sbin/lsof', '-n', '-P', '-Fpcuftan', '--', str(lock), str(rollout)],
                                 capture_output=True, text=True, timeout=2)
@@ -155,8 +165,59 @@ def observe_native_writer(root, tid, turn_id, project):
                 or history.status(tid, metadata) != before):
             return unknown
         return {'liveness': 'LIVE', 'reason': 'NATIVE_WRITER_PROCESS', 'writer_pid': pid}
-    except (OSError, ValueError, subprocess.SubprocessError, ThreadLookupError):
+    except (OSError, ValueError, IndexError, StopIteration, subprocess.SubprocessError, ThreadLookupError):
         return unknown
+
+
+def _linux_native_writer(lock, rollout, proc_root=Path('/proc')):
+    """Kernel lock owner + exact writable inodes + process identity, all read-only."""
+    def identity(path):
+        s = path.stat()
+        return s.st_dev, s.st_ino
+
+    def owners():
+        with (proc_root / 'locks').open() as f:
+            data = f.read(1024 * 1024 + 1)
+        if len(data) > 1024 * 1024:
+            return set()
+        result = set()
+        dev, inode = identity(lock)
+        for line in data.splitlines():
+            parts = line.split()
+            if len(parts) != 8 or parts[1:4] != ['FLOCK', 'ADVISORY', 'WRITE'] or parts[6:] != ['0', 'EOF']:
+                continue
+            major, minor, number = parts[5].split(':')
+            if (int(major, 16), int(minor, 16), int(number)) == (os.major(dev), os.minor(dev), inode):
+                result.add(int(parts[4]))
+        return result
+
+    pids = owners()
+    if len(pids) != 1 or next(iter(pids)) <= 0:
+        return None
+    pid = next(iter(pids))
+    proc = proc_root / str(pid)
+    start = (proc / 'stat').read_bytes()
+    if proc.stat().st_uid != os.getuid() or (proc / 'exe').resolve().name != 'codex':
+        return None
+    args = (proc / 'cmdline').read_bytes().split(b'\0')
+    if not args or Path(os.fsdecode(args[0])).name != 'codex' or not {b'exec', b'app-server'}.intersection(args):
+        return None
+    expected = {identity(lock), identity(rollout)}
+    writable = set()
+    for i, fd in enumerate((proc / 'fd').iterdir()):
+        if i >= 1024:
+            return None
+        try:
+            info = (proc / 'fdinfo' / fd.name).read_text()
+            flags = next(int(line.split()[1], 8) for line in info.splitlines() if line.startswith('flags:'))
+            if flags & os.O_ACCMODE in (os.O_WRONLY, os.O_RDWR):
+                writable.add(identity(fd))
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+    if (not expected <= writable or owners() != pids or (proc / 'stat').read_bytes().split(b')', 1)[1].split()[19]
+            != start.split(b')', 1)[1].split()[19]):
+        return None
+    return pid
 
 
 def select_writer_client(cfg, tid, *, host_tools=False):

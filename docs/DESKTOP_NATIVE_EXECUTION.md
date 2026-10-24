@@ -1,5 +1,36 @@
 # Desktop 原生执行
 
+## 当前 Rust 路径（2026-10-24）
+
+`CODEX_NATIVE` 与 `HOST_EXECUTOR` 全部使用现有 Desktop 原生 daemon。
+不启动专用 Provider，不创建独立 `CODEX_HOME`，不复制会话或凭据。
+Rust 继续保存唯一任务权威、发送许可、输入去重、Host 调用账本及最终回执。
+动态工具只处理已绑定 Thread/Turn 的请求；Desktop 的审批、用户输入及其他任务
+的工具请求交给 Desktop。
+
+`desktop_socket.py` 通过现有聊天的精确 thread ID、socket inode 和内核 peer UID
+验证 Desktop 端点。`/run/clinx-rust-provider/provider.sock` 仅保留为历史账本使用的
+逻辑 socket 别名，直接指向 Desktop socket，不运行中间 daemon 或执行代理。
+Socket 消失时明确失败；重新发布前必须再次验证准确身份，不扫描并选择其他 daemon。
+服务的 private `/tmp` 映射到同一 Desktop socket 目录，不再映射旧 Provider 目录。
+
+原生观察由用户 Observer 读取已有会话记录，Centre 通过现有鉴权只读接口续采。
+观察项的 `THREAD_UNBOUND` 不表示执行失败，也不自动授予接管权。明确授权的续派
+按原生 thread ID 建立 Rust task；原生 writer 未释放时不重放或复制会话。
+
+Host 调用因 `ROOT_CONTROLLED_WORKER_LAUNCHER_REQUIRED` 在创建子进程之前
+被拒绝时，Transport 可提交原生终态 turn 中的原始失败工具回执进行协调。
+Rust 核对精确 endpoint、turn、call、只读和无变更证据，保留原状态及回执摘要，
+按 `NOT_EXECUTED` 收敛 Host 调用，并将所属执行终结为 `FAILED / RELEASED`。
+普通超时、断线、身份不符或可能发生变更的调用不能沿用此证明释放资源。
+
+采集源故障恢复后，即使原生 turn 内容没有变化，也会在 coverage 变化时重新上报。
+恢复记录使用最多 8 条的独立调度队列，避免被持续活跃会话挤出采集。
+`freshness` 表示最近一次收到列表项变化的时间：30 秒内为 `RECENT`，随后为
+`STALE`；不变的终态样本继续去重，不通过重复上报制造实时活跃证据。
+
+## 历史 Python Owner 路径
+
 普通原生任务的新建和续接统一连接 `app_server.native_socket`。
 CLINX 转交用户输入并跟踪原生 thread/turn，不另建一个专用 Provider writer。
 `NATIVE_FULL_ACCESS` 保持 `dangerFullAccess`、`approvalPolicy=never`；

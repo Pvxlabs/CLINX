@@ -35,6 +35,7 @@ def parser():
     serve.add_argument("--rust-projection", action="store_true", help="Publish Rust managed tasks without opening a legacy native or canonical database")
     serve.add_argument("--local-canonical-db", type=Path)
     serve.add_argument("--local-owner-host")
+    serve.add_argument("--local-codex-host-id", help="Exact Codex Desktop host identity for local thread URIs")
     serve.add_argument("--local-provider-config", type=Path, help="Existing native owner configuration for read-only liveness observations")
     lifecycle = commands.add_parser("reconcile-native")
     lifecycle.add_argument("--registry", type=Path, required=True)
@@ -163,11 +164,13 @@ def main(argv=None) -> int:
         approvals=NodeAuthorizationStore(args.state)
         if rust_authority_enabled():
             from rust_observation import RustObservationSource
-            source = RustObservationSource(args.local_native_home, identity.public["node_id"], args.local_owner_host, provider_config)
+            from native_observation_bridge import RemoteNativeSource
+            source = RustObservationSource(args.local_native_home, identity.public["node_id"], args.local_owner_host,
+                provider_config, native_source=RemoteNativeSource.from_env())
         else:
             source = CodexObservationSource(args.local_native_home, identity.public["node_id"], args.local_canonical_db, args.local_owner_host, provider_config)
         collector=ObservationCollector(args.state / "local-observation-outbox.sqlite3", source,
-            identity,LocalObservationRegistration(identity,registry,approvals,observations,args.stale_after),
+            identity,LocalObservationRegistration(identity,registry,approvals,observations,args.stale_after,args.local_codex_host_id),
             lambda: approvals.get(identity.public["node_id"]),server.address[1],("session.read",))
     next_collection=0.0
     stop = threading.Event()

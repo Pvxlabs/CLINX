@@ -106,6 +106,17 @@ def observe_desktop(directory, thread_id, *, context=False, recent_turns=8, max_
     # A persisted terminal turn is history. Only the current owner's live read
     # establishes current thread activity; do not promote old summaries to it.
     live = result['provider_observation']['state']
+    if live not in ('active', 'idle') and result['native_turn_state'] == 'RUNNING':
+        from native_provider import observe_native_writer
+        proof = observe_native_writer(directory.native_home, thread_id,
+            result['native_status']['turn_id'], metadata['cwd'])
+        if proof['liveness'] != 'LIVE' and endpoint:
+            from native_writer_probe import observe
+            proof = observe(endpoint, directory.native_home, thread_id,
+                result['native_status']['turn_id'], metadata['cwd'])
+        result['native_writer_observation'] = dict(proof, observed_at=stamp())
+        if proof['liveness'] == 'LIVE':
+            live = 'active'
     result['native_display_state'] = 'RUNNING' if live == 'active' else 'IDLE' if live == 'idle' else 'UNKNOWN'
     result['codex_running'] = live == 'active'
     if context:

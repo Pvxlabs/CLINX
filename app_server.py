@@ -1046,6 +1046,18 @@ class CodexAppServerClient:
             raise
 
     def _send_server_response(self, request: dict[str, Any]) -> None:
+        if getattr(self, 'shared_desktop_daemon', False):
+            params = request.get('params')
+            # Desktop broadcasts server requests to attached clients. Handle
+            # only this execution's registered dynamic tool; never answer its
+            # approvals, user-input prompts, or another thread's tool calls.
+            if (request.get('method') != 'item/tool/call'
+                    or not isinstance(params, dict)
+                    or self._dynamic_tool_handler is None
+                    or params.get('threadId') != self._dynamic_thread_id
+                    or (self._dynamic_turn_id is not None
+                        and params.get('turnId') != self._dynamic_turn_id)):
+                return
         if (getattr(self, 'read_only_observer', False)
                 or getattr(self, 'shared_native_writer', False)
                 or getattr(self, 'native_forwarding_thread_id', None)):

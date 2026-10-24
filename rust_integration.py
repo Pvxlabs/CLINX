@@ -154,7 +154,7 @@ class RustIntegration:
                           query=None, execution_mode='normal', network_access=None, execution_surface=None,
                           required_capabilities=None, operation_classes=None, production_mutation_intent=None,
                           requested_operations=None, codex_uri=None, thread_id=None):
-        if (query or execution_mode != 'normal' or network_access is not None
+        if (query or execution_mode != 'normal'
                 or execution_surface not in (None, 'CODEX_NATIVE', 'HOST_EXECUTOR')):
             raise RustAuthorityError('RUST_REQUEST_CAPABILITY_NOT_IMPLEMENTED')
         if task_action not in (None, 'create', 'continue', 'reopen') or task_mode not in ('new', 'continue'):
@@ -281,12 +281,61 @@ class RustIntegration:
                 result = self.commands.call('get_status', dict(execution_ref=execution_ref))
                 if task_ref and result['task_ref'] != task_ref:
                     raise RustAuthorityError('TASK_ROUTE_MISMATCH')
-                return result
+                return self._host_readback(result)
             if task_ref:
                 return self._task_public(vars(self.registry.get_task(task_ref)))
         tid, task, selected = self._read_target(execution_ref=execution_ref, task_ref=task_ref,
             thread_id=thread_id, codex_uri=codex_uri, host=host, project=project, node_id=node_id, query=query)
         return self._read_native(tid, task, selected, project=project)
+
+    def _host_readback(self, result):
+        tid = result.get('thread_id')
+        turn_id = result.get('native_turn_id') or result.get('execution_turn_ref')
+        if not tid or not turn_id:
+            return result
+        from app_server import AppServerError
+        from native_provider import existing_client, endpoints
+        from rust_transport import RustDispatcher
+        try:
+            with existing_client(endpoints(self.cfg)[0], self.cfg.app_server.request_timeout_seconds) as client:
+                client.initialize(client_name=self.cfg.app_server.client_name,
+                                  client_title=self.cfg.app_server.client_title,
+                                  client_version=self.cfg.app_server.client_version)
+                turn = RustDispatcher.exact_turn(client, tid, turn_id)
+            return self._native_host_readback(result, turn)
+        except (AppServerError, RustAuthorityError, OSError, ValueError, KeyError):
+            return result
+
+    @staticmethod
+    def _native_host_readback(result, turn):
+        import json
+        rows = []
+        for item in turn.get('items', []):
+            if (item.get('type') != 'dynamicToolCall' or item.get('namespace') != 'clinx'
+                    or item.get('tool') != 'clinx_host_operation'):
+                continue
+            for part in item.get('contentItems', []):
+                try:
+                    body = json.loads(part.get('text', ''))
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(body, dict):
+                    continue
+                fields = ('execution_state', 'delivery_state', 'result_state', 'reconciliation_required',
+                          'host_execution_ref', 'exit_code', 'stdout', 'stderr', 'error', 'delivery_state_scope')
+                rows.append(dict({k: body[k] for k in fields if k in body}, call_id=item.get('id'),
+                                 source='NATIVE_DYNAMIC_TOOL_RECEIPT', success=item.get('success')))
+        if not rows:
+            return result
+        result = dict(result, host_executions=rows)
+        pending = [row for row in rows if row.get('reconciliation_required')]
+        if pending:
+            finalized = (result.get('resource_state') == 'RELEASED'
+                         or result.get('execution_state') in ('SUCCEEDED', 'FAILED', 'CANCELLED'))
+            result.update(reconciliation_required=not finalized,
+                          current_stage='FINALIZED' if finalized else 'HOST_RECONCILIATION_REQUIRED',
+                          failure_code=pending[0].get('error'))
+        return result
 
     def _read_native(self, tid, task, selected, *, context=False, project=None,
                      recent_turns=8, max_bytes=32000, cursor=None):
@@ -345,6 +394,8 @@ class RustIntegration:
                 result['context'] = page
             else:
                 result['context_truncated'] = True
+        if selected:
+            result = self._host_readback(result)
         return result
 
     def get_effective_authority(self, *, task_ref, requested_operations=None):
@@ -375,12 +426,12 @@ class RustIntegration:
                                 requested_workspace_contract=p.get('requested_workspace_contract')),
                     prompt_sha256=hashlib.sha256(p['prompt'].encode()).hexdigest(), read_only=True)
 
-    def find_task(self, *, task_ref=None, query=None, project=None, **unused):
-        if unused:
-            raise RustAuthorityError('UNSUPPORTED_TASK_SELECTOR')
+    def find_task(self, *, task_ref=None, query=None, project=None, host=None, status=None):
         tasks = self.registry.tasks()
         return dict(tasks=[self._task_public(t) for t in tasks if (not task_ref or t['task_id'] == task_ref)
             and (not project or t['project'] == project)
+            and (not host or t['host'] == host)
+            and (not status or t['lifecycle'] == status)
             and (not query or query.casefold() in t['title'].casefold())], read_only=True)
 
     @staticmethod

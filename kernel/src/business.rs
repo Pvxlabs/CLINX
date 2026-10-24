@@ -675,7 +675,7 @@ impl Store {
         let mut changes = vec![];
         let result = match operation {
             "host_receive" | "host_take" | "host_begin" | "host_complete" | "host_sent"
-            | "host_failed" | "host_ack" => {
+            | "host_failed" | "host_ack" | "host_reconcile_rejected" => {
                 let eid = string(p, "execution_ref")?;
                 let mut e = row(&tx, "execution", eid)?;
                 if terminal(&e) {
@@ -1572,7 +1572,10 @@ fn finalize(
     let aid = string(e, "attempt_id")?.to_owned();
     let allocation = string(e, "allocation_id")?.to_owned();
     let status = normalized(&p["turn"]["status"]);
+    let host_rejected = e["host_deliveries"].as_object().is_some_and(|rows| rows.values().any(|row|
+        row["terminal_rejection_reconciled"] == true));
     let outcome = match status.as_str() {
+        "completed" if host_rejected => "FAILED",
         "completed" => "SUCCEEDED",
         "failed" | "error" => "FAILED",
         "cancelled" | "interrupted" if e["cancel_requested"] == true => "CANCELLED",
@@ -2193,6 +2196,54 @@ fn host_command(
             }
             row.clone()
         }
+        "host_reconcile_rejected" => {
+            if !core::keys(p, "execution_ref call_id endpoint turn")
+                || p["endpoint"] != e["endpoint"]
+                || p["turn"]["id"] != e["turn_id"]
+                || !matches!(normalized(&p["turn"]["status"]).as_str(), "completed" | "failed")
+                || row["call_state"] != "RUNNING"
+                || row["delivery_state"] != "FAILED"
+                || row["response_sent"] != true
+                || row["host_completion"] != "UNKNOWN"
+                || row["start_evidence"]["mutating"] != 0
+                || row["start_evidence"]["operation_class"] != "READ_ONLY_HOST"
+            {
+                return Err("HOST_REJECTION_RECONCILIATION_DENIED".into());
+            }
+            let items = p["turn"]["items"].as_array().ok_or("HOST_REJECTION_ITEM_REQUIRED")?;
+            let exact: Vec<_> = items.iter().filter(|item| item["id"] == call_id).collect();
+            if exact.len() != 1 {
+                return Err("HOST_REJECTION_ITEM_REQUIRED".into());
+            }
+            let item = exact[0];
+            let proved = item["contentItems"].as_array().is_some_and(|parts| parts.iter().any(|part|
+                part["text"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok())
+                .is_some_and(|body| body["error"] == "ROOT_CONTROLLED_WORKER_LAUNCHER_REQUIRED"
+                    && body["result_state"] == "RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH"
+                    && body["execution_state"] == "COMMAND_DISPATCHED"
+                    && body["reconciliation_required"] == true)));
+            // This named guard throws while evaluating spawn_argv, before
+            // Popen. Generic command/transport failures prove no such fact.
+            if item["type"] != "dynamicToolCall" || item["namespace"] != "clinx"
+                || item["tool"] != "clinx_host_operation" || item["success"] != false || !proved
+            {
+                return Err("HOST_PRESPAWN_REJECTION_UNPROVEN".into());
+            }
+            row["reconciliation"] = json!({"contract":"HOST_PRESPAWN_REJECTION_V1",
+                "prior_call_state":row["call_state"],"prior_execution_state":row["execution_state"],
+                "prior_delivery_state":row["delivery_state"],"prior_failure_code":row["failure_code"],
+                "native_item_digest":core::digest(item),"native_turn_id":e["turn_id"],
+                "native_turn_status":p["turn"]["status"],"endpoint":p["endpoint"]});
+            row["call_state"] = json!("REJECTED");
+            row["execution_state"] = json!("COMMAND_NOT_DISPATCHED");
+            row["host_completion"] = json!("NOT_EXECUTED");
+            row["delivery_state"] = json!("DELIVERED");
+            row["failure_code"] = json!("ROOT_CONTROLLED_WORKER_LAUNCHER_REQUIRED");
+            row["reconciliation_required"] = json!(false);
+            row["terminal_rejection_reconciled"] = json!(true);
+            row["provider_item"] = item.clone();
+            row.clone()
+        }
         "host_ack" => {
             if !core::keys(p, "execution_ref call_id message") {
                 return Err("INVALID_HOST_ACK".into());
@@ -2312,6 +2363,7 @@ pub fn transport_operation(operation: &str) -> bool {
             | "host_sent"
             | "host_failed"
             | "host_ack"
+            | "host_reconcile_rejected"
             | "host_rows"
             | "successor_begin"
             | "successor_take"

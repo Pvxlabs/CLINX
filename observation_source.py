@@ -122,7 +122,7 @@ class CodexObservationSource:
             raise NodeProtocolError("OBSERVATION_FOREIGN_EXECUTION_OWNER","Frontend index cannot claim another execution owner")
         return turns
 
-    def sample(self,metadata,state):
+    def native_turns(self,metadata,state):
         tid=metadata["id"];turns=[];coverage="INDEXED"
         if metadata.get("history_mode")=="paginated":
             try:
@@ -160,6 +160,11 @@ class CodexObservationSource:
                 coverage="NATIVE_HISTORY_UNAVAILABLE"
         elif metadata.get("history_mode")!="canonical":
             turns,coverage=self._legacy(metadata,state)
+        return turns,coverage
+
+    def sample(self,metadata,state):
+        tid=metadata["id"]
+        turns,coverage=self.native_turns(metadata,state)
         canonical=self.canonical_turns(tid,metadata["cwd"],state)
         native={r["turn_id"]:r for r in turns if r.get("turn_id")}
         for turn in canonical:
@@ -167,6 +172,8 @@ class CodexObservationSource:
                 original=native[turn["turn_id"]]
                 turn["native_state"]=original["native_state"]
                 turn["ordinal"]=original["ordinal"]
+                if original.get("live_observation"):
+                    turn["live_observation"]=original["live_observation"]
                 if not turn.get("summary"): turn["summary"]=original.get("summary")
                 turns.remove(original)
         turns+=canonical
@@ -174,7 +181,7 @@ class CodexObservationSource:
             coverage="HISTORY_BACKFILL"
         if not turns: turns=[{"turn_id":None,"ordinal":0,"native_state":"UNKNOWN"}]
         latest=max(turns,key=lambda t:t["ordinal"])
-        if (self.provider_config or self.native_writer_observation) and latest.get("turn_id") and latest.get("native_state")=="RUNNING":
+        if (self.provider_config or self.native_writer_observation) and latest.get("turn_id") and latest.get("native_state")=="RUNNING" and "live_observation" not in latest:
             latest["live_observation"]=self._observe_live(tid,metadata["cwd"],latest["turn_id"])
         state["active"]=any(t.get("native_state")=="RUNNING" or t.get("execution_state") in ("CODEX_RUNNING","FINALIZING","TURN_STARTED") for t in turns)
         task_refs={t["task_ref"] for t in canonical}
@@ -202,6 +209,10 @@ class CodexObservationSource:
         if self.native_writer_observation:
             from native_provider import observe_native_writer
             evidence=observe_native_writer(self.history.root,tid,turn_id,project)
+            endpoint=os.environ.get('CLINX_NATIVE_OBSERVER_SOCKET')
+            if evidence['liveness'] != 'LIVE' and endpoint:
+                from native_writer_probe import observe
+                evidence=observe(endpoint,self.history.root,tid,turn_id,project)
             proof=dict(thread_id=tid,turn_id=turn_id,observed_at=stamp,
                 liveness=evidence["liveness"],reason=evidence["reason"])
             self.live_cache[tid]=proof
@@ -372,11 +383,21 @@ class ObservationCollector:
             managed=self.source.canonical_inventory(scope,self.get("canonical_after",""))
             self.put("canonical_after",managed[-1]["id"] if managed else "")
             candidates={m["id"]:m for m in managed+audit+metadata}
+            # Source failures can make a previously active session look idle.
+            # Give recovery its own bounded queue rather than starving it
+            # behind the ongoing-session queue. Legacy metadata hashes also
+            # identify pre-upgrade failures whose recovery was deduplicated.
+            for r in self.conn.execute("SELECT metadata FROM sessions WHERE "
+                    "json_extract(state,'$.native_observation_error') IS NOT NULL OR "
+                    "(json_extract(state,'$.reported_coverage') IS NULL AND "
+                    "json_extract(state,'$.hashes.metadata') IS NOT NULL) ORDER BY checked LIMIT 8"):
+                m=json.loads(r[0])
+                if scope.allows_project(m["cwd"]): candidates.setdefault(m["id"],m)
             # Round-robin ongoing/backfill reads are independent of index timestamp.
             for r in self.conn.execute("SELECT metadata FROM sessions ORDER BY coalesce(json_extract(state,\'$.active\'),0) DESC,checked LIMIT 8"):
                 m=json.loads(r[0])
                 if scope.allows_project(m["cwd"]): candidates.setdefault(m["id"],m)
-            for tid,m in list(candidates.items())[:PAGE*3+8]:
+            for tid,m in list(candidates.items())[:PAGE*3+16]:
                 if self.conn.execute("SELECT count(*) FROM outbox").fetchone()[0]>=OUTBOX_LIMIT-128:
                     self.status="OBSERVATION_BACKPRESSURE"
                     break
@@ -387,6 +408,13 @@ class ObservationCollector:
                 state=json.loads(existing[0]) if existing else {}
                 events,state=self.source.sample(m,state)
                 hashes=state.get("hashes",{})
+                coverage_signature=sorted({event.get("coverage", "UNKNOWN") for event in events})
+                if state.get("reported_coverage") != coverage_signature:
+                    # A source-level failure can overwrite the thread projection
+                    # with a metadata-only event. Re-emit unchanged turns when
+                    # coverage recovers, so their older hashes cannot hide it.
+                    hashes={}
+                state["reported_coverage"]=coverage_signature
                 for event in events:
                     # title and summaries are scrubbed before entering the durable outbox.
                     event["title"]=clean(event.get("title"),100) or tid
@@ -419,9 +447,10 @@ class LocalObservationRegistration:
     The local read_sessions grant is explicit and persisted. No self-pair,
     alternate identity, canonical task, execution or Provider is created.
     """
-    def __init__(self,identity,registry,approvals,writer,stale_after=45):
+    def __init__(self,identity,registry,approvals,writer,stale_after=45,codex_host_id=None):
         self.identity,self.registry,self.approvals,self.writer=identity,registry,approvals,writer
         self.stale_after=stale_after
+        self.codex_host_id=codex_host_id
 
     def heartbeat(self,identity,scope,*,port,capabilities):
         from node_protocol import NodeRecord,_now
@@ -430,8 +459,11 @@ class LocalObservationRegistration:
             old=self.registry.get(self.identity.public["node_id"])
             if old: self.registry.revoke(old.node_id,old.user_scope)
             return {"registered":False,"error_code":"LOCAL_OBSERVATION_SCOPE_DENIED"}
+        previous=self.registry.get(identity.public["node_id"])
+        routes=(self.codex_host_id,) if self.codex_host_id else previous.route_ids if previous else ()
         record=NodeRecord(node_id=identity.public["node_id"],user_scope=approved.user_scope,
             public_key_fingerprint=identity.public["fingerprint"],display_name=identity.public["display_name"],
+            route_ids=routes,
             capabilities=("session.read","session.status"),state="ONLINE",last_seen=_now(),stale_after_seconds=self.stale_after)
         self.registry.register(record,approved)
         return {"registered":True,"scope":approved.as_dict()}

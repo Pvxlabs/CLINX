@@ -509,6 +509,7 @@ class ObserverAPI:
         self.observations = observations
         self.network_observations = network_observations if network_observations is not None else observations
         self.store.observation_directory = observations
+        self.native_collector = None
 
     def request(self, method, target, authorization):
         token = self.credential()
@@ -520,7 +521,7 @@ class ObserverAPI:
             raise APIError(401, "UNAUTHORIZED")
         if method != "GET":
             raise APIError(405, "READ_ONLY")
-        if len(target) > 2048:
+        if len(target) > (16384 if target.startswith('/v2/native-collector/') else 2048):
             raise APIError(400, "INVALID_REQUEST")
         url = urlsplit(target)
         if url.scheme or url.netloc or url.fragment or "%" in url.path:
@@ -532,6 +533,28 @@ class ObserverAPI:
             raise APIError(400, "INVALID_QUERY") from None
         if any(len(v) != 1 for v in query.values()):
             raise APIError(400, "INVALID_QUERY")
+        collector = re.fullmatch(r'/v2/native-collector/(inventory|sample/([0-9a-f-]{36}))', url.path)
+        if collector:
+            from native_observation_bridge import NativeCollectorBridge
+            from node_protocol import NodeProtocolError
+            from thread_identity import ThreadLookupError, parse_selector
+            try:
+                if self.native_collector is None:
+                    self.native_collector = NativeCollectorBridge(self.observations)
+                if collector[1] == 'inventory':
+                    if set(query) - {'audit', 'after'} or query.get('audit', ['0'])[0] not in ('0', '1'):
+                        raise ValueError()
+                    return self.native_collector.inventory(
+                        after=json.loads(query['after'][0]) if 'after' in query else None,
+                        audit=query.get('audit', ['0'])[0] == '1')
+                if set(query) - {'checkpoint'}:
+                    raise ValueError()
+                parse_selector(thread_id=collector[2])
+                return self.native_collector.sample(collector[2], query.get('checkpoint', [None])[0])
+            except (NodeProtocolError, ThreadLookupError) as exc:
+                raise APIError(409 if exc.code == 'NATIVE_COLLECTOR_CURSOR_RESET' else 400, exc.code) from None
+            except (TypeError, ValueError):
+                raise APIError(400, 'INVALID_QUERY') from None
         native = re.fullmatch(r"/v2/native/([0-9a-f-]{36})", url.path)
         if native:
             from rust_reads import observe_desktop

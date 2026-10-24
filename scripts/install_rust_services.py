@@ -9,7 +9,6 @@ import grp
 import json
 import os
 import pwd
-import shutil
 import subprocess
 import tomllib
 from pathlib import Path
@@ -52,10 +51,12 @@ def main():
     p.add_argument("--release", type=Path, required=True)
     p.add_argument("--operator-home", type=Path, required=True)
     p.add_argument("--bridge-config", type=Path, required=True)
+    p.add_argument("--desktop-socket", type=Path, required=True)
+    p.add_argument("--desktop-thread-id", required=True)
     args = p.parse_args()
     if os.geteuid() != 0:
         raise SystemExit("ADMINISTRATOR_REQUIRED")
-    for name in ('authority', 'provider', 'dispatcher'):
+    for name in ('authority', 'dispatcher'):
         if Path('/etc/systemd/system', 'clinx-rust-' + name + '.service').exists():
             raise RuntimeError('SERVICE_ALREADY_EXISTS:' + name)
     release = args.release.resolve(strict=True)
@@ -87,28 +88,10 @@ def main():
     ]:
         owned_dir(ROOT / name, user)
     owned_dir("/run/clinx-rust-provider", worker.pw_name, 0o2750, "clinx-ipc")
-    owned_dir("/run/clinx-rust-provider/native", worker.pw_name, 0o700, "clinx-provider-ipc")
-    codexhome = ROOT / "worker/codex"
-    owned_dir(codexhome, worker.pw_name)
-    old = tomllib.loads((args.operator_home / ".codex/config.toml").read_text())
-    minimal = {
-        k: old[k]
-        for k in (
-            "model_provider",
-            "model",
-            "model_reasoning_effort",
-            "model_providers",
-        )
-        if k in old
-    }
-    minimal.update(approval_policy="never", sandbox_mode="danger-full-access")
-    private = codexhome / "config.toml"
-    private.write_text("\n".join(toml(minimal)) + "\n")
-    auth = codexhome / "auth.json"
-    shutil.copyfile(args.operator_home / ".codex/auth.json", auth)
-    for path in (private, auth):
-        os.chown(path, worker.pw_uid, worker.pw_gid)
-        path.chmod(0o600)
+    desktop_socket = args.desktop_socket.resolve(strict=True)
+    subprocess.run(['runuser', '-u', worker.pw_name, '--', '/usr/bin/python3',
+                    str(release / 'control/desktop_socket.py'), '--socket', str(desktop_socket),
+                    '--witness-thread-id', args.desktop_thread_id, '--apply'], check=True)
     config = tomllib.loads(args.bridge_config.read_text())
     config["app_server"]["local_socket"] = "/run/clinx-rust-provider/provider.sock"
     config["app_server"].pop("native_socket", None)
@@ -169,44 +152,23 @@ User=clinx-authority
 Group=clinx-authority
 SupplementaryGroups=clinx-ipc clinx-provider-ipc
 ExecStart={command}
-BindReadOnlyPaths=/run/clinx-rust-provider/native:/tmp/codex-daemon-{worker.pw_uid}
+BindReadOnlyPaths={desktop_socket.parent}:/tmp/codex-daemon-{worker.pw_uid}
 ReadWritePaths={ROOT}/authority /run/clinx-rust
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 {common.replace("ProcSubset=pid", "")}
 """,
-        "clinx-rust-provider.service": f"""[Unit]
-Description=CLINX confined Codex Provider
-After=network-online.target
-[Service]
-User={worker.pw_name}
-Group={worker.pw_gid}
-SupplementaryGroups=clinx-provider-ipc
-Environment=HOME={args.operator_home}
-Environment=CODEX_HOME={codexhome}
-Environment=TMPDIR=/run/clinx-rust-provider
-Environment=PATH={release}/provider/bin:{release}/provider/codex-path:/usr/bin:/bin
-ExecStartPre=/usr/bin/chmod 00700 /run/clinx-rust-provider/native
-ExecStart={release}/provider/bin/codex app-server --listen unix:///run/clinx-rust-provider/provider.sock
-ExecStartPost=/usr/bin/python3 {release}/control/rust_provider_socket.py
-BindPaths=/run/clinx-rust-provider/native:/tmp/codex-daemon-{worker.pw_uid}
-ReadWritePaths={ROOT}/worker /run/clinx-rust-provider
-InaccessiblePaths={ROOT}/authority /run/clinx-rust /run/clinx-rust-api /run/user/1001 -/run/docker.sock -/run/containerd
-NoNewPrivileges=yes
-CapabilityBoundingSet=
-{execution_common}
-""",
         "clinx-rust-dispatcher.service": f"""[Unit]
 Description=CLINX Rust authority transport adapter
-After=clinx-rust-authority.service clinx-rust-provider.service
-Requires=clinx-rust-authority.service clinx-rust-provider.service
+After=clinx-rust-authority.service
+Requires=clinx-rust-authority.service
 [Service]
 User=clinx-transport
 Group=clinx-transport
 SupplementaryGroups=clinx-ipc
 {env}Environment=CLINX_RUST_WORKER_LAUNCHER={release}/host-worker
 ExecStart=/usr/bin/python3 {release}/control/rust_transport.py --config {cfgdir}/bridge.toml
-BindReadOnlyPaths=/run/clinx-rust-provider/native:/tmp/codex-daemon-{worker.pw_uid}
+BindReadOnlyPaths={desktop_socket.parent}:/tmp/codex-daemon-{worker.pw_uid}
 ReadWritePaths={ROOT}/transport
 InaccessiblePaths={ROOT}/authority /run/clinx-rust-api /run/user/1001 -/run/docker.sock -/run/containerd
 CapabilityBoundingSet=CAP_SETUID CAP_SETGID
