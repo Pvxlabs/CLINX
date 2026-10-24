@@ -1,7 +1,7 @@
 [Unit]
 Description=CLINX MCP tunnel-client runtime
-After=network-online.target clinx-provider.service
-Wants=network-online.target clinx-provider.service
+After=network-online.target
+Wants=network-online.target
 # Install the full unit to remove a legacy PartOf=clinx.service dependency.
 # An empty PartOf= in a drop-in cannot be relied on to remove that dependency.
 # Fixed delay bounds retries; do not permanently lock out recovery after a burst.

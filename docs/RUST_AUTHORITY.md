@@ -1,5 +1,8 @@
 # Native Rust business authority
 
+源码清理及新的发布集合见 [2026-10-24 清理记录](cleanup/RUST_MIGRATION_CLEANUP.md)。
+该源码提交未部署；实际服务可能继续使用不同的已选 release。
+
 ## Terminal receipt capacity repair, 2026-10-24
 
 The authority binary is now `rust-7fc39f7e5ea15dc6b014`; the existing

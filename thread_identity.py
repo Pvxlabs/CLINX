@@ -14,7 +14,7 @@ import re
 import sqlite3
 from urllib.parse import urlsplit, unquote, quote
 
-from task_registry import TERMINAL_EXECUTION_STAGES
+from runtime_contracts import TERMINAL_EXECUTION_STAGES
 from node_protocol import NodeProtocolError
 
 ID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"

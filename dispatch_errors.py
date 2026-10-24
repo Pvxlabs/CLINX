@@ -50,7 +50,7 @@ def failure_details(name, arguments, exc, registry=None):
     correlation = {k: arguments[k] for k in ('task_ref', 'execution_ref') if k in arguments}
     correlation.update(request_ref=request_ref, tool=name)
     evidence = None
-    if registry is not None and request_ref:
+    if registry is not None and request_ref and not getattr(registry, 'rust_authority', False):
         try:
             from prepared_requests import read_prepared_request
             evidence = read_prepared_request(registry, request_ref)

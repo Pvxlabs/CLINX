@@ -1,8 +1,8 @@
 # Full replacement unit, not a dependency-reset drop-in. NOT INSTALLED.
 [Unit]
 Description=CLINX P1 bounded Tunnel supervisor
-After=network-online.target clinx-provider.service
-Wants=network-online.target clinx-provider.service
+After=network-online.target
+Wants=network-online.target
 StartLimitIntervalSec=0
 
 [Service]

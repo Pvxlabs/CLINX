@@ -4,7 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from task_registry import TaskRegistryError
+from runtime_contracts import TaskRegistryError
 
 
 class WorkspaceContractError(TaskRegistryError):

@@ -8,6 +8,8 @@ arbitrary shell or filesystem access.
 
 from __future__ import annotations
 
+from runtime_contracts import M9IntegrationError
+
 import dataclasses
 import hashlib
 import json
@@ -43,10 +45,6 @@ from task_registry import (
 from tool_delivery import ToolDeliveryLedger, requires_reconciliation, delivery_summary
 
 
-class M9IntegrationError(RuntimeError):
-    def __init__(self, message, *, details=None):
-        super().__init__(message)
-        self.details = details or {}
 
 
 class ResultParseError(M9IntegrationError):

@@ -19,7 +19,7 @@ import tempfile
 import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from execution_policy import (
     BUSINESS_ACTION,
@@ -32,7 +32,10 @@ from execution_policy import (
 )
 from host_contract import executable_contract, operation_catalog
 from execution_semantics import RoutingIdentity, normalize_host
-from task_registry import TaskRegistry, TaskRegistryError
+from runtime_contracts import TaskRegistryError
+
+if TYPE_CHECKING:
+    from task_registry import TaskRegistry
 
 
 class HostExecutorError(RuntimeError):

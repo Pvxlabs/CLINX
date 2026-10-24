@@ -10,12 +10,12 @@ from execution_semantics import build_routing_identity
 from host_executor import HostExecutionRequest, HostExecutor
 from rust_authority import RustAuthorityError
 from rust_integration import RustRegistryView, stable_key
-from task_registry import TaskRegistry
+from runtime_contracts import worktree_key
 
 
 class RustHostRegistry(RustRegistryView):
     rust_authority = True
-    worktree_key = staticmethod(TaskRegistry.worktree_key)
+    worktree_key = staticmethod(worktree_key)
 
     def spawn_argv(self, argv):
         health = self.commands.client.request('health', {}, request_id='host-runtime-identity')

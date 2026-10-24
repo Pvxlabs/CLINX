@@ -18,15 +18,17 @@ import re
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 
 import app_server
-import bridge
+if TYPE_CHECKING:
+    from m9_integration import ClinxIntegration
+
+from runtime_config import BridgeConfig
+from runtime_contracts import BridgeError, M9IntegrationError, TaskRegistryError
 from consultations import NAMES as CONSULTATION_TOOL_NAMES
 from execution_policy import EXECUTION_SURFACES, HOST_CAPABILITIES, OPERATION_CLASSES
-from m9_integration import ClinxIntegration, M9IntegrationError
 from rust_authority import RustAuthorityError
-from task_registry import TaskRegistry, TaskRegistryError
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 SERVER_DISCOVER_PROTOCOL_VERSION = "2026-07-28"
@@ -1274,7 +1276,7 @@ class ClinxMCPServer:
                 if payload['outcome_certainty'] == 'UNKNOWN':
                     payload.update(codex_running=None, retry_required=False)
                 result = self._tool_result(payload, is_error=True)
-            except (M9IntegrationError, TaskRegistryError, bridge.BridgeError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+            except (M9IntegrationError, TaskRegistryError, BridgeError, KeyError, TypeError, ValueError, sqlite3.Error) as exc:
                 from dispatch_errors import failure_details, safe_reason
                 payload = {"error": safe_reason(exc)}
                 if getattr(exc, "code", None):
@@ -1308,7 +1310,7 @@ def build_server(
     allow_execute: bool = False,
     own_executions: bool = False,
 ) -> ClinxMCPServer:
-    cfg = bridge.BridgeConfig.load(Path(config_path).expanduser().resolve())
+    cfg = BridgeConfig.load(Path(config_path).expanduser().resolve())
     from rust_integration import RustIntegration, enabled
     if enabled():
         if own_executions:
@@ -1324,6 +1326,10 @@ def build_server(
             observations = RustObservationDirectory(observations, integration)
         server = ClinxMCPServer(integration, allow_execute=False, observations=observations)
         return server
+    import bridge
+    from m9_integration import ClinxIntegration
+    from task_registry import TaskRegistry
+
     registry = TaskRegistry(
         task_db_path
         or cfg.task_db_path
@@ -1507,6 +1513,7 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error('--consultations-only requires --task-db and excludes --observations-only')
             path = Path(args.task_db).expanduser().resolve(strict=True)
             from consultations import standalone_server
+            from task_registry import TaskRegistry
             serve_stdio(standalone_server(TaskRegistry(path, read_only=True)), recover_existing=False)
         elif args.observations_only:
             from network_observation import directory_from_env

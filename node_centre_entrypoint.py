@@ -159,7 +159,7 @@ def main(argv=None) -> int:
         from observation_source import CodexObservationSource,ObservationCollector,LocalObservationRegistration
         provider_config=None
         if args.local_provider_config:
-            from bridge import BridgeConfig
+            from runtime_config import BridgeConfig
             provider_config=BridgeConfig.load(args.local_provider_config)
         approvals=NodeAuthorizationStore(args.state)
         if rust_authority_enabled():

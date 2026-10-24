@@ -8,6 +8,9 @@ updates and a process-safe lease without introducing a service or dependency.
 
 from __future__ import annotations
 
+from runtime_config import WorkspaceConfig
+from runtime_contracts import TaskRegistryError, TERMINAL_EXECUTION_STAGES, worktree_key
+
 import contextlib
 import dataclasses
 import datetime as _datetime
@@ -32,8 +35,6 @@ from execution_policy import ExecutionPolicy, parse_execution_policy, policy_ide
 from authority_transactions import owner_mutation
 
 
-class TaskRegistryError(RuntimeError):
-    pass
 
 
 class WorkItemFingerprintConflict(TaskRegistryError):
@@ -72,22 +73,9 @@ class ProjectResolutionError(TaskRegistryError):
 MAX_TASK_TITLE_LENGTH = 240
 MAX_TASK_SUMMARY_LENGTH = 2000
 _UNSET = object()
-TERMINAL_EXECUTION_STAGES = frozenset({
-    "CANCELLED", "COMPLETED", "FAILED", "IN_REVIEW", "BLOCKED",
-    "RECOVERY_REQUIRED", "STOPPED",
-})
 
 
-@dataclasses.dataclass(frozen=True)
-class WorkspaceConfig:
-    alias: str
-    root: Path
-    allow_existing_projects: bool = True
-    allow_new_projects: bool = False
-    # Execution-host identity is separate from the optional remote SSH alias.
-    host: str | None = None
-    ssh_alias: str | None = None
-    codex_host_ids: tuple[str, ...] = ()
+
 
 
 class WorkspaceRegistry:
@@ -171,14 +159,6 @@ def _git_identity(path: Path) -> tuple[str, str]:
     return origin or "", branch
 
 
-def _has_origin(path: Path) -> bool:
-    result = subprocess.run(
-        ["git", "-C", str(path), "remote", "get-url", "origin"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        text=True,
-    )
-    return result.returncode == 0 and bool(result.stdout.strip())
 
 
 def _git_origin(path: Path) -> str | None:
@@ -1632,9 +1612,7 @@ class TaskRegistry:
 
     @staticmethod
     def worktree_key(*, host: str, cwd: str, repository_origin: str | None) -> str:
-        payload = "\x1f".join((host.strip().casefold(), os.path.realpath(cwd),
-                               (repository_origin or "").strip().casefold()))
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        return worktree_key(host=host, cwd=cwd, repository_origin=repository_origin)
 
     def register_derived_git_target(self, *, task_id: str, path: str,
                                     trusted_roots: tuple[Path, ...], provenance: str,

@@ -45,6 +45,7 @@ class Commands:
 
 
 class RustRegistryView:
+    rust_authority = True
     def __init__(self, commands):
         self.commands = commands
 

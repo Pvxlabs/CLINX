@@ -408,7 +408,7 @@ def main():
     args = parser.parse_args()
     from pathlib import Path
 
-    from bridge import BridgeConfig
+    from runtime_config import BridgeConfig
     return run(BridgeConfig.load(Path(args.config)), once=args.once)
 
 

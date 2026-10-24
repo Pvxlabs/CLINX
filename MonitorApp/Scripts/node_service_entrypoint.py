@@ -35,7 +35,7 @@ def configured_observation_source(native_home, node_id, config):
     if path is not None:
         if not isinstance(path, str) or not path.strip():
             raise ValueError("Invalid observation_provider_config")
-        from bridge import BridgeConfig
+        from runtime_config import BridgeConfig
         provider = BridgeConfig.load(Path(path).expanduser())
     return CodexObservationSource(native_home, node_id,
         config.get("observation_canonical_db"), config.get("observation_owner_host"),

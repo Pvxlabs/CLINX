@@ -15,41 +15,10 @@ cp "$binary_dir/CLINXMonitor" "$app_dir/Contents/MacOS/CLINXMonitor"
 cp Info.plist "$app_dir/Contents/Info.plist"
 cp ThirdPartyNotices.txt "$app_dir/Contents/Resources/ThirdPartyNotices.txt"
 
-# Matching, narrowly scoped adapter source; secrets travel only on inherited pipes.
-discovery_dir="$app_dir/Contents/Resources/Discovery"
-mkdir -p "$discovery_dir/local_discovery"
-cp ../local_discovery/*.py "$discovery_dir/local_discovery/"
-cp ../execution_semantics.py "$discovery_dir/"
-
-# Bundle the user-session node helper and the provider-neutral protocol. The
-# helper is launched by the App's LaunchAgent controller; it is not a root
-# daemon and is never sourced from the development checkout at runtime.
-cp ../node_protocol.py "$app_dir/Contents/Resources/"
-cp ../node_runtime.py "$app_dir/Contents/Resources/"
-cp ../node_execution_adapter.py "$app_dir/Contents/Resources/"
-cp ../native_history.py "$app_dir/Contents/Resources/"
-cp ../network_observation.py ../observation_source.py "$app_dir/Contents/Resources/"
-# Keep the canonical CLINX execution adapter self-contained in the installed
-# helper. Read-only observation may load provider configuration without
-# constructing or starting the execution adapter.
-for canonical_module in \
-    app_server.py bridge.py completion_runtime.py execution_liveness.py \
-    execution_policy.py execution_semantics.py host_contract.py host_executor.py \
-    m9_integration.py native_provider.py native_writer_probe.py native_observation_bridge.py \
-    prepared_requests.py production_workflows.py result_ingestion.py \
-    task_registry.py thread_identity.py tool_delivery.py native_lifecycle.py \
-    desktop_publication.py derived_git_targets.py dispatch_errors.py execution_owner.py \
-    authority_mapping.py authority_transactions.py authority_writer.py canonical_authority.py \
-    consultations.py historical_handoff.py native_input_recovery.py task_projection.py \
-    unstarted_recovery.py workspace_contract.py mcp_server.py observation_mcp.py \
-    observer_server.py rust_authority.py rust_host.py rust_integration.py rust_mcp.py \
-    rust_monitor.py rust_node_adapter.py rust_reads.py rust_transport.py; do
-    cp "../$canonical_module" "$app_dir/Contents/Resources/"
-done
-for canonical_package in domain shadow_ledger runtime_control; do
-    mkdir -p "$app_dir/Contents/Resources/$canonical_package"
-    cp "../$canonical_package/"*.py "$app_dir/Contents/Resources/$canonical_package/"
-done
+# Copy the declared helper closure, including its still-configurable execution
+# compatibility route. Retired experiments and stale incremental sources are
+# excluded by the shared inventory used by Rust release packaging.
+python3 -B ../runtime_packaging.py --monitor-resources "$app_dir/Contents/Resources"
 cp Scripts/node_service_entrypoint.py "$app_dir/Contents/Resources/"
 cp Scripts/CLINXNodeService "$app_dir/Contents/Resources/CLINXNodeService"
 chmod 755 "$app_dir/Contents/Resources/CLINXNodeService"
@@ -91,10 +60,11 @@ for path in sorted(root.rglob("*")):
     path.unlink()
     temporary.replace(path)
 PY
-uv pip install --python "$runtime_dir/bin/python" -r ../requirements-discovery.txt maturin==1.9.6
+uv pip install --python "$runtime_dir/bin/python" -r ../requirements-discovery.txt
 mkdir -p .build/discovery-wheels
 CARGO_PROFILE_RELEASE_DEBUG=1 CARGO_PROFILE_RELEASE_STRIP=none \
-    "$runtime_dir/bin/maturin" build --release --locked --manifest-path ../native/opaque_pairing/Cargo.toml --out .build/discovery-wheels
+    uv tool run --python 3.13 --from maturin==1.9.6 maturin build --release --locked \
+    --interpreter "$runtime_dir/bin/python" --manifest-path ../native/opaque_pairing/Cargo.toml --out .build/discovery-wheels
 uv pip install --python "$runtime_dir/bin/python" --reinstall .build/discovery-wheels/clinx_opaque-0.1.0-*-macosx_*.whl
 
 # A signed runtime is not an installation target or a bytecode cache location.
