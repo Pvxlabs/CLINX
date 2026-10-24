@@ -11,6 +11,8 @@ public struct ObserverHealth: Codable, Sendable {
     public let authorityLiveness: String
     public let authMode: String
     public let eventsTransport: String
+    public var authority: String? = nil
+    public var observationSource: String? = nil
 }
 
 public struct TaskPage: Codable, Sendable {

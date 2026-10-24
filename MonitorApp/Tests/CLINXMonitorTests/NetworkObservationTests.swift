@@ -157,6 +157,26 @@ private actor UnifiedProjectionService: ObserverServing, NetworkObservationServi
 
 @MainActor
 final class UnifiedMonitorProjectionTests: XCTestCase {
+    func testRustTerminalProjectionPreservesExactExecutionWithoutBusinessPass() throws {
+        let fixture = try projectedObservation(node: "p620", host: "P620", thread: "rust-thread",
+            state: "UNKNOWN", taskRef: "task_rust", executionRef: "exec_rust")
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        var raw = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(fixture)) as? [String: Any])
+        var turn = try XCTUnwrap(raw["turn"] as? [String: Any])
+        turn["execution_state"] = "SUCCEEDED"
+        raw["turn"] = turn
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let item = try decoder.decode(NetworkObservation.self, from: JSONSerialization.data(withJSONObject: raw))
+        let row = try XCTUnwrap(NetworkObservationAdapter.project([item], canonical: []).first)
+        XCTAssertEqual(row.executionRef, "exec_rust")
+        XCTAssertEqual(row.state, "COMPLETED")
+        XCTAssertFalse(row.resultPassed)
+        XCTAssertTrue(item.turn.isTerminal)
+        XCTAssertEqual(item.statusLabel, "SUCCEEDED")
+    }
+
     func testNativeProjectionAndOriginalHostCounts() async throws {
         let items = try [
             projectedObservation(node: "p620", host: "P620", thread: "a", state: "RUNNING", liveness: "PROVEN"),

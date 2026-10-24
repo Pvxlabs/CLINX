@@ -39,6 +39,10 @@ struct NetworkObservation: Codable, Identifiable, Sendable, Equatable {
         if turn.resultProcessing == "RESULT_MARKER_MISSING" { return "执行结束 · 结果待处理" }
         if freshness == "OFFLINE" { return "离线 · " + (turn.isTerminal ? turn.nativeState : "UNKNOWN") }
         if let result = turn.businessResult { return result }
+        if bindingEvidence == "CANONICAL_ROUTE", turn.executionRef != nil,
+           let state = turn.executionState, ["SUCCEEDED", "FAILED", "CANCELLED", "FENCED"].contains(state) {
+            return state
+        }
         if turn.isTerminal { return "执行结束 · \(turn.nativeState)" }
         return displayState ?? (turn.nativeState == "RUNNING" && !isRunning ? "UNKNOWN" : turn.executionState ?? turn.nativeState)
     }
@@ -61,7 +65,7 @@ struct ObservationTurn: Codable, Identifiable, Sendable, Equatable {
     var source: String? = nil
     var isTerminal: Bool {
         ["COMPLETED", "FAILED", "CANCELLED", "INTERRUPTED", "TIMED_OUT", "DISCONNECTED"].contains(nativeState)
-        || ["COMPLETED", "IN_REVIEW", "FAILED", "CANCELLED"].contains(executionState ?? "")
+        || ["COMPLETED", "IN_REVIEW", "SUCCEEDED", "FAILED", "CANCELLED", "FENCED"].contains(executionState ?? "")
     }
 }
 struct ObservationControl: Codable, Sendable, Equatable {

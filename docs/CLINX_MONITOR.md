@@ -287,3 +287,30 @@ and a random loopback port; they do not read the configured live registry.
 Historical reports and handoff snapshots: [recovery index](README.md#历史资料恢复).
 Requested export location is /data/artifacts/clinx-monitor-spec-20261001/ with those
 same filenames; export failure is explicit and must not be recorded as PASS.
+
+## Rust production observation source (2026-10-24)
+
+The existing Observer can select `CLINX_OBSERVER_RUST_MCP`, an explicitly bound
+Unix socket to the existing MCP API. In that mode, `/v1/health` identifies
+`authority=RUST`, `/v1/tasks` returns an empty compatibility page with
+`legacy_history=false`, and `/v2/observations` supplies the current Centre
+projection. No legacy task database is opened or imported. Health checks the
+read endpoint and directory; authority liveness remains UNKNOWN without a live
+business authority probe.
+
+The existing Rust MCP API selects the current Centre directory with
+`CLINX_RUST_OBSERVATION_READS=1` and explicit `CLINX_OBSERVATION_*` paths.
+Managed context reads validate current grants, select the exact Rust execution
+and native turn through its configured Provider, and recheck grants and identity
+before returning content. Local external conversations retain the existing
+Desktop Observer route; remote conversations stay with their owning node.
+The Observer does not receive authority database access or write commands.
+
+The macOS source candidate is **0.3.1 (4)**. It preserves canonical execution
+identity, recognizes Rust terminal states, and shows the returned authority in
+Connection settings. Terminal execution does not manufacture a business PASS.
+Build and sign using the existing `MonitorApp/Scripts/build-app.sh` on macOS;
+preserve installed node identity, trust, sharing configuration and Keychain.
+A source version or Linux backend acceptance does not establish installation on
+iMac or Air. macOS build, signing, installation, node bootstrap and UI readback
+must be verified separately on each device.

@@ -59,7 +59,16 @@ enum NetworkObservationAdapter {
         let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         let ref = item.taskRef ?? ("native_observation_" + digest)
         let state: String
-        switch item.turn.nativeState {
+        let canonicalState = item.bindingEvidence == "CANONICAL_ROUTE" && item.turn.executionRef != nil
+            ? item.turn.executionState : nil
+        let terminalState: String?
+        switch canonicalState {
+        case "SUCCEEDED": terminalState = "COMPLETED"
+        case "FAILED": terminalState = "FAILED"
+        case "CANCELLED", "FENCED": terminalState = "CANCELLED"
+        default: terminalState = nil
+        }
+        switch terminalState ?? item.turn.nativeState {
         case "RUNNING":
             // Persisted native indexes are historical evidence, not proof that a
             // runtime is still executing. Only an explicit liveness proof may
@@ -79,7 +88,8 @@ enum NetworkObservationAdapter {
         let host = item.nodeId
         let activity = item.turn.progress ?? item.turn.summary ?? item.turn.nativeState
         return ObservedTask(
-            schemaVersion: "presentation-native-v2", taskRef: ref, executionRef: nil,
+            schemaVersion: "presentation-native-v2", taskRef: ref,
+            executionRef: item.bindingEvidence == "CANONICAL_ROUTE" ? item.turn.executionRef : nil,
             project: item.project, title: item.shortTitle, host: host,
             state: state, stage: item.turn.nativeState, executionState: state,
             executionStage: item.turn.nativeState,

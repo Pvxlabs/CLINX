@@ -1312,7 +1312,16 @@ def build_server(
     if enabled():
         if own_executions:
             raise ValueError("PYTHON_OWNER_DISABLED_FOR_RUST_AUTHORITY")
-        server = ClinxMCPServer(RustIntegration(cfg), allow_execute=False)
+        integration = RustIntegration(cfg)
+        observations = None
+        if os.environ.get('CLINX_RUST_OBSERVATION_READS') == '1':
+            from network_observation import directory_from_env
+            observations = directory_from_env()
+            if observations is None:
+                raise ValueError('RUST_OBSERVATION_CONFIG_REQUIRED')
+            from rust_monitor import RustObservationDirectory
+            observations = RustObservationDirectory(observations, integration)
+        server = ClinxMCPServer(integration, allow_execute=False, observations=observations)
         return server
     registry = TaskRegistry(
         task_db_path

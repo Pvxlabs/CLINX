@@ -504,9 +504,10 @@ class ObserverStore:
 
 
 class ObserverAPI:
-    def __init__(self, store, credential, observations=None):
+    def __init__(self, store, credential, observations=None, network_observations=None):
         self.store, self.credential = store, credential
         self.observations = observations
+        self.network_observations = network_observations if network_observations is not None else observations
         self.store.observation_directory = observations
 
     def request(self, method, target, authorization):
@@ -555,17 +556,17 @@ class ObserverAPI:
                 raise APIError(400, 'INVALID_QUERY') from None
         if url.path.startswith("/v2/observations"):
             from node_protocol import NodeProtocolError
-            if self.observations is None:
+            if self.network_observations is None:
                 raise APIError(503, "OBSERVATION_NOT_CONFIGURED")
             arguments = {k: v[0] for k, v in query.items()}
             try:
                 if "limit" in arguments:
                     arguments["limit"] = int(arguments["limit"])
                 if url.path == "/v2/observations" and not set(arguments) - {"node", "project", "state", "kind", "native_thread_id", "cursor", "limit"}:
-                    return self.observations.list(**arguments)
+                    return self.network_observations.list(**arguments)
                 match = re.fullmatch(r"/v2/observations/(obs_[a-f0-9]{40})(/context|/activity)?", url.path)
                 if match and not set(arguments) - ({"cursor"} if match[2] == "/context" else {"cursor", "limit"}):
-                    operation = self.observations.context if match[2] == "/context" else self.observations.activity if match[2] == "/activity" else self.observations.detail
+                    operation = self.network_observations.context if match[2] == "/context" else self.network_observations.activity if match[2] == "/activity" else self.network_observations.detail
                     return operation(match[1], **arguments)
                 raise APIError(400, "INVALID_QUERY")
             except NodeProtocolError as exc:
@@ -698,8 +699,6 @@ def main():
     if not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", token):
         raise SystemExit("CLINX_OBSERVER_TOKEN must be a 32..256 character URL-safe credential")
     path = os.environ.get("CLINX_OBSERVER_DB")
-    if not path:
-        raise SystemExit("CLINX_OBSERVER_DB must identify the existing canonical registry")
     from network_observation import directory_from_env
     observations = directory_from_env()
     desktop_routes = json.loads(os.environ.get('CLINX_OBSERVER_CODEX_HOST_IDS', '{}'))
@@ -707,10 +706,15 @@ def main():
             not isinstance(k, str) or not isinstance(v, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]+', v)
             for k, v in desktop_routes.items()):
         raise SystemExit('CLINX_OBSERVER_CODEX_HOST_IDS must map canonical hosts to configured Desktop host IDs')
-    store = ObserverStore(path, codex_host_ids=desktop_routes)
+    from rust_monitor import from_env as rust_monitor_from_env
+    rust_monitor = rust_monitor_from_env()
+    if not rust_monitor and not path:
+        raise SystemExit("CLINX_OBSERVER_DB must identify the existing canonical registry")
+    store = rust_monitor[0] if rust_monitor else ObserverStore(path, codex_host_ids=desktop_routes)
     store.health()  # Fail closed; never initialize a missing registry.
     server = ObserverHTTPServer(int(os.environ.get("CLINX_OBSERVER_PORT", "8766")),
-                                ObserverAPI(store, lambda: os.environ.get("CLINX_OBSERVER_TOKEN"), observations),
+                                ObserverAPI(store, lambda: os.environ.get("CLINX_OBSERVER_TOKEN"), observations,
+                                            network_observations=rust_monitor[1] if rust_monitor else None),
                                 audit_methods=os.environ.get("CLINX_OBSERVER_AUDIT_METHODS") == "1")
     server.serve_forever(poll_interval=0.5)
 

@@ -96,6 +96,10 @@ private struct ConnectionSettingsView: View {
                         StatusGlyphView(glyph: statusGlyph, color: statusColor, size: 10)
                         Text(statusText).font(DS.Font.meta).foregroundStyle(DS.Palette.textSecondary)
                     }
+                    if let authority = store.health?.authority {
+                        Text("Authority: \(authority)")
+                            .font(DS.Font.micro).foregroundStyle(DS.Palette.textTertiary)
+                    }
                 }
                 Spacer()
             }

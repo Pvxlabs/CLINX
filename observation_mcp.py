@@ -6,7 +6,7 @@ NAMES = ("clinx_list_observations","clinx_get_observation","clinx_get_observatio
 
 def observation_tools():
     common={"cursor":{"type":"string","maxLength":2048},"limit":{"type":"integer","minimum":1,"maximum":100}}
-    props=dict(common,**{k:{"type":"string","maxLength":1024} for k in ("node","project","state")})
+    props=dict(common,**{k:{"type":"string","maxLength":1024} for k in ("node","project","state","native_thread_id")})
     props["kind"]={"type":"string","enum":["managed","external"]}
     identity={"observation_id":{"type":"string","pattern":"^obs_[a-f0-9]{40}$"}}
     specs=[
