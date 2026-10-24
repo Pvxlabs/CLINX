@@ -795,6 +795,12 @@
         },
         "events_transport": {
           "const": "POLLING"
+        },
+        "authority": {
+          "const": "RUST"
+        },
+        "observation_source": {
+          "const": "RUST_CENTRE_V2"
         }
       },
       "required": [
@@ -834,6 +840,12 @@
         },
         "has_more": {
           "type": "boolean"
+        },
+        "source": {
+          "const": "RUST_CENTRE_V2"
+        },
+        "legacy_history": {
+          "const": false
         }
       },
       "required": [
