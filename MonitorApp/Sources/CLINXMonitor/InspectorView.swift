@@ -23,9 +23,10 @@ struct InspectorView: View {
     }
 
     @ViewBuilder private func content(for task: ObservedTask) -> some View {
-        let status = store.status(of: task)
+        let freshness = store.freshness
+        let status = task.status(freshness: freshness)
         VStack(spacing: 0) {
-            ExecutionHeaderView(store: store, task: task, status: status)
+            ExecutionHeaderView(task: task, freshness: freshness, stacked: stacked)
             if store.selectedDetailIncomplete {
                 Text("当前 Observer 未提供该历史 execution 的 task 详情；保留精确列表快照，未用当前 execution 替代。")
                     .font(DS.Font.meta)
@@ -154,10 +155,12 @@ struct InspectorView: View {
 
 // MARK: - Execution header
 
+/// Value inputs keep the pill and freshness tag on the same presentation snapshot.
+/// This view must not independently observe the Store or resample its clock.
 struct ExecutionHeaderView: View {
-    @ObservedObject var store: MonitorStore
     let task: ObservedTask
-    let status: MonitorStatus
+    let freshness: Freshness
+    let stacked: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -172,33 +175,45 @@ struct ExecutionHeaderView: View {
             }
 
             HStack(spacing: 8) {
-                StatusPill(status: status)
-                Text(task.workspaceName)
-                    .help(task.projectText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .font(DS.Font.metaEmphasis)
-                    .foregroundStyle(DS.Palette.textPrimary)
-                Text("·").font(DS.Font.meta).foregroundStyle(DS.Palette.textTertiary)
-                Text(task.hostText)
-                    .font(DS.Font.monoID)
-                    .foregroundStyle(DS.Palette.textSecondary)
-                if store.isStaleSnapshot {
-                    Text(store.freshness.label)
-                        .font(DS.Font.monoMicro)
-                        .foregroundStyle(store.freshness.color)
-                        .padding(.horizontal, 4)
-                        .frame(height: 14)
-                        .overlay(RoundedRectangle(cornerRadius: 3)
-                            .strokeBorder(store.freshness.color.opacity(0.4), lineWidth: 1))
+                StatusPill(status: task.status(freshness: freshness))
+                if freshness != .current {
+                    FreshnessTag(freshness: freshness)
                 }
                 Spacer(minLength: 0)
             }
             .padding(.top, 8)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading),
+                                     count: stacked ? 2 : 4), alignment: .leading, spacing: 14) {
+                fact("HOST", task.hostText)
+                fact("PROJECT", task.workspaceName, help: task.projectText)
+                fact("LAST PROGRESS", task.lastProgressText)
+                fact("DURATION", task.durationText)
+            }
+            .padding(.top, 12)
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
         .padding(.bottom, 16)
+    }
+
+    private func fact(_ label: String, _ value: String, help: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(DS.Font.micro)
+                .foregroundStyle(DS.Palette.textTertiary)
+            Text(value)
+                .font(DS.Font.statValue)
+                .monospacedDigit()
+                .foregroundStyle(DS.Palette.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .help(help ?? value)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 12)
+        .overlay(alignment: .leading) { Rectangle().fill(DS.Palette.divider).frame(width: 1) }
     }
 }
 

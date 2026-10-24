@@ -111,6 +111,83 @@ final class ExecutionRowSnapshotTests: XCTestCase {
     }
 
     @MainActor
+    func testInspectorHeaderKeepsCapturedFreshnessAndRecoversWithIdenticalTask() async throws {
+        let source = SyntheticObserverService(scenario: .running)
+        let page = try await source.tasks(active: true, offset: 0)
+        let task = try XCTUnwrap(page.items.first { $0.monitorStatus == .running })
+        let service = RowRecoveryService(health: try await source.health(), task: task)
+        var now = Date()
+        let store = MonitorStore(service: service, now: { now }, lowPowerMode: { false })
+        await store.refresh()
+        let snapshot = ExecutionHeaderView(task: task, freshness: store.freshness, stacked: false).body
+        now = now.addingTimeInterval(11)
+        XCTAssertEqual(store.freshness, .stale)
+        let host = NSHostingView(rootView: snapshot)
+        host.frame = NSRect(x: 0, y: 0, width: 900, height: 200)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(spinnerCount(in: host), 1, "Deferred header must keep its captured CURRENT snapshot")
+        host.rootView = ExecutionHeaderView(task: task, freshness: store.freshness, stacked: false).body
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(spinnerCount(in: host), 0, "A newly sampled expired snapshot must still warn")
+
+        // Also exercise the real observing parent, including failed reads and
+        // recovery while all task fields stay unchanged.
+        await store.select(task.taskRef, executionRef: task.executionRef)
+        let inspector = NSHostingView(rootView: InspectorView(store: store, stacked: false))
+        inspector.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
+        window.contentView = inspector
+        for (unavailable, expected) in [(false, 1), (true, 0), (false, 1)] {
+            await service.setUnavailable(unavailable)
+            await store.refresh()
+            inspector.layoutSubtreeIfNeeded()
+            try await Task.sleep(nanoseconds: 200_000_000)
+            inspector.layoutSubtreeIfNeeded()
+            XCTAssertEqual(spinnerCount(in: inspector), expected)
+            XCTAssertEqual(store.selected?.executionIdentity, task.executionIdentity)
+            XCTAssertEqual(store.selected?.monitorStatus, .running)
+        }
+    }
+
+    @MainActor
+    func testPollingFreshnessUsesNormalAndLowPowerCadenceWithoutHidingFailures() async throws {
+        let source = SyntheticObserverService(scenario: .running)
+        let page = try await source.tasks(active: true, offset: 0)
+        let task = try XCTUnwrap(page.items.first { $0.monitorStatus == .running })
+        let service = RowRecoveryService(health: try await source.health(), task: task)
+        var now = Date()
+        var lowPower = true
+        let store = MonitorStore(service: service, now: { now }, lowPowerMode: { lowPower })
+        await store.refresh()
+        now = now.addingTimeInterval(15)
+        XCTAssertEqual(store.connection, .connected, "A healthy scheduled low-power wait must not warn")
+        XCTAssertEqual(store.status(of: task), .running)
+        now = now.addingTimeInterval(31)
+        XCTAssertEqual(store.connection, .stale, "Low-power snapshots still have a finite expiry")
+        await store.refresh()
+        XCTAssertEqual(store.connection, .connected)
+        await service.setUnavailable(true)
+        await store.refresh()
+        XCTAssertEqual(store.freshness, .lastKnown, "A real failed read must warn even inside the deadline")
+        await service.setUnavailable(false)
+        lowPower = false
+        await store.refresh()
+        now = now.addingTimeInterval(9)
+        XCTAssertEqual(store.connection, .connected)
+        now = now.addingTimeInterval(2)
+        XCTAssertEqual(store.connection, .stale, "Normal active polling retains its ten-second limit")
+        await store.refresh()
+        XCTAssertEqual(store.connection, .connected)
+        XCTAssertEqual(MonitorPollingPolicy.interval(hasActiveTasks: false, lowPowerMode: false), 15)
+        XCTAssertEqual(MonitorPollingPolicy.freshnessLimit(hasActiveTasks: false, lowPowerMode: false), 45)
+    }
+
+    @MainActor
     private func spinnerCount(in view: NSView) -> Int {
         (view is LayerSpinner.SpinnerView ? 1 : 0)
             + view.subviews.reduce(0) { $0 + spinnerCount(in: $1) }

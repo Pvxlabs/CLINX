@@ -20,7 +20,7 @@ final class InspectorMetadataTests: XCTestCase {
         XCTAssertEqual(task.workspaceName, "HDL")
         XCTAssertEqual(task.projectText, "/home/pvxlabs/dev/HDL/", "Display names must not change routing/filter identity")
         XCTAssertEqual(task.overviewRows.map(\.label),
-                       ["TASK ID", "THREAD ID", "MODEL", "PROVIDER", "STARTED", "LAST PROGRESS", "DURATION"])
+                       ["TASK ID", "THREAD ID", "MODEL", "PROVIDER", "STARTED"])
         XCTAssertEqual(task.overviewRows.first?.value, task.taskRef)
         XCTAssertEqual(task.overviewRows.first?.copyable, true)
         XCTAssertTrue(task.startedDetailText.contains("UTC+8"))
@@ -100,27 +100,22 @@ final class InspectorMetadataTests: XCTestCase {
                                "task_ref": "native_observation:node_p620:codex:01a1697c-d4fa-7fd1-913c-d8184dd8f9e5:01a16cc1-2261-7632-b273-e1d0c777c58c",
                                "native_conversation": ["node_id": "p620", "provider": "codex", "thread_id": "01a1697c-d4fa-7fd1-913c-d8184dd8f9e5"],
                                "model": ["resolved": "gpt-6.1-sol", "logical": NSNull()]])
-        let store = MonitorStore()
-        store.useSynthetic(.running)
-        await store.refresh()
-        store.stop()
-        let host = NSHostingView(rootView: VStack(alignment: .leading, spacing: 20) {
-            Text("SYNTHETIC PREVIEW").font(DS.Font.meta).padding(.horizontal, 24)
-            ExecutionHeaderView(store: store, task: task, status: .running)
-            VStack(alignment: .leading, spacing: 12) {
-                SectionLabel(title: "OVERVIEW")
-                MetadataGrid(rows: task.overviewRows)
-            }.padding(.horizontal, 24)
-            Spacer()
-        }.background(Color(nsColor: .windowBackgroundColor)))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 460),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.contentView = host
-        window.appearance = NSAppearance(named: .aqua)
-        window.orderBack(nil)
-        defer { window.orderOut(nil); window.contentView = nil }
         for width in [440, 900] {
-            window.setContentSize(NSSize(width: width, height: 460))
+            let host = NSHostingView(rootView: VStack(alignment: .leading, spacing: 20) {
+                Text("SYNTHETIC PREVIEW").font(DS.Font.meta).padding(.horizontal, 24)
+                ExecutionHeaderView(task: task, freshness: .current, stacked: width < 600)
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionLabel(title: "OVERVIEW")
+                    MetadataGrid(rows: task.overviewRows)
+                }.padding(.horizontal, 24)
+                Spacer()
+            }.background(Color(nsColor: .windowBackgroundColor)))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: CGFloat(width), height: 480),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            window.appearance = NSAppearance(named: .aqua)
+            window.orderBack(nil)
+            defer { window.orderOut(nil); window.contentView = nil }
             host.layoutSubtreeIfNeeded()
             try await Task.sleep(nanoseconds: 200_000_000)
             XCTAssertEqual(host.bounds.width, CGFloat(width))

@@ -117,6 +117,8 @@ final class MonitorStore: ObservableObject {
     @Published private(set) var navigationHistory: [NavigationEntry] = []
     @Published private(set) var navigationIndex: Int?
 
+    private let now: () -> Date
+    private let lowPowerMode: () -> Bool
     private let defaults: UserDefaults
     private static let archiveKey = "monitor.localArchives.v1"
 
@@ -138,7 +140,11 @@ final class MonitorStore: ObservableObject {
     private var failed = false
 
     init(service: (any ObserverServing)? = nil, defaults: UserDefaults = .standard,
-         networkService: (any NetworkObservationServing)? = nil) {
+         networkService: (any NetworkObservationServing)? = nil,
+         now: @escaping () -> Date = Date.init,
+         lowPowerMode: @escaping () -> Bool = { ProcessInfo.processInfo.isLowPowerModeEnabled }) {
+        self.now = now
+        self.lowPowerMode = lowPowerMode
         self.defaults = defaults
         localArchives = defaults.data(forKey: Self.archiveKey)
             .flatMap { try? JSONDecoder().decode([LocalArchiveEntry].self, from: $0) } ?? []
@@ -201,8 +207,8 @@ final class MonitorStore: ObservableObject {
         if let syntheticScenario { return Self.connection(for: syntheticScenario) }
         guard service != nil else { return .setup }
         guard let lastSuccessfulFetch else { return failed ? .error(errorCategory ?? "Connection error") : .loading }
-        let interval: TimeInterval = active.isEmpty ? 15 : 2
-        if Date().timeIntervalSince(lastSuccessfulFetch) > max(3 * interval, 10) { return .stale }
+        if now().timeIntervalSince(lastSuccessfulFetch) > MonitorPollingPolicy.freshnessLimit(
+            hasActiveTasks: !active.isEmpty, lowPowerMode: lowPowerMode()) { return .stale }
         if failed { return .error(errorCategory ?? "Connection error") }
         if health?.status != "OK" { return .degraded }
         return .connected
@@ -694,8 +700,7 @@ final class MonitorStore: ObservableObject {
     private var retryDelay: Double {
         if authFailed { return 60 }
         if failed { return min(60, Double(1 << min(failureCount, 6))) }
-        if ProcessInfo.processInfo.isLowPowerModeEnabled { return 15 }
-        return active.isEmpty ? 15 : 2
+        return MonitorPollingPolicy.interval(hasActiveTasks: !active.isEmpty, lowPowerMode: lowPowerMode())
     }
 
     // MARK: - Refresh
@@ -748,7 +753,7 @@ final class MonitorStore: ObservableObject {
                 failureCount += 1
                 errorCategory = "Session updates unavailable: \(Self.category(observationFailure))"
             } else {
-                lastSuccessfulFetch = Date()
+                lastSuccessfulFetch = now()
                 failed = false; authFailed = false; failureCount = 0; errorCategory = nil
             }
             if selectedRef != nil { await reloadSelected(using: service) }
