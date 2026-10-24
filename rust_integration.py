@@ -49,7 +49,16 @@ class RustRegistryView:
         self.commands = commands
 
     def tasks(self):
-        return self.commands.call('list_tasks')['tasks']
+        tasks, after = [], ''
+        while True:
+            page = self.commands.call('list_tasks', dict(projection='summary', after=after))
+            tasks.extend(page['tasks'])
+            cursor = page.get('next_after')
+            if cursor is None:
+                return tasks
+            if not isinstance(cursor, str) or cursor <= after:
+                raise RustAuthorityError('INVALID_TASK_CURSOR')
+            after = cursor
 
     def get_task(self, ref):
         task = next((t for t in self.tasks() if t['task_id'] == ref), None)

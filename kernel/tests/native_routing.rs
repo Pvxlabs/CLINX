@@ -14,6 +14,125 @@ use std::{
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
+#[test]
+fn task_summary_reads_do_not_export_terminal_history() {
+    let mut f = Fixture::new();
+    let mut expected = Vec::new();
+    for _ in 0..2 {
+        let prepared = f.prepare(Value::Null).unwrap();
+        let execution = f.start(&prepared);
+        let e = f.send(&execution, &prepared["workspace_contract"]["cwd"], true);
+        let challenge = f
+            .call(
+                Role::Transport,
+                "observe_begin",
+                json!({"execution_ref":e["execution_ref"]}),
+            )
+            .unwrap();
+        let result = f.call(Role::Transport, "observe_commit", json!({"execution_ref":e["execution_ref"],
+            "nonce":challenge["nonce"],"observations":[{"endpoint":"/fixture/provider.sock","state":"idle",
+                "thread_id":e["thread_id"],"turn_id":e["native_turn_id"],"turn_status":"completed"}],
+            "turn":{"id":e["native_turn_id"],"status":"completed","items":[
+                {"type":"commandExecution","aggregatedOutput":"x".repeat(590000)},
+                {"type":"agentMessage","phase":"final_answer","text":"Exact final response"}]}})).unwrap();
+        assert_eq!(result["resource_state"], "RELEASED");
+        expected.push(e["task_ref"].clone());
+    }
+    let raw = f.call(Role::Api, "list_tasks", json!({})).unwrap();
+    assert!(serde_json::to_vec(&raw).unwrap().len() > clinx_decision_kernel::MAX_FRAME_BYTES);
+    let summary = f
+        .call(
+            Role::Api,
+            "list_tasks",
+            json!({"projection":"summary","after":""}),
+        )
+        .unwrap();
+    assert_eq!(summary["tasks"].as_array().unwrap().len(), 2);
+    assert!(summary["next_after"].is_null());
+    for task in summary["tasks"].as_array().unwrap() {
+        assert!(expected.contains(&task["task_id"]));
+        assert!(task.get("native_checkpoint").is_none());
+        assert!(task["active_execution"].is_null());
+        assert!(task["policy_hash"].is_string());
+    }
+    assert!(serde_json::to_vec(&summary).unwrap().len() < 16384);
+    let inventory = f
+        .call(
+            Role::Api,
+            "observation_inventory",
+            json!({"host":"p620","after":""}),
+        )
+        .unwrap();
+    assert_eq!(inventory["tasks"].as_array().unwrap().len(), 2);
+    assert!(serde_json::to_vec(&inventory).unwrap().len() < 16384);
+    // Summary reads must not change the full authoritative continuation evidence.
+    assert_eq!(f.call(Role::Api, "list_tasks", json!({})).unwrap(), raw);
+    f.store.verify_business().unwrap();
+}
+
+#[test]
+fn task_summary_pages_retain_every_identity_and_reject_invalid_selectors() {
+    let mut f = Fixture::new();
+    let mut expected = Vec::new();
+    for _ in 0..65 {
+        let prepared = f.prepare(Value::Null).unwrap();
+        let execution = f.start(&prepared);
+        f.call(
+            Role::Api,
+            "cancel",
+            json!({"execution_ref":execution["execution_ref"],"approved":true}),
+        )
+        .unwrap();
+        expected.push(execution["task_ref"].clone());
+    }
+    expected.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+    let first = f
+        .call(
+            Role::Api,
+            "list_tasks",
+            json!({"projection":"summary","after":""}),
+        )
+        .unwrap();
+    assert_eq!(first["tasks"].as_array().unwrap().len(), 64);
+    assert_eq!(first["next_after"], expected[63]);
+    let last = f
+        .call(
+            Role::Api,
+            "list_tasks",
+            json!({"projection":"summary","after":first["next_after"]}),
+        )
+        .unwrap();
+    assert_eq!(last["tasks"].as_array().unwrap().len(), 1);
+    assert!(last["next_after"].is_null());
+    let actual: Vec<Value> = first["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(last["tasks"].as_array().unwrap())
+        .map(|t| t["task_id"].clone())
+        .collect();
+    assert_eq!(actual, expected);
+    assert_eq!(
+        f.call(
+            Role::Api,
+            "list_tasks",
+            json!({"projection":"summary","after":4})
+        )
+        .unwrap_err(),
+        "INVALID_CURSOR"
+    );
+    assert_eq!(
+        f.call(
+            Role::Api,
+            "list_tasks",
+            json!({"projection":"raw","after":""})
+        )
+        .unwrap_err(),
+        "INVALID_BUSINESS_READ"
+    );
+    f.store.verify_business().unwrap();
+}
+
 struct Fixture {
     root: PathBuf,
     policy: Policy,
@@ -162,6 +281,38 @@ fn git(cwd: &std::path::Path, args: &[&str]) -> String {
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8(output.stdout).unwrap().trim().into()
+}
+
+#[test]
+fn large_native_terminal_receipt_preserves_evidence_and_allows_continuation() {
+    let mut f = Fixture::new();
+    let prepared = f.prepare(Value::Null).unwrap();
+    let execution = f.start(&prepared);
+    let e = f.send(&execution, &prepared["workspace_contract"]["cwd"], true);
+    let challenge = f.call(Role::Transport, "observe_begin", json!({"execution_ref":e["execution_ref"]})).unwrap();
+    // A real audit turn was 586996 bytes. Its command output is retained both
+    // in the execution terminal evidence and the task continuation checkpoint.
+    let turn = json!({"id":e["native_turn_id"],"status":"completed","items":[
+        {"id":"command","type":"commandExecution","aggregatedOutput":"x".repeat(590000)},
+        {"id":"final","type":"agentMessage","phase":"final_answer","text":"Exact original audit result"}]});
+    let request = json!({"execution_ref":e["execution_ref"],"nonce":challenge["nonce"],
+        "observations":[{"endpoint":"/fixture/provider.sock","state":"idle","thread_id":e["thread_id"],
+        "turn_id":e["native_turn_id"],"turn_status":"completed"}],"turn":turn});
+    assert!(serde_json::to_vec(&request).unwrap().len() < clinx_decision_kernel::MAX_FRAME_BYTES);
+    let done = f.store.business(Role::Transport, &f.policy, "observe_commit", "large-terminal", &request).unwrap();
+    assert_eq!(done["status"], "SUCCEEDED");
+    assert_eq!(done["resource_state"], "RELEASED");
+    assert_eq!(done["execution_result"]["response_text"], "Exact original audit result");
+    assert_eq!(f.store.business(Role::Transport, &f.policy, "observe_commit", "large-terminal", &request).unwrap(), done);
+    f.store.verify_business().unwrap();
+    let tasks = f.call(Role::Api, "list_tasks", json!({})).unwrap();
+    assert_eq!(tasks["tasks"][0]["native_checkpoint"]["turn"], turn);
+    let continued = f.call(Role::Api, "prepare", json!({"approved":true,"project":"orion","host":"p620",
+        "title":"Continuation","prompt":"Continue once","task_ref":e["task_ref"],"thread_id":e["thread_id"]})).unwrap();
+    let next = f.start(&continued);
+    assert_ne!(next["execution_ref"], e["execution_ref"]);
+    assert_eq!(next["resource_state"], "HELD");
+    f.store.verify_business().unwrap();
 }
 
 #[test]

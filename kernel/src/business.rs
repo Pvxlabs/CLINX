@@ -18,6 +18,10 @@ mod targets;
 pub mod workspace_observer;
 
 type Result<T> = std::result::Result<T, String>;
+// SQLite receipts contain several full row snapshots, including both terminal
+// evidence and its continuation checkpoint. They are not IPC frames. Keep a
+// separate bounded storage budget; public reads expose results, not this body.
+const MAX_BUSINESS_RECEIPT_BYTES: usize = 8 * crate::MAX_FRAME_BYTES;
 pub const SCHEMA: &str = "
 CREATE TABLE business_config(id INTEGER PRIMARY KEY CHECK(id=1), policy TEXT NOT NULL);
 CREATE TABLE business_rows(kind TEXT NOT NULL CHECK(kind IN ('prepared','task','execution')), id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(kind,id));
@@ -385,6 +389,97 @@ fn public(e: &Value) -> Value {
     }
     result
 }
+// Inventory consumers need task identity and policy, not full native history.
+// Keep the authoritative checkpoint/lineage in SQLite for exact continuation.
+fn task_summary(task: &Value) -> Value {
+    let mut summary = serde_json::Map::new();
+    for key in [
+        "id",
+        "task_id",
+        "project",
+        "host",
+        "title",
+        "workspace_contract",
+        "thread_id",
+        "lifecycle",
+        "version",
+        "execution_policy",
+        "policy_hash",
+        "active_execution",
+        "repository_identity",
+        "workspace_resolution",
+        "repository_origin",
+        "provider_policy_hash",
+    ] {
+        if let Some(value) = task.get(key) {
+            summary.insert(key.into(), value.clone());
+        }
+    }
+    Value::Object(summary)
+}
+
+fn task_summary_page(values: Vec<Value>, cursor_key: &str) -> Result<Value> {
+    let count = values.len();
+    let mut tasks = Vec::new();
+    // Leave room for the response envelope, cursor and the maximum request ID.
+    let mut remaining = crate::MAX_FRAME_BYTES - 2048;
+    for task in values {
+        let summary = task_summary(&task);
+        let size = serde_json::to_vec(&summary)
+            .map_err(|e| e.to_string())?
+            .len()
+            + 1;
+        if tasks.len() == 64 || size > remaining {
+            if tasks.is_empty() {
+                return Err("TASK_SUMMARY_CAPACITY_EXCEEDED".into());
+            }
+            break;
+        }
+        remaining -= size;
+        tasks.push(summary);
+    }
+    let next = if tasks.len() < count {
+        tasks.last().ok_or("INVALID_TASK_PAGE")?[cursor_key].clone()
+    } else {
+        Value::Null
+    };
+    Ok(json!({"tasks":tasks,"next_after":next,"read_only":true}))
+}
+
+#[cfg(test)]
+mod task_read_tests {
+    use super::*;
+
+    #[test]
+    fn byte_budget_counts_json_escaping_and_utf8_and_retains_cursor() {
+        let title = "\"\\\n大".repeat(70000);
+        let tasks = vec![
+            json!({"task_id":"a","title":title}),
+            json!({"task_id":"b","title":title}),
+        ];
+        let page = task_summary_page(tasks.clone(), "task_id").unwrap();
+        assert_eq!(page["tasks"].as_array().unwrap().len(), 1);
+        assert_eq!(page["next_after"], "a");
+        assert_eq!(page["tasks"][0]["title"], tasks[0]["title"]);
+        assert!(serde_json::to_vec(&page).unwrap().len() < crate::MAX_FRAME_BYTES - 1024);
+        let last = task_summary_page(tasks[1..].to_vec(), "task_id").unwrap();
+        assert_eq!(last["tasks"][0]["task_id"], "b");
+        assert!(last["next_after"].is_null());
+    }
+
+    #[test]
+    fn single_oversized_summary_is_an_explicit_error() {
+        assert_eq!(
+            task_summary_page(
+                vec![json!({"task_id":"a","title":"x".repeat(crate::MAX_FRAME_BYTES)})],
+                "task_id"
+            )
+            .unwrap_err(),
+            "TASK_SUMMARY_CAPACITY_EXCEEDED"
+        );
+    }
+}
+
 fn worker_fence(c: &Connection, e: &Value, p: &Value, boot: &str) -> Result<()> {
     if p["ticket"] != e["ticket"] || p["epoch"] != e["epoch"] || e["ticket"].is_null() {
         return Err("FENCED".into());
@@ -1364,7 +1459,7 @@ impl Store {
             .unwrap_or((0, String::new()));
         let body = json!({"authority_id":self.identity,"position":position+1,"previous":previous,"operation_id":id,"operation":operation,"role":role.name(),"request_hash":hash,"changes":changes,"result":result});
         let digest = core::digest(&body);
-        if core::canonical(&body).len() > crate::MAX_FRAME_BYTES - 2048 {
+        if core::canonical(&body).len() > MAX_BUSINESS_RECEIPT_BYTES {
             return Err("BUSINESS_RECEIPT_CAPACITY_EXCEEDED".into());
         }
         tx.execute(
@@ -1404,7 +1499,7 @@ impl Store {
                     .map_err(db)?
                     .map(|r| parse(r.map_err(db)?))
                     .collect::<Result<Vec<Value>>>()?;
-                Ok(json!({"tasks":values,"read_only":true}))
+                task_summary_page(values, "thread_id")
             }
             "observation_turns" if core::keys(p, "host thread_id before") => {
                 let host = string(p, "host")?;
@@ -1442,6 +1537,16 @@ impl Store {
                 Ok(
                     json!({"rows":e["host_deliveries"].as_object().map(|m|m.values().cloned().collect::<Vec<_>>()).unwrap_or_default()}),
                 )
+            }
+            "list_tasks" if core::keys(p, "projection after") && p["projection"] == "summary" => {
+                let after = p["after"].as_str().ok_or("INVALID_CURSOR")?;
+                let mut stmt = self.conn.prepare("SELECT value FROM business_rows WHERE kind='task' AND id>? ORDER BY id LIMIT 65").map_err(db)?;
+                let values = stmt
+                    .query_map([after], |r| r.get::<_, String>(0))
+                    .map_err(db)?
+                    .map(|r| parse(r.map_err(db)?))
+                    .collect::<Result<Vec<Value>>>()?;
+                task_summary_page(values, "task_id")
             }
             "list_tasks" if core::keys(p, "") => {
                 Ok(json!({"tasks":rows(&self.conn,"task")?,"read_only":true}))

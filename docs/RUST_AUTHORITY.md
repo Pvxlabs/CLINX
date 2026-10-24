@@ -1,5 +1,35 @@
 # Native Rust business authority
 
+## Terminal receipt capacity repair, 2026-10-24
+
+The authority binary is now `rust-7fc39f7e5ea15dc6b014`; the existing
+MCP/transport adapters retain their selected releases. An actual 586996-byte
+completed audit turn remained RUNNING/HELD because finalization embeds the
+full turn in both execution evidence and the task continuation checkpoint.
+The resulting SQLite command receipt exceeded the incorrectly reused 1 MiB
+IPC frame budget, rolling back terminal state and resource release together.
+
+SQLite business receipts now have a separate bounded 8 MiB storage budget.
+The 1 MiB IPC limit, original native evidence, hashes, atomic transaction,
+terminal identity checks and Host finalization rules are preserved. Oversized
+native IPC inputs still fail closed; this is not unbounded history support.
+
+The regression fails with BUSINESS_RECEIPT_CAPACITY_EXCEEDED before the repair
+and passes afterward, retaining the complete checkpoint, idempotent receipt and
+subsequent admission. Authority, crash and native routing checks passed 22 tests;
+targeted Clippy and the release build passed. Production dispatcher finalized
+`exec_3d09357c3fb82ab358e4807b0c1f332b` as SUCCEEDED/RELEASED after the
+authority restart. The original prepared request
+`prepared_0f88ea2307f90f1beb91c7603536f9d3` was then admitted through the
+production MCP with its original request hash and task identity. Exact native
+readback found one new inProgress turn and the original completed turn.
+Rust subsequently confirmed RUNNING/ACKED with delivery certainty CONFIRMED,
+bound to turn `01a16d10-783d-76a1-92fa-c56461f3056c` in the original thread.
+Business completion is not asserted by that running snapshot.
+
+Evidence, source patch, release manifest and exact MCP/native readbacks:
+`/lab/runtime-worktrees/p620/clinx-terminal-receipt-20261024T0834Z/`.
+
 Status on 2026-10-24 (Asia/Shanghai): **production Rust authority PASS**.
 The selected immutable release is `rust-834b236abff41aa9e117`. The existing
 Tunnel launcher now forwards stdio to `/run/clinx-rust-api/mcp.sock`; Centre
@@ -18,6 +48,71 @@ Current evidence root:
 `/lab/runtime-worktrees/p620/clinx-rust-business-20261022T165524Z/cutover-20261023T164657Z/`.
 The independently fsynced retirement and switch receipts are also under
 `/var/lib/clinx-rust/migration-receipts/`.
+
+## Task read capacity repair and paired deployment, 2026-10-24
+
+Status: **production paired deployment and Desktop identity acceptance PASS**.
+Authority selects `rust-73ad2dc733578a1e8947`; Dispatcher and MCP select
+`rust-c09215686ef963f9067f`; Centre selects `rust-6c0ba78d0ba4d7960131`.
+Each caller release preserves its own selected baseline with only the named
+`rust_integration.py` overlay. Local production MCP now passes task status,
+native-thread status and task search; the old execution remains SUCCEEDED/RELEASED.
+
+Those three reads first call `RustRegistryView.tasks()`. Its unbounded
+`list_tasks` response includes full native checkpoints, lineage and adoption
+evidence before Python selects the public task fields. The runtime replaces a
+serialized response at or above the 1 MiB IPC limit with that capacity error.
+This is a response encoding limit, separate from the terminal transaction's
+BUSINESS_RECEIPT_CAPACITY_EXCEEDED storage limit described above. During the
+initial source repair, operation-specific production journal/DB records were
+inaccessible; live reproduction and source tracing established the current path.
+The authorized deployment's subsequent readback is recorded below.
+
+The candidate adds `list_tasks` with `projection=summary` and an `after` cursor.
+It returns up to 64 task summaries, also bounded by encoded JSON bytes, with
+`next_after` for continuation. The Python registry consumes every page and rejects
+invalid or nonadvancing cursors. Centre's existing `observation_inventory` reads
+use the same summary and byte budget with their existing thread cursor. Identity,
+workspace, policy and active-execution fields remain exact. Full checkpoints and
+terminal evidence stay in SQLite; the legacy raw read and IPC bound are retained.
+A single oversized summary returns TASK_SUMMARY_CAPACITY_EXCEEDED explicitly.
+
+The authorized deployment paired the authority binary and `rust_integration.py`
+in every selected caller release. Admission was closed for the switch after
+confirming zero active managed executions and leases. Exact unit backups and
+CAS checks precede activation. Native Provider/Desktop processes and business
+tasks were preserved; no resource lock was cleared. Production readback confirms
+the authority PID is the sole holder of writable authority DB/WAL/SHM FDs.
+
+Regression evidence includes a previously failing oversized-inventory case,
+65-task pagination, JSON escaping/UTF-8 byte bounds, exact checkpoint preservation,
+and real Unix-socket qualification with SIGKILL/restart and idempotent terminal
+receipt readback. The qualification's disposable repository was removed.
+Evidence and reproducible socket qualifier:
+`/lab/runtime-worktrees/p620/clinx-read-capacity-20261024T094004Z/`.
+
+The cloud MCP created and started one no-business-side-effects acceptance task:
+`task_c9ce01f157308efbf096cae627afab2c`, execution
+`exec_3bc649a7744e624f41cb867c064e947c`. Desktop's own list/read tools found
+thread `01a16d58-570e-7da1-8f8e-ca23ecd2f0d7` and exactly one completed turn
+`01a16d58-5872-7ab1-8307-a775c0d49f81`. Its only items are the user message
+and final agent message. The exact marker is
+`CLINX_DESKTOP_CAPACITY_ACCEPTANCE_OK_20261024T095326Z`.
+Rust confirms SUCCEEDED/ACKED/RELEASED, one terminal receipt and an unchanged
+full continuation checkpoint. Repeating the original preparation's start through
+local production MCP returns the same completed execution without a new turn.
+
+One cloud duplicate-start probe failed at the ChatGPT MCP HTTP transport; the
+original preparation and execution were read back before the local duplicate
+check. The cloud task search and exact native status probes passed. This is not
+proof that intermittent external connector failures are resolved. One pre-existing
+pending adoption still reports REQUEST_TOO_LARGE and was preserved. Original
+operation IDs have no committed command receipts; no failed/read-only request
+was synthesized into the ledger. No business task was replayed and no Git commit
+or push was performed by this repair.
+
+Deployment, service/manifest readback and Desktop/native/terminal receipts:
+`/lab/runtime-worktrees/p620/clinx-read-capacity-deploy-20261024T095326Z/`.
 
 ## One durable Rust authority
 
