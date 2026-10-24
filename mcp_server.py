@@ -1060,7 +1060,7 @@ def _public_json(value: Any, *, native_identity: bool = False) -> Any:
             key: (dict(item) if key == 'workspace_contract' and isinstance(item, dict)
                   and 'cwd' in item and set(item) <= {'cwd', 'branch', 'head'}
                   or key == 'workspace_resolution' and isinstance(item, dict)
-                  and set(item) <= {'cwd', 'branch', 'head', 'repository_identity', 'repository_root', 'repository_common_dir', 'worktree'}
+                  and set(item) <= {'cwd', 'branch', 'head', 'repository_identity', 'repository_root', 'repository_common_dir', 'worktree', 'observer_uid', 'observer_source'}
                   else _public_json(item, native_identity=native_identity))
             for key, item in value.items()
             if key not in forbidden

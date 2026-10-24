@@ -14,6 +14,8 @@ use std::{collections::BTreeMap, os::unix::fs::MetadataExt, path::Path, process:
 mod handoff;
 #[path = "business_targets.rs"]
 mod targets;
+#[path = "business_workspace.rs"]
+pub mod workspace_observer;
 
 type Result<T> = std::result::Result<T, String>;
 pub const SCHEMA: &str = "
@@ -153,6 +155,9 @@ fn rows(c: &Connection, kind: &str) -> Result<Vec<Value>> {
         .collect()
 }
 fn git(cwd: &str, args: &[&str]) -> Result<String> {
+    if let Some(observed) = workspace_observer::read("git", cwd, args)? {
+        return Ok(observed["value"].as_str().unwrap().into());
+    }
     // Read-only, bounded local identity query. Never interpret repository text as shell.
     let out = Command::new("/usr/bin/timeout")
         .args([
@@ -202,6 +207,9 @@ fn native_workspace(project: &Project, requested: &Value) -> Result<Value> {
 }
 
 fn repository(cwd: &str) -> Result<String> {
+    if let Some(observed) = workspace_observer::read("repository", cwd, &[])? {
+        return Ok(string(&observed, "repository_identity")?.into());
+    }
     let common = git(
         cwd,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -240,6 +248,16 @@ fn known_repository(c: &Connection, project: &Project, saved: &Value) -> Result<
 
 fn native_resolution(project: &Project, requested: &Value, identity: &Value) -> Result<Value> {
     let route = native_workspace(project, requested)?;
+    if let Some(observed) = workspace_observer::read("workspace", string(&route, "cwd")?, &[])? {
+        let expected = match identity.as_str() {
+            Some(saved) => saved.to_owned(),
+            None => repository(&project.cwd).map_err(|_| "PROJECT_REPOSITORY_UNAVAILABLE")?,
+        };
+        if observed["repository_identity"] != expected {
+            return Err("WORKSPACE_REPOSITORY_MISMATCH".into());
+        }
+        return Ok(observed);
+    }
     let cwd = Path::new(string(&route, "cwd")?)
         .canonicalize()
         .map_err(|_| "WORKSPACE_CWD_UNREADABLE")?;

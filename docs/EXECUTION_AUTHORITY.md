@@ -61,6 +61,17 @@ executions. Git and filesystem operations report actual conflicts normally.
 Existing persisted execution resources remain valid without database migration.
 This is a source contract; local tests do not establish installed-release activation.
 
+Production workspace metadata is read by a fixed, bounded probe through the
+existing Codex Provider's `command/exec`, under the configured native worker UID.
+Rust authenticates that Provider's peer identity and validates and records the
+observed repository identity, cwd, branch and HEAD in its existing transaction.
+It does not require the SQLite writer UID to read or list project directories.
+The adapter creates no thread or turn and never writes task state. Provider
+failure, malformed evidence and actual worker filesystem failures remain explicit
+errors; production never falls back to the writer's filesystem identity. The
+Authority retains its existing empty capability set, database ownership and
+read-only filesystem confinement. Project ACLs are unchanged.
+
 An exact execution status read can resolve its sealed preparation before an
 execution record exists. An untouched `PREPARED` request without an owner claim
 is reported as `PREPARED_WITHOUT_EXECUTION`, with the exact request evidence and
