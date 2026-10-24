@@ -181,7 +181,7 @@ def repair_result(finalizer, *, identity, expected, raw, source, provider_outcom
     stamp = datetime.now(timezone.utc).isoformat()
     # Join an explicit canonical authority transaction, or own the complete
     # repair/audit transaction when called through the existing legacy path.
-    with registry._shadow_write_connection(atomic=True) as conn:
+    with registry._write_connection(atomic=True) as conn:
         row, task, old, duplicate = check_repair(conn, identity, expected)
         from execution_liveness import read_row, release_allowed
         live = read_row(conn, identity["execution_ref"])
@@ -212,10 +212,6 @@ def repair_result(finalizer, *, identity, expected, raw, source, provider_outcom
             updated_at=?,last_progress_at=? WHERE task_id=?""",
             (decision.terminal_state,decision.terminal_state,result.blockers if result.status=="BLOCKED" else None,
              stage,decision.failure_code,decision.failure_evidence,stamp,stamp,identity["task_id"]))
-        registry._append_shadow_observation(conn, task_id=identity["task_id"], execution_ref=identity["execution_ref"],
-            event_type="V1ExecutionResultPersistedObserved", observed_at=stamp,
-            payload={"exact_result_ref":identity["execution_ref"], "turn_id":identity["turn_id"],
-                     "result_status":result.status,"evidence_ref":identity["execution_ref"]})
         body = json.dumps(evidence, sort_keys=True, ensure_ascii=False)
         conn.execute("INSERT OR IGNORE INTO result_ingestions VALUES (?,?,?,?,?)",
                      (identity["execution_ref"],digest(body),body,evidence["failure_code"],stamp))

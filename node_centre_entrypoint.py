@@ -30,21 +30,12 @@ def parser():
     serve.add_argument("--bind", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8771)
     serve.add_argument("--stale-after", type=int, default=45)
-    serve.add_argument("--canonical-lifecycle-config", type=Path, help="Explicit observation-only canonical registry and exact node/project mapping")
     serve.add_argument("--local-native-home", type=Path)
     serve.add_argument("--rust-projection", action="store_true", help="Publish Rust managed tasks without opening a legacy native or canonical database")
     serve.add_argument("--local-canonical-db", type=Path)
     serve.add_argument("--local-owner-host")
     serve.add_argument("--local-codex-host-id", help="Exact Codex Desktop host identity for local thread URIs")
     serve.add_argument("--local-provider-config", type=Path, help="Existing native owner configuration for read-only liveness observations")
-    lifecycle = commands.add_parser("reconcile-native")
-    lifecycle.add_argument("--registry", type=Path, required=True)
-    lifecycle.add_argument("--observations", type=Path, required=True)
-    lifecycle.add_argument("--canonical-lifecycle-config", type=Path, required=True)
-    lifecycle.add_argument("--limit", type=int, default=16)
-    lifecycle.add_argument("--paused", choices=("yes", "no"))
-    lifecycle.add_argument("--backfill-budget", type=int)
-    lifecycle.add_argument("--auto-budget", type=int)
     share = commands.add_parser("share")
     share.add_argument("--peer", required=True)
     share.add_argument("--local-source", action="store_true", help="Explicit local read_sessions grant; peer must equal this node")
@@ -81,8 +72,7 @@ def parser():
 def main(argv=None) -> int:
     args = parser().parse_args(argv)
     from rust_integration import enabled as rust_authority_enabled
-    if rust_authority_enabled() and (getattr(args, 'canonical_lifecycle_config', None)
-                                     or getattr(args, 'local_canonical_db', None)
+    if rust_authority_enabled() and (getattr(args, 'local_canonical_db', None)
                                      or getattr(args, 'observation_canonical_db', None)):
         raise ValueError('RUST_AUTHORITY_REQUIRES_REMOVAL_OF_LEGACY_CANONICAL_DB_ARGUMENTS')
     private = PrivateStore(args.state)
@@ -133,21 +123,6 @@ def main(argv=None) -> int:
     registry = NodeRegistry(args.registry)
     from network_observation import ObservationWriter
     observations = ObservationWriter(args.observations) if args.observations else None
-    if args.canonical_lifecycle_config:
-        from native_lifecycle import NativeLifecycleClient
-        from network_observation import ObservationDirectory
-        from task_registry import TaskRegistry
-        config = json.loads(args.canonical_lifecycle_config.read_text())
-        canonical = TaskRegistry(config["canonical_db"], read_only=True)
-        directory = ObservationDirectory(args.observations, registry, NodeAuthorizationStore(args.state), peers,
-            config["user_scope"], local_identity=identity.public, canonical_path=canonical.path)
-        observations.lifecycle = NativeLifecycleClient(canonical)
-        if args.command == "reconcile-native":
-            control = observations.lifecycle.control(
-                paused=None if args.paused is None else args.paused == "yes", backfill_remaining=args.backfill_budget, auto_remaining=args.auto_budget)
-            print(json.dumps({"control": control, "backfill": observations.lifecycle.backfill(limit=args.limit)}))
-            registry.close()
-            return 0
     service = CentreService(PairedTLS(identity, peers), registry, NodeAuthorizationStore(args.state), stale_after=args.stale_after, observations=observations)
     server = service.server(address=args.bind, port=args.port)
     collector = None

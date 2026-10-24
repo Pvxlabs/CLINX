@@ -3,6 +3,7 @@
 源码清理及新的发布集合见 [2026-10-24 清理记录](cleanup/RUST_MIGRATION_CLEANUP.md)。
 Python Authority 实验退役及实际 macOS 兼容依赖见[第二轮清理记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md)。
 旧 Linear 轮询器、源码启动器收口和干净产物验证见[第三轮记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md)。
+Python Owner、MCP fallback、Centre 自动入库及 shadow 任务模型退役见[第四轮记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md)。Mac 直接执行路径尚未全部迁移到 Rust。
 该源码提交未部署；实际服务可能继续使用不同的已选 release。
 
 当前状态是 Rust 接管 P620 业务状态权威，旧 Python 核心尚未完全退役。

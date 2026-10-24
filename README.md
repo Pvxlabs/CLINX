@@ -192,17 +192,24 @@ for the first command. See [CONTRIBUTING](CONTRIBUTING.md) for workflow and layo
 platform prerequisites, and the local `tests/README.md` index for retained suites.
 On P620 put developer environments and build outputs in your task-owned LAB path.
 The retained local `basic`, `owner` and `recovery` profiles still include tests of
-retired Python experiments. Full collection currently reports nine import errors;
+retired Python experiments. Phase 2 collection reported nine import errors;
 see the [phase 2 cleanup record](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md) for
 the exact impact and preserved baseline failures. The later removal of the old
 Linear Bridge/Dispatcher and CLI also leaves explicit historical-test failures;
 see the [phase 3 comparison](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md).
+Phase 4 removes the Python Owner, automatic Centre enrollment and shadow task
+models/replay. The unchanged local tests now report 24 collection errors;
+the retained 18-module comparison preserves all baseline outcomes. See the
+[phase 4 results and remaining Mac migration blockers](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md).
+The tracked `fixtures/test_rust_node_contract.py` checks Rust node selectors,
+cancellation receipts and the MCP factory without the local test archive:
+`python -m pytest --import-mode=prepend -o pythonpath=. fixtures/test_rust_node_contract.py`.
 
 ## Runtime entry points
 
 P620 business state is owned by the deployed Rust Authority. Source code, staged
 release manifests and running services are separate identities; see
-[Rust authority](docs/RUST_AUTHORITY.md) and the [cleanup record](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md).
+[Rust authority](docs/RUST_AUTHORITY.md) and the [cleanup record](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md).
 
 `bin/clinx` defaults to device discovery. Its `devices`, `pair` and `serve`
 commands use the discovery CLI directly, without importing the Python execution

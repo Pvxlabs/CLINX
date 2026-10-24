@@ -1,4 +1,4 @@
-"""Append-only lifecycle fact contract for CLINX V2."""
+"""Immutable metadata event serialization for the existing Desktop outbox."""
 
 from __future__ import annotations
 

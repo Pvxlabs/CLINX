@@ -10,19 +10,14 @@ this repository; this module never opens a public listener.
 from __future__ import annotations
 
 import argparse
-import dataclasses
-import datetime as dt
 import json
 import os
-import re
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable
 
 import app_server
-if TYPE_CHECKING:
-    from m9_integration import ClinxIntegration
 
 from runtime_config import BridgeConfig
 from runtime_contracts import BridgeError, M9IntegrationError, TaskRegistryError
@@ -1074,7 +1069,7 @@ def _public_json(value: Any, *, native_identity: bool = False) -> Any:
 class ClinxMCPServer:
     def __init__(
         self,
-        integration: ClinxIntegration,
+        integration: Any,
         *,
         allow_execute: bool = False,
         executor: Callable[..., dict[str, Any]] | None = None,
@@ -1101,7 +1096,7 @@ class ClinxMCPServer:
             raise MCPRequestError(-32602, "tool arguments must be an object")
         if name in CONSULTATION_TOOL_NAMES:
             from consultations import call
-            return call(getattr(self, 'consultation_registry', None) or self.integration.registry, name, arguments)
+            return call(self.integration.registry, name, arguments)
         if name in {"clinx_list_observations", "clinx_get_observation", "clinx_get_observation_context", "clinx_get_observation_activity"}:
             from observation_mcp import call_observation
             return call_observation(self.observations, name, arguments)
@@ -1310,137 +1305,30 @@ def build_server(
     allow_execute: bool = False,
     own_executions: bool = False,
 ) -> ClinxMCPServer:
+    """Construct the Rust adapter only; legacy database ownership is retired."""
+    if own_executions or task_db_path is not None:
+        raise ValueError("PYTHON_OWNER_RETIRED_USE_RUST_AUTHORITY")
     cfg = BridgeConfig.load(Path(config_path).expanduser().resolve())
     from rust_integration import RustIntegration, enabled
-    if enabled():
-        if own_executions:
-            raise ValueError("PYTHON_OWNER_DISABLED_FOR_RUST_AUTHORITY")
-        integration = RustIntegration(cfg)
-        observations = None
-        if os.environ.get('CLINX_RUST_OBSERVATION_READS') == '1':
-            from network_observation import directory_from_env
-            observations = directory_from_env()
-            if observations is None:
-                raise ValueError('RUST_OBSERVATION_CONFIG_REQUIRED')
-            from rust_monitor import RustObservationDirectory
-            observations = RustObservationDirectory(observations, integration)
-        server = ClinxMCPServer(integration, allow_execute=False, observations=observations)
-        return server
-    import bridge
-    from m9_integration import ClinxIntegration
-    from task_registry import TaskRegistry
-
-    registry = TaskRegistry(
-        task_db_path
-        or cfg.task_db_path
-        or (Path.home() / ".local" / "state" / "clinx" / "tasks.sqlite3"),
-        read_only=not own_executions,
-    )
-    # The stdio launcher deliberately starts with a minimal environment.  The
-    # service-owned runtime.env remains the configured secret source; it is
-    # read locally and never returned through MCP or written to the registry.
-    api_key = os.environ.get("LINEAR_API_KEY", "").strip()
-    if not api_key:
-        runtime_env = Path.home() / ".config" / "clinx" / "runtime.env"
-        try:
-            for line in runtime_env.read_text(encoding="utf-8").splitlines():
-                match = re.fullmatch(r"\s*LINEAR_API_KEY\s*=\s*(.*?)\s*", line)
-                if match:
-                    api_key = match.group(1).strip().strip("'\"")
-                    break
-        except OSError:
-            pass
-    linear = bridge.LinearClient(api_key) if api_key else None
-    dispatcher = bridge.TaskDispatcher(cfg, task_registry=registry, linear=linear)
-    reader = bridge.TaskContextReader(cfg, registry)
-    topic_reader = bridge.TopicStatusReader(cfg, registry)
-    if os.environ.get("CLINX_ENABLE_NODE_ROUTER") == "1":
-        # Build the local node route in the same process as the MCP boundary.
-        # The node index is separate from the task DB and stores identity/status
-        # only; native history stays on its owner.
-        from node_protocol import NodeRecord, NodeRegistry, NodeRouter, NodeService, SharingScope
-        shared_registry = os.environ.get("CLINX_OBSERVATION_REGISTRY")
-        node_db = Path(shared_registry).expanduser() if shared_registry else Path(str(registry.path) + ".nodes.sqlite3")
-        if shared_registry and not node_db.is_file():
-            raise ValueError("NODE_REGISTRY_UNAVAILABLE: configured centre registry is missing")
-        node_registry = NodeRegistry(node_db)
-        user_scope = os.environ.get("CLINX_USER_SCOPE", os.environ.get("USER", "default"))
-        node_id = os.environ.get("CLINX_NODE_ID") or cfg.runtime_host or "local"
-        node_record = NodeRecord(
-            node_id=node_id,
-            user_scope=user_scope,
-            capabilities=("session.read", "session.status", "execution.context"),
-            public_key_fingerprint=os.environ.get("CLINX_NODE_PUBLIC_KEY_FINGERPRINT", ""),
-            route_ids=(cfg.runtime_host,),
-            state="ONLINE",
-            last_seen=dt.datetime.now(dt.timezone.utc).isoformat(),
-        )
-        if shared_registry:
-            node_record = node_registry.get(node_id)
-            if node_record is None or node_record.user_scope != user_scope:
-                raise ValueError("NODE_REGISTRY_IDENTITY_MISMATCH: local centre node is not registered for this user")
-        if shared_registry:
-            local_scope = node_registry.scope(node_id, user_scope) or SharingScope(user_scope=user_scope)
-        else:
-            local_scope = SharingScope(user_scope=user_scope, read_sessions=True, execute_tasks=False)
-        local_cfg = dataclasses.replace(cfg, node_router=None)
-        from thread_identity import ThreadIdentityReader
-        native_reader = ThreadIdentityReader(local_cfg, registry.path, reader)
-        local_service = NodeService(
-            node_record,
-            node_registry,
-            scope=local_scope,
-            read_thread=lambda thread_id, **kwargs: native_reader.read(context=True, thread_id=thread_id, **kwargs),
-            context_execution=lambda **request: native_reader.read(context=True, **{
-                key: request[key] for key in ("thread_id", "host", "project", "execution_ref",
-                                              "recent_turns", "max_bytes", "cursor")
-                if key in request}),
-        )
-        remote_factory = None
-        identity_root = os.environ.get("CLINX_NODE_CENTRE_STATE") or os.environ.get("CLINX_NODE_STATE")
-        if identity_root and Path(identity_root).expanduser().is_dir():
-            from node_runtime import remote_client_factory
-            remote_factory = remote_client_factory(Path(identity_root).expanduser(), node_id, node_registry)
-        router = NodeRouter(node_registry, user_scope=user_scope, local_node_id=node_id,
-                            remote_client_factory=remote_factory)
-        def local_read(request):
-            if shared_registry:
-                # Centre approvals can change while this MCP process is alive.
-                current_scope = node_registry.scope(node_id, user_scope) or SharingScope(user_scope=user_scope)
-                local_service.set_scope(current_scope)
-            result = local_service.handle(request)
-            if shared_registry and "*" not in current_scope.projects:
-                cwd = (result.get("native_thread") or {}).get("cwd")
-                if not cwd or not current_scope.allows_project(cwd):
-                    return {"error_code": "PROJECT_SCOPE_DENIED", "read_only": True}
-            return result
-
-        if shared_registry:
-            router.attach_existing(node_id, reader=local_read,
-                executor=lambda operation, request: local_read(dict(request, operation=operation)))
-        else:
-            router.attach(node_record, reader=local_read,
-                executor=lambda operation, request: local_read(dict(request, operation=operation)), scope=local_scope)
-        cfg = dataclasses.replace(cfg, node_router=router)
-    integration = ClinxIntegration(
-        cfg, registry, dispatcher, reader, linear=linear, topic_reader=topic_reader
-    )
-    if not own_executions:
-        from execution_owner import ExecutionOwnerClient
-        integration.execution_owner_client = ExecutionOwnerClient(registry)
-    from network_observation import directory_from_env
-    return ClinxMCPServer(integration, allow_execute=allow_execute, observations=directory_from_env())
+    if not enabled():
+        raise ValueError("RUST_AUTHORITY_REQUIRED")
+    integration = RustIntegration(cfg)
+    observations = None
+    if os.environ.get('CLINX_RUST_OBSERVATION_READS') == '1':
+        from network_observation import directory_from_env
+        observations = directory_from_env()
+        if observations is None:
+            raise ValueError('RUST_OBSERVATION_CONFIG_REQUIRED')
+        from rust_monitor import RustObservationDirectory
+        observations = RustObservationDirectory(observations, integration)
+    return ClinxMCPServer(integration, allow_execute=False, observations=observations)
 
 
 def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None, *, recover_existing: bool = True) -> None:
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    dispatcher = getattr(getattr(server, "integration", None), "dispatcher", None)
-    start_completion = getattr(dispatcher, "start_completion_runtime", None)
-    stop_completion = getattr(dispatcher, "stop_completion_runtime", None)
-    if (recover_existing and callable(start_completion)
-            and not getattr(getattr(server, 'integration', None), 'execution_owner_client', None)):
-        start_completion()
+    # Keep the legacy keyword for callers of the codec. Completion and recovery
+    # belong to the Rust transport service, never an MCP stdio request process.
     try:
         for line in stdin:
             if not line.strip():
@@ -1462,8 +1350,6 @@ def serve_stdio(server: ClinxMCPServer, stdin=None, stdout=None, *, recover_exis
                 stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
                 stdout.flush()
     finally:
-        if callable(stop_completion):
-            stop_completion()
         # No payload, credentials or exception text: distinguish EOF from an
         # uncaught request failure in the service-owned stderr log.
         if os.environ.get('CLINX_STDIO_DIAGNOSTICS') == '1':
@@ -1474,39 +1360,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CLINX M12 MCP stdio server")
     parser.add_argument("--config", default="bridge.toml")
     parser.add_argument("--observations-only", action="store_true", help="Read-only network directory; no canonical runtime construction")
-    parser.add_argument("--consultations-only", action="store_true", help="Private stdio consultation ledger only; no execution runtime or credentials")
-    parser.add_argument("--task-db", help="Existing CLINX task database for --consultations-only")
     parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
-    parser.add_argument("--execution-owner", action="store_true", help="serve persistent canonical execution ownership on a private local socket")
-    parser.add_argument("--no-recover-existing", action="store_true", help="parallel maintenance: existing executions remain with their running completion owner")
+    # Existing immutable Rust caller units may still include this former flag.
+    parser.add_argument("--no-recover-existing", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")
     args = parser.parse_args(argv)
-    if args.consultations_only and (args.execution_owner or args.allow_execute):
-        parser.error('--consultations-only cannot construct execution ownership or enable execution')
-    if args.execution_owner:
-        if args.stdio:
-            parser.error('--execution-owner cannot combine with --stdio')
-        from execution_owner import serve
-        server = build_server(args.config, own_executions=True)
-        lifecycle_config = os.environ.get('CLINX_CANONICAL_LIFECYCLE_CONFIG')
-        if lifecycle_config:
-            from native_lifecycle import configure_owner
-            configure_owner(server.integration, lifecycle_config)
-        # The device compatibility Owner has no business-authority transport.
-        serve(server.integration)
-        return 0
     if not args.stdio:
         print("MCP_TRANSPORT=BLOCKED: only authenticated external transport may expose CLINX", file=sys.stderr)
         return 2
     try:
-        if args.consultations_only:
-            if args.observations_only or not args.task_db:
-                parser.error('--consultations-only requires --task-db and excludes --observations-only')
-            path = Path(args.task_db).expanduser().resolve(strict=True)
-            from consultations import standalone_server
-            from task_registry import TaskRegistry
-            serve_stdio(standalone_server(TaskRegistry(path, read_only=True)), recover_existing=False)
-        elif args.observations_only:
+        if args.observations_only:
             from network_observation import directory_from_env
             from observation_mcp import standalone_server
             directory = directory_from_env()

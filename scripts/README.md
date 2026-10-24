@@ -9,7 +9,7 @@ Owner、Registry、实验包和独立 Provider。`--runtime-binary` 可指定已
 该命令只生成候选，不选择或启动服务。独立 Provider 的旧 bootstrap 打包分支已退役。
 
 macOS Helper 仍保留可配置的本地 Python 执行兼容路径，因此其清单比 Rust release 大。
-依赖分类、设备验证和未解除的兼容边界见[第三轮清理记录](../docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md)。
+依赖分类、设备验证和未解除的兼容边界见[第四轮清理记录](../docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md)。
 Python Authority 实验和 `--authority-transport` 已移除；普通设备本地执行路径仍保留。
 
 pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它；运行器也位于该目录。

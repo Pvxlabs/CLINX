@@ -17,7 +17,7 @@ The Python Authority, runtime_control and prototype Provider implementations wer
 retired in [cleanup phase 2](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md). Their local
 test files and the local suite index were preserved byte for byte. Consequently,
 `basic`, `owner` and `recovery` still select retired suites, and full collection
-reports nine import errors (1,714 collected, versus 1,967 before retirement).
+reported nine import errors (1,714 collected, versus 1,967 before retirement).
 These profiles are historical evidence, not current passing gates. Do not add a
 skip hook, weaken assertions or delete the retained tests to hide this result.
 The phase 2 record lists all affected modules and the exact baseline comparison.
@@ -30,6 +30,24 @@ or commands. The 20-module comparison changed from 492 passed / 21 failed to
 interfaces, and other outcomes are unchanged. This is not a passing full suite.
 Fresh Rust builds, copied-package request/routing tests and the isolated Rust
 MCP/Dispatcher/recovery chain are recorded separately in the phase 3 report.
+
+[Cleanup phase 4](cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md) removes the Python
+Owner, Centre automatic enrollment, duplicate domain models, shadow replay and
+the private consultation/Owner entry. Full collection now reports 1,491 tests
+and 24 import errors, including 15 newly affected historical suites. All 124
+local test/support files retain their original SHA-256; none were skipped or
+edited. The 18 retained modules have the same 439 JUnit node outcomes as their
+baseline subset: 386 passed / 66 failed / 2 skipped / 73 subtests passed.
+That subset is not a passing full suite. The report lists the excluded retired
+module tests and separately records 7 no-Owner recovery checks, 10 tracked Rust
+node contract checks, a baseline-created publication outbox upgrade, and the
+fresh Rust artifact chain.
+
+The tracked node contract fixture also runs without the local test archive:
+
+```sh
+python -B -m pytest --import-mode=prepend -o pythonpath=. fixtures/test_rust_node_contract.py
+```
 
 For the existing public request and native routing fixtures:
 
@@ -47,11 +65,13 @@ The original runner still supplies disposable state, disables bytecode/cache
 writes and third-party plugin autoload, and preserves pytest's exit status.
 Pytest 9.1 includes unittest subtest support; use the pinned dependency versions.
 
-Useful retained compatibility modules include `test_execution_owner.py`,
-`test_execution_owner_routing.py`, `test_execution_liveness.py`,
-`test_result_ingestion.py`, `test_native_input_recovery.py` and
-`test_shadow_ledger.py`. They exercise the ordinary local execution route that
-is still enabled on iMac. They do not qualify a Python Authority writer.
+Useful retained compatibility modules include `test_execution_owner_routing.py`,
+`test_execution_liveness.py`, `test_result_ingestion.py` and
+`test_desktop_publication.py`. They exercise the ordinary local execution route
+that is still enabled on iMac. They do not qualify a Python Authority writer.
+`test_execution_owner.py`, `test_native_input_recovery.py` and
+`test_shadow_ledger.py` still import deleted modules and are historical evidence,
+not current passing gates. No import shims were added to hide their retirement.
 The schema-only migration input belonged to the retired experiment; it is not
 required to run the present Rust authority or device compatibility code.
 
@@ -62,7 +82,7 @@ cargo test --lib --locked --offline --manifest-path kernel/Cargo.toml --target-d
 cargo build --release --locked --offline --manifest-path kernel/Cargo.toml --bin clinx-runtime --target-dir <task-build-dir>
 ```
 
-On Linux, temporary compatibility Owners may leave empty lock files under
+Historical Linux compatibility Owner fixtures may have left empty lock files under
 `/run/user/<uid>/clinx-owner-<uid>/`. Do not sweep this shared directory.
 
 ## Recovery and environment-dependent suites
@@ -136,7 +156,7 @@ production capacity, real device behavior or business acceptance.
 | --- | --- |
 | Missing `zeroconf` / `jsonschema` | Install `requirements-dev.txt` using the interpreter that runs pytest |
 | `setup(tmp_path)` receives a module | Use pinned pytest; older system pytest invokes legacy nose setup. Changing HOME can expose an older system copy |
-| Missing Owner / `CLINX_OWNER_CLIENT_BINARY` | Build the client and start the fixture's own temporary Owner; inspect the full error response, never fall back to local production writes |
+| Missing Python Owner / `CLINX_OWNER_CLIENT_BINARY` | Python Owner fixtures are historical and do not collect on current source; use the recorded source ref in an isolated fixture if recovering old evidence, never start an Owner against production |
 | Missing `CLINX_PRODUCTION_SCHEMA` | Supply `owner --schema <schema-only.json>`; absence is retained as an explicit prerequisite failure |
 | `PRODUCTION_PAKE_UNAVAILABLE` | Build the native OPAQUE adapter in the test environment; SPAKE2 DEV_ONLY is a different backend |
 | Socket-directory permissions | Confirm private same-user endpoint and temporary DB identity; do not chmod/delete a production socket |

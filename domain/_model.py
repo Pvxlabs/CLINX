@@ -1,4 +1,4 @@
-"""Framework-free primitives shared by the CLINX V2 domain contracts."""
+"""Immutable JSON serialization used by the Desktop metadata event contract."""
 
 from __future__ import annotations
 

@@ -59,7 +59,12 @@ class RustNodeExecutionAdapter:
 
     def status(self, **request):
         result = self.integration.get_status(execution_ref=request.get('execution_ref'), task_ref=request.get('task_ref'))
-        self._target(dict(task_ref=result['task_ref'], host=self.node_id))
+        # Validate the caller's complete selector against the exact Rust receipt.
+        # Do not replace a supplied host/thread with the local route first.
+        self._target(dict({k: v for k, v in request.items() if k != 'thread_id'},
+                          task_ref=result['task_ref']))
+        if request.get('thread_id') not in (None, result.get('thread_id')):
+            raise NodeProtocolError('EXECUTION_TURN_IDENTITY_CONFLICT', 'Exact thread differs')
         if request.get('native_turn_id') not in (None, result.get('native_turn_id')):
             raise NodeProtocolError('EXECUTION_TURN_IDENTITY_CONFLICT', 'Exact turn differs')
         return dict(result, node_id=self.node_id)
@@ -68,7 +73,9 @@ class RustNodeExecutionAdapter:
         status = self.status(**request)
         self._target(dict(task_ref=status['task_ref']), cancel=True)
         result = self.integration.cancel_execution(execution_ref=status['execution_ref'], approved=request.get('approved', False))
-        return dict(result, node_id=self.node_id, operation_state='CANCELLATION_PENDING')
+        confirmed = result.get('status') == 'CANCELLED' and result.get('resource_state') == 'RELEASED'
+        return dict(result, node_id=self.node_id,
+                    operation_state='CANCELLED' if confirmed else 'CANCELLATION_PENDING')
 
     def reconcile(self, **request):
         # The transport service polls exact outstanding executions; callers have
@@ -85,3 +92,6 @@ class RustNodeExecutionAdapter:
         fields = inspect.signature(self.integration.adopt_conversation).parameters
         result = self.integration.adopt_conversation(**{k: v for k, v in request.items() if k in fields})
         return dict(result, node_id=self.node_id)
+
+    def close(self):
+        """Match the Helper lifecycle; the Rust adapter owns no local worker."""

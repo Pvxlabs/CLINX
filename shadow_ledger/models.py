@@ -130,38 +130,3 @@ class AppendResult:
     stored_event: StoredEvent
     outbox: tuple[OutboxRecord, ...]
     duplicate: bool = False
-
-
-@dataclasses.dataclass(frozen=True)
-class InboxReceipt:
-    cursor: int
-    receipt_id: str
-    source: str
-    dedup_key: str
-    provider_cursor: str | None
-    received_at: str
-    payload: JsonDocument
-    payload_hash: str
-    state: str
-    normalized_event_id: str | None
-    quarantine_reason: str | None
-
-
-@dataclasses.dataclass(frozen=True)
-class IdentityMapping:
-    source_system: str
-    source_type: str
-    source_identity: str
-    target_type: str
-    target_id: str
-    attribution_state: str
-    created_at: str
-
-
-@dataclasses.dataclass(frozen=True)
-class ProjectionCheckpoint:
-    projection_name: str
-    last_cursor: int
-    state: str
-    updated_at: str
-    last_error: str | None

@@ -96,7 +96,7 @@ Description=CLINX MCP API adapter
 After=clinx-rust-authority.service
 Requires=clinx-rust-authority.service
 [Service]
-{common}ExecStart=/usr/bin/python3 {release}/control/mcp_server.py --config {root}/config/bridge.toml --stdio --no-recover-existing
+{common}ExecStart=/usr/bin/python3 {release}/control/mcp_server.py --config {root}/config/bridge.toml --stdio
 StandardInput=socket
 StandardOutput=inherit
 StandardError=journal

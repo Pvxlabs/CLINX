@@ -1,5 +1,9 @@
 # CLINX Unified Task Lifecycle v1 — DEV 实现与有界验收
 
+历史记录：2026-10-24 [第四轮清理](cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md)已删除
+Python Centre 自动入库类和 `reconcile-native` 入口。Mac 节点的身份校验与 handoff
+仍保留；本文的历史验收不表示这些能力已迁移到 Rust。
+
 本分支为 **DEV / PARTIAL / NOT_DEPLOYED**。已实现真实 Canonical Task 注册链路，
 并以真实 P620 原生历史、正式 registry 的只读隔离副本和真实多进程传输验收。
 不表示 Air/iMac 实机、macOS GUI、原生任务的双向取消/恢复或生产部署已经通过。

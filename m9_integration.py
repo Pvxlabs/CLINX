@@ -18,18 +18,12 @@ from pathlib import Path
 import re
 from typing import Any
 
-from execution_owner import owner_caller
+from task_registry import local_writer
 from completion_runtime import serialized_execution, serialized_prepared_start
 from app_server import AppServerError, ModelCapabilityError
 from execution_semantics import parse_routing_identity
 from execution_policy import (
-    DEVELOPMENT_CAPABILITIES,
-    DEVELOPMENT_MUTATION,
-    HOST_CAPABILITIES,
-    HOST_CAPABILITY_PROBES,
     HOST_EXECUTOR,
-    OPERATION_CLASSES,
-    ExecutionPolicyError,
     build_execution_policy,
     build_development_policy,
     legacy_policy_for_route,
@@ -318,13 +312,7 @@ class ExecutionResultService:
         blocked_state_id: str | None = None,
     ) -> ExecutionResult:
         """Compatibility facade: finalization owns truth, this service projects it."""
-        if getattr(self.registry, 'read_only', False):
-            from execution_owner import ExecutionOwnerClient
-            arguments = dict(execution_ref=execution_ref, task_id=task_id, turn_id=turn_id,
-                raw_result=raw_result, issue_id=issue_id, review_state_id=review_state_id,
-                blocked_state_id=blocked_state_id)
-            return ExecutionResult(**ExecutionOwnerClient(self.registry).control(
-                'result', 'receive_and_writeback', arguments))
+        self.registry.require_local_writer()
         return ExecutionFinalizer(self.registry, self.linear).finalize(
             execution_ref=execution_ref,
             task_id=task_id,
@@ -931,7 +919,7 @@ class ClinxIntegration:
             "read_only": True,
         }
 
-    @owner_caller('integration')
+    @local_writer
     def adopt_conversation(
         self,
         *,
@@ -1089,7 +1077,7 @@ class ClinxIntegration:
             "read_only": False,
         }
 
-    @owner_caller('integration')
+    @local_writer
     def reconcile_host_delivery(self, *, execution_ref: str, tool_call_id: str,
                                 proof: dict[str, Any]) -> dict[str, Any]:
         """Outer maintenance entry for one exact persisted delivery failure."""
@@ -1401,7 +1389,7 @@ class ClinxIntegration:
         network_access = bool(prepared.network_access) if prepared is not None else False
         status["workspace_contract"] = json.loads(prepared.workspace_contract_json) if prepared else {}
         if record and record.get('failure_code') == 'NATIVE_SHARED_WRITER_NOT_QUALIFIED':
-            from execution_owner import native_rejection_recovery
+            from native_input_recovery import native_rejection_recovery
             status.update(native_rejection_recovery(self.registry, execution_ref))
         status["network_access"] = network_access
         status["NETWORK_ACCESS"] = "ENABLED" if network_access else "DISABLED"
@@ -1450,7 +1438,7 @@ class ClinxIntegration:
         status["dynamic_tool_deliveries"] = deliveries
         status["provider_delivery"] = delivery_summary(deliveries, result.raw_result if result else '')
         if execution_ref:
-            from execution_owner import owner_record
+            from native_input_recovery import owner_record
             status['execution_owner'] = owner_record(self.registry, execution_ref)
         from desktop_publication import inspect_publication
         status["desktop_publication"] = inspect_publication(self.registry.path, task_id=task.task_id)
@@ -1626,7 +1614,7 @@ class ClinxIntegration:
                 'backend_implemented': True, 'mcp_exposed': True, 'client_exposure': 'NOT_OBSERVED',
                 'runtime_health': 'NOT_PROBED', 'read_only': True}
 
-    @owner_caller('integration')
+    @local_writer
     def register_derived_git_target(self, *, approved=False, task_ref, path,
                                     ownership_evidence, creation_host_execution_ref=None):
         if approved is not True:
@@ -1638,14 +1626,14 @@ class ClinxIntegration:
             provenance=ownership_evidence,
             creation_host_execution_ref=creation_host_execution_ref)
 
-    @owner_caller('integration')
+    @local_writer
     def revoke_derived_git_target(self, *, approved=False, task_ref, target):
         if approved is not True:
             raise M9IntegrationError('explicit approved=true is required for derived Git target revocation')
         self.registry.revoke_derived_git_target(task_id=task_ref, target_id=target)
         return {'task_ref': task_ref, 'target': target, 'revoked': True}
 
-    @owner_caller('integration')
+    @local_writer
     def prepare_policy_reauthorization(self, *, approved=False, task_ref, expected_policy_hash,
                                        target_policy, reason, network_access=None):
         from execution_semantics import normalize_surface, normalize_authority, normalize_network_policy
@@ -1678,7 +1666,7 @@ class ClinxIntegration:
             new_policy=policy, new_route=updated, requested_scope={'policy': policy.as_dict(),
                 'network_access': network, 'derived_git_targets': derived_audit}, reason=reason)
 
-    @owner_caller('integration')
+    @local_writer
     def apply_policy_reauthorization(self, *, prepared_reauthorization_ref, approved=False,
                                     expected_request_hash=None, expected_task_ref=None):
         if approved is not True:
@@ -1756,7 +1744,7 @@ class ClinxIntegration:
             prepared_reauthorization_ref=prepared['prepared_reauthorization_ref'])
         return self.registry.get_task(task.task_id), policy
 
-    @owner_caller('integration')
+    @local_writer
     def prepare_execution(
         self,
         *,
@@ -2230,6 +2218,7 @@ class ClinxIntegration:
             result['native_forwarding'] = native_forwarding
         return result
 
+    @local_writer
     def start_execution(
         self, *, prepared_execution_ref: str, approved: bool = False,
         expected_request_hash=None, expected_task_ref=None,
@@ -2244,11 +2233,6 @@ class ClinxIntegration:
             reviewed = self.registry.verify_prepared_execution(prepared_execution_ref)
             check_review(reviewed.integrity_hash, reviewed.task_ref or reviewed.resulting_task_id,
                          expected_request_hash=expected_request_hash, expected_task_ref=expected_task_ref)
-        owner = getattr(self, 'execution_owner_client', None)
-        if owner is not None:
-            # Forward before taking the canonical execution lock: the owner
-            # takes that same lock while it performs the existing dispatch.
-            return owner.start(prepared_execution_ref=prepared_execution_ref, approved=approved)
         return self._start_execution_local(prepared_execution_ref=prepared_execution_ref, approved=approved)
 
     @serialized_prepared_start
@@ -2522,7 +2506,7 @@ class ClinxIntegration:
             ),
         )
 
-    @owner_caller('integration')
+    @local_writer
     def cancel_execution(self, *, execution_ref: str | None = None, task_ref: str | None = None,
                          native_turn_id: str | None = None, approved: bool = False) -> dict[str, Any]:
         """Cancel a managed execution or an explicitly approved canonical native turn."""
@@ -2555,12 +2539,6 @@ class ClinxIntegration:
         remote = self._remote_dispatch('execution.cancel', locals(), reference=execution_ref)
         if remote is not None:
             return remote
-        owner = getattr(self, 'execution_owner_client', None)
-        if owner is not None:
-            from execution_owner import owner_record
-            if (owner_record(self.registry, execution_ref) is not None
-                    and self.registry.get_active_execution(execution_ref) is not None):
-                return owner.cancel(execution_ref=execution_ref)
         terminal_record = self.registry.get_execution_record(execution_ref)
         if terminal_record is not None and terminal_record.get("stage") == "CANCELLED":
             return {
@@ -2649,7 +2627,7 @@ class ClinxIntegration:
             "read_only": False,
         }
 
-    @owner_caller('integration')
+    @local_writer
     def execute(
         self,
         *,

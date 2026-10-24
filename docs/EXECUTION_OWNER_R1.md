@@ -1,5 +1,9 @@
 # Execution Owner R1：精确未派发恢复（DEV）
 
+历史记录：2026-10-24 [第四轮清理](cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md)已删除
+`execution_owner.py` 服务和客户端。下文记录当时的恢复契约；现存
+`unstarted_recovery.py` 仍用于精确历史证据维护，不表示旧 Owner 可以重新启动。
+
 RCA：CONFIRMED。旧 Owner 在模型解析阶段拒绝 `gpt-6`，尚未调用
 `turn/start`，但因 execution 已建立被降级为 UNKNOWN。旧取消路径拿了
 Task 保留的上一轮 turn，收到 `no active turn to interrupt` 后持续保留

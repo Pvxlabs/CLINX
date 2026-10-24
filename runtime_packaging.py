@@ -68,7 +68,6 @@ MONITOR_COMPAT_MODULES = (
     "bridge",
     "completion_runtime",
     "desktop_publication",
-    "execution_owner",
     "historical_handoff",
     "m9_integration",
     "native_input_recovery",

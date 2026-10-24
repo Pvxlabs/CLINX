@@ -1,5 +1,8 @@
 # Rust 迁移后第三轮清理（2026-10-24）
 
+后续 Python Owner / shadow 模型退役、当前规模和剩余迁移阻塞见
+[第四轮清理](RUST_MIGRATION_CLEANUP_PHASE4.md)。以下为本轮当时的独立基线和结果。
+
 基准 `efd14cd2e0c2811f5276358cbcc73532ff2f23c0`，canonical 仓库
 `/home/pvxlabs/dev/clinx`，分支 `main`。开始时受控工作区干净；本地忽略的 `tests/`
 129 个文件保持原字节、原断言。没有部署、重启现役服务、修改已安装 Mac App/配置、

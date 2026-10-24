@@ -1,4 +1,4 @@
-"""Explicit failure classes for the CLINX V2 shadow ledger."""
+"""Compatibility failures for the existing Desktop metadata event store."""
 
 
 class ShadowLedgerError(RuntimeError):
@@ -31,17 +31,5 @@ class IdempotencyConflict(ShadowLedgerError):
     pass
 
 
-class IdentityMappingConflict(ShadowLedgerError):
-    pass
-
-
 class LedgerBusy(ShadowLedgerError):
-    pass
-
-
-class ReplayError(ShadowLedgerError):
-    pass
-
-
-class ReplayBoundaryExceeded(ReplayError):
     pass

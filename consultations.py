@@ -210,17 +210,6 @@ def tools():
 
 def call(registry, name, arguments):
     if getattr(registry, 'read_only', False):
-        from execution_owner import ExecutionOwnerClient
-        return ExecutionOwnerClient(registry).control('consultation', name, arguments)
+        raise ValueError('PYTHON_OWNER_RETIRED_USE_RUST_AUTHORITY')
     ledger = Consultations(registry)
     return dict(zip(NAMES, (ledger.bind,ledger.submit,ledger.get,ledger.pending,ledger.transition)))[name](**arguments)
-
-
-def standalone_server(registry):
-    from mcp_server import ClinxMCPServer
-    server = ClinxMCPServer.__new__(ClinxMCPServer)
-    server.integration = None
-    server.consultation_registry = registry
-    server.public_tools = tools()
-    server.public_tool_names = set(NAMES)
-    return server

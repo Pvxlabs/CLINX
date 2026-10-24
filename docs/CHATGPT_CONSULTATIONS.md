@@ -22,23 +22,13 @@ An operator may explicitly `cancel` an already paused request with a reason.
 The durable CANCELLED record releases the queue without replay; stale pause or
 begin calls cannot reopen it.
 
-The normal MCP catalog includes these tools. For OP's private stdio connection,
-without execution/provider/Linear construction or auth reads:
-
-```sh
-python3 /absolute/path/to/CLINX/mcp_server.py --stdio \
-  --consultations-only --task-db /absolute/path/to/existing/tasks.sqlite3
-```
-
-The database must already exist and its corresponding Execution Owner must be
-running; the stdio caller does not acquire write authority or start an Owner.
-For a disposable integration example see `tests/test_consultation_owner.py`.
-This reuses `serve_stdio` and its JSON-RPC
-framing; no HTTP listener or public exposure is added. The outer MCP transport
-and local OS permissions remain the access boundary. `client_id` is routing
-identity, not an authentication secret. In a deployed runtime, point both OP
-and Codex at the same private transport/registry and release version. Merely
-editing this repository does not upgrade a running remote connector.
+This is the historical SQLite consultation contract. The private
+`--consultations-only --task-db` entry depended on the Python Execution Owner;
+both were retired in [cleanup phase 4](cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md).
+The Rust MCP catalog is unchanged by that cleanup; it does not publish these
+legacy consultation tools. The shared schemas and local SQLite compatibility
+implementation remain for existing local consumers and retained tests.
+No running connector or installed client was upgraded by the source cleanup.
 
 OP independently verifies exact question bubble, immediate assistant, readable
 request marker, real message/conversation metadata, observed generation followed
@@ -52,7 +42,9 @@ data within the original task's authority. No automatic native turn is started;
 the current Codex turn can poll, read and continue. Unattended wakeup after that
 turn ends is outside this implementation.
 
-Validation: `python3 -W ignore::ResourceWarning -m unittest test_consultations test_m12 -q`.
+The original local consultation/Owner tests remain unchanged as historical
+evidence and no longer collect after the old entry and service were removed.
+Current adapter validation and its limits are listed in [Testing](TESTING.md).
 Live OP acceptance uses an isolated synthetic task linked to the current Desktop
 thread and a real website conversation; synthetic fixture results and remote
 deployment must be reported separately. No ORION runtime mutation is involved.

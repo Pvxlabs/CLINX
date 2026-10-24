@@ -26,7 +26,7 @@ import urllib.request
 import uuid
 from typing import Any
 
-from execution_owner import owner_caller
+from task_registry import local_writer
 from completion_runtime import CompletionIdentity, CompletionIdentityError, CompletionRuntime, serialized_execution
 
 from app_server import (
@@ -542,10 +542,7 @@ class LinearTaskIndex:
         return f"[CLINX Task] {task.title}"
 
     def sync(self, task_id: str, *, project_id: str | None = None) -> TaskIndexRecord:
-        if getattr(self.registry, 'read_only', False):
-            from execution_owner import ExecutionOwnerClient
-            return TaskIndexRecord(**ExecutionOwnerClient(self.registry).control('task_index', 'sync',
-                dict(task_id=task_id, project_id=project_id)))
+        self.registry.require_local_writer()
         task = self.registry.get_task(task_id)
         existing = self.registry.get_task_index(task_id)
         title = self._title(task)
@@ -1856,7 +1853,7 @@ class TaskDispatcher:
         )
         return [spec]
 
-    @owner_caller('dispatcher')
+    @local_writer
     def migrate_provider_thread(
         self,
         *,
@@ -1981,7 +1978,7 @@ class TaskDispatcher:
 
     def start_completion_runtime(self) -> CompletionRuntime:
         if self.tasks.read_only:
-            return None  # Only the existing Owner runs completion/publication.
+            return None  # Read-only consumers cannot run local completion/publication.
         if getattr(self, "_completion_runtime", None) is None:
             self._completion_runtime = CompletionRuntime(self.tasks, self.reconcile_execution,
                 owner_instance=getattr(self, 'completion_owner_instance', None),
@@ -1991,12 +1988,8 @@ class TaskDispatcher:
         return self._completion_runtime
 
     def _native_maintenance(self):
-        from native_input_recovery import recover_pending
         from desktop_publication import DesktopPublicationOutbox
-        try:
-            recover_pending(self)
-        finally:
-            DesktopPublicationOutbox(self.tasks, self.cfg).run_once()
+        DesktopPublicationOutbox(self.tasks, self.cfg).run_once()
 
     def stop_completion_runtime(self) -> None:
         if self._completion_runtime is not None:
@@ -2017,7 +2010,7 @@ class TaskDispatcher:
         runtime.register(identity)
         configure(thread_id, turn_id, lambda message: runtime.notify(identity, message))
 
-    @owner_caller('dispatcher')
+    @local_writer
     @serialized_execution
     def recover_execution_completion(self, execution_ref: str, *, restore_cancelled: bool = False,
                                      reconcile_unstarted: bool = False,
@@ -2130,7 +2123,7 @@ class TaskDispatcher:
         )
         return thread
 
-    @owner_caller('dispatcher')
+    @local_writer
     def dispatch(
         self,
         *,
@@ -2756,7 +2749,7 @@ class TaskDispatcher:
             native_forwarding=native_receipt if isinstance(native_receipt, dict) else None,
         )
 
-    @owner_caller('dispatcher')
+    @local_writer
     def adopt_existing_conversation(
         self,
         *,
@@ -2920,7 +2913,7 @@ class TaskDispatcher:
             index = task_index.sync(task.task_id, project_id=task_index_project_id)
         return (task, binding, index, created) if include_created else (task, binding, index)
 
-    @owner_caller('dispatcher')
+    @local_writer
     def adopt_or_reuse_existing_conversation(
         self,
         *,
@@ -2991,7 +2984,7 @@ class TaskDispatcher:
             discovery_evidence=discovery_evidence,
         )
 
-    @owner_caller('dispatcher')
+    @local_writer
     def task_action(self, task_id: str, action: str) -> str:
         if action == "complete":
             return self.tasks.set_status(task_id, "COMPLETED").status
@@ -3039,7 +3032,7 @@ class TaskDispatcher:
             )
         return route
 
-    @owner_caller('dispatcher')
+    @local_writer
     def cancel_execution(self, execution_ref: str) -> dict[str, Any]:
         """Durably request cancellation, then confirm it with the provider."""
         active = self.tasks.get_active_execution(execution_ref)
@@ -3167,7 +3160,7 @@ class TaskDispatcher:
         workspace = self.workspaces.resolve(task.workspace_alias)
         return self.workspaces.validate_path(workspace, Path(task.cwd))
 
-    @owner_caller('dispatcher')
+    @local_writer
     @serialized_execution
     def reconcile_execution(
         self, execution_ref: str | None = None, *, task_id: str | None = None,
