@@ -177,12 +177,12 @@ The pytest suite is kept locally in the ignored `tests/` directory and is not
 distributed through Git. A fresh GitHub clone contains runtime sources and the
 development dependency declarations, but not this local suite. If the retained
 local `tests/` directory is available, use Python 3.12 and the commands below.
-No production service, API key or Codex daemon is needed for the basic profile:
+No production service, API key or Codex daemon is needed for these Rust adapter fixtures:
 
 ```sh
 python3.12 -m venv .venv-test
 .venv-test/bin/python -m pip install -r requirements-dev.txt
-.venv-test/bin/python tests/run_tests.py basic
+.venv-test/bin/python -B -m pytest -c tests/pytest.ini tests/test_rust_native_routing.py tests/test_rust_request_contract.py
 .venv-test/bin/python tests/run_tests.py collect
 ```
 
@@ -191,6 +191,10 @@ for the first command. See [CONTRIBUTING](CONTRIBUTING.md) for workflow and layo
 [Testing](docs/TESTING.md) for isolated Owner/Rust, SQLite, native pairing and
 platform prerequisites, and the local `tests/README.md` index for retained suites.
 On P620 put developer environments and build outputs in your task-owned LAB path.
+The retained local `basic`, `owner` and `recovery` profiles still include tests of
+retired Python experiments. Full collection currently reports nine import errors;
+see the [phase 2 cleanup record](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md) for
+the exact impact and preserved baseline failures.
 
 ## Getting started
 

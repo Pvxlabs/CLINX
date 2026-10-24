@@ -1,6 +1,7 @@
 # Native Rust business authority
 
 源码清理及新的发布集合见 [2026-10-24 清理记录](cleanup/RUST_MIGRATION_CLEANUP.md)。
+Python Authority 实验退役及实际 macOS 兼容依赖见[第二轮清理记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md)。
 该源码提交未部署；实际服务可能继续使用不同的已选 release。
 
 ## Terminal receipt capacity repair, 2026-10-24

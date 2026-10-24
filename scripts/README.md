@@ -9,7 +9,8 @@ Owner、Registry、实验包和独立 Provider。`--runtime-binary` 可指定已
 该命令只生成候选，不选择或启动服务。独立 Provider 的旧 bootstrap 打包分支已退役。
 
 macOS Helper 仍保留可配置的本地 Python 执行兼容路径，因此其清单比 Rust release 大。
-依赖分类、删除依据和未解除的兼容边界见[清理记录](../docs/cleanup/RUST_MIGRATION_CLEANUP.md)。
+依赖分类、设备验证和未解除的兼容边界见[第二轮清理记录](../docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md)。
+Python Authority 实验和 `--authority-transport` 已移除；普通设备本地执行路径仍保留。
 
 pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它；运行器也位于该目录。
 从仓库根目录运行。开发安装见[贡献指南](../CONTRIBUTING.md)，常用验证命令见
@@ -17,11 +18,11 @@ pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它�
 
 | 入口 | 用途与副作用 |
 | --- | --- |
-| `python tests/run_tests.py basic` | 无需生产服务的基础测试，隔离 HOME、SQLite 和临时目录 |
+| `python -B -m pytest -c tests/pytest.ini tests/test_rust_native_routing.py tests/test_rust_request_contract.py` | Rust MCP 请求及路由 fixture 回归；无需现役任务 |
 | `python tests/run_tests.py collect` | 全仓库 pytest 收集，不执行测试 |
-| `python tests/run_tests.py owner` | 真实隔离 Owner/socket/SQLite；需显式构建 Owner client |
+| `python tests/run_tests.py basic` / `owner` | 历史 profile 含已退役实验的测试，当前会收集失败；不能作为当前完整门禁 |
 | `python tests/run_tests.py transport --temp-parent <task-artifact-dir>` | 隔离发布/传输回归；要求 `/data/artifacts` 下临时目录及精确外部制品 |
-| `python tests/run_tests.py recovery` | 恢复与故障回归；其中 transient systemd 用例需要隔离 user manager |
+| `python tests/run_tests.py recovery` | 历史 profile 含退役 Authority transport 测试；其余 transient systemd 用例还需要隔离 user manager |
 | [check_tunnel_health.py](check_tunnel_health.py) | `--url-file`、可选 `--max-age`；只读核对 PID 和 poll 新鲜度 |
 | [check_embedded_bridge_idle.py](check_embedded_bridge_idle.py) | `--base-url --tunnel-pid --bridge-pid`；只读，不 Warmup、回收或接管 |
 | [reconcile_task_projection.py](reconcile_task_projection.py) | `--database --execution-ref --check-only` 为检查；省略 `--check-only` 会应用精确维护 |
@@ -39,7 +40,7 @@ pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它�
 [Observer](../bin/clinx-observer)。这些入口可能写状态或启动服务；已安装服务通常
 使用独立的 release，不因编辑源码而升级。
 
-一次性实验资格器随对应实验退役。authority 测试改用统一 `owner` 入口，
-用 `--schema <schema-only.json>` 显式提供迁移输入。历史回执位置见
+一次性实验资格器随对应实验退役。本地旧测试文件保持原字节，因此全量收集会显示
+9 个退役实验模块的导入错误；不会通过改断言或跳过测试把它们变成 PASS。历史回执位置见
 [文档索引](../docs/README.md#历史资料恢复)。构建与测试只回收本任务拥有的输出；
 部署包、manifest、数据库、回退和证据按各自运行契约保留。

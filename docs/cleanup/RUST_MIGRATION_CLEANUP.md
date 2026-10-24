@@ -1,5 +1,9 @@
 # Rust 迁移后清理记录（2026-10-24）
 
+> 本文记录第一轮清理，保留当时的基线和验证结果。第二轮已删除 Python Authority、
+> runtime_control 和 Provider 实验实现，并完成两台 Mac 的临时源码验证；当前清单和
+> 兼容阻塞见[第二轮记录](RUST_MIGRATION_CLEANUP_PHASE2.md)。下文的“保留”状态仅适用于第一轮。
+
 本次在 canonical `/home/pvxlabs/dev/clinx` 的 `main` 上清理，基准为
 `af9c263757684270c8e38c325c19a612bd780a9e`。开始时 Git 工作区干净；已有忽略的
 本地测试保持原文件、原断言及原失败。没有创建新 CLINX 仓库，没有部署、重启现役服务、

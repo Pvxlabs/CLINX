@@ -32,7 +32,6 @@ from execution_semantics import (
     parse_routing_identity,
 )
 from execution_policy import ExecutionPolicy, parse_execution_policy, policy_identity
-from authority_transactions import owner_mutation
 
 
 
@@ -495,10 +494,6 @@ class TaskRegistry:
             self._shadow_store.initialize()
 
     def _connect(self) -> sqlite3.Connection:
-        from authority_transactions import borrowed, configure
-        joined = borrowed(self.path)
-        if joined is not None and not self.read_only:
-            return joined
         if self.read_only:
             conn = sqlite3.connect(self.path.resolve().as_uri() + '?mode=ro', uri=True,
                                    timeout=30, isolation_level=None)
@@ -506,7 +501,6 @@ class TaskRegistry:
         else:
             conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
         conn.row_factory = sqlite3.Row
-        configure(conn)
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -1795,7 +1789,6 @@ class TaskRegistry:
         best = tuple(task for score, task in matches if score == best_score)
         return TaskSearchResult("UNIQUE" if len(best) == 1 else "AMBIGUOUS", best)
 
-    @owner_mutation
     def update_metadata(
         self,
         task_id: str,
@@ -1939,7 +1932,6 @@ class TaskRegistry:
                   AND d.provider_item_json LIKE '%Unsupported dynamic tool namespace%'
                   LIMIT 1""", (task_id,)).fetchone() is not None
 
-    @owner_mutation
     def bind_dynamic_tool_upgrade(self, *, task_id: str, execution_ref: str,
                                   expected_thread: str, successor: dict[str, Any],
                                   reason: str = 'DYNAMIC_TOOL_SCHEMA_UPGRADE') -> ConversationBinding:
@@ -2211,7 +2203,6 @@ class TaskRegistry:
         assert binding is not None
         return task, binding
 
-    @owner_mutation
     def bind_conversation(
         self,
         *,
@@ -2744,7 +2735,6 @@ class TaskRegistry:
             ).fetchone()
         return ContextAnchor(**dict(row)) if row is not None else None
 
-    @owner_mutation
     def set_status(self, task_id: str, status: str) -> TaskRecord:
         if status not in {"ACTIVE", "COMPLETED", "ARCHIVED"}:
             raise TaskRegistryError(f"Unsupported task status: {status}")
@@ -2760,7 +2750,6 @@ class TaskRegistry:
             )
         return self.get_task(task_id)
 
-    @owner_mutation
     def set_execution_state(
         self,
         task_id: str,
@@ -2982,7 +2971,6 @@ class TaskRegistry:
             require_reobservation(self, active_hint["execution_ref"])
         return self.get_task(task_id)
 
-    @owner_mutation
     def request_cancellation(self, execution_ref: str) -> TaskRecord:
         """Persist cancellation intent before contacting the provider."""
         active = self.get_active_execution(execution_ref)
@@ -3011,7 +2999,6 @@ class TaskRegistry:
             _shadow_execution_ref=execution_ref,
         )
 
-    @owner_mutation
     def mark_cancellation_pending(
         self, execution_ref: str, *, evidence: str | None = None
     ) -> TaskRecord:
@@ -3031,7 +3018,6 @@ class TaskRegistry:
             _shadow_execution_ref=execution_ref,
         )
 
-    @owner_mutation
     def finalize_cancellation(self, execution_ref: str) -> TaskRecord:
         from execution_liveness import release_allowed
         with self._connect() as conn:
@@ -3062,7 +3048,6 @@ class TaskRegistry:
             return conn.execute("SELECT 1 FROM worktree_leases WHERE execution_ref=? LIMIT 1",
                                 (execution_ref,)).fetchone() is not None
 
-    @owner_mutation
     def reconcile_undispatched_model_failure(self, execution_ref, proof):
         """Commit terminal/audit before exact lease release; restart-idempotent."""
         from unstarted_recovery import KIND, deny, identity, snapshot, validate, validate_replay
@@ -3114,7 +3099,6 @@ class TaskRegistry:
                     state='BLOCKED', failure_code='TURN_NOT_DISPATCHED', reconciled=True,
                     execution_started=False, replay_performed=False, idempotent=idempotent)
 
-    @owner_mutation
     def confirm_pre_turn_absence(self, execution_ref, proof):
         """Canonical maintenance barrier after fresh owning-Provider absence proof."""
         execution = self.get_active_execution(execution_ref)
@@ -3132,7 +3116,6 @@ class TaskRegistry:
                 WHERE execution_ref=? AND turn_id=''""",
                 (time.time(), json.dumps(proof['observations']), execution_ref))
 
-    @owner_mutation
     def reconcile_terminal(
         self,
         execution_ref: str,
@@ -3231,7 +3214,6 @@ class TaskRegistry:
                                    _delivery_reconciled=_delivery_reconciled)
         return task
 
-    @owner_mutation
     def reconcile_host_delivery_failure(self, execution_ref: str, tool_call_id: str,
                                         proof: dict[str, Any]) -> dict[str, Any]:
         """CAS-reconcile a known Host-success/provider-delivery failure.
@@ -3292,7 +3274,6 @@ class TaskRegistry:
                 'task_id': task.task_id, 'retry_required': task.retry_required,
                 'original_result_preserved': True}
 
-    @owner_mutation
     def reconcile_orphaned_terminal(
         self,
         task_id: str,
@@ -3402,7 +3383,6 @@ class TaskRegistry:
             conn.execute('ROLLBACK')
             raise
 
-    @owner_mutation
     def record_execution_result(
         self,
         *,
@@ -3475,7 +3455,6 @@ class TaskRegistry:
             )
         return self.get_execution_result(execution_ref)  # type: ignore[return-value]
 
-    @owner_mutation
     def mark_execution_result_writeback(
         self,
         execution_ref: str,
@@ -3497,7 +3476,6 @@ class TaskRegistry:
             )
         return self.get_execution_result(execution_ref)  # type: ignore[return-value]
 
-    @owner_mutation
     def reset_execution(self, task_id: str) -> TaskRecord:
         return self.set_execution_state(
             task_id, "QUEUED", current_stage="queued", current_blocker=None,
@@ -3576,7 +3554,6 @@ class TaskRegistry:
             ).fetchone()
         return dict(row) if row is not None else None
 
-    @owner_mutation
     def set_execution_models(self, execution_ref: str, *, logical_model: str | None,
                              resolved_model: str | None) -> None:
         with self._connect() as conn:
@@ -3585,7 +3562,6 @@ class TaskRegistry:
                 (logical_model, resolved_model, execution_ref),
             )
 
-    @owner_mutation
     def update_routing_identity(
         self, task_id: str, routing_identity: RoutingIdentity | str
     ) -> TaskRecord:
@@ -3637,7 +3613,6 @@ class TaskRegistry:
             )
         return self.get_task(task_id)
 
-    @owner_mutation
     def bind_routing_identity(
         self,
         *,
@@ -3721,7 +3696,6 @@ class TaskRegistry:
                 )
         return self.get_task(task_id)
 
-    @owner_mutation
     def update_execution_routing_identity(
         self, execution_ref: str, routing_identity: RoutingIdentity | str
     ) -> dict[str, Any]:
@@ -3901,7 +3875,6 @@ class TaskRegistry:
                 ) SELECT 1 FROM bound JOIN conversation_bindings b ON b.thread_id=bound.thread_id
                   WHERE b.task_id=?""", (task_id, version, task_id, task_id)).fetchone() is not None
 
-    @owner_mutation
     def bind_reauthorized_provider(self, *, task_id, execution_ref, expected_thread, successor, version):
         """Bind a new tool contract only before a turn, under the claimed lease.
 
@@ -3984,7 +3957,6 @@ class TaskRegistry:
                         "mutating host operation does not own the canonical worktree lease"
                     )
 
-    @owner_mutation
     def begin_host_execution(self, **values: Any) -> None:
         resource_key = values.pop("resource_key", None)
         required = {
@@ -4054,7 +4026,6 @@ class TaskRegistry:
                 },
             )
 
-    @owner_mutation
     def complete_host_execution(self, host_execution_ref: str, **values: Any) -> None:
         allowed = {
             "completed_at", "duration_ms", "exit_code", "stdout", "stderr",
@@ -4101,7 +4072,6 @@ class TaskRegistry:
                     },
                 )
 
-    @owner_mutation
     def request_host_execution_cancellation(self, execution_ref: str) -> int:
         with self._connect() as conn:
             return conn.execute(
@@ -4225,7 +4195,6 @@ class TaskRegistry:
         self.request_cancellation(execution_ref)
         return self.finalize_cancellation(execution_ref)
 
-    @owner_mutation
     def release_execution(
         self,
         task_id: str,
@@ -4396,15 +4365,6 @@ class TaskRegistry:
         task = self.get_task(task_id)
         if task.status == "ARCHIVED":
             raise TaskRegistryError(f"Archived task requires explicit reopen: {task_id}")
-        from authority_transactions import borrowed
-        owner = getattr(self, '_execution_owner', None)
-        if owner is not None and borrowed(self.path) is None:
-            with owner.execution(task_id, issue_id=issue_id, execution_ref=execution_ref,
-                    retain=retain, preserve_uncertain=preserve_uncertain,
-                    expected_policy_json=expected_policy_json,
-                    expected_route_json=expected_route_json) as leased:
-                yield leased
-            return
         with self._connect() as conn:
             owns_transaction = not conn.in_transaction
             try:

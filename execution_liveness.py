@@ -114,15 +114,7 @@ def public_status(conn, execution_ref, *, now=None):
 
 def record(registry, execution_ref, thread_id, turn_id, evidence, *, now=None):
     """Persist a current exact identity only; unknown observations are not activity."""
-    from authority_transactions import borrowed
     from task_registry import TaskRegistryError
-    owner = getattr(registry, '_execution_owner', None)
-    if owner is not None and borrowed(registry.path) is None:
-        token = owner._execution_token(dict(execution_ref=execution_ref))
-        if token is not None:
-            _, (resource, epoch, _) = token
-            return owner._submit(resource, epoch, 'observe', args=dict(
-                thread_id=thread_id, turn_id=turn_id, evidence=evidence, now=now))
     now = time.time() if now is None else now
     execution = registry.get_execution_record(execution_ref)
     route = registry.get_execution_routing_identity(execution_ref)
@@ -264,12 +256,6 @@ def restore_cancelled_execution(registry, identity, evidence):
 
 def invalidate(registry, execution_ref, reason):
     """Loss of local identity invalidates live proof without inventing activity."""
-    from authority_transactions import borrowed
-    owner = getattr(registry, '_execution_owner', None)
-    if owner is not None and borrowed(registry.path) is None:
-        result = owner.liveness_mutation('invalidate', dict(execution_ref=execution_ref, reason=reason))
-        if result is not NotImplemented:
-            return result
     with registry._connect() as conn:
         conn.execute("""UPDATE execution_liveness SET provider_liveness='UNKNOWN',
             transport_health='UNAVAILABLE',liveness_reason=?,release_safe=0,
@@ -279,14 +265,6 @@ def invalidate(registry, execution_ref, reason):
 
 def completion_activity(registry, identity):
     """An enrolled exact completion event is activity, never terminal authority."""
-    from authority_transactions import borrowed
-    owner = getattr(registry, '_execution_owner', None)
-    if owner is not None and borrowed(registry.path) is None:
-        result = owner.liveness_mutation('completion_activity', dict(
-            execution_ref=identity.execution_ref, task_id=identity.task_id,
-            thread_id=identity.thread_id, turn_id=identity.turn_id))
-        if result is not NotImplemented:
-            return result
     with registry._connect() as conn:
         now = time.time()
         conn.execute("""INSERT INTO execution_liveness VALUES
@@ -301,12 +279,6 @@ def require_reobservation(registry, execution_ref):
     Empty identity fields represent missing routing evidence and never prove
     liveness. Only record(), after checking the durable exact route, fills them.
     """
-    from authority_transactions import borrowed
-    owner = getattr(registry, '_execution_owner', None)
-    if owner is not None and borrowed(registry.path) is None:
-        result = owner.liveness_mutation('require_reobservation', dict(execution_ref=execution_ref))
-        if result is not NotImplemented:
-            return result
     execution = registry.get_execution_record(execution_ref)
     route = registry.get_execution_routing_identity(execution_ref)
     if execution is None:

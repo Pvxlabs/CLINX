@@ -164,15 +164,6 @@ def check_repair(conn, identity, expected):
 def repair_result(finalizer, *, identity, expected, raw, source, provider_outcome, provider_status):
     """Called only after the existing dispatcher has re-read the terminal owner."""
     registry = finalizer.registry
-    from authority_transactions import borrowed
-    owner = getattr(registry, '_execution_owner', None)
-    if owner is not None and borrowed(registry.path) is None:
-        token = owner._execution_token(identity, projection=True)
-        if token is not None:
-            _, (resource, epoch, _) = token
-            return owner._submit(resource, epoch, 'repair', args=dict(
-                identity=identity, expected=expected, raw=raw, source=source,
-                provider_outcome=provider_outcome, provider_status=provider_status))
     evidence = evidence_for(registry, identity["execution_ref"], identity["task_id"],
                             identity["turn_id"], raw, source)
     if (source is None or source.get("source") != "provider_final"

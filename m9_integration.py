@@ -701,18 +701,6 @@ class ExecutionFinalizer:
         result_source: dict[str, Any] | None = None,
     ) -> ExecutionResult:
         """Persist result, terminate/release, then update the external projection."""
-        from authority_transactions import borrowed
-        owner = getattr(self.registry, '_execution_owner', None)
-        if owner is not None and borrowed(self.registry.path) is None:
-            committed = owner.finalize(self, dict(
-                execution_ref=execution_ref, task_id=task_id, turn_id=turn_id,
-                raw_result=raw_result, issue_id=issue_id, review_state_id=review_state_id,
-                blocked_state_id=blocked_state_id, team_id=team_id,
-                review_state=review_state, blocked_state=blocked_state,
-                provider_outcome=provider_outcome, provider_status=provider_status,
-                result_source=result_source))
-            if committed is not NotImplemented:
-                return committed
         if provider_outcome not in {
             "PROVIDER_TERMINAL", "PROVIDER_FAILED", "PROVIDER_TIMEOUT",
             "PROVIDER_DISCONNECTED",

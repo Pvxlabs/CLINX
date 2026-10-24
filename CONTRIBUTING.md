@@ -14,7 +14,7 @@ Use Python 3.12 and Git. From the repository root:
 ```sh
 python3.12 -m venv .venv-test
 .venv-test/bin/python -m pip install -r requirements-dev.txt
-.venv-test/bin/python tests/run_tests.py basic
+.venv-test/bin/python -B -m pytest -c tests/pytest.ini tests/test_rust_native_routing.py tests/test_rust_request_contract.py
 .venv-test/bin/python tests/run_tests.py collect
 ```
 
@@ -23,16 +23,19 @@ use `uv venv --python 3.12 --seed .venv-test`. On P620 put environments/builds i
 your task-owned LAB directory and use that Python path. Keep `.venv-node` under
 its deployment contract; it may link to an installed release.
 
-The basic profile uses disposable SQLite and scripted transports and needs no
+The Rust adapter fixtures use disposable state and scripted transports and need no
 production CLINX, Linear account, Codex daemon, API key or production database.
 `collect` discovers tests without running them. Profiles are listed in
 the local `tests/suites.toml`. For isolated Owner integration and special
 prerequisites, see [Testing](docs/TESTING.md); runtime setup remains in [README.md](README.md).
+The retained historical profiles include retired Python experiments and currently
+fail collection. Preserve these local files; report their retirement separately
+from current runtime regressions as described in the phase 2 cleanup record.
 
 ## Before submitting a change
 
 1. Install `requirements-dev.txt` in a separate virtual environment.
-2. Run `python tests/run_tests.py basic` and the tests for the changed behavior.
+2. Run the Rust adapter fixtures above and the tests for the changed behavior.
 3. Run `python tests/run_tests.py collect`; compare node IDs if changing collection.
 4. Run `python -m ruff check --no-cache --config ruff-discovery.toml <changed-python-files>`
    and `git diff --check`. Use the repository configuration, not Ruff defaults.

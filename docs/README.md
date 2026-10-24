@@ -23,8 +23,10 @@ Rust Core 唯一状态权威、五条设计原则与效果指标。CLINX 是 AI 
 
 ## 源码布局
 
-根目录 Python 模块实现 MCP、任务、Owner、Provider 和节点协调；`domain/`、
-`runtime_control/`、`provider_adapters/`、`shadow_ledger/` 提供领域、事务和事件原语。
+根目录 Python 模块提供 Rust MCP/IPC、Provider、观察和节点适配；其中仍有实际 iMac
+本地执行所需的 Registry/Dispatcher/Owner 兼容实现。`domain/`、`shadow_ledger/` 仍为
+这些兼容路径提供模型和发布账本。Python Authority、`runtime_control/`、
+`provider_adapters/` 实验已退役，见[第二轮清理记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md)。
 `kernel/` 包含 Rust Owner client、冻结 core、历史 Runtime 和原生 Rust authority。
 Rust 权威实现、切换记录与证据边界见 [Rust authority](RUST_AUTHORITY.md)；
 当前运行身份须另行读回，不从源码目录或历史记录推导。

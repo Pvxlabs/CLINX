@@ -1478,12 +1478,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--task-db", help="Existing CLINX task database for --consultations-only")
     parser.add_argument("--stdio", action="store_true", help="serve JSON-RPC over stdio")
     parser.add_argument("--execution-owner", action="store_true", help="serve persistent canonical execution ownership on a private local socket")
-    parser.add_argument("--authority-transport", action="store_true", help="Owner only: expose existing migrated shared authority; never migrate or enroll history")
     parser.add_argument("--no-recover-existing", action="store_true", help="parallel maintenance: existing executions remain with their running completion owner")
     parser.add_argument("--allow-execute", action="store_true", help="enable explicit local action calls")
     args = parser.parse_args(argv)
-    if args.authority_transport and not args.execution_owner:
-        parser.error('--authority-transport requires --execution-owner')
     if args.consultations_only and (args.execution_owner or args.allow_execute):
         parser.error('--consultations-only cannot construct execution ownership or enable execution')
     if args.execution_owner:
@@ -1495,14 +1492,8 @@ def main(argv: list[str] | None = None) -> int:
         if lifecycle_config:
             from native_lifecycle import configure_owner
             configure_owner(server.integration, lifecycle_config)
-        authority = None
-        if args.authority_transport:
-            from execution_owner import configured_authority
-            # Deployment must explicitly migrate and hand off writable handles
-            # before enabling this option. No schema creation or fallback here.
-            authority = configured_authority(server.integration.registry)
-        # Never recover unrelated existing executions at service startup.
-        serve(server.integration, authority=authority)
+        # The device compatibility Owner has no business-authority transport.
+        serve(server.integration)
         return 0
     if not args.stdio:
         print("MCP_TRANSPORT=BLOCKED: only authenticated external transport may expose CLINX", file=sys.stderr)

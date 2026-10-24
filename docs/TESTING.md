@@ -11,72 +11,50 @@ Install Python 3.12 and the pinned dependencies as described in
 discovery development pins; there is one source of package versions.
 The local `tests/README.md` index maps suites and naming conventions.
 
-## Portable basic tests
+## Current Rust adapter and compatibility checks
 
-From the repository root, using your development environment's Python:
+The Python Authority, runtime_control and prototype Provider implementations were
+retired in [cleanup phase 2](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md). Their local
+test files and the local suite index were preserved byte for byte. Consequently,
+`basic`, `owner` and `recovery` still select retired suites, and full collection
+reports nine import errors (1,714 collected, versus 1,967 before retirement).
+These profiles are historical evidence, not current passing gates. Do not add a
+skip hook, weaken assertions or delete the retained tests to hide this result.
+The phase 2 record lists all affected modules and the exact baseline comparison.
+
+For the existing public request and native routing fixtures:
 
 ```sh
-python tests/run_tests.py basic --list
-python tests/run_tests.py basic --junitxml=/tmp/clinx-basic-results.xml
+python -B -m pytest -c tests/pytest.ini -p no:cacheprovider tests/test_rust_native_routing.py tests/test_rust_request_contract.py
 python tests/run_tests.py collect
-python -m ruff check --no-cache --config ruff-discovery.toml tests/run_tests.py tests/test_consultation_owner.py
+python -m ruff check --no-cache --config ruff-discovery.toml <changed-python-files>
 git diff --check
 ```
 
-The basic profile runs core domain, Provider adapter, SQLite runtime-control,
-shadow-ledger and Observer-schema checks. It needs no production CLINX service,
-account, API key, installed release, Codex daemon or Rust binary. Its SQLite
-registries and scripted transports are temporary. The profile is a reproducible
-entrypoint, not a claim that every platform and integration suite has passed.
+The two adapter modules passed 36 tests from an independently copied Rust source
+package. They need no production service, account or real Codex daemon. Use
+private HOME/XDG/TMPDIR state and no live opt-ins for offline regression work.
+The original runner still supplies disposable state, disables bytecode/cache
+writes and third-party plugin autoload, and preserves pytest's exit status.
+Pytest 9.1 includes unittest subtest support; use the pinned dependency versions.
 
-The runner creates private HOME/XDG/TMPDIR state, removes it after the run,
-disables bytecode/pytest-cache writes and third-party plugin autoload, and passes
-only PATH/locale/platform settings plus explicit inputs below. This is environment
-isolation, not an OS sandbox. `--junitxml` saves results outside temporary state.
-Pytest 9.1 includes unittest subtest support. The local `tests/pytest.ini` keeps the original
-filename patterns and accepts `test.py`; it sets no selection filter, skip hook,
-import-mode override or narrowed testpaths. Plain `python -m pytest` collects all
-eligible tests, including suites with special prerequisites.
+Useful retained compatibility modules include `test_execution_owner.py`,
+`test_execution_owner_routing.py`, `test_execution_liveness.py`,
+`test_result_ingestion.py`, `test_native_input_recovery.py` and
+`test_shadow_ledger.py`. They exercise the ordinary local execution route that
+is still enabled on iMac. They do not qualify a Python Authority writer.
+The schema-only migration input belonged to the retired experiment; it is not
+required to run the present Rust authority or device compatibility code.
 
-## Isolated Owner and authority
-
-The current Rust Owner client needs Linux and Rust 1.98+. Build it from this
-checkout with locked dependencies into a fresh directory:
+Rust checks use a task-owned output directory, never an installed release:
 
 ```sh
-CLINX_TEST_BUILD=$(mktemp -d)
-cargo build --locked --manifest-path kernel/Cargo.toml --bin clinx-owner-client --target-dir "$CLINX_TEST_BUILD"
-CLINX_OWNER_CLIENT_BINARY="$CLINX_TEST_BUILD/debug/clinx-owner-client" python tests/run_tests.py owner
+cargo test --lib --locked --offline --manifest-path kernel/Cargo.toml --target-dir <task-build-dir>
+cargo build --release --locked --offline --manifest-path kernel/Cargo.toml --bin clinx-runtime --target-dir <task-build-dir>
 ```
 
-On P620 create the build directory under your task-owned LAB path. Preserve logs
-before removing only your build output; do not replace an installed release.
-The profile starts isolated Owner threads, real Unix sockets and SQLite registries,
-uses scripted Providers, and exercises Python/Rust transport, CAS, rollback, stale
-epochs, uncertain ACKs, finalization and lease release. No production Owner is
-needed. The consultation CLI test now starts its own temporary Owner;
-its persistence/discovery assertions remain in their original collected case.
-The additional integration case covers idempotency, uncertain send/resume and
-refusal to write after Owner shutdown.
-
-Two schema-migration cases require a schema-only `sqlite_master` JSON export.
-One currently fails and the other skips when no schema is supplied; this remains
-visible in the default Owner run. For a complete schema qualification:
-
-```sh
-CLINX_OWNER_CLIENT_BINARY="$CLINX_TEST_BUILD/debug/clinx-owner-client" python tests/run_tests.py owner --schema /absolute/path/to/schema-only.json
-```
-
-The JSON is a list of objects with `type`, `name` and `sql` strings, containing DDL
-only. Use an independently approved schema export, never a production SQLite
-file or production rows. The runner validates the JSON shape and forwards this
-explicit path as `CLINX_PRODUCTION_SCHEMA`; it does not inherit that variable or
-open a production database. A schema export proves compatibility with that schema
-version, not with every future database.
-
-On Linux the runtime derives socket directories from the temporary database
-identity under `/run/user/<uid>/clinx-owner-<uid>/`; stopped test Owners may leave
-empty lock files there. Do not sweep this shared directory.
+On Linux, temporary compatibility Owners may leave empty lock files under
+`/run/user/<uid>/clinx-owner-<uid>/`. Do not sweep this shared directory.
 
 ## Recovery and environment-dependent suites
 
@@ -84,7 +62,8 @@ empty lock files there. Do not sweep this shared directory.
 python tests/run_tests.py recovery
 ```
 
-This retains failure/recovery semantics, including a transient systemd test that
+This historical profile includes a retired Authority transport module and cannot
+currently collect in full. Its retained recovery tests include a transient systemd test that
 needs a separately provisioned user manager/session bus. Without that prerequisite
 it fails with `Failed to connect to bus`. Do not attach the runner to a production
 manager to obtain a pass. The remaining recovery cases use temporary state.
@@ -96,19 +75,16 @@ manager to obtain a pass. The remaining recovery cases use temporary state.
 | Tunnel wire, first migration and stage1 wire | Pinned installed client/release artifacts referenced in source, isolated HTTP proxy/Owner; no portable artifact availability promise |
 | Transport build/release tests | Fixture sources and controlled fake builds; actual builds need matching Go toolchain/upstream archive |
 | `fixtures/bridge_transport_control_test.go` | Matching upstream harness through `scripts/qualify_bridge_transport.py`, not standalone pytest |
-| Rust Owner client | `cargo test --locked --manifest-path kernel/Cargo.toml --target-dir <fresh-directory>` checks compilation; real socket behavior is covered by the Owner pytest profile |
+| Rust Owner client | `cargo test --locked --manifest-path kernel/Cargo.toml --target-dir <fresh-directory>` checks compilation; the old Owner profile also contains retired experiment suites and is not a passing gate |
 | Native OPAQUE Rust adapter | Matching Python/PyO3/maturin toolchain; independent of pytest collection |
 | `MonitorApp/Tests/CLINXMonitorTests` | macOS/Xcode; from MonitorApp run `swift test --scratch-path <fresh-directory>`; Python source checks are not GUI acceptance |
 
-The Rust authority migration retains the frozen execution contract and restores
-its Runtime Lab source and opt-in qualification wrappers for evidence recovery.
-The wrappers use the retained local `tests/` fixtures; those fixtures are still
-not distributed through Git. Lab/shadow PASS does not establish production
-authority. See [Rust authority status and acceptance](RUST_AUTHORITY.md).
-Other retired experiments remain separate from normal development. Core Owner,
-authority, SQLite, transport, idempotency and recovery assertions remain.
-[Historical source/evidence recovery](README.md#历史资料恢复) is independent of
-normal development installation.
+The Rust authority retains its frozen execution contract and shared Rust state.
+Historical Python Authority tests remain local for evidence recovery; their
+implementation has been removed from current source. See
+[Rust authority status and acceptance](RUST_AUTHORITY.md) and
+[historical source/evidence recovery](README.md#历史资料恢复).
+A lab or adapter PASS does not establish production business acceptance.
 
 Transport packaging/wire tests have an additional artifact-location contract:
 create a fresh task-owned directory under `/data/artifacts`, then run:

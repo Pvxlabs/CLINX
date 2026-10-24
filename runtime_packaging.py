@@ -65,11 +65,7 @@ DISCOVERY_MODULES = (
 # Still reachable from CanonicalNodeExecutionAdapter's configured local route.
 # Keep this explicit; these modules must never enter the Rust release profile.
 MONITOR_COMPAT_MODULES = (
-    "authority_mapping",
-    "authority_transactions",
-    "authority_writer",
     "bridge",
-    "canonical_authority",
     "completion_runtime",
     "desktop_publication",
     "execution_owner",
@@ -84,7 +80,7 @@ MONITOR_COMPAT_MODULES = (
     "task_registry",
     "unstarted_recovery",
 )
-MONITOR_COMPAT_PACKAGES = ("domain", "shadow_ledger", "runtime_control")
+MONITOR_COMPAT_PACKAGES = ("domain", "shadow_ledger")
 # P620 daemon/launcher entrypoints are never launched by the bundled user helper.
 SERVER_ONLY_MODULES = {
     "desktop_socket", "node_centre_entrypoint", "rust_observation", "rust_stdio",
@@ -118,7 +114,7 @@ def copy_monitor_sources(source: Path, resources: Path) -> None:
     # an incremental app bundle from silently surviving retirement.
     for path in resources.glob("*.py"):
         path.unlink()
-    for name in ("Discovery", *MONITOR_COMPAT_PACKAGES, "provider_adapters"):
+    for name in ("Discovery", *MONITOR_COMPAT_PACKAGES, "runtime_control", "provider_adapters"):
         target = resources / name
         if target.exists():
             shutil.rmtree(target)
