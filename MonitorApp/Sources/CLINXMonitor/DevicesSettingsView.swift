@@ -55,8 +55,8 @@ struct DevicesSettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(DS.Palette.textPrimary)
         .task {
-            nodeService.refresh()
             while !Task.isCancelled {
+                nodeService.refresh()
                 await devices.scan()
                 try? await Task.sleep(nanoseconds: 8_000_000_000)
             }
@@ -88,6 +88,7 @@ struct DevicesSettingsView: View {
                     .foregroundStyle({
                         switch nodeService.state {
                         case .running: return DS.Palette.success
+                        case .degraded(_): return DS.Palette.warning
                         case .failed(_), .requiresApproval(_): return DS.Palette.error
                         default: return DS.Palette.textSecondary
                         }
@@ -97,6 +98,8 @@ struct DevicesSettingsView: View {
             switch nodeService.state {
             case .running:
                 Button("Disable") { nodeService.disable() }.controlSize(.small)
+            case .degraded(_):
+                Button("Refresh") { nodeService.refresh() }.controlSize(.small)
             case .requiresApproval(_), .failed(_), .disabled, .notInstalled:
                 Button(nodeService.state == .notInstalled ? "Enable" : "Retry") {
                     nodeService.installAndEnable()
@@ -186,7 +189,7 @@ struct DevicesSettingsView: View {
         if device.identityMismatch { return "Identity changed · verify this device" }
         if devices.busyDeviceID == device.id { return devices.phase ?? "Connecting…" }
         if monitor.linkedDeviceID == device.id { return monitor.runtimeStatus.connection }
-        return device.online ? (device.paired ? "Paired · available" : "Available to pair") : "Paired · offline"
+        return device.online ? (device.paired ? "Paired · available" : "Available to pair") : "Paired · not discovered on LAN"
     }
 }
 

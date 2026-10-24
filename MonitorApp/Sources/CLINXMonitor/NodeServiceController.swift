@@ -11,6 +11,7 @@ final class NodeServiceController: ObservableObject {
         case disabled
         case starting
         case running
+        case degraded(String)
         case failed(String)
         case requiresApproval(String)
 
@@ -20,6 +21,7 @@ final class NodeServiceController: ObservableObject {
             case .disabled: return "Node service disabled"
             case .starting: return "Starting node service…"
             case .running: return "Node service running"
+            case .degraded(let reason): return "Node service running · observation degraded (\(reason))"
             case .failed(let message), .requiresApproval(let message): return message
             }
         }
@@ -29,16 +31,19 @@ final class NodeServiceController: ObservableObject {
     @Published private(set) var lastError: String?
 
     private let label = "com.pvxlabs.clinx.node"
-    private var plistURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+    private let plistURL: URL
+    private let healthURL: URL
+    private let commandRunner: (([String]) -> (status: Int32, output: String))?
+
+    init(plistURL: URL? = nil, healthURL: URL? = nil,
+         commandRunner: (([String]) -> (status: Int32, output: String))? = nil) {
+        self.plistURL = plistURL ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
             .appendingPathComponent("\(label).plist")
-    }
-
-    private var healthURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        self.healthURL = healthURL ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/CLINX Monitor/Node", isDirectory: true)
             .appendingPathComponent("health.json")
+        self.commandRunner = commandRunner
     }
 
     func refresh() {
@@ -51,15 +56,24 @@ final class NodeServiceController: ObservableObject {
             state = .disabled
             return
         }
-        switch helperHealth() {
-        case "running": state = .running
-        case "blocked": state = .requiresApproval("Pair this Mac with a trusted CLINX centre, then retry.")
-        default: state = .disabled
-        }
+        state = helperHealth() ?? .starting
     }
 
     func installAndEnable() {
         lastError = nil
+        let job = "gui/\(getuid())/\(label)"
+        let loaded = launchctl(["print", job])
+        if loaded.status == 0 {
+            // Refresh an active helper without overwriting its configured route
+            // or interrupting work. A loaded, stopped job only needs kickstart.
+            if loaded.output.range(of: #"\bpid = [1-9][0-9]*\b"#, options: .regularExpression) != nil {
+                state = helperHealth() ?? .starting
+            } else {
+                _ = launchctl(["kickstart", job])
+                state = waitForHealth() ?? .starting
+            }
+            return
+        }
         guard let executable = Bundle.main.url(forResource: "CLINXNodeService", withExtension: nil) else {
             state = .failed("This app build does not contain the CLINX node service.")
             return
@@ -85,24 +99,14 @@ final class NodeServiceController: ObservableObject {
         state = .starting
         let result = launchctl(["bootstrap", "gui/\(getuid())", plistURL.path])
         if result.status == 0 {
-            _ = launchctl(["kickstart", "-k", "gui/\(getuid())/\(label)"])
-            switch waitForHealth() {
-            case "running": state = .running
-            case "blocked": state = .requiresApproval("Pair this Mac with a trusted CLINX centre, then retry.")
-            default:
-                state = .failed("The CLINX node helper did not report ready. Check pairing and retry.")
-            }
+            state = waitForHealth() ?? .starting
         } else if launchctl(["print", "gui/\(getuid())/\(label)"]).status == 0 {
             // bootstrap is intentionally idempotent at the UI boundary: a
             // previously installed LaunchAgent may already be loaded while
             // its helper is stopped after a clean exit.  Treat that as a
             // restart, not as a macOS approval failure.
-            _ = launchctl(["kickstart", "-k", "gui/\(getuid())/\(label)"])
-            switch waitForHealth() {
-            case "running": state = .running
-            case "blocked": state = .requiresApproval("Pair this Mac with a trusted CLINX centre, then retry.")
-            default: state = .failed("The CLINX node helper did not report ready. Check pairing and retry.")
-            }
+            _ = launchctl(["kickstart", job])
+            state = waitForHealth() ?? .starting
         } else {
             state = .requiresApproval("macOS did not approve the node helper. Open System Settings, allow CLINX, then retry.")
             lastError = result.output
@@ -116,23 +120,35 @@ final class NodeServiceController: ObservableObject {
 
     func retry() { installAndEnable() }
 
-    private func waitForHealth() -> String? {
+    private func waitForHealth() -> State? {
         for _ in 0..<10 {
-            if let status = helperHealth() { return status }
+            if let status = helperHealth(), status != .disabled { return status }
             usleep(200_000)
         }
         return nil
     }
 
-    private func helperHealth() -> String? {
+    private func helperHealth() -> State? {
         guard let data = try? Data(contentsOf: healthURL),
               let object = try? JSONSerialization.jsonObject(with: data),
-              let payload = object as? [String: Any],
-              let status = payload["status"] as? String else { return nil }
-        return status
+              let payload = object as? [String: Any] else { return nil }
+        return Self.healthState(payload)
+    }
+
+    static func healthState(_ payload: [String: Any]) -> State? {
+        let reason = payload["reason"] as? String ?? "UNKNOWN"
+        switch payload["status"] as? String {
+        case "running": return .running
+        case "degraded": return .degraded(reason)
+        case "blocked": return .requiresApproval("Node service blocked (\(reason)).")
+        case "offline": return .failed("Node service offline (\(reason)).")
+        case "stopped": return .disabled
+        default: return nil
+        }
     }
 
     private func launchctl(_ arguments: [String]) -> (status: Int32, output: String) {
+        if let commandRunner { return commandRunner(arguments) }
         let process = Process()
         let output = Pipe()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")

@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+export PYTHONDONTWRITEBYTECODE=1
 cd "$(dirname "$0")/.."
 signing_identity="${CLINX_SIGNING_IDENTITY:-CLINX Monitor Local Development}"
 if ! security find-certificate -c "$signing_identity" >/dev/null 2>&1; then
@@ -36,10 +37,15 @@ for canonical_module in \
     execution_policy.py execution_semantics.py host_contract.py host_executor.py \
     m9_integration.py native_provider.py prepared_requests.py production_workflows.py result_ingestion.py \
     task_registry.py thread_identity.py tool_delivery.py native_lifecycle.py \
-    desktop_publication.py derived_git_targets.py dispatch_errors.py execution_owner.py; do
+    desktop_publication.py derived_git_targets.py dispatch_errors.py execution_owner.py \
+    authority_mapping.py authority_transactions.py authority_writer.py canonical_authority.py \
+    consultations.py historical_handoff.py native_input_recovery.py task_projection.py \
+    unstarted_recovery.py workspace_contract.py mcp_server.py observation_mcp.py \
+    observer_server.py rust_authority.py rust_host.py rust_integration.py rust_mcp.py \
+    rust_monitor.py rust_node_adapter.py rust_reads.py rust_transport.py; do
     cp "../$canonical_module" "$app_dir/Contents/Resources/"
 done
-for canonical_package in domain shadow_ledger; do
+for canonical_package in domain shadow_ledger runtime_control; do
     mkdir -p "$app_dir/Contents/Resources/$canonical_package"
     cp "../$canonical_package/"*.py "$app_dir/Contents/Resources/$canonical_package/"
 done
@@ -55,6 +61,9 @@ runtime_dir="$app_dir/Contents/Resources/DiscoveryRuntime"
 if ! command -v uv >/dev/null 2>&1; then
     echo 'Missing uv; cannot build the bundled discovery runtime.' >&2
     exit 1
+fi
+if [ -d "$runtime_dir" ]; then
+    chmod -R u+w "$runtime_dir"
 fi
 uv venv --clear --python 3.13 "$runtime_dir"
 # uv intentionally symlinks the interpreter into a venv.  Symlinks escaping an
@@ -86,6 +95,9 @@ mkdir -p .build/discovery-wheels
 CARGO_PROFILE_RELEASE_DEBUG=1 CARGO_PROFILE_RELEASE_STRIP=none \
     "$runtime_dir/bin/maturin" build --release --locked --manifest-path ../native/opaque_pairing/Cargo.toml --out .build/discovery-wheels
 uv pip install --python "$runtime_dir/bin/python" --reinstall .build/discovery-wheels/clinx_opaque-0.1.0-*-macosx_*.whl
+
+# A signed runtime is not an installation target or a bytecode cache location.
+chmod -R a-w "$runtime_dir"
 
 # App icon, drawn from the design's AppIcon spec. Generation is best-effort: a failure
 # leaves the bundle on the default icon rather than breaking the build.
