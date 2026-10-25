@@ -1,0 +1,1100 @@
+{
+  "schema": 1,
+  "baseline": "5c0107dc79447d49a25a5dd16e01083f37c65840",
+  "scope": "Native Transport/Host/Node/Provider qualification and offline contract checker; runtime core unchanged",
+  "original_parameter_cases": 92,
+  "rust_covered_original_cases": 82,
+  "rust_test_groups": 69,
+  "retained_original_python_cases": 24,
+  "added_python_binding_smokes": 3,
+  "coverage": {
+    "fixtures/test_native_transport_binary.py": {
+      "original_test_functions": 1,
+      "mapped_test_functions": 1,
+      "unmapped": []
+    },
+    "fixtures/test_rust_host_runtime.py": {
+      "original_test_functions": 10,
+      "mapped_test_functions": 10,
+      "unmapped": []
+    },
+    "fixtures/test_rust_node_network.py": {
+      "original_test_functions": 14,
+      "mapped_test_functions": 14,
+      "unmapped": []
+    },
+    "fixtures/test_rust_node_router.py": {
+      "original_test_functions": 15,
+      "mapped_test_functions": 15,
+      "unmapped": []
+    },
+    "fixtures/test_rust_provider_client.py": {
+      "original_test_functions": 19,
+      "mapped_test_functions": 19,
+      "unmapped": []
+    },
+    "fixtures/test_rust_provider_runtime.py": {
+      "original_test_functions": 6,
+      "mapped_test_functions": 6,
+      "unmapped": []
+    }
+  },
+  "original_source_sha256": {
+    "fixtures/test_native_transport_binary.py": "39ed678f1ed67ea7e276f2986c446dd242959a1d32100ac2912b2344104e6d67",
+    "fixtures/test_rust_host_runtime.py": "abf65123ecc680607d23a49d969a424cab10771b1c2d5cd32515657111b5b815",
+    "fixtures/test_rust_node_network.py": "141b6a6c8e10f98a26ff23279b3cf1cd1a8715902c8d9638812eae697bc3ca5b",
+    "fixtures/test_rust_node_router.py": "2085338166143bb2aaf6fe352abf3640671a042355e3a072a309334f408a2631",
+    "fixtures/test_rust_provider_client.py": "863f53998b243601d51c3c1a2b6a1db9ad3e32ef06d087122371e5c6a0e5d0e0",
+    "fixtures/test_rust_provider_runtime.py": "32d3d7ecacc5e773ef2d94e88e7e50159966f23dd6bf373b88d0960f3c043f83",
+    "scripts/check_execution_core_contract.py": "88d1bf0dfe6ff578b748033ee2c9343bb72b26584c8872bd2c81904fdd6e0229"
+  },
+  "rust_source_sha256": {
+    "kernel/examples/check_execution_core_contract.rs": "7fcf9dcb447be14273ad0d3c177a8867ae9a27915ffbba828db9f095d5c022f8",
+    "kernel/tests/execution_core_qualification.rs": "4508e2f6934a2e1dcd94ab245b9496f8a129abb31fd7d7904e6b1f2737b460d2",
+    "kernel/tests/host_runtime_qualification.rs": "5ce32167feba19e0001ed7bbc9b0cb840b957fbaaeb36e30024364effe69c579",
+    "kernel/tests/native_transport_qualification.rs": "9a11d47cfc04cf68652b7fea32f9cf74b617c0feb76524bb6d0a44ba6cbec4e1",
+    "kernel/tests/node_network_qualification.rs": "2a08406d4a393f2a44cf9a828fdb8bc0d546e635fae01c0884002350bbd9834c",
+    "kernel/tests/node_router_qualification.rs": "aee8c80a33ab7488777ad14d55e2bb8b47838cbf77b0e602d4d6f300c07997c8",
+    "kernel/tests/provider_client_qualification.rs": "e3deeb1157cfb69ea57044f90442c3af88fc786416dc1a3ff254ecd42f49d1ef",
+    "kernel/tests/provider_runtime_qualification.rs": "df7659963ad2f24831d86c9c933df5f7a9c54c6b834a211cccbbe7b7ba916c46",
+    "kernel/tests/support/native_network.rs": "044a7abc0c46da1057bcf7fcf1cf897b8601274b94ff215b69aeb23c557e2024",
+    "kernel/tests/support/node_qualification.rs": "8ca02c5a77a5b380e4802081905316687bed5c5b41bad4a169f3679a76e74ab2",
+    "kernel/tests/support/provider.rs": "0080ed47004890114e259454c91c00bff2aae8638b3f4d2ae77b43f4e730244c",
+    "kernel/tests/support/runtime_qualification.rs": "3b806b747b2fae602573811fc9192f44a2dc9d1ee4e713010084e86659d8b303"
+  },
+  "detailed_assertion_evidence": {
+    "provider-test-map.json": {
+      "path": "/data/artifacts/clinx-native-qualification-20261025/provider-test-map.json",
+      "sha256": "e32bbb7add159cdff438ee16d4748afec7f7dbaaa77ccfbf24234afcd4c9c7d5"
+    },
+    "node-test-map.json": {
+      "path": "/data/artifacts/clinx-native-qualification-20261025/node-test-map.json",
+      "sha256": "5f0e13d5b8a523abcc85bace1b39b093d82d69cbda5b7877d809d624bff14725"
+    },
+    "native-host-test-map.json": {
+      "path": "/data/artifacts/clinx-native-qualification-20261025/native-host-test-map.json",
+      "sha256": "b21d3b7eed3d059648278b426faee29db5b78641f79b82f3544205e8f5ca65e1"
+    },
+    "core-contract-map.json": {
+      "path": "/data/artifacts/clinx-native-qualification-20261025/core-contract-map.json",
+      "sha256": "96fc98baa039eefcf4bbd7c1f6ea983a9e43e42bae7eb3c40fdce8c27fdf2472"
+    },
+    "host-independent-review.json": {
+      "path": "/data/artifacts/clinx-native-qualification-20261025/host-independent-review.json",
+      "sha256": "7d520a29a5af08d9b725dd148451071b7be3479a9eff8596373cf2bbe6e6c844"
+    },
+    "core-contract-independent-review.json": {
+      "path": "/data/artifacts/clinx-native-qualification-20261025/core-contract-independent-review.json",
+      "sha256": "95ed030e42e006d635487c2708633650bc7356543bd6eac5e9bf5b4c2db79857"
+    }
+  },
+  "cases": [
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_native_rust_transport_initializes_once_preserves_identity_and_peer_uid",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::native_rust_transport_initializes_once_preserves_identity_and_peer_uid"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_native_unknown_delivery_consumes_creation_and_never_replays",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::native_unknown_delivery_consumes_creation_and_never_replays",
+        "fixtures/test_rust_provider_client.py::test_native_unknown_delivery_consumes_creation_and_never_replays"
+      ],
+      "python_original_retained": true,
+      "reason": "Python native_creation_cwd capability is cleared on unknown send before next policy construction; original real socket binding retained."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport",
+      "parameters": {
+        "policy": {
+          "read_only_observer": true
+        },
+        "method": "thread/resume",
+        "params": {
+          "threadId": "t"
+        },
+        "error": "AppServerProtocolError"
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::admission_rejects_before_transport",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport"
+      ],
+      "python_original_retained": true,
+      "reason": "Exact Python exception subclasses and __dict__ injected policy flags remain binding requirements; all six original variants retained."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport",
+      "parameters": {
+        "policy": {
+          "read_only_observer": true
+        },
+        "method": "thread/list",
+        "params": {},
+        "error": "AppServerProtocolError"
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::admission_rejects_before_transport",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport"
+      ],
+      "python_original_retained": true,
+      "reason": "Exact Python exception subclasses and __dict__ injected policy flags remain binding requirements; all six original variants retained."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport",
+      "parameters": {
+        "policy": {
+          "read_only_observer": true
+        },
+        "method": "command/exec",
+        "params": {
+          "command": [
+            "unsafe"
+          ]
+        },
+        "error": "AppServerProtocolError"
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::admission_rejects_before_transport",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport"
+      ],
+      "python_original_retained": true,
+      "reason": "Exact Python exception subclasses and __dict__ injected policy flags remain binding requirements; all six original variants retained."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport",
+      "parameters": {
+        "policy": {
+          "shared_native_writer": true
+        },
+        "method": "turn/start",
+        "params": {
+          "threadId": "t"
+        },
+        "error": "AppServerSharedWriterError"
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::admission_rejects_before_transport",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport"
+      ],
+      "python_original_retained": true,
+      "reason": "Exact Python exception subclasses and __dict__ injected policy flags remain binding requirements; all six original variants retained."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport",
+      "parameters": {
+        "policy": {
+          "shared_native_writer": true,
+          "native_forwarding_thread_id": "other"
+        },
+        "method": "thread/resume",
+        "params": {
+          "threadId": "t"
+        },
+        "error": "AppServerSharedWriterError"
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::admission_rejects_before_transport",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport"
+      ],
+      "python_original_retained": true,
+      "reason": "Exact Python exception subclasses and __dict__ injected policy flags remain binding requirements; all six original variants retained."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport",
+      "parameters": {
+        "policy": {
+          "shared_native_writer": true,
+          "native_creation_cwd": "/approved"
+        },
+        "method": "thread/start",
+        "params": {
+          "cwd": "/elsewhere",
+          "ephemeral": false,
+          "threadSource": "user"
+        },
+        "error": "AppServerSharedWriterError"
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::admission_rejects_before_transport",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport"
+      ],
+      "python_original_retained": true,
+      "reason": "Exact Python exception subclasses and __dict__ injected policy flags remain binding requirements; all six original variants retained."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_exact_metadata_exception_and_index_read_preserve_read_only_scope",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::exact_metadata_exception_and_index_read_preserve_read_only_scope"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rpc_preserves_remote_error_and_explicit_result_mark_without_retry",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::rpc_preserves_remote_error_and_explicit_result_mark_without_retry",
+        "fixtures/test_rust_provider_client.py::test_rpc_preserves_remote_error_and_explicit_result_mark_without_retry"
+      ],
+      "python_original_retained": true,
+      "reason": "Python AppServerRemoteError.method and .error fields remain unchanged."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rpc_missing_result_is_unknown_and_never_retried",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::rpc_missing_result_is_unknown_and_never_retried"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_request_events_are_bounded_overflow_explicit_and_tools_unanswered",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::request_events_are_bounded_overflow_explicit_and_tools_unanswered"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_drain_partial_events_preserves_original_transport_error",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::drain_partial_events_preserves_transport_error",
+        "fixtures/test_rust_provider_client.py::test_drain_partial_events_preserves_original_transport_error"
+      ],
+      "python_original_retained": true,
+      "reason": "Original Python exception object identity and attached events tuple cannot be expressed in Rust."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_nonblocking_empty_drain_is_not_connection_loss",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::nonblocking_empty_drain_is_not_connection_loss"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence",
+      "parameters": {
+        "mismatch": "threadId"
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::native_input_thread_evidence",
+        "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence"
+      ],
+      "python_original_retained": true,
+      "reason": "All four original mismatches retain Python negative binding: failure must not create native_forwarding_receipt attribute; no transport send."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence",
+      "parameters": {
+        "mismatch": "turnId"
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::native_input_turn_evidence",
+        "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence"
+      ],
+      "python_original_retained": true,
+      "reason": "All four original mismatches retain Python negative binding: failure must not create native_forwarding_receipt attribute; no transport send."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence",
+      "parameters": {
+        "mismatch": "clientId"
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::native_input_client_evidence",
+        "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence"
+      ],
+      "python_original_retained": true,
+      "reason": "All four original mismatches retain Python negative binding: failure must not create native_forwarding_receipt attribute; no transport send."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence",
+      "parameters": {
+        "mismatch": "text"
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::native_input_text_evidence",
+        "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence"
+      ],
+      "python_original_retained": true,
+      "reason": "All four original mismatches retain Python negative binding: failure must not create native_forwarding_receipt attribute; no transport send."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_native_input_confirmation_records_exact_item_without_sending",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::native_input_confirmation_records_exact_item_without_sending",
+        "fixtures/test_rust_provider_client.py::test_native_input_confirmation_records_exact_item_without_sending"
+      ],
+      "python_original_retained": true,
+      "reason": "Python native_forwarding_receipt attribute mutation is verified in addition to Rust exact evidence."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_concurrent_clients_cannot_consume_each_others_response",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::concurrent_clients_cannot_consume_each_others_response"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_observer_prefers_exact_live_owner_over_unloaded_interrupted",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::observer_prefers_exact_live_owner_over_unloaded_interrupted"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_observer_wrong_turn_active_claim_never_proves_completion",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::observer_wrong_turn_active_claim_never_proves_completion"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_thread_observer_missing_socket_and_wrong_identity_remain_unknown",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::thread_observer_missing_socket_and_wrong_identity_remain_unknown"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_liveness_conflict_and_release_rules",
+      "parameters": {
+        "statuses": [
+          "notLoaded",
+          "unloaded"
+        ],
+        "expected": "EXACT_COMPLETED_TURN_UNLOADED",
+        "safe": true
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::liveness_conflict_and_release_rules"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_liveness_conflict_and_release_rules",
+      "parameters": {
+        "statuses": [
+          "active",
+          "active"
+        ],
+        "expected": "OWNERSHIP_CONFLICT",
+        "safe": false
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::liveness_conflict_and_release_rules"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_liveness_conflict_and_release_rules",
+      "parameters": {
+        "statuses": [
+          "idle",
+          "UNKNOWN"
+        ],
+        "expected": "EXACT_OWNER_TERMINAL",
+        "safe": false
+      },
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::liveness_conflict_and_release_rules"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_full_unix_backlog_has_bounded_connect_and_no_provider_request",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::full_unix_backlog_has_bounded_connect_and_no_provider_request"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_existing_long_timeout_and_truthy_read_only_guard_are_preserved",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_client_qualification.rs::existing_long_timeout_and_truthy_read_only_guard_are_preserved"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py::test_rust_peer_credentials_failure_never_falls_back_to_legacy_socket",
+      "parameters": {},
+      "targets": [
+        "fixtures/test_rust_provider_client.py::test_rust_peer_credentials_failure_never_falls_back_to_legacy_socket"
+      ],
+      "python_original_retained": true,
+      "reason": "Explicit Python monkeypatch of native transport peer identity and legacy socket Mock must remain: no getsockopt fallback or Provider request."
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_rust_metadata_matches_git_and_shares_identity_across_linked_worktrees",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::metadata_matches_git_and_shares_identity_across_linked_worktrees"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_metadata_rejects_mutation_and_invalid_cwd_before_git",
+      "parameters": {
+        "case": {
+          "mode": "workspace",
+          "cwd": "relative"
+        },
+        "error": "WORKSPACE_CONTRACT_INVALID"
+      },
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::metadata_rejects_mutation_and_invalid_cwd_before_git"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_metadata_rejects_mutation_and_invalid_cwd_before_git",
+      "parameters": {
+        "case": {
+          "mode": "workspace",
+          "cwd": "/missing-fixture-cwd"
+        },
+        "error": "WORKSPACE_CWD_UNREADABLE"
+      },
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::metadata_rejects_mutation_and_invalid_cwd_before_git"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_metadata_rejects_mutation_and_invalid_cwd_before_git",
+      "parameters": {
+        "case": {
+          "mode": "workspace",
+          "cwd": "/bad\u0000cwd"
+        },
+        "error": "WORKSPACE_CONTRACT_INVALID"
+      },
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::metadata_rejects_mutation_and_invalid_cwd_before_git"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_metadata_rejects_mutation_and_invalid_cwd_before_git",
+      "parameters": {
+        "case": {
+          "mode": "unexpected"
+        },
+        "error": "WORKSPACE_PROBE_INVALID"
+      },
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::metadata_rejects_mutation_and_invalid_cwd_before_git"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_metadata_rejects_mutation_and_invalid_cwd_before_git",
+      "parameters": {
+        "case": {
+          "mode": "git",
+          "args": [
+            "reset",
+            "--hard"
+          ]
+        },
+        "error": "WORKSPACE_PROBE_INVALID"
+      },
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::metadata_rejects_mutation_and_invalid_cwd_before_git"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_metadata_rejects_mutation_and_invalid_cwd_before_git",
+      "parameters": {
+        "case": {
+          "mode": "git",
+          "args": [
+            "config",
+            "user.email",
+            "mutation"
+          ]
+        },
+        "error": "WORKSPACE_PROBE_INVALID"
+      },
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::metadata_rejects_mutation_and_invalid_cwd_before_git"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_metadata_rejects_mutation_and_invalid_cwd_before_git",
+      "parameters": {
+        "case": {
+          "mode": "git",
+          "args": [
+            "rev-parse",
+            null
+          ]
+        },
+        "error": "WORKSPACE_PROBE_INVALID"
+      },
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::metadata_rejects_mutation_and_invalid_cwd_before_git"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_local_observer_and_node_exchange_use_rust_probe_with_exact_provider_uid",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::local_observer_and_node_exchange_use_rust_probe_with_exact_provider_uid"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_authority_workspace_contract_uses_rust_provider_without_python_probe",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::authority_workspace_contract_uses_rust_provider_without_python_probe"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_remote_workspace_observer_reuses_paired_mtls_and_exact_host_route",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/provider_runtime_qualification.rs::remote_workspace_observer_reuses_paired_mtls_and_exact_host_route"
+      ],
+      "python_original_retained": false,
+      "reason": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_packaged_node_finds_companion_rust_binary_without_checkout_or_pythonpath",
+      "parameters": {
+        "profile": "rust"
+      },
+      "targets": [
+        "fixtures/test_rust_provider_runtime.py::test_packaged_node_finds_companion_rust_binary_without_checkout_or_pythonpath"
+      ],
+      "python_original_retained": true,
+      "reason": "Both Rust/Monitor package profiles dynamically import the actual packaged Python source list under python -I; Monitor also exercises Python NodeProviderRelay binary lookup."
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py::test_packaged_node_finds_companion_rust_binary_without_checkout_or_pythonpath",
+      "parameters": {
+        "profile": "monitor"
+      },
+      "targets": [
+        "fixtures/test_rust_provider_runtime.py::test_packaged_node_finds_companion_rust_binary_without_checkout_or_pythonpath"
+      ],
+      "python_original_retained": true,
+      "reason": "Both Rust/Monitor package profiles dynamically import the actual packaged Python source list under python -I; Monitor also exercises Python NodeProviderRelay binary lookup."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_deployed_cursor_bytes_roundtrip_and_cross_identity_rejection",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::deployed_cursor_bytes_roundtrip_and_cross_identity_rejection",
+        "fixtures/test_rust_node_router.py::test_cursor_python_exception_type_and_reason"
+      ],
+      "status": "RUST_WITH_PYTHON_EXCEPTION_ORACLE",
+      "intent": "Preserve UTF-8 canonical cursor bytes, v1 offset / v2 opaque token and HMAC lowercase; reject other identity, wrong key, uppercase signature. Rust expected tokens are literal original Python-generated vectors. Python exception type/reason retained separately."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_exact_host_route_casefold_and_alias_conflict",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::exact_host_route_casefold_and_alias_conflict"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Unicode casefold Straße/STRASSE exact route, one air IO, ambiguous alias rejected."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_authorized_search_requires_exact_evidence_and_reports_conflicts",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::authorized_search_requires_exact_evidence_and_reports_conflicts"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Foreign thread evidence cannot prove coverage; exact dual positives conflict; revoked scope blocks node-specific read."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_only_complete_exact_negatives_prove_absence",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::only_complete_exact_negatives_prove_absence"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Incomplete negative is UNKNOWN; only all exact authorized negatives prove NOT_FOUND with exact queried set."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_fanout_is_bounded_and_does_not_start_queued_reads_after_timeout",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::fanout_is_bounded_and_does_not_start_queued_reads_after_timeout"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Eight nodes, two workers, 50 ms budget, 150 ms reads; only two reads begin, no queried successes and eight unavailable."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_idle_local_read_recovers_but_write_remains_offline",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::idle_local_read_recovers_but_write_remains_offline"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Offline local node rejects write with zero callback; context read permits liveness recovery and exactly one call."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_unknown_execution_is_not_retried_or_bound",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::unknown_execution_is_not_retried_or_bound"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Lost execution ACK remains UNKNOWN/RECONCILIATION_REQUIRED with one callback and no reference binding."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_canonical_ack_conflict_is_not_published_as_success",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::canonical_ack_conflict_is_not_published_as_success"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Wrong canonical task ACK remains UNKNOWN/unbound; exact ACK binds execution to original node."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_read_identity_validation_precedes_provider_io",
+      "parameters": null,
+      "targets": [
+        "fixtures/test_rust_node_router.py::test_read_identity_validation_precedes_provider_io"
+      ],
+      "status": "RETAINED_PYTHON",
+      "intent": "Python NodeService facade normalizes identity and maps ValueError while invoking real Rust worker; invalid source_version values remain [None, empty, control character, integer, overlong]."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_service_scope_denial_cannot_call_provider",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::service_scope_denial_cannot_call_provider"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Wrong user rejects both read and status before any Provider or registry callback."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_reverse_authority_ack_identity_frame_limit_and_no_replay",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::reverse_authority_ack_identity_frame_limit_and_no_replay"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Exact node/request identity, command mapping, mismatch and lost ACK unknown, no resend; Unicode frame bound, operation and sharing denial before IO."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_cached_remote_request_rechecks_bilateral_scope_and_io_uncertainty",
+      "parameters": null,
+      "targets": [
+        "fixtures/test_rust_node_router.py::test_cached_remote_request_rechecks_bilateral_scope_and_io_uncertainty"
+      ],
+      "status": "RETAINED_PYTHON",
+      "intent": "Python AuthorizedRemoteClient preserves original TimeoutError identity and message while Rust rechecks current bilateral scopes; exact callback ownership remains Python-specific."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_helper_native_read_uses_exact_rust_metadata_and_project_scope",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::helper_native_read_uses_exact_rust_metadata_and_project_scope"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Real SQLite native index lookup, scope before context; missing provider exact absence, denied project no context, accepted exact node/thread, unavailable index UNKNOWN."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_helper_supervisor_registers_once_schedules_and_fails_closed_on_restart",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_router_qualification.rs::helper_supervisor_registers_once_schedules_and_fails_closed_on_restart"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Same real worker registers once and respects schedule; real process replacement with lost ACK deactivates, marks OFFLINE, no immediate retry."
+    },
+    {
+      "source": "fixtures/test_rust_node_router.py::test_packaged_helper_registers_reads_and_restarts_without_business_execution",
+      "parameters": null,
+      "targets": [
+        "fixtures/test_rust_node_router.py::test_packaged_helper_registers_reads_and_restarts_without_business_execution"
+      ],
+      "status": "RETAINED_PYTHON",
+      "intent": "Exercises actual Python release copier plus packaged shell launcher and Rust daemon over real paired TLS; no Python sources or retired DiscoveryRuntime, two process generations, no authority execution."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_release_node_identifies_its_network_contract",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::release_node_identifies_its_network_contract"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Invoke real clinx-node executable and require exact stdout/no stderr."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_rust_listener_can_rebind_after_process_restart_without_replaying_requests",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::rust_listener_can_rebind_after_process_restart_without_replaying_requests"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Real loopback TCP listener, old worker process exits, new worker binds exact same port; no replay and one call per generation."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_existing_openssl_and_rust_node_are_bidirectionally_wire_compatible[\\n]",
+      "parameters": "[\\n]",
+      "targets": [
+        "fixtures/test_rust_node_network.py::test_existing_openssl_and_rust_node_are_bidirectionally_wire_compatible[\\n]"
+      ],
+      "status": "RETAINED_PYTHON",
+      "intent": "Independent real Python/OpenSSL TLS 1.3 mutual-auth oracle in both directions; newline and EOF parameters retained exactly. Rust-to-Rust would not cover interoperability."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_existing_openssl_and_rust_node_are_bidirectionally_wire_compatible[]",
+      "parameters": "[]",
+      "targets": [
+        "fixtures/test_rust_node_network.py::test_existing_openssl_and_rust_node_are_bidirectionally_wire_compatible[]"
+      ],
+      "status": "RETAINED_PYTHON",
+      "intent": "Independent real Python/OpenSSL TLS 1.3 mutual-auth oracle in both directions; newline and EOF parameters retained exactly. Rust-to-Rust would not cover interoperability."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_rust_listener_reloads_revoked_trust_without_restart",
+      "parameters": null,
+      "targets": [
+        "fixtures/test_rust_node_network.py::test_rust_listener_reloads_revoked_trust_without_restart"
+      ],
+      "status": "RETAINED_PYTHON",
+      "intent": "Actual paired TLS listener with Python TrustedPeerStore revocation; no authority dispatch after server trust mutation."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_expired_certificate_is_rejected_before_dispatch",
+      "parameters": null,
+      "targets": [
+        "fixtures/test_rust_node_network.py::test_expired_certificate_is_rejected_before_dispatch"
+      ],
+      "status": "RETAINED_PYTHON",
+      "intent": "Independent cryptography certificate oracle uses original private key and expired validity; actual paired TLS rejects before Authority dispatch."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_historical_non_ascii_float_request_digest_survives_rust_reopen",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::historical_non_ascii_float_request_digest_survives_rust_reopen"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Seed independent legacy SQLite ledger from literal Python ensure_ascii/float bytes, preserve exact digest across process replacement and reject key reuse."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_distinct_rust_workers_claim_once_and_keep_unknown_after_restart",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::distinct_rust_workers_claim_once_and_keep_unknown_after_restart"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Two simultaneous real worker processes, eight claim callers, twenty claims, exactly NEW 1/IN_FLIGHT 19; collection lock never spans IPC; old workers exit and replacement keeps unknown."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_start_lost_reply_is_reconciled_exactly_without_reexecuting",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::start_lost_reply_is_reconciled_exactly_without_reexecuting"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Old registry process exits after IN_FLIGHT; new worker rejects foreign execution evidence and reconciles exact execution without start replay."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_concurrent_start_and_cancel_receipts_survive_node_restart",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::concurrent_start_and_cancel_receipts_survive_node_restart"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Eight concurrent real service.handle requests share durable registry, start/cancel once; payload conflict rejected; process replacement reads both cached receipts."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_full_wire_budget_unicode_keeps_exact_legacy_ledger_digest",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::full_wire_budget_unicode_keeps_exact_legacy_ledger_digest"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "60000 emoji valid UTF-8 public frame preserved through actual private IPC, legacy ASCII ledger digest, one prepare, durable exact receipt."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_independent_callback_fence_conflict_is_durably_blocked_before_execution",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::independent_callback_fence_conflict_is_durably_blocked_before_execution"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Occupied exact thread fence blocks before execution and persists FAILED receipt with same owner/code/side-effect."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_cancel_receipt_recovery_finishes_interrupted_independent_fence_release",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::cancel_receipt_recovery_finishes_interrupted_independent_fence_release"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Exit registry process after durable cancel receipt but before fence release; replacement returns receipt without cancel replay and next fence generation advances 1 to 2."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_receipt_write_failure_after_start_stays_unknown_and_never_replays",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::receipt_write_failure_after_start_stays_unknown_and_never_replays"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Real Rust service receives registry write failure through IPC callback after one start; unknown recovery later reads exact status and never restarts."
+    },
+    {
+      "source": "fixtures/test_rust_node_network.py::test_provider_unknown_and_consumed_reply_cannot_be_replayed_after_worker_loss",
+      "parameters": null,
+      "targets": [
+        "kernel/tests/node_network_qualification.rs::provider_unknown_and_consumed_reply_cannot_be_replayed_after_worker_loss"
+      ],
+      "status": "MIGRATED_RUST",
+      "intent": "Real Rust relay worker seals submission before failed Provider callback, exposes one UNKNOWN result, rejects consumed read/resubmit; replacement process has no stale response."
+    },
+    {
+      "source": "fixtures/test_native_transport_binary.py::test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart",
+      "parameters": {
+        "paired": false,
+        "mcp_entry": false
+      },
+      "targets": [
+        "kernel/tests/native_transport_qualification.rs::direct_local"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_native_transport_binary.py::test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart",
+      "parameters": {
+        "paired": false,
+        "mcp_entry": true
+      },
+      "targets": [
+        "kernel/tests/native_transport_qualification.rs::mcp_local"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_native_transport_binary.py::test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart",
+      "parameters": {
+        "paired": false,
+        "mcp_entry": "node"
+      },
+      "targets": [
+        "kernel/tests/native_transport_qualification.rs::node_local"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_native_transport_binary.py::test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart",
+      "parameters": {
+        "paired": true,
+        "mcp_entry": false
+      },
+      "targets": [
+        "kernel/tests/native_transport_qualification.rs::direct_paired"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_native_transport_binary.py::test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart",
+      "parameters": {
+        "paired": true,
+        "mcp_entry": true
+      },
+      "targets": [
+        "kernel/tests/native_transport_qualification.rs::mcp_paired"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_native_transport_binary.py::test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart",
+      "parameters": {
+        "paired": true,
+        "mcp_entry": "node"
+      },
+      "targets": [
+        "kernel/tests/native_transport_qualification.rs::node_paired"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_native_transport_binary.py::test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart",
+      "parameters": {
+        "paired": "routed",
+        "mcp_entry": false
+      },
+      "targets": [
+        "kernel/tests/native_transport_qualification.rs::direct_routed"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_native_transport_binary.py::test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart",
+      "parameters": {
+        "paired": "routed",
+        "mcp_entry": true
+      },
+      "targets": [
+        "kernel/tests/native_transport_qualification.rs::mcp_routed"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_native_transport_binary.py::test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart",
+      "parameters": {
+        "paired": "routed",
+        "mcp_entry": "node"
+      },
+      "targets": [
+        "kernel/tests/native_transport_qualification.rs::node_routed"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_process_exact_result_duplicate_requests_ack_queue_and_broadcasts",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_process_exact_result_duplicate_requests_ack_queue_and_broadcasts"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_lost_ack_exact_history_restart_and_no_process_replay",
+      "parameters": {
+        "lost": "input"
+      },
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_lost_input_ack_exact_history_restart_and_no_process_replay"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_lost_ack_exact_history_restart_and_no_process_replay",
+      "parameters": {
+        "lost": "result_ack"
+      },
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_lost_result_ack_exact_history_restart_and_no_process_replay"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_cancel_kills_running_process_and_preserves_exact_receipts",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_cancel_kills_running_process_and_preserves_exact_receipts"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_pre_dispatch_rejection_is_durable_and_never_executes",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_pre_dispatch_rejection_is_durable_and_never_executes"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_competing_workers_dispatch_one_process",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_competing_workers_dispatch_one_process"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_parallel_projects_keep_distinct_execution_and_turn_evidence",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_parallel_projects_keep_distinct_execution_and_turn_evidence"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_unknown_process_result_after_restart_is_never_replayed",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_unknown_process_result_after_restart_is_never_replayed"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_timeout_and_bounded_output_preserve_raw_evidence",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_timeout_and_bounded_output_preserve_raw_evidence"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_thread_creation_ack_unknown_survives_restart_without_recreate",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_thread_creation_ack_unknown_survives_restart_without_recreate"
+      ],
+      "python_original_retained": false
+    },
+    {
+      "source": "fixtures/test_rust_host_runtime.py::test_host_canonical_checkpoint_successor_runs_once_and_keeps_task_identity",
+      "parameters": {},
+      "targets": [
+        "kernel/tests/host_runtime_qualification.rs::host_canonical_checkpoint_successor_runs_once_and_keeps_task_identity"
+      ],
+      "python_original_retained": false
+    }
+  ],
+  "offline_contract": {
+    "original_python_lines": 411,
+    "replacement": "kernel/examples/check_execution_core_contract.rs",
+    "existing_semantics": "kernel/src/execution_core.rs",
+    "golden_cases": 35,
+    "objects": 7,
+    "original_malformed_table_variants": 12,
+    "new_tests": 3,
+    "fixture_and_semantic_source_unchanged": true,
+    "command_output_byte_identical": true
+  }
+}

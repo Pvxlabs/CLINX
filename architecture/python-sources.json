@@ -689,9 +689,9 @@
     },
     {
       "path": "scripts/check_execution_core_contract.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Replaced by kernel/examples/check_execution_core_contract.rs and existing execution_core semantics; no remaining Python consumers"
     },
     {
       "path": "scripts/check_tunnel_health.py",
@@ -907,9 +907,9 @@
     },
     {
       "path": "fixtures/test_rust_host_runtime.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Real Rust Authority/Host worker processes and isolated Provider protocol fault qualification."
+      "reason": "All 11 real-process Host qualification cases migrated to kernel/tests/host_runtime_qualification.rs with independent Provider oracle; no remaining Python consumer"
     },
     {
       "path": "fixtures/test_rust_provider_runtime.py",

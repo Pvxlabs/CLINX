@@ -2,7 +2,7 @@
 
 状态：FROZEN；契约标识 `CLINX_EXECUTION_CORE_V1`，版本 `1.0.0`，2026-10-22 UTC。
 冻结含义：本文、[转换表与 golden fixtures](../../fixtures/execution_core_v1.json)、
-[离线校验器](../../scripts/check_execution_core_contract.py) 共同定义规范；定向测试必须通过。
+[离线校验器](../../kernel/examples/check_execution_core_contract.rs) 共同定义规范；定向测试必须通过。
 这是后续实现的约束，不声称现行 V1 已实现所有 V2 原子性，也不授予执行权限。
 当前 V1 Owner/Finalizer/TaskRegistry 保持权威，shadow、runtime_control 和已有 Rust
 decision-kernel 均不因此获得生产权威。本阶段不启用它们，不实现或启动 Rust Runtime。
@@ -167,8 +167,11 @@ runtime foundation `RELEASED` Attempt、`REGISTERED` worker 等仅是原 slice �
 
 ## 9. 验收和后续边界
 
-`python3 scripts/check_execution_core_contract.py` 校验冻结表、golden fixtures；
-`python3 -m pytest -q test_execution_core_contract.py` 验证关键不变量与负面回放。
+`cargo run --locked --manifest-path kernel/Cargo.toml --example check_execution_core_contract`
+校验冻结表及原 35 个 golden fixtures；
+`cargo test --locked --manifest-path kernel/Cargo.toml --test execution_core_qualification`
+验证表结构拒绝条件与 facts 合并，`cargo test --locked --manifest-path kernel/Cargo.toml execution_core::tests`
+继续验证关键不变量和负面回放。旧 Python 校验器已退役，纯语义复用现役 Rust `execution_core`。
 JSON 是转换表与规范 fixture，不是生产 wire/schema 替换。校验器检查输入账本快照的一致性，
 不认证输入引用的真实性；`replay` 使用最小 envelope 验证 identity、sequence、版本、hash
 和转换。完整 Event 字段仍按第 2/7 节及各原 family reader 验证；不得直接导入这个离线格式。

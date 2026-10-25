@@ -22,6 +22,7 @@ Observer、四个观察 MCP 工具和设备 CLI 的正常装配现也由 Rust �
 Python 仍保留公开 API/DTO、显式 DEV_ONLY 资格后端及构建、资格和维护工具。
 当前边界和验证见 [资格与维护迁移](RUST_QUALIFICATION_MIGRATION.md)；
 每组 Python 的实际用途见 [Python 运行边界](PYTHON_RUNTIME_BOUNDARIES.md)。
+后续跨进程资格与重复离线校验器退役见 [原生资格迁移](RUST_NATIVE_QUALIFICATION_MIGRATION.md)。
 
 ## 布局
 
@@ -182,3 +183,7 @@ Collector 队列和 Task Authority metadata outbox 仍分别由 Rust 持久化�
 发布还要求 `desktop_socket_maintenance=RUST_DESKTOP_SOCKET_V1`，Python源码与依赖数组必须为空。
 现役 Python 资格分批迁入 `kernel/tests/*_qualification.rs`；原参数/断言映射与必要绑定smoke
 见 [资格与维护迁移](RUST_QUALIFICATION_MIGRATION.md)，不能通过取消测试降低统计量。
+Native Transport、Host、Node 路由和 Provider 的后续逐用例映射见
+[native-qualification-migrations.json](../architecture/native-qualification-migrations.json)。
+冻结契约的离线入口为 `cargo run --locked --manifest-path kernel/Cargo.toml --example check_execution_core_contract`；
+它复用现役 Rust `execution_core`，不构造第二状态机或发起运行时操作。

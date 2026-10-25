@@ -35,7 +35,8 @@
 | `transport/tunnel_reliability.py` | 仅保留原公开资格 API 的可注入时钟/进程 IO；正常 CLI exec Rust | 独立 `clinx-tunnel` 接管 supervisor、flock、进程组 drain、signal、health deadline 和持久恢复；该 Python 文件不进入运行发布包 |
 
 `tools/build/`、`scripts/` 中的构建、候选发布、安装与维护工具不在运行源码 profile 中；
-`fixtures/` 和 `tools/qualification/` 是资格代码。现役测试原断言保留；本轮只删除依赖已不存在阶段测试的封闭 runtime_lab 资格链，恢复点为前一 Git 提交。
+`fixtures/` 和 `tools/qualification/` 是资格代码。现役测试按原参数和断言映射迁入 Rust，
+Python 对象和独立 OpenSSL 互操作检查仍保留。封闭 runtime_lab 资格链已在早前提交退役。
 历史 forwarding builder/deployer 仍用于精确旧产物恢复，并拒绝拿当前包冒充旧平铺 release。
 源清单的 DEAD 条目记录已删除模块，不会拷入新 Rust release 或 Helper。
 
@@ -51,3 +52,6 @@ Rust release 的 `rust` Python profile 现为空；安装维护由 `clinx-provid
 旧 monitor profile 仅供兼容资格，不是当前 App 资源。构建/维护工具本身仍需继续迁移。
 本轮将一组现役 Python 核心资格迁入 Rust，并保留依赖 Python 对象行为的最小smoke，
 逐用例映射与删除量见 [资格与维护迁移](RUST_QUALIFICATION_MIGRATION.md)。
+后续 Native/Host/Node/Provider 跨进程资格与 411 行旧离线契约校验器的退役，
+见 [原生资格迁移](RUST_NATIVE_QUALIFICATION_MIGRATION.md)。剩余 fixture 共享的 Python
+Provider wire helper 仍有消费者，不能随测试主体一并删除；它不进入任何原生运行包。
