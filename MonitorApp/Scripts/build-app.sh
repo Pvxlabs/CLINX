@@ -26,13 +26,15 @@ case "$provider_target" in
     aarch64-apple-darwin|x86_64-apple-darwin) ;;
     *) echo 'A native macOS Rust toolchain is required to build the Provider helper.' >&2; exit 1 ;;
 esac
-cargo build --release --locked --target "$provider_target" --manifest-path ../kernel/Cargo.toml --bin clinx-provider
+cargo build --release --locked --target "$provider_target" --manifest-path ../kernel/Cargo.toml --bin clinx-provider --bin clinx-node
 provider_binary_dir=$(cargo metadata --no-deps --format-version 1 --manifest-path ../kernel/Cargo.toml | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
-rm -f "$app_dir/Contents/Resources/clinx-provider"
-cp "$provider_binary_dir/$provider_target/release/clinx-provider" "$app_dir/Contents/Helpers/clinx-provider"
-chmod 755 "$app_dir/Contents/Helpers/clinx-provider"
-codesign --force --sign "$signing_identity" --timestamp=none "$app_dir/Contents/Helpers/clinx-provider"
-codesign --verify --strict "$app_dir/Contents/Helpers/clinx-provider"
+for helper in clinx-provider clinx-node; do
+    rm -f "$app_dir/Contents/Resources/$helper"
+    cp "$provider_binary_dir/$provider_target/release/$helper" "$app_dir/Contents/Helpers/$helper"
+    chmod 755 "$app_dir/Contents/Helpers/$helper"
+    codesign --force --sign "$signing_identity" --timestamp=none "$app_dir/Contents/Helpers/$helper"
+    codesign --verify --strict "$app_dir/Contents/Helpers/$helper"
+done
 cp Scripts/CLINXNodeService "$app_dir/Contents/Resources/CLINXNodeService"
 chmod 755 "$app_dir/Contents/Resources/CLINXNodeService"
 

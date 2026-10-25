@@ -82,7 +82,7 @@ def parser():
 
 def main(argv=None) -> int:
     args = parser().parse_args(argv)
-    from clinx.authority.rust_integration import enabled as rust_authority_enabled
+    from clinx.authority.rust_authority import enabled as rust_authority_enabled
     if rust_authority_enabled() and (getattr(args, 'local_canonical_db', None)
                                      or getattr(args, 'observation_canonical_db', None)):
         raise ValueError('RUST_AUTHORITY_REQUIRES_REMOVAL_OF_LEGACY_CANONICAL_DB_ARGUMENTS')
@@ -136,7 +136,7 @@ def main(argv=None) -> int:
     observations = ObservationWriter(args.observations) if args.observations else None
     authority = None
     if rust_authority_enabled():
-        from clinx.authority.rust_integration import Commands
+        from clinx.authority.rust_authority import Commands
         authority = Commands.from_env()
     service = CentreService(PairedTLS(identity, peers), registry, NodeAuthorizationStore(args.state), stale_after=args.stale_after, observations=observations, authority=authority)
     server = service.server(address=args.bind, port=args.port)

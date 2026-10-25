@@ -28,7 +28,7 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     (base/'manifest.json').write_text(json.dumps(dict(files={
         p: hashlib.sha256(data).hexdigest() for p, data in previous.items()})))
     binaries = {}
-    for key in ('runtime', 'mcp_relay', 'native_transport', 'provider', 'mcp'):
+    for key in ('runtime', 'mcp_relay', 'native_transport', 'provider', 'mcp', 'node'):
         path = tmp_path/key
         path.write_bytes(key.encode())
         path.chmod(0o755)
@@ -46,6 +46,8 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     stage.stage_desktop(args, SOURCE_ROOT)
     receipt = json.loads(args.output.read_text())
     release = Path(receipt['release'])
+    assert receipt['node_api'] == 'RUST_NODE_API_V1'
+    assert (release/'clinx-node').read_bytes() == b'node'
     assert receipt['mcp_runtime'] == 'RUST_MCP_V1'
     assert (release/'clinx-mcp').read_bytes() == b'mcp'
     assert (release/'control/clinx/mcp/registry.json').is_file()

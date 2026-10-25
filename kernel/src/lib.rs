@@ -1632,3 +1632,6 @@ pub mod mcp;
 pub mod mcp_api;
 pub mod node_provider;
 pub mod workspace_probe;
+
+pub mod node_api;
+pub mod request_pipe;

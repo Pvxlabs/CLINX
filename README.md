@@ -242,10 +242,11 @@ the existing TOML at build/install time using
 existing authority; the adapter does not create or migrate its database. A fresh
 clone does not configure an authority or reproduce an installed service.
 
-macOS Helper uses the paired Centre-to-Rust Authority route. Node request mapping,
-authenticated mTLS transport, discovery and observation still execute Python;
-these are runtime responsibilities awaiting Rust migration. The Rust MCP IPC
-client is local to the Centre and does not supply cross-Mac authentication.
+macOS Helper delegates Node selectors, canonical handoff and business request mapping
+to Rust `clinx-node`, using the paired Centre-to-Rust Authority route. Authenticated
+mTLS transport, discovery and observation still execute Python and await migration.
+The normal Helper no longer constructs the Python integration/Registry/Dispatcher.
+The Rust MCP IPC client is local to the Centre and does not supply cross-Mac authentication.
 
 ## Boundaries and status
 
@@ -268,4 +269,5 @@ P620 uses one canonical development repository. See
 for the workspace lifecycle and recovery evidence.
 
 The Rust MCP request/read migration and remaining Python runtime boundaries are recorded in
-[the MCP migration receipt](docs/RUST_MCP_RUNTIME_MIGRATION.md).
+[the MCP migration receipt](docs/RUST_MCP_RUNTIME_MIGRATION.md). Helper routing and
+the exact verification limits are recorded in [the Node API migration](docs/RUST_NODE_API_MIGRATION.md).

@@ -1,0 +1,94 @@
+{
+  "date": "2026-10-25",
+  "base_head": "dca2d7d1ef5b4a7ccc5f3f92d28ba7b6ad2839c6",
+  "scope": "Rust Node execution API and compatibility request projection",
+  "deployment": "NOT_DEPLOYED",
+  "python_target_below_25_percent": "NOT_ACHIEVED",
+  "scales": {
+    "Python": {
+      "before": {
+        "files": 101,
+        "lines": 21231,
+        "bytes": 1035146
+      },
+      "after": {
+        "files": 103,
+        "lines": 21147,
+        "bytes": 1026228
+      }
+    },
+    "Rust": {
+      "before": {
+        "files": 37,
+        "lines": 17591,
+        "bytes": 702967
+      },
+      "after": {
+        "files": 40,
+        "lines": 18254,
+        "bytes": 728467
+      }
+    },
+    "Swift": {
+      "before": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      "after": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      }
+    },
+    "ACTIVE_RUNTIME_Python": {
+      "before": {
+        "files": 53,
+        "lines": 13071,
+        "bytes": 651335
+      },
+      "after": {
+        "files": 54,
+        "lines": 12819,
+        "bytes": 632578
+      }
+    }
+  },
+  "validation": {
+    "rust_passed": 82,
+    "node_vectors": 47,
+    "tests": {
+      "fixtures-baseline": {
+        "passed": 76
+      },
+      "fixtures-release": {
+        "passed": 83
+      },
+      "full-baseline-continued": {
+        "error": 104,
+        "passed": 295,
+        "failure": 31,
+        "skipped": 2
+      },
+      "full-after-continued": {
+        "error": 104,
+        "passed": 295,
+        "failure": 31,
+        "skipped": 2
+      }
+    }
+  },
+  "original_local_tests": {
+    "files": 124,
+    "unchanged": true
+  },
+  "full_local_suite_outcome_changes": {},
+  "mac_native_build_signing_physical_execution": "NOT_VERIFIED",
+  "known_parallel_rust_failure": "WRITER_ALREADY_ACTIVE; original test unchanged; final complete serial run passed",
+  "evidence_directory": "/data/artifacts/clinx-node-api-rust-20261025",
+  "remaining_python_runtime": [
+    "Node/Discovery registration, trust, mTLS and Provider chunk protocol",
+    "ObservationDirectory, monitoring projection, native history and association",
+    "configuration and read-only compatibility protocol clients"
+  ]
+}

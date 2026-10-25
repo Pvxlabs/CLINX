@@ -232,3 +232,23 @@ python -B -m pytest -p no:cacheprovider fixtures --tb=short \
 
 Keep test HOME/XDG/TMPDIR private and use the pinned dev requirements, including
 the native OPAQUE wheel. Do not use live opt-ins or real business tasks.
+
+## Rust Node execution API
+
+`clinx-node` is the private Helper request process. Set
+`CLINX_NODE_BINARY=<task-target>/release/clinx-node` alongside the three existing
+binary variables above when running fixtures from source. Normal packages find
+the companion binary in the release root or App `Contents/Helpers/`; source
+execution requires an explicit tested binary or PATH entry and never compiles
+or falls back automatically. The local-test runner preserves PATH; prepend the
+task binary directory before invoking it.
+
+`fixtures/node_api_v1.json` freezes 47 Node decision and callback sequences from
+`dca2d7d`'s Python implementation. The existing 35 MCP/API vectors remain unchanged.
+`fixtures/test_native_transport_binary.py` retains its direct/MCP cases and adds
+Helper cases through paired reverse Authority routing, canonical predecessor
+adoption, completion, lost ACK, restart, cancellation and concurrent tasks.
+These use a protocol Provider fixture and temporary repositories, not physical
+Mac or real business tasks. Package fixtures exercise both copied source profiles
+without the source checkout or PYTHONPATH. Full evidence and historical failures:
+[Rust Node API migration](RUST_NODE_API_MIGRATION.md).

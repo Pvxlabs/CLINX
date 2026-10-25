@@ -1,0 +1,2201 @@
+{
+  "source": "dca2d7d1ef5b4a7ccc5f3f92d28ba7b6ad2839c6 Python RustNodeExecutionAdapter",
+  "vectors": [
+    {
+      "operation": "prepare",
+      "arguments": {
+        "project": "project",
+        "host": "air",
+        "prompt": "Exact input",
+        "task_action": "create",
+        "_ignored": "network extra"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "prepared_execution_ref": "prepared_exact",
+        "node_id": "air"
+      },
+      "calls": [
+        {
+          "method": "prepare_execution",
+          "arguments": {
+            "project": "project",
+            "host": "air",
+            "prompt": "Exact input",
+            "task_action": "create"
+          },
+          "result": {
+            "prepared_execution_ref": "prepared_exact"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "project": "project",
+        "host": "wrong",
+        "prompt": "Exact input",
+        "task_action": "create",
+        "_ignored": "network extra"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "NODE_TARGET_MISMATCH",
+      "calls": []
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "project": "wrong",
+        "host": "air",
+        "prompt": "Exact input",
+        "task_action": "create",
+        "_ignored": "network extra"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXECUTION_TARGET_DENIED",
+      "calls": []
+    },
+    {
+      "operation": "start",
+      "arguments": {
+        "prepared_execution_ref": "prepared_exact",
+        "execution_ref": "exec_exact",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "execution_ref": "exec_exact",
+        "task_ref": "task_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "status": "RUNNING",
+        "resource_state": "HELD",
+        "node_id": "air",
+        "operation_state": "QUEUED"
+      },
+      "calls": [
+        {
+          "method": "prepared",
+          "arguments": {
+            "reference": "prepared_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "task_ref": "task_exact",
+            "new_task": true,
+            "execution_ref": null
+          }
+        },
+        {
+          "method": "start_execution",
+          "arguments": {
+            "prepared_execution_ref": "prepared_exact",
+            "approved": true,
+            "expected_request_hash": null,
+            "expected_task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "start",
+      "arguments": {
+        "prepared_execution_ref": "prepared_exact",
+        "execution_ref": "exec_exact",
+        "approved": true,
+        "host": "wrong"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "execution_ref": "exec_exact",
+        "task_ref": "task_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "status": "RUNNING",
+        "resource_state": "HELD",
+        "node_id": "air",
+        "operation_state": "QUEUED"
+      },
+      "calls": [
+        {
+          "method": "prepared",
+          "arguments": {
+            "reference": "prepared_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "task_ref": "task_exact",
+            "new_task": true,
+            "execution_ref": null
+          }
+        },
+        {
+          "method": "start_execution",
+          "arguments": {
+            "prepared_execution_ref": "prepared_exact",
+            "approved": true,
+            "expected_request_hash": null,
+            "expected_task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "start",
+      "arguments": {
+        "prepared_execution_ref": "prepared_exact",
+        "execution_ref": "exec_exact",
+        "approved": true,
+        "project": "wrong"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "execution_ref": "exec_exact",
+        "task_ref": "task_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "status": "RUNNING",
+        "resource_state": "HELD",
+        "node_id": "air",
+        "operation_state": "QUEUED"
+      },
+      "calls": [
+        {
+          "method": "prepared",
+          "arguments": {
+            "reference": "prepared_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "task_ref": "task_exact",
+            "new_task": true,
+            "execution_ref": null
+          }
+        },
+        {
+          "method": "start_execution",
+          "arguments": {
+            "prepared_execution_ref": "prepared_exact",
+            "approved": true,
+            "expected_request_hash": null,
+            "expected_task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "status",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "host": "air",
+        "project": "project",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "execution_ref": "exec_exact",
+        "task_ref": "task_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "status": "RUNNING",
+        "resource_state": "HELD",
+        "node_id": "air"
+      },
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "status",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "host": "wrong",
+        "project": "project",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "NODE_TARGET_MISMATCH",
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "status",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "host": "air",
+        "project": "wrong",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXECUTION_TARGET_DENIED",
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "cancel",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "host": "air",
+        "project": "project",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "execution_ref": "exec_exact",
+        "task_ref": "task_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "status": "RUNNING",
+        "resource_state": "HELD",
+        "node_id": "air",
+        "operation_state": "CANCELLATION_PENDING"
+      },
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        },
+        {
+          "method": "cancel_execution",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "approved": true
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "cancel",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "host": "wrong",
+        "project": "project",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "NODE_TARGET_MISMATCH",
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "cancel",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "host": "air",
+        "project": "wrong",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXECUTION_TARGET_DENIED",
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "reconcile",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "host": "air",
+        "project": "project",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "execution_ref": "exec_exact",
+        "task_ref": "task_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "status": "RUNNING",
+        "resource_state": "HELD",
+        "node_id": "air",
+        "reconciliation": "RUST_TRANSPORT_PENDING"
+      },
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "reconcile",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "host": "wrong",
+        "project": "project",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "NODE_TARGET_MISMATCH",
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "reconcile",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "host": "air",
+        "project": "wrong",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXECUTION_TARGET_DENIED",
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "RUNNING",
+            "resource_state": "HELD"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "context",
+      "arguments": {
+        "project": "project",
+        "host": "air",
+        "task_ref": "task_exact",
+        "recent_turns": 2,
+        "max_bytes": 2000,
+        "cursor": "opaque"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "context": "exact",
+        "node_id": "air"
+      },
+      "calls": [
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        },
+        {
+          "method": "get_context",
+          "arguments": {
+            "project": "project",
+            "host": "air",
+            "task_ref": "task_exact",
+            "recent_turns": 2,
+            "max_bytes": 2000,
+            "cursor": "opaque"
+          },
+          "result": {
+            "context": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "context",
+      "arguments": {
+        "project": "project",
+        "host": "wrong",
+        "task_ref": "task_exact",
+        "recent_turns": 2,
+        "max_bytes": 2000,
+        "cursor": "opaque"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "NODE_TARGET_MISMATCH",
+      "calls": []
+    },
+    {
+      "operation": "context",
+      "arguments": {
+        "project": "wrong",
+        "host": "air",
+        "task_ref": "task_exact",
+        "recent_turns": 2,
+        "max_bytes": 2000,
+        "cursor": "opaque"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXECUTION_TARGET_DENIED",
+      "calls": [
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "project": "project",
+        "host": "air",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "exact_turn_id": "predecessor"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "adoption_status": "ADOPTED",
+        "task_ref": "task_native",
+        "node_id": "air"
+      },
+      "calls": [
+        {
+          "method": "adopt_conversation",
+          "arguments": {
+            "project": "project",
+            "host": "air",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "exact_turn_id": "predecessor"
+          },
+          "result": {
+            "adoption_status": "ADOPTED",
+            "task_ref": "task_native"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "project": "project",
+        "host": "wrong",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "exact_turn_id": "predecessor"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "NODE_TARGET_MISMATCH",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "project": "wrong",
+        "host": "air",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "exact_turn_id": "predecessor"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": [
+          "project"
+        ],
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXECUTION_TARGET_DENIED",
+      "calls": []
+    },
+    {
+      "operation": "cancel",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "execution_ref": "exec_exact",
+        "task_ref": "task_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "status": "CANCELLED",
+        "resource_state": "HELD",
+        "node_id": "air",
+        "operation_state": "CANCELLATION_PENDING"
+      },
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "CANCELLED",
+            "resource_state": "HELD"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        },
+        {
+          "method": "cancel_execution",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "approved": true
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "CANCELLED",
+            "resource_state": "HELD"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "cancel",
+      "arguments": {
+        "execution_ref": "exec_exact",
+        "approved": true
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "execution_ref": "exec_exact",
+        "task_ref": "task_exact",
+        "thread_id": "11111111-2222-3333-4444-555555555555",
+        "native_turn_id": "turn_exact",
+        "status": "CANCELLED",
+        "resource_state": "RELEASED",
+        "node_id": "air",
+        "operation_state": "CANCELLED"
+      },
+      "calls": [
+        {
+          "method": "get_status",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "task_ref": null
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "CANCELLED",
+            "resource_state": "RELEASED"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_exact"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        },
+        {
+          "method": "cancel_execution",
+          "arguments": {
+            "execution_ref": "exec_exact",
+            "approved": true
+          },
+          "result": {
+            "execution_ref": "exec_exact",
+            "task_ref": "task_exact",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "native_turn_id": "turn_exact",
+            "status": "CANCELLED",
+            "resource_state": "RELEASED"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "prepared_execution_ref": "prepared_exact",
+        "node_id": "air"
+      },
+      "calls": [
+        {
+          "method": "adopt_conversation",
+          "arguments": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "title": "Original",
+            "exact_turn_id": "predecessor",
+            "canonical_identity": {
+              "node_id": "air",
+              "host": "air",
+              "thread_id": "11111111-2222-3333-4444-555555555555",
+              "user_scope": "alice",
+              "cwd": "/fixture",
+              "title": "Original",
+              "task_id": "task_native",
+              "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+            }
+          },
+          "result": {
+            "adoption_status": "ADOPTED",
+            "task_ref": "task_native"
+          }
+        },
+        {
+          "method": "task",
+          "arguments": {
+            "reference": "task_native"
+          },
+          "result": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555"
+          }
+        },
+        {
+          "method": "prepare_execution",
+          "arguments": {
+            "prompt": "Exact native input",
+            "task_ref": "task_native",
+            "host": "air"
+          },
+          "result": {
+            "prepared_execution_ref": "prepared_exact"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": null,
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_SCOPE_DENIED",
+      "calls": []
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "bob",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_IDENTITY_CONFLICT",
+      "calls": []
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": null,
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXACT_PREDECESSOR_TURN_REQUIRED",
+      "calls": []
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input",
+        "thread_id": "wrong"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_IDENTITY_CONFLICT",
+      "calls": []
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input",
+        "project": "wrong"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXECUTION_TARGET_DENIED",
+      "calls": []
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_ADOPTION_PENDING",
+      "calls": [
+        {
+          "method": "adopt_conversation",
+          "arguments": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "title": "Original",
+            "exact_turn_id": "predecessor",
+            "canonical_identity": {
+              "node_id": "air",
+              "host": "air",
+              "thread_id": "11111111-2222-3333-4444-555555555555",
+              "user_scope": "alice",
+              "cwd": "/fixture",
+              "title": "Original",
+              "task_id": "task_native",
+              "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+            }
+          },
+          "result": {
+            "adoption_status": "PENDING",
+            "task_ref": "task_native"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": null,
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_SCOPE_DENIED",
+      "calls": []
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "bob",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_IDENTITY_CONFLICT",
+      "calls": []
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": null,
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXACT_PREDECESSOR_TURN_REQUIRED",
+      "calls": []
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input",
+        "thread_id": "wrong"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_IDENTITY_CONFLICT",
+      "calls": []
+    },
+    {
+      "operation": "prepare",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input",
+        "project": "wrong"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXECUTION_TARGET_DENIED",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "adoption_status": "ADOPTED",
+        "task_ref": "task_native",
+        "node_id": "air"
+      },
+      "calls": [
+        {
+          "method": "adopt_conversation",
+          "arguments": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "title": "Original",
+            "exact_turn_id": "predecessor",
+            "canonical_identity": {
+              "node_id": "air",
+              "host": "air",
+              "thread_id": "11111111-2222-3333-4444-555555555555",
+              "user_scope": "alice",
+              "cwd": "/fixture",
+              "title": "Original",
+              "task_id": "task_native",
+              "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+            }
+          },
+          "result": {
+            "adoption_status": "ADOPTED",
+            "task_ref": "task_native"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": null,
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_SCOPE_DENIED",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "bob",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_IDENTITY_CONFLICT",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": null,
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXACT_PREDECESSOR_TURN_REQUIRED",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input",
+        "thread_id": "wrong"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_IDENTITY_CONFLICT",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input",
+        "project": "wrong"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXECUTION_TARGET_DENIED",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "result": {
+        "adoption_status": "PENDING",
+        "task_ref": "task_native",
+        "node_id": "air"
+      },
+      "calls": [
+        {
+          "method": "adopt_conversation",
+          "arguments": {
+            "host": "air",
+            "project": "project",
+            "thread_id": "11111111-2222-3333-4444-555555555555",
+            "title": "Original",
+            "exact_turn_id": "predecessor",
+            "canonical_identity": {
+              "node_id": "air",
+              "host": "air",
+              "thread_id": "11111111-2222-3333-4444-555555555555",
+              "user_scope": "alice",
+              "cwd": "/fixture",
+              "title": "Original",
+              "task_id": "task_native",
+              "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+            }
+          },
+          "result": {
+            "adoption_status": "PENDING",
+            "task_ref": "task_native"
+          }
+        }
+      ]
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": null,
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_SCOPE_DENIED",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "bob",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_IDENTITY_CONFLICT",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": null,
+        "prompt": "Exact native input"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXACT_PREDECESSOR_TURN_REQUIRED",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input",
+        "thread_id": "wrong"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "CANONICAL_HANDOFF_IDENTITY_CONFLICT",
+      "calls": []
+    },
+    {
+      "operation": "adopt",
+      "arguments": {
+        "canonical_identity": {
+          "node_id": "air",
+          "host": "air",
+          "thread_id": "11111111-2222-3333-4444-555555555555",
+          "user_scope": "alice",
+          "cwd": "/fixture",
+          "title": "Original",
+          "task_id": "task_native",
+          "first_provenance_json": "{\"node\": \"air\", \"node_fingerprint\": \"key\"}"
+        },
+        "_canonical_owner": {
+          "owner": "air",
+          "user": "alice",
+          "fingerprint": "key"
+        },
+        "exact_turn_id": "predecessor",
+        "prompt": "Exact native input",
+        "project": "wrong"
+      },
+      "config": {
+        "node_id": "air",
+        "projects": [
+          {
+            "repo": "/fixture",
+            "project_alias": "project"
+          }
+        ],
+        "allowed_threads": null,
+        "allowed_projects": null,
+        "allowed_new_projects": null,
+        "allowed_cancel_projects": null
+      },
+      "error": "EXECUTION_TARGET_DENIED",
+      "calls": []
+    }
+  ]
+}

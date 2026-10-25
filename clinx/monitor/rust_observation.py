@@ -3,7 +3,7 @@ from pathlib import Path
 
 from clinx.monitor.observation_source import CodexObservationSource, order
 from clinx.authority.rust_authority import RustAuthorityError
-from clinx.authority.rust_integration import Commands
+from clinx.authority.rust_authority import Commands
 
 
 class RustObservationSource(CodexObservationSource):

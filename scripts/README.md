@@ -2,13 +2,13 @@
 
 现役任务状态由 Rust Authority 提供。Rust release 的 Python 源文件清单位于
 [runtime_sources.py](../tools/build/runtime_sources.py)，不再复制整个仓库。构建器
-`stage_rust_release.py --desktop-base-release <installed-release> --source <checkout> --runtime-binary <tested-authority> --mcp-relay-binary <tested-relay> --native-transport-binary <tested-native-worker> --provider-binary <tested-provider-exchange> --mcp-binary <tested-mcp-server> --output <receipt>`
+`stage_rust_release.py --desktop-base-release <installed-release> --source <checkout> --runtime-binary <tested-authority> --mcp-relay-binary <tested-relay> --native-transport-binary <tested-native-worker> --provider-binary <tested-provider-exchange> --mcp-binary <tested-mcp-server> --node-binary <tested-node-api> --output <receipt>`
 使用现有不可变 release 的 native 依赖，刷新完整的 Rust adapter 源码集合并移除旧 Python
 Owner、Registry、实验包和独立 Provider。必须同时提供已验证的 Authority、Rust relay、native Transport、Provider exchange 和 MCP server binary；
 `--replace-source` 仅保留为清单成员校验兼容参数，不再代表部分源码覆盖。
 该命令只生成候选，不选择或启动服务。独立 Provider 的旧 bootstrap 打包分支已退役。
 候选标记 `host_transport=RUST_HOST_V1`、`provider_exchange=RUST_PROVIDER_V1`、
-`workspace_observer=RUST_PROVIDER_V1`、`mcp_runtime=RUST_MCP_V1`。服务模板直接执行 Rust native/Host worker；
+`workspace_observer=RUST_PROVIDER_V1`、`mcp_runtime=RUST_MCP_V1`、`node_api=RUST_NODE_API_V1`。服务模板直接执行 Rust native/Host worker；
 `python -m tools.build.host_runtime_config --config <toml> --output <new-json>`
 仅在构建/安装时编译 Host 配置。
 `python -m tools.build.mcp_runtime_config --config <toml> --output <new-json>` 编译 MCP 配置；

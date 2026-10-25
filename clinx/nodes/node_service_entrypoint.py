@@ -136,11 +136,11 @@ def main() -> int:
         execution_config = config.get("execution_config")
         if local_scope.execute_tasks and isinstance(execution_config, str) and execution_config:
             try:
-                from clinx.authority.rust_integration import RustIntegration, Commands
+                from clinx.authority.rust_authority import Commands
                 from clinx.contracts.runtime_config import BridgeConfig
                 from clinx.nodes.node_runtime import NodeAuthorityClient
-                execution = RustNodeExecutionAdapter(RustIntegration(BridgeConfig.load(Path(execution_config)),
-                    Commands(NodeAuthorityClient(registration, lambda: active_scope[0]))), identity.public["node_id"],
+                execution = RustNodeExecutionAdapter.from_config(BridgeConfig.load(Path(execution_config)),
+                    Commands(NodeAuthorityClient(registration, lambda: active_scope[0])), identity.public["node_id"],
                     allowed_threads=config.get('execution_threads'),
                     allowed_projects=tuple(p.casefold() for p in config['execution_projects']) if config.get('execution_projects') is not None else None,
                     allowed_new_projects=tuple(p.casefold() for p in config['execution_new_projects']) if config.get('execution_new_projects') is not None else None,

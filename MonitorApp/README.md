@@ -186,3 +186,9 @@ configured private HTTPS route (currently Tailnet HTTPS on P620), which must als
 be reachable. Discovery does not cross routed VPN subnets. See
 [the implementation contract](../docs/monitor/LAN_PAIRING_SPEC.md) and
 [historical acceptance archive](../docs/README.md#历史资料恢复).
+
+Helper 执行业务 API 由同源码构建的 Rust `clinx-node` 承担，Provider 协议由
+`clinx-provider` 承担；两者在本机 Mac 架构编译、放入 `Contents/Helpers/` 并分别签名。
+`CLINXNodeService` 固定 bundle 内路径；缺失二进制时不回退到 Python 业务实现。
+Python 仍负责既有配对、mTLS、发现和观察网络运行时。迁移验证与未验证边界见
+[Node API 迁移](../docs/RUST_NODE_API_MIGRATION.md)。

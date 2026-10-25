@@ -38,6 +38,9 @@ def main():
     if (manifest.get('provider_exchange') != 'RUST_PROVIDER_V1'
             or 'clinx-provider' not in manifest['files']):
         raise RuntimeError('QUALIFIED_RUST_PROVIDER_REQUIRED')
+    if (manifest.get('node_api') != 'RUST_NODE_API_V1'
+            or 'clinx-node' not in manifest['files']):
+        raise RuntimeError('QUALIFIED_RUST_NODE_API_REQUIRED')
     if (manifest.get('mcp_runtime') != 'RUST_MCP_V1'
             or 'clinx-mcp' not in manifest['files']):
         raise RuntimeError('QUALIFIED_RUST_MCP_REQUIRED')

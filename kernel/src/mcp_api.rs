@@ -94,6 +94,16 @@ pub fn operation_id() -> Result<String> {
 /// Only observations. Implementations never resume/start a Provider or claim a writer.
 pub trait Reads {
     fn thread(&mut self, tid: &str) -> Result<Value>;
+    fn cwd(&mut self, tid: &str) -> Result<Value> {
+        let native = self.thread(tid)?;
+        if native["id"] != tid {
+            return Err("NATIVE_OBSERVATION_IDENTITY_CONFLICT".into());
+        }
+        match text(&native, "cwd") {
+            Some(c) if c.starts_with('/') && !c.contains('\0') => Ok(json!(c)),
+            _ => Err("WORKSPACE_CWD_UNREADABLE".into()),
+        }
+    }
     fn page(&mut self, tid: &str, limit: u64, cursor: Option<&str>) -> Result<Value>;
     fn desktop(
         &mut self,
@@ -195,16 +205,13 @@ impl<A: Authority, R: Reads> Api<A, R> {
         })
     }
     fn cwd(&mut self, tid: &str) -> ApiResult {
-        let native = self.native(tid)?;
-        if native["id"] != tid {
-            return Err("NATIVE_OBSERVATION_IDENTITY_CONFLICT".into());
-        }
-        match text(&native, "cwd") {
-            Some(c) if c.starts_with('/') && !c.contains('\0') => Ok(json!(c)),
-            _ => Err("WORKSPACE_CWD_UNREADABLE".into()),
-        }
+        self.reads.cwd(tid).map_err(|code| Error {
+            code,
+            operation_id: None,
+            provider: true,
+        })
     }
-    fn tasks(&mut self) -> std::result::Result<Vec<Value>, Error> {
+    pub fn tasks(&mut self) -> std::result::Result<Vec<Value>, Error> {
         let mut after = String::new();
         let mut tasks = vec![];
         loop {
@@ -223,7 +230,7 @@ impl<A: Authority, R: Reads> Api<A, R> {
             }
         }
     }
-    fn task(&mut self, reference: &Value) -> ApiResult {
+    pub fn task(&mut self, reference: &Value) -> ApiResult {
         self.tasks()?
             .into_iter()
             .find(|t| t["task_id"] == *reference)

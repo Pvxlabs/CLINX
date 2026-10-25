@@ -8,17 +8,18 @@ Host、Transport、Node 与 Discovery 的长期核心；Swift 负责 macOS UI；
 Mac 的旧 Bridge/Registry/M9 核心和 Python Dispatcher/Host runner 已删除。
 Node 的精确 Provider 请求校验、协议调用和 workspace probe 也已迁 Rust；
 正常业务 MCP framing、请求映射和精确 Provider 上下文读取已由 Rust `clinx-mcp` 接管；
-Node/Discovery 网络协议、配对传输、观察目录及其余调用端请求映射仍有 Python 运行时。
+Node 的目标校验、canonical handoff、prepare/start/cancel/context 请求映射已由 Rust `clinx-node` 接管；
+Node/Discovery 网络协议、配对传输和观察目录仍有 Python 运行时。
 
 ## 布局
 
 | 位置 | 当前职责 | 分类与目标 |
 | --- | --- | --- |
-| `kernel/` | Rust Authority、原生与 Host 执行/Provider worker、状态/持久化/幂等/恢复、MCP stdio/API 与精确上下文读取、stdio byte relay、Node Provider exchange/workspace probe | ACTIVE_RUNTIME；长期核心 |
+| `kernel/` | Rust Authority、原生与 Host 执行/Provider worker、状态/持久化/幂等/恢复、MCP stdio/API 与精确上下文读取、stdio byte relay、Node Provider exchange/workspace probe、Node execution API | ACTIVE_RUNTIME；长期核心 |
 | `native/opaque_pairing/` | Rust OPAQUE 原生配对依赖 | ACTIVE_RUNTIME |
 | `MonitorApp/` | Swift macOS UI、App 构建入口、Helper shell launcher | ACTIVE_RUNTIME；UI 留在 Swift |
 | `clinx/contracts/` | 公共配置、身份选择、策略与响应契约 | ACTIVE_RUNTIME；运行职责待迁 Rust |
-| `clinx/authority/` | 当前 Python Rust IPC 客户端、请求映射、状态读取 | ACTIVE_RUNTIME；不等于 Rust Authority 实现 |
+| `clinx/authority/` | 当前 Python IPC/配对请求转发、兼容 API 与只读 Provider 协议客户端 | ACTIVE_RUNTIME；业务请求选择与投影已迁 Rust |
 | `clinx/mcp/` | 观察/显式维护用兼容 codec、Rust CLI launcher、共享公开 schema 数据 | 观察 codec 仍 ACTIVE_RUNTIME；正常业务入口已迁 Rust |
 | `clinx/provider/` | Codex 协议、原生历史、精确证据读取和观测判断 | ACTIVE_RUNTIME；待迁 Rust |
 | `clinx/host/` | 安装配置的 workflow schema；冻结的操作目录参考仅用于资格验证 | 配置解析仍 ACTIVE_RUNTIME；执行、投递、恢复已迁 Rust |
@@ -53,15 +54,15 @@ Monitor profile 同样禁止 COMPAT；新增文件不会通过目录 glob 自动
 增量 App 构建清除旧 Python 拷贝目录，保留解释器、原生 wheel 和 Swift 资源。
 
 `scripts/stage_rust_release.py` 需要匹配新布局、已测试的 `--runtime-binary` 和
-`--mcp-relay-binary`、`--native-transport-binary`、`--provider-binary`、`--mcp-binary`。不能只更换 Python 文件再继承引用旧路径的 Authority binary。
+`--mcp-relay-binary`、`--native-transport-binary`、`--provider-binary`、`--mcp-binary`、`--node-binary`。不能只更换 Python 文件再继承引用旧路径的 Authority binary。
 清单标记 `source_layout=qualified-clinx-v1`、`host_transport=RUST_HOST_V1`；新服务模板仅接受该布局。
 服务直接启动 Rust worker 和 `clinx-mcp`；安装工具把现有 TOML 编译为
 `host-runtime.json` 与 `mcp-runtime.json`，运行时不启动配置编译器。
-新 release 必须标记 `mcp_runtime=RUST_MCP_V1`。`architecture/runtime-data.json`
+新 release 必须标记 `mcp_runtime=RUST_MCP_V1`、`node_api=RUST_NODE_API_V1`，并包含 `clinx-node`。`architecture/runtime-data.json`
 显式声明共享 schema 数据，Rust 在编译时嵌入，Python 观察/维护 codec 从包内读取。
 新清单还须声明 `provider_exchange=RUST_PROVIDER_V1`、`workspace_observer=RUST_PROVIDER_V1`，
 Authority 从 release 同级的 `clinx-provider` 执行观察。Mac 构建用本机 Rust toolchain 编译
-同一入口，放入 `Contents/Helpers/clinx-provider` 并单独签名；Helper launcher 固定该路径。
+`clinx-provider` 与 `clinx-node`，放入 `Contents/Helpers/` 并分别签名；Helper launcher 固定这两个路径。
 继承的 `deps/` 禁止夹带另一份 `clinx` 包或已退役的平铺 Python 核心。
 候选发布仍为 STAGED_NOT_SELECTED，构建不会选择 production target。
 
@@ -96,7 +97,9 @@ MCP 保持 `CLINX_AUTHORITY=rust` 与既有 socket/UID 配置契约。以上命�
 
 ## 原生执行与剩余运行时
 
-Helper 默认创建 `RustNodeExecutionAdapter`，经已有 OPAQUE 配对与 mTLS 请求 Centre，
+Helper 默认通过 `RustNodeExecutionAdapter.from_config` 调用 `clinx-node`，不构造 Python
+`RustIntegration`、Registry 或 Dispatcher。Node 目标/scope/canonical 校验与所有业务映射在 Rust；
+Rust 子进程的 Authority 请求由 Python 经已有 OPAQUE 配对与 mTLS 转发 Centre，
 由 Centre 本地 IPC 调用 Rust Authority。Mac 不使用 Linux Unix socket 或自报 UID 充当远端认证。
 Rust `clinx-native-transport` 经 Centre 的 Provider gateway 调用该节点的真实 Codex Provider；
 thread/turn/input 证据由 Rust 校验并原子提交。workspace observer 同样按 host 路由，
@@ -125,8 +128,11 @@ take/begin/complete/ACK、successor checkpoint 和取消许可，不持有数据
 详见 [Rust MCP 迁移报告](RUST_MCP_RUNTIME_MIGRATION.md)。
 
 **仍是 Python 运行时**：Node/Discovery 注册配对与网络协议、Provider mTLS 分块通道、
-历史读取与监控目录投影，以及 Centre、Node 本地兼容入口仍用的公共请求/配置映射。
-`rust_integration.py` 仍包含业务请求与读取逻辑，不被标为“薄适配”或开发工具。
+历史读取与监控目录投影，以及配置解析。
+`rust_integration.py` 已删除重复业务判断，保留原接口委托 Rust、对象视图和只读 Provider 协议回调；
+正常 Helper 不调用该兼容接口，直接使用 Rust NativeReads。它与配对转发客户端仍为 ACTIVE_RUNTIME，不能标为开发工具。
+本轮协议、原 Python 行为向量、完整套件前后对照和 Mac 验证边界见
+[Rust Node API 迁移](RUST_NODE_API_MIGRATION.md)。
 这些明确未完成迁移，25% 目标尚未达到。
 Python 的 `host_contract.py` 仅作为冻结资格参考保留，不进入 Rust release 或 Helper 包。
 

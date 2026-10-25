@@ -30,13 +30,22 @@
       "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
     },
     {
+      "path": "clinx/authority/request_pipe.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Bounded private child protocol forwarding existing authenticated Authority calls; no business selection, state, worker or retry"
+    },
+    {
       "path": "clinx/authority/rust_integration.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
         "rust",
         "monitor"
       ],
-      "reason": "Python business request mapping still used by the normal Node Helper route and explicit policy maintenance; Centre also imports Commands; normal MCP replaced by Rust, not a thin adapter"
+      "reason": "Compatibility API client delegating business mapping, selection and projection to Rust; read-only Provider protocol callback retained for existing clients; normal Helper bypasses this class"
     },
     {
       "path": "clinx/authority/rust_reads.py",
@@ -567,7 +576,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Node protocol mapping to Rust, including canonical identity and exact predecessor adoption; no local business state; cross-device Authority/Provider routing remains unimplemented"
+      "reason": "Thin Rust Node request client; target, canonical handoff, start/cancel/context checks live in Rust"
     },
     {
       "path": "clinx/provider/__init__.py",
@@ -967,6 +976,12 @@
       "role": "DEVOPS",
       "profiles": [],
       "reason": "Install-time TOML-to-Rust-MCP JSON compiler; no runtime state or execution"
+    },
+    {
+      "path": "fixtures/test_rust_node_runtime.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Isolated Rust Helper request, unknown receipt identity and copied release/App closure regression"
     }
   ]
 }

@@ -10,6 +10,7 @@ import os
 import socket
 import stat
 import struct
+import uuid
 from pathlib import Path
 
 PROTOCOL = "CLINX_RUST_AUTHORITY_V1"
@@ -79,3 +80,38 @@ class RustAuthorityClient:
                 return result["result"]
         except (OSError, ValueError) as error:
             raise RustAuthorityError("DELIVERY_UNKNOWN" if sent else "AUTHORITY_UNAVAILABLE") from error
+
+
+def enabled():
+    mode = os.environ.get('CLINX_AUTHORITY', 'python')
+    if mode not in {'python', 'rust'}:
+        raise RustAuthorityError('INVALID_AUTHORITY_SELECTION')
+    return mode == 'rust'
+
+
+class Commands:
+    def __init__(self, client):
+        self.client = client
+
+    @classmethod
+    def from_env(cls):
+        try:
+            endpoint = os.environ['CLINX_RUST_SOCKET']
+            uid = int(os.environ['CLINX_RUST_UID'])
+        except (KeyError, ValueError) as exc:
+            raise RustAuthorityError('RUST_AUTHORITY_CONFIG_REQUIRED') from exc
+        result = cls(RustAuthorityClient(endpoint, uid))
+        health = result.client.request('health', {}, request_id='health')
+        if health.get('business_commands') is not True:
+            raise RustAuthorityError('RUST_BUSINESS_AUTHORITY_REQUIRED')
+        return result
+
+    def call(self, operation, payload=None, *, key=None):
+        key = key or uuid.uuid4().hex
+        try:
+            return self.client.request('business.' + operation, payload or {}, request_id=key)
+        except RustAuthorityError as exc:
+            # Preserve the receipt identity on an unknown response. No retry and
+            # no fallback to any old registry/Owner operation.
+            exc.operation_id = key
+            raise
