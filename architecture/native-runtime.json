@@ -24,5 +24,9 @@
   "desktop_socket_maintenance": "RUST_DESKTOP_SOCKET_V1",
   "config_compiler": "RUST_CONFIG_COMPILER_V1",
   "policy_maintenance_entrypoint": "clinx-mcp --policy-maintenance --config PATH --stdio",
-  "history_mount_guard_entrypoint": "clinx-observer --history-mount-guard"
+  "history_mount_guard_entrypoint": "clinx-observer --history-mount-guard",
+  "excluded_development_binaries": [
+    "clinx-build",
+    "clinx-maintenance"
+  ]
 }

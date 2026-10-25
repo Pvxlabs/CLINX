@@ -333,8 +333,10 @@ build/signing remain separate migration/qualification boundaries.
 
 ## Rust Collector spool and recovery
 
-`fixtures/test_rust_collector.py` adds disposable real-SQLite collector cases.
-Use the same private HOME/XDG and all binary variables as the observation suite.
+`kernel/tests/collector_qualification.rs` runs disposable real-SQLite collector cases:
+`cargo test --locked --manifest-path kernel/Cargo.toml --test collector_qualification`.
+The former `fixtures/test_rust_collector.py` duplicates were retired after mapping
+their assertions to these Rust cases. Use a private HOME/XDG and temporary state.
 `clinx-node --collector-contract` must report `RUST_COLLECTOR_V1`; both source
 profiles and builders require `collector_runtime=RUST_COLLECTOR_V1`.
 
@@ -345,3 +347,5 @@ coverage recovery, recovery fairness, native/canonical merge, and SQLite COMMIT
 BUSY rollback. No Provider execution input is sent. Existing local assertions
 and test files remain unchanged; full-suite failures are reported against the
 same-environment baseline in the [receipt](cleanup/RUST_COLLECTOR_MIGRATION_RECEIPT.json).
+The subsequent Python wrapper retirement and unchanged-local-test failure comparison
+are recorded in [maintenance and Monitor convergence](RUST_MAINTENANCE_CONVERGENCE.md).

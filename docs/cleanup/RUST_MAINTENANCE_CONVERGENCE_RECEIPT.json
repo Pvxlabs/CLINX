@@ -1,0 +1,602 @@
+{
+  "schema": "CLINX_MAINTENANCE_CONVERGENCE_RECEIPT_V1",
+  "baseline": "26af9ee3f5f76979e6b1f28a1ec2ea3ace512acf",
+  "production": "NOT_DEPLOYED",
+  "services_unchanged": true,
+  "local_preserved_files": 294,
+  "local_preserved_hash_changes": [],
+  "rust_tests": {
+    "passed": 452,
+    "failed": 0,
+    "ignored": 0
+  },
+  "tracked_fixtures": {
+    "before_passed": 160,
+    "after_passed": 150,
+    "retired_duplicate_cases_mapped_to_rust": 10
+  },
+  "full_local_before": {
+    "error": 118,
+    "pass": 222,
+    "failure": 35,
+    "skipped": 2
+  },
+  "full_local_after": {
+    "error": 118,
+    "pass": 215,
+    "failure": 42,
+    "skipped": 2
+  },
+  "full_local_classification": {
+    "classification_counts": {
+      "PRE_EXISTING_FAILURE": 153,
+      "UNCHANGED_REPORTED_PASS": 214,
+      "UNCHANGED_SKIP": 2,
+      "CURRENT_RETIREMENT_OLD_API_FAILURE": 7,
+      "MASKED_RETIRED_API_EXPECTED_EXCEPTION": 1
+    },
+    "pre_existing_negative_cases": 153,
+    "current_retirement_old_api_failures": 7,
+    "observed_new_semantic_failures": 0,
+    "masked_retired_api_expected_exception_passes": 1,
+    "reported_after_passes": 215,
+    "unchanged_passes_without_identified_masking": 214,
+    "state_changes": 7,
+    "original_suite_result": "NOT_PASS",
+    "scope_limit": "118 collection/runtime errors and 35 original failures predate this change. Zero observed new semantic failures is not a full-suite semantic PASS. Seven newly failing retired Python entrypoint cases have independent real-process Rust replacement evidence. One unchanged PASS is masked by a pre-configuration FileNotFoundError; use Rust replacement evidence instead."
+  },
+  "deleted_python": [
+    {
+      "path": "clinx/authority/rust_integration.py",
+      "lines": 149,
+      "bytes": 8660,
+      "sha256": "bdf6568a3fcd51279b0ac342992a4331ed857e9680211d2d6359ee4e8745081a"
+    },
+    {
+      "path": "clinx/authority/rust_reads.py",
+      "lines": 181,
+      "bytes": 6327,
+      "sha256": "a98e68928c56e41d4f7572d517e8aa3bae1a4162546627128c4f533a3421d99b"
+    },
+    {
+      "path": "clinx/monitor/__init__.py",
+      "lines": 1,
+      "bytes": 61,
+      "sha256": "a89f4224b4957179bd3eee70d16d3782a5aa2d00dcdb7bf9565fe872f1fddf2d"
+    },
+    {
+      "path": "clinx/monitor/native_observation_bridge.py",
+      "lines": 188,
+      "bytes": 6762,
+      "sha256": "de62756fc3bb0fcb2607e4359a4773b443f76287a7c6d6bf15822306f2b2738e"
+    },
+    {
+      "path": "clinx/monitor/network_observation.py",
+      "lines": 328,
+      "bytes": 10473,
+      "sha256": "8ac790d8b526bbb54109d796eaf3edca969c800f1cfdda9b0ed26fbb88540e30"
+    },
+    {
+      "path": "clinx/monitor/observation_source.py",
+      "lines": 433,
+      "bytes": 15746,
+      "sha256": "ca3e64786ee450d9e2361c9bc9b81700989c1819f7cd41fc2b1a87503245ba78"
+    },
+    {
+      "path": "clinx/monitor/observer_server.py",
+      "lines": 462,
+      "bytes": 16143,
+      "sha256": "5d1dfcb939e74e81edb3c3552b22e22f37ce9a415ced8bb703a598b610ec2b9e"
+    },
+    {
+      "path": "clinx/monitor/rust_observation.py",
+      "lines": 162,
+      "bytes": 5940,
+      "sha256": "eb495eed2c28c15b14410a229c15c7df3031571da6af501cc1ee145628b1eadf"
+    },
+    {
+      "path": "clinx/nodes/node_service_entrypoint.py",
+      "lines": 41,
+      "bytes": 1502,
+      "sha256": "892bdd62124730a9da2f9f27fefb927e181c6d9387ac89c24eae326de07d44c7"
+    },
+    {
+      "path": "fixtures/test_rust_collector.py",
+      "lines": 110,
+      "bytes": 3462,
+      "sha256": "5e9c0d2de5f6ffe864a39a547ab0c1a0748a519d71948a6b04255b914b08d3f0"
+    },
+    {
+      "path": "fixtures/test_rust_observer_http.py",
+      "lines": 151,
+      "bytes": 4945,
+      "sha256": "551de2e2c3a724307919d22aab52bb2d55eff0ea4a1e3ed0b4a66018451b1e7e"
+    },
+    {
+      "path": "scripts/local_discovery_smoke.py",
+      "lines": 171,
+      "bytes": 6592,
+      "sha256": "cf19862af2cba9026eee03370ae5bb316e45c3e97a3d7b4463e71b82a6aec65a"
+    },
+    {
+      "path": "scripts/transfer_rust_native_session.py",
+      "lines": 163,
+      "bytes": 8563,
+      "sha256": "f6f34f6a81b042315503a6e40b7579f96acc1159ef3d2596493e9fe0ad5e0386"
+    }
+  ],
+  "python_net_removed_lines": 2645,
+  "python_net_removed_bytes": 98746,
+  "size_before": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 651861,
+        "files": 104,
+        "lines": 15172
+      },
+      "Rust": {
+        "bytes": 2072382,
+        "files": 117,
+        "lines": 53448
+      },
+      "Shell": {
+        "bytes": 10218,
+        "files": 9,
+        "lines": 224
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 19.82056134555578,
+    "python_line_percent": 18.70869093420144,
+    "python_roles": {
+      "COMPAT": {
+        "bytes": 296678,
+        "files": 47,
+        "lines": 7391
+      },
+      "DEVOPS": {
+        "bytes": 90516,
+        "files": 14,
+        "lines": 1958
+      },
+      "QUALIFICATION": {
+        "bytes": 264667,
+        "files": 43,
+        "lines": 5823
+      }
+    },
+    "revision": "26af9ee3f5f76979e6b1f28a1ec2ea3ace512acf",
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "size_after": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 553115,
+        "files": 91,
+        "lines": 12527
+      },
+      "Rust": {
+        "bytes": 2157670,
+        "files": 124,
+        "lines": 55620
+      },
+      "Shell": {
+        "bytes": 10218,
+        "files": 9,
+        "lines": 224
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 16.88718227098506,
+    "python_line_percent": 15.537749773637795,
+    "python_roles": {
+      "COMPAT": {
+        "bytes": 225064,
+        "files": 38,
+        "lines": 5446
+      },
+      "DEVOPS": {
+        "bytes": 81953,
+        "files": 13,
+        "lines": 1795
+      },
+      "QUALIFICATION": {
+        "bytes": 246098,
+        "files": 40,
+        "lines": 5286
+      }
+    },
+    "revision": null,
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "python_less_than_5_percent": "NOT_MET",
+  "release_binaries": [
+    {
+      "name": "clinx-build",
+      "sha256": "a3191a0c13cf9b47487dc260fbda2517b099220a8482479881eaf74402b19f98",
+      "libpython": false
+    },
+    {
+      "name": "clinx-device",
+      "sha256": "46ecb12bd211ae78bca61fc6823c518c35572942ff603d09de7fd6363e39e418",
+      "libpython": false
+    },
+    {
+      "name": "clinx-kernel-bench",
+      "sha256": "dca6f282b0ad34a646ffca79507b52dffd9b64ddb602086305a1ebf7c9418e67",
+      "libpython": false
+    },
+    {
+      "name": "clinx-kernel-eval",
+      "sha256": "833525c7e41b24ab1b52f274a1c1a50e907b7c59ebd239c615c3d26bf9c32fe4",
+      "libpython": false
+    },
+    {
+      "name": "clinx-maintenance",
+      "sha256": "c47801b3aabf682709e73d99e1da04fafb23babca675546613c5c5242f88fb87",
+      "libpython": false
+    },
+    {
+      "name": "clinx-mcp",
+      "sha256": "aee03f9edc0446324656531e3d48328c06e650c67758cc46bfa44742d5fb0e3c",
+      "libpython": false
+    },
+    {
+      "name": "clinx-mcp-relay",
+      "sha256": "49afd1ee66691275fc0c13e7ee1c30f5598c1d4d69b1789a71cc14f1809cceb9",
+      "libpython": false
+    },
+    {
+      "name": "clinx-native-transport",
+      "sha256": "5b943b51c430184506e2b766a032ec4e1f0fcf2888cf2a2dc82cf3fedb47c6bc",
+      "libpython": false
+    },
+    {
+      "name": "clinx-node",
+      "sha256": "c4efa928eed4e3c06a39deb1f194bae3112a2c19a31a0cd7c35b98683ce002a1",
+      "libpython": false
+    },
+    {
+      "name": "clinx-node-daemon",
+      "sha256": "bfbd8425223f41cf3598556a293b03be7d3d2c1a44d7eb8cee8a164c3c5eebf6",
+      "libpython": false
+    },
+    {
+      "name": "clinx-observer",
+      "sha256": "2803fe8394d573e46bb79df2ea09337e7480b9f8fc0200754e4800c037866449",
+      "libpython": false
+    },
+    {
+      "name": "clinx-owner-client",
+      "sha256": "bdf6a2c20b3795633b582d8c06d8216da90a02698e1568b5736eab192fb634ea",
+      "libpython": false
+    },
+    {
+      "name": "clinx-provider",
+      "sha256": "6757afa8f9afa828fbd9b014d2cf213306ac35cea6bf555d61a68813b2124e90",
+      "libpython": false
+    },
+    {
+      "name": "clinx-runtime",
+      "sha256": "aacefe1d20d7c1ca6a73fbca3bba398eb68046927b81cf199308662fff7384c7",
+      "libpython": false
+    },
+    {
+      "name": "clinx-source-audit",
+      "sha256": "6f23dd445815215f1267b5afd0b92a20266b01179e67770f100b672c8ad8ef28",
+      "libpython": false
+    },
+    {
+      "name": "clinx-tunnel",
+      "sha256": "df76ee0d01558387c3a483aefc308031098a7fff3cf2e2a91f17eb123a3d31c3",
+      "libpython": false
+    }
+  ],
+  "runtime_and_monitor_python": "EMPTY",
+  "format": {
+    "same_after_path_and_line_normalization": true,
+    "existing_files": [
+      "<repo>/kernel/src/bin/clinx-owner-client.rs",
+      "<repo>/kernel/src/authority_store.rs",
+      "<repo>/kernel/src/node_network.rs",
+      "<repo>/kernel/src/node_network.rs",
+      "<repo>/kernel/src/node_network.rs",
+      "<repo>/kernel/src/remote_provider.rs",
+      "<repo>/kernel/src/request_pipe.rs",
+      "<repo>/kernel/src/runtime_config.rs",
+      "<repo>/kernel/tests/native_routing.rs",
+      "<repo>/kernel/tests/native_routing.rs",
+      "<repo>/kernel/tests/native_routing.rs",
+      "<repo>/kernel/tests/native_routing.rs",
+      "<repo>/kernel/tests/native_routing.rs",
+      "<repo>/kernel/tests/native_routing.rs",
+      "<repo>/kernel/tests/native_routing.rs",
+      "<repo>/kernel/tests/native_routing.rs"
+    ]
+  },
+  "clippy": {
+    "same_diagnostics": true,
+    "before": [
+      [
+        "unneeded unit expression",
+        "src/business_node.rs"
+      ],
+      [
+        "this function has too many arguments (8/7)",
+        "src/business.rs"
+      ],
+      [
+        "compiling a regex in a loop",
+        "src/host_executor.rs"
+      ],
+      [
+        "this `if` statement can be collapsed",
+        "src/host_executor.rs"
+      ],
+      [
+        "this function has too many arguments (8/7)",
+        "src/host_transport.rs"
+      ],
+      [
+        "this `if` statement can be collapsed",
+        "src/host_transport.rs"
+      ],
+      [
+        "this `if` statement can be collapsed",
+        "src/host_transport.rs"
+      ],
+      [
+        "this `if` statement can be collapsed",
+        "src/mcp_api.rs"
+      ],
+      [
+        "this pattern reimplements `Option::unwrap_or`",
+        "src/mcp_api.rs"
+      ],
+      [
+        "returning the result of a `let` binding from a block",
+        "src/request_pipe.rs"
+      ],
+      [
+        "call to `std::mem::drop` with a value that does not implement `Drop`. Dropping such a type only extends its contained lifetimes",
+        "tests/workspace_routes.rs"
+      ]
+    ],
+    "after": [
+      [
+        "unneeded unit expression",
+        "src/business_node.rs"
+      ],
+      [
+        "this function has too many arguments (8/7)",
+        "src/business.rs"
+      ],
+      [
+        "compiling a regex in a loop",
+        "src/host_executor.rs"
+      ],
+      [
+        "this `if` statement can be collapsed",
+        "src/host_executor.rs"
+      ],
+      [
+        "this function has too many arguments (8/7)",
+        "src/host_transport.rs"
+      ],
+      [
+        "this `if` statement can be collapsed",
+        "src/host_transport.rs"
+      ],
+      [
+        "this `if` statement can be collapsed",
+        "src/host_transport.rs"
+      ],
+      [
+        "this `if` statement can be collapsed",
+        "src/mcp_api.rs"
+      ],
+      [
+        "this pattern reimplements `Option::unwrap_or`",
+        "src/mcp_api.rs"
+      ],
+      [
+        "returning the result of a `let` binding from a block",
+        "src/request_pipe.rs"
+      ],
+      [
+        "call to `std::mem::drop` with a value that does not implement `Drop`. Dropping such a type only extends its contained lifetimes",
+        "tests/workspace_routes.rs"
+      ]
+    ]
+  },
+  "checks": [
+    {
+      "name": "ruff",
+      "code": 0,
+      "command": [
+        "/lab/runtime-worktrees/p620/clinx-maintenance-convergence-20261025/venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "--select",
+        "E9,F",
+        "clinx",
+        "tools",
+        "scripts",
+        "fixtures"
+      ]
+    },
+    {
+      "name": "structure",
+      "code": 0,
+      "command": [
+        "/lab/runtime-worktrees/p620/clinx-maintenance-convergence-20261025/venv/bin/python",
+        "-B",
+        "-m",
+        "tools.qualification.check_structure"
+      ]
+    },
+    {
+      "name": "diff-check",
+      "code": 0,
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ]
+    },
+    {
+      "name": "fmt-after",
+      "code": 1,
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "kernel/Cargo.toml",
+        "--",
+        "--check"
+      ]
+    },
+    {
+      "name": "size-after",
+      "code": 2,
+      "command": [
+        "/lab/runtime-worktrees/p620/cargo-target/clinx-maintenance-convergence-20261025/release/clinx-source-audit"
+      ]
+    },
+    {
+      "name": "clippy-before",
+      "code": 0,
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--manifest-path",
+        "kernel/Cargo.toml",
+        "--all-targets"
+      ]
+    },
+    {
+      "name": "clippy-after",
+      "code": 0,
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--manifest-path",
+        "kernel/Cargo.toml",
+        "--all-targets"
+      ]
+    }
+  ],
+  "shell_syntax": [
+    {
+      "path": "MonitorApp/Scripts/CLINXNodeService",
+      "code": 0,
+      "stderr": ""
+    },
+    {
+      "path": "MonitorApp/Scripts/build-app.sh",
+      "code": 0,
+      "stderr": ""
+    },
+    {
+      "path": "MonitorApp/Scripts/capture-window-geometry.sh",
+      "code": 0,
+      "stderr": ""
+    },
+    {
+      "path": "MonitorApp/Scripts/setup-discovery-runtime.sh",
+      "code": 0,
+      "stderr": ""
+    },
+    {
+      "path": "MonitorApp/Scripts/setup-local-signing.sh",
+      "code": 0,
+      "stderr": ""
+    },
+    {
+      "path": "bin/clinx",
+      "code": 0,
+      "stderr": ""
+    },
+    {
+      "path": "bin/clinx-context-mcp",
+      "code": 0,
+      "stderr": ""
+    },
+    {
+      "path": "bin/clinx-node-centre",
+      "code": 0,
+      "stderr": ""
+    },
+    {
+      "path": "bin/clinx-observer",
+      "code": 0,
+      "stderr": ""
+    }
+  ],
+  "not_verified": [
+    "Native macOS Swift/App build and signing",
+    "Physical LAN/multicast and new Mac-to-P620 artifact acceptance",
+    "Real root/runuser/nsenter native-session maintenance"
+  ],
+  "evidence_directory": "/data/artifacts/clinx-maintenance-convergence-20261025",
+  "evidence_sha256": {
+    "baseline.json": "ed84997d78f57bcdbdad6a75329e1a217cac9c0f1affaedf47f6320a180aab94",
+    "ownership.json": "e2adb6a0dd3f4bc25189fe041b2c210ded9b2123d185f5b5c945cdefe4d52601",
+    "monitor-test-map.json": "8d55c6a535d477b0987980b1bbcc19d99eaacc5e1091789a720fe95453fba0ad",
+    "monitor-independent-review.json": "2f5950945a210563c892419e4a1fb41fe62d9e1cf6281112720d7c74739ba883",
+    "maintenance-transfer-migration-receipt.json": "713bb79a70024a26e2df7ea387f442c6b673e0c23893c7a89efa8098b21ec6d9",
+    "maintenance-transfer-independent-review.json": "e1cbf84f3415a9b25bf14e0b2847b885ffb7ce96a57ebb13b8abc55058fb4422",
+    "discovery-smoke-migration.json": "3785cce77ae43057da0c4500a7937c418f8bf4467db733e47255ece04de622e9",
+    "local-outcome-comparison.json": "48ffeb5ff445b4447b88ffba068f21849ec9612ff620c8a5f9b112589224c7e2",
+    "build-after.log": "ba8e571294a11f54267ad5efa58ce473c0d8344e9beaa18037acf70e344a2060",
+    "examples-after.log": "e41c24083e046dda0a8fce7692945a26fb226a1f64d36e21f5c16243ca21437c",
+    "rust-full.log": "c5085ae1087fca98dc8a89e7b3e9e47939a461b92bad6355b95f0c75827b86ce",
+    "fixtures.log": "31038371b7935972ff1bd91e6bd7e51ccc5d98ea246bf44fd9a54ed3ae478c63",
+    "fixtures.xml": "40db8f6a72052802370d583a1111fec0622a6893f37e2d66209428dd4e389fb6",
+    "fixtures-before.log": "829a62fe0a34004fe053f9a0a3d0fba9bb6e3badbce6bf53d7c65aa7d00af3e9",
+    "fixtures-before.xml": "be7e35637edcb3730d7c014d8bb6d1729bd572adb6f60090752eb45ed727f3c4",
+    "services-before.txt": "ca3437d048a06eb8899a39a6e79f6ce9a37c3ed5ea2575235349b9cde9d0f51d",
+    "services-after.txt": "ca3437d048a06eb8899a39a6e79f6ce9a37c3ed5ea2575235349b9cde9d0f51d",
+    "local-before/result.xml": "9fdc93f56cfe721c7b275a7f18ae39205f70133ad0da016df05fce13d9b824fc",
+    "local-after/result.xml": "7680ebda9c7faf26fd3009ea2cd2df6ed313fcf373bba0fabce9084d3c56a4e5"
+  }
+}

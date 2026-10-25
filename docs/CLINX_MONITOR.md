@@ -1,5 +1,11 @@
 # CLINX Monitor — Phase 0/1 specification and observer contract
 
+Historical specification: the Python implementation paths and launch commands below
+describe Phase 0/1, not the current runtime. The current observer is `clinx-observer`;
+Helper/Collector and observation routing are native Rust. See
+[current architecture](REPOSITORY_ARCHITECTURE.md) and the
+[Monitor compatibility retirement](RUST_MAINTENANCE_CONVERGENCE.md).
+
 Contract: `CLINX_OBSERVER_V1` / wire `schema_version: "1"`.
 Scope: native macOS Swift/SwiftUI/MenuBarExtra observer; P620 remains the only CLINX
 authority. This change implements specification + a separately launched read-only

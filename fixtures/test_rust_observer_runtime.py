@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 import pytest
 
 from clinx.discovery.identity import NodeIdentity, PrivateStore
-from clinx.monitor.network_observation import ObservationWriter
+from clinx.nodes.network_worker import read_command
 from clinx.nodes.node_protocol import NodeAuthorizationStore, NodeRecord, NodeRegistry
 from fixtures.test_rust_native_observer import historical as historical
 from fixtures.test_rust_observation import TID, snapshot
@@ -125,7 +125,7 @@ def test_standalone_legacy_exact_projection_auth_audit_and_no_python(historical,
         assert observer.request("/v1/tasks/absent")[0] == 404
         status, item = observer.request("/v1/tasks/task-fixture")
         assert status == 200
-        assert without_time(item) == without_time(historical.store.task("task-fixture"))
+        assert without_time(item) == historical.expected
         assert item["final_result"]["execution_ref"] == "exec-fixture"
         assert item["codex_uri"].endswith("?hostId=remote-ssh-discovered%3Ap620")
         assert observer.request("/v1/tasks/task-fixture/events")[0] == 200
@@ -185,11 +185,12 @@ def native_config(native, historical, tmp_path):
         NodeRecord("observer-fixture", user_scope="alice", public_key_fingerprint=identity.public["fingerprint"], state="ONLINE"),
         scope,
     )
-    observations = ObservationWriter(tmp_path / "observations.db")
+    observations = tmp_path / "observations.db"
+    read_command("observation.init", path=str(observations))
     env = environment(
         tmp_path,
         CLINX_OBSERVER_DB=historical.path,
-        CLINX_OBSERVATION_DB=observations.path,
+        CLINX_OBSERVATION_DB=observations,
         CLINX_OBSERVATION_STATE=state,
         CLINX_OBSERVATION_REGISTRY=registry.path,
         CLINX_OBSERVATION_USER_SCOPE="alice",

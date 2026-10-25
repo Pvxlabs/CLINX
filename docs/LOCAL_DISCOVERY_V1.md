@@ -202,9 +202,9 @@ PYO3_PYTHON="$PWD/.venv/bin/python" cargo clippy --locked --manifest-path native
 python3 -m pytest -q tests/test_local_discovery.py
 python3 -m pytest -q tests/test_local_discovery_production.py
 CLINX_LAN_SELFTEST=1 python3 -m pytest -q
-python3 scripts/local_discovery_smoke.py
-python3 -m ruff check --config ruff-discovery.toml local_discovery tests/test_local_discovery.py tests/test_local_discovery_production.py scripts/local_discovery_smoke.py
-python3 -m ruff format --check --config ruff-discovery.toml local_discovery tests/test_local_discovery.py tests/test_local_discovery_production.py scripts/local_discovery_smoke.py
+cargo run --locked --manifest-path kernel/Cargo.toml --example local_discovery_smoke -- --lan --node-binary <verified-clinx-node>
+cargo test --locked --manifest-path kernel/Cargo.toml --test discovery_smoke_qualification --test mdns_runtime
+cargo run --locked --manifest-path kernel/Cargo.toml --example local_discovery_smoke -- --loopback --node-binary <verified-clinx-node>
 python3 -m mypy --config-file mypy-discovery.ini
 git diff --check
 ```

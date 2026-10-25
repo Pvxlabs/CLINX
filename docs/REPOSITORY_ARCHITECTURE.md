@@ -33,14 +33,14 @@ Python 仍保留公开 API/DTO、独立协议 oracle 及尚未迁完的构建、
 | `native/opaque_pairing/` | Rust OPAQUE 原生配对依赖 | ACTIVE_RUNTIME |
 | `MonitorApp/` | Swift macOS UI、App 构建入口、Helper shell launcher | ACTIVE_RUNTIME；UI 留在 Swift |
 | `clinx/contracts/` | TOML 配置、Python DTO/错误类型；身份/策略规范化与兼容校验委托 Rust | COMPAT；配置与公开对象兼容 |
-| `clinx/authority/` | 当前 Python IPC/配对请求转发、兼容 API 与只读 Provider 协议客户端 | COMPAT；业务请求选择与投影已迁 Rust |
+| `clinx/authority/` | Python IPC/私有协议客户端 | COMPAT；RustIntegration/Registry view 与 desktop read callback 已删除，实际维护消费者已迁 Rust |
 | `clinx/mcp/` | 共享公开 schema 数据 | Python server/factory 已删除；业务、观察和策略维护 profile 均为 Rust |
 | `clinx/provider/` | Codex 公开协议 API 与平台 IO；客户端请求契约、默认 Process/SSH/Unix RPC、事件、live-writer/精确证据判断由 Rust 实现 | COMPAT；仍含资格/维护用旧传输公开 API |
 | `clinx/host/` | Workflow 公开 DTO；schema/validation/render 已迁 Rust；冻结操作目录仅用于资格验证 | 配置 codec 仍 COMPAT；执行、投递、恢复已迁 Rust |
 | `clinx/transport/` | Tunnel 历史公开资格 API；正常 CLI exec Rust | QUALIFICATION；运行服务直接启动 `clinx-tunnel`，不发布此 Python 实现 |
 | `clinx/nodes/` | Rust Node/Registry/Provider 公开 Python 客户端、历史 CLI exec 别名 | COMPAT；正常 Helper/Centre 装配、路由/cursor/read 投影/注册心跳及外层调度全部由 Rust 实现 |
 | `clinx/discovery/` | 公开身份/配对 DTO、历史设备 CLI exec 和独立 OpenSSL 资格 oracle | COMPAT；正常密钥/证书、信任事务、OPAQUE/TLS enrollment、DNS-SD、GUI helper 全由 Rust 实现 |
-| `clinx/monitor/` | Observer HTTP/codec 与身份/协议装配；历史/查询/精确证据/checkpoint/投影委托 Rust | COMPAT；HTTP listener/auth/router 与正常 Collector 探针/cache 已迁 Rust；Observer CLI 及环境/身份/IO 装配均已迁 Rust |
+| `clinx/monitor/`（已删除） | 原观察 Python 对象/回调/HTTP 封装 | DEAD；资格直接验证 Rust Observer/Node，保留独立 SQL/HTTP oracle |
 | `clinx/compat/`（已删除） | 旧 Mac Bridge/Registry/M9 及 completion/recovery/outbox | DEAD；由 Rust Authority 事务与 native Transport 替代 |
 | `tools/build/` | 发布源码清单与历史布局资格拷贝 | DEVOPS；正常 App 构建改用 Rust `clinx-build`，配置编译由 `clinx-node` 执行 |
 | `tools/maintenance/` | 显式维护工具 | DEVOPS；不进入运行包 |
@@ -161,9 +161,9 @@ Node 配对后的 TLS、Centre/Owner scope、反向请求路由、Provider 分�
 原生历史 SQL、JSONL 解析、fork/projection/turn 身份证明、增量历史 checkpoint，以及
 观察目录 SQL、批次摘要/去重、stream CAS、终态合并、保留策略、签名游标和查询投影，
 已迁入 `native_history.rs`、`observation.rs` 和 `read_projection.rs`。
-Python `NativeHistory`、`ObservationWriter` 和 `ObservationDirectory` 使用现有
-`clinx-node` 私有 stdio 通道；本地原生索引只读，观察数据库只写展示投影，均不承担任务权威。
-旧 Python 实现已移除，保留 public 调用接口；详见
+Python `NativeHistory` 仍使用 `clinx-node` 私有 stdio 通道；`ObservationWriter` 和
+`ObservationDirectory` 的 Python 接口已随 Monitor 兼容闭包退役，资格直接调用 Rust。
+本地原生索引只读，观察数据库只写展示投影，均不承担任务权威。首次迁移记录见
 [Rust 历史与观察目录迁移](RUST_OBSERVATION_MIGRATION.md)。
 
 Collector 的 spool/outbox、调度决策、checkpoint/ACK 事务、采样合并及历史 canonical SQL
@@ -196,3 +196,8 @@ Monitor 构建、Host/MCP 配置编译及 Observer inode guard 改用 Rust。
 配置安装另要求 `config_compiler=RUST_CONFIG_COMPILER_V1`，stager 实际探测
 `clinx-node --config-compile-contract`；安装器在任何修改前拒绝缺少此契约的旧 release。
 `clinx-build` 仅是开发工具，不进入 release 或 App 的三个 Helpers。
+
+最新维护入口为开发工具 `clinx-maintenance transfer-native-session`，复用原有身份边界与
+Provider/Authority 契约，明确目标 Provider home，不进入正常 release/App。
+Rust `local_discovery_smoke` example 提供显式 LAN 资格及隔离 loopback 模式。
+完整删除与证据见 [维护与观察兼容收敛](RUST_MAINTENANCE_CONVERGENCE.md)。

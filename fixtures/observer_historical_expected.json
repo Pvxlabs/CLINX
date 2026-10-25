@@ -1,0 +1,91 @@
+{
+  "artifacts": [],
+  "artifacts_status": "NO_SAFE_ARTIFACT_REGISTRY",
+  "blocker": null,
+  "codex_running": false,
+  "codex_uri": "codex://threads/01a0fa4e-11e7-7540-91c8-1eee45d1a4d0?hostId=remote-ssh-discovered%3Ap620",
+  "current_activity": {
+    "kind": "PERSISTED_STAGE",
+    "label": "COMPLETE"
+  },
+  "elapsed_seconds": 3600,
+  "execution_ref": "exec-fixture",
+  "execution_stage": "COMPLETE",
+  "execution_state": "COMPLETED",
+  "final_result": {
+    "blockers": "NONE",
+    "changed_files": null,
+    "execution_ref": "exec-fixture",
+    "next_state": "IN_REVIEW",
+    "received_at": "2026-10-25T02:00:00+00:00",
+    "redaction": "PATHS_AND_RAW_RESULT_OMITTED",
+    "status": "PASS",
+    "summary": "Done",
+    "text_truncated": false,
+    "validation": "checked"
+  },
+  "host": "p620",
+  "host_operations": [],
+  "host_operations_has_more": false,
+  "menu_state": "PASS",
+  "model": {
+    "logical": "logical",
+    "resolved": "resolved"
+  },
+  "mutation_boundary": {
+    "allowed_actions": [],
+    "authority_status": "PERSISTED",
+    "execution_operation_classes": [
+      "DEVELOPMENT_MUTATION"
+    ],
+    "execution_surface": "HOST_EXECUTOR",
+    "observer_read_only": true
+  },
+  "native_conversation": {
+    "node_id": "p620",
+    "provider": "codex_app_server",
+    "thread_id": "01a0fa4e-11e7-7540-91c8-1eee45d1a4d0"
+  },
+  "phases": [],
+  "progress_basis": "NO_PERSISTED_DENOMINATOR",
+  "progress_percent": null,
+  "project": "fixture",
+  "reasoning": null,
+  "recent_events": {
+    "coverage": "PARTIAL",
+    "has_more": false,
+    "items": [],
+    "next_cursor": "740707ee91f2c720.0"
+  },
+  "retry_required": false,
+  "routing": {
+    "host": {
+      "identifier": "p620",
+      "status": "UNKNOWN"
+    },
+    "provider": {
+      "identifier": "codex_app_server",
+      "status": "UNKNOWN"
+    },
+    "surface": {
+      "identifier": null,
+      "status": "UNKNOWN"
+    },
+    "transport": {
+      "identifier": null,
+      "status": "UNKNOWN"
+    }
+  },
+  "schema_version": "1",
+  "stage": "COMPLETE",
+  "state": "COMPLETED",
+  "task_ref": "task-fixture",
+  "timestamps": {
+    "completed_at": "2026-10-25T02:00:00+00:00",
+    "created_at": "2026-10-25T01:00:00+00:00",
+    "last_progress_at": "2026-10-25T02:00:00+00:00",
+    "started_at": "2026-10-25T01:00:00+00:00",
+    "updated_at": "2026-10-25T02:00:00+00:00"
+  },
+  "title": "Title"
+}

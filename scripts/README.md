@@ -44,7 +44,7 @@ pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它�
 | [tunnel_release_cas.py](tunnel_release_cas.py) | `check` 只读；`fixture-apply` 只接受带 marker 的隔离根目录 |
 | [deploy_forwarding_release.py](deploy_forwarding_release.py) | `activate` / `rollback` 写配置并操作服务，需要对应部署授权 |
 | [qualify_bridge_transport.py](qualify_bridge_transport.py) | 固定上游 Bridge 源码的隔离 generation-fence 资格 |
-| [local_discovery_smoke.py](local_discovery_smoke.py) | 显式启用的真实 mDNS / OPAQUE / mTLS 网络资格 |
+| `cargo run --locked --manifest-path kernel/Cargo.toml --example local_discovery_smoke -- --lan --node-binary <verified-node>` | 显式真实 mDNS / OPAQUE / mTLS 网络资格；`--loopback` 为隔离测试，不代表物理 LAN |
 
 源码启动器：[CLI](../bin/clinx)、[MCP](../bin/clinx-context-mcp)、
 [节点中心](../bin/clinx-node-centre)、
@@ -74,3 +74,9 @@ Collector 调用端还要求 `collector_runtime=RUST_COLLECTOR_V1`；构建时�
 仅暴露原有四个 policy 工具，不含执行/恢复服务。旧 Python/TOML 维护入口已删除。
 Observer inode guard 为 `bin/clinx-observer --history-mount-guard`；该维护命令可能
 对唯一的 Observer 服务执行 try-restart，测试只使用临时文件和替身命令，本轮没有执行实际 guard。
+
+原 Python 会话转移脚本已删除。新开发工具 `clinx-maintenance transfer-native-session`
+保留精确归档、复制、Provider 回读与 Authority adoption；必须明确 `--destination-home`，
+不猜测旧 codex160 目录。维护会修改指定会话，仅在获得对应维护授权时调用；源码迁移测试
+使用临时文件、Provider 与 Authority，没有执行真实维护命令。详见
+[本轮迁移报告](../docs/RUST_MAINTENANCE_CONVERGENCE.md)。

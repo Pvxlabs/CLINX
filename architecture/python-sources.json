@@ -36,19 +36,15 @@
     },
     {
       "path": "clinx/authority/rust_integration.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Compatibility request facade still consumed by scripts/transfer_rust_native_session.py; normal Helper uses Rust. Removal requires migrating that exact maintenance consumer and its qualification."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Last real maintenance consumer migrated to clinx-maintenance. Remaining helper qualification uses native API; historical request semantics covered in Rust. Removed api_compat Python read callback transport as well."
     },
     {
       "path": "clinx/authority/rust_reads.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Read-only HTTP/Provider IO callbacks and Python object compatibility; desktop evidence, exact identity and projection owned by Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Monitor Python API closure retired after qualification callers switched to native Observer/Node IPC; original assert/parameter mapping and independent historical SQL/HTTP oracle retained."
     },
     {
       "path": "clinx/authority/rust_worker_identity.py",
@@ -404,11 +400,9 @@
     },
     {
       "path": "clinx/monitor/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current monitoring projection and native observation implementation; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Monitor Python API closure retired after qualification callers switched to native Observer/Node IPC; original assert/parameter mapping and independent historical SQL/HTTP oracle retained."
     },
     {
       "path": "clinx/monitor/native_associations.py",
@@ -418,19 +412,15 @@
     },
     {
       "path": "clinx/monitor/native_observation_bridge.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. HTTP and existing source/scope callbacks; checkpoint/HMAC/expiry, exact identity, remote cooldown and rejection policy owned by Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Monitor Python API closure retired after qualification callers switched to native Observer/Node IPC; original assert/parameter mapping and independent historical SQL/HTTP oracle retained."
     },
     {
       "path": "clinx/monitor/network_observation.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public DTO/private Rust directory calls for compatibility qualification; native observation_directory owns production environment, identity, scope, remote mTLS and managed reads."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Monitor Python API closure retired after qualification callers switched to native Observer/Node IPC; original assert/parameter mapping and independent historical SQL/HTTP oracle retained."
     },
     {
       "path": "clinx/monitor/observation_mcp.py",
@@ -440,19 +430,15 @@
     },
     {
       "path": "clinx/monitor/observation_source.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public Collector facade and explicitly injected qualification callbacks; normal native/Provider/remote probes, live cache and decisions run in Rust observation_runtime"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Monitor Python API closure retired after qualification callers switched to native Observer/Node IPC; original assert/parameter mapping and independent historical SQL/HTTP oracle retained."
     },
     {
       "path": "clinx/monitor/observer_server.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Historical injectable read-only snapshot/HTTP facade for qualification; main execs clinx-observer. Native Rust service owns normal assembly and IO."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Monitor Python API closure retired after qualification callers switched to native Observer/Node IPC; original assert/parameter mapping and independent historical SQL/HTTP oracle retained."
     },
     {
       "path": "clinx/monitor/rust_monitor.py",
@@ -462,9 +448,9 @@
     },
     {
       "path": "clinx/monitor/rust_observation.py",
-      "role": "COMPAT",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Rust managed inventory/turn projection and canonical sample facade; Authority and base-source IO callbacks only"
+      "reason": "Monitor Python API closure retired after qualification callers switched to native Observer/Node IPC; original assert/parameter mapping and independent historical SQL/HTTP oracle retained."
     },
     {
       "path": "clinx/nodes/__init__.py",
@@ -500,11 +486,9 @@
     },
     {
       "path": "clinx/nodes/node_service_entrypoint.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Historical CLI alias that execs Rust clinx-node-daemon helper; normal Helper loads TOML, assembles Node/Provider/Collector and schedules entirely in Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Current Helper executes clinx-node-daemon; historical factory configuration constraints verified through native process qualification, obsolete Python object/mock-only interfaces retired."
     },
     {
       "path": "clinx/nodes/provider_relay.py",
@@ -699,9 +683,9 @@
     },
     {
       "path": "scripts/local_discovery_smoke.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Rust local_discovery_smoke example replaces two-process Discovery/OPAQUE/mTLS qualification; real LAN remains explicit, loopback and private UDP tests separate."
     },
     {
       "path": "scripts/qualify_bridge_transport.py",
@@ -777,9 +761,9 @@
     },
     {
       "path": "scripts/transfer_rust_native_session.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Rust clinx-maintenance transfer-native-session preserves exact Provider/Authority/inode/FD/durable receipt workflow; no Python runtime or guessed worker home."
     },
     {
       "path": "scripts/tunnel_release_cas.py",
@@ -937,9 +921,9 @@
     },
     {
       "path": "fixtures/test_rust_collector.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Rust collector real spool, checkpoint/ACK atomicity, worker death/restart, duplicate receipts, scope narrowing and source merge regression"
+      "reason": "Duplicate Python facade qualification retired after explicit per-case mapping to existing Rust contract tests; original local tests and all effective assertions preserved."
     },
     {
       "path": "fixtures/test_rust_native_observer.py",
@@ -985,9 +969,9 @@
     },
     {
       "path": "fixtures/test_rust_observer_http.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Private-process regression for Rust thin-runtime migration; no production access."
+      "reason": "Duplicate Python facade qualification retired after explicit per-case mapping to existing Rust contract tests; original local tests and all effective assertions preserved."
     },
     {
       "path": "fixtures/test_rust_provider_api.py",

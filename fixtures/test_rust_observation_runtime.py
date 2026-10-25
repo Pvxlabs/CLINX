@@ -10,7 +10,6 @@ from unittest.mock import patch
 import pytest
 
 from clinx.discovery.discovery import DiscoveryIndex, LanDiscovery
-from clinx.monitor.observation_source import CodexObservationSource
 from clinx.nodes.network_worker import Worker
 from fixtures.test_rust_observation import TID, snapshot
 from fixtures.test_rust_observation import native as native
@@ -47,9 +46,12 @@ def replies(turn="exact-turn", cwd="/approved", thread=TID):
     return reply
 
 
-def close_source(source):
-    if source._source_worker:
-        source._source_worker.close()
+def source_worker(root, *, callback=None, **values):
+    """Only fixture framing; all cache, source, Provider and merge logic is Rust."""
+    worker = Worker(callback=callback)
+    worker.call("source_runtime.init", config=dict(
+        native_home=str(root), node_id="fixture", owner_host="fixture", **values))
+    return worker
 
 
 def test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe(
@@ -57,17 +59,17 @@ def test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe(
 ):
     socket = tmp_path / "private.sock"
     provider = Provider(socket, replies())
-    source = CodexObservationSource(tmp_path, "fixture", provider_config=config(socket))
+    source = source_worker(tmp_path, provider_config=config(socket))
     try:
         with patch(
             "clinx.provider.native_provider.observe_thread",
             side_effect=AssertionError("Python probe forbidden"),
         ):
-            first = source._observe_live(TID, "/approved", "exact-turn")
+            first = source.call("source_runtime.observe_live", tid=TID, project="/approved", turn_id="exact-turn")
             assert (
                 first["liveness"] == "LIVE" and first["reason"] == "EXACT_OWNER_ACTIVE"
             )
-            assert source._observe_live(TID, "/approved", "exact-turn") == first
+            assert source.call("source_runtime.observe_live", tid=TID, project="/approved", turn_id="exact-turn") == first
             assert [c["method"] for c in provider.calls] == [
                 "initialize",
                 "initialized",
@@ -77,14 +79,14 @@ def test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe(
             provider.close()
             socket.unlink()
             provider = Provider(socket, replies())
-            changed = source._observe_live(TID, "/different", "exact-turn")
+            changed = source.call("source_runtime.observe_live", tid=TID, project="/different", turn_id="exact-turn")
             assert (
                 changed["liveness"] == "UNKNOWN"
                 and changed["reason"] == "WORKSPACE_MISMATCH"
             )
             assert len(provider.calls) == 4
     finally:
-        close_source(source)
+        source.close()
         provider.close()
 
 
@@ -105,38 +107,34 @@ def test_provider_identity_conflict_never_becomes_live(tmp_path, variant, reason
         ),
     )
     b = Provider(tmp_path / "b.sock", replies()) if variant == "conflict" else None
-    source = CodexObservationSource(
-        tmp_path, "fixture", provider_config=config(a.path, b.path if b else None)
+    source = source_worker(
+        tmp_path, provider_config=config(a.path, b.path if b else None)
     )
     try:
-        proof = source._observe_live(TID, "/approved", "exact-turn")
+        proof = source.call("source_runtime.observe_live", tid=TID, project="/approved", turn_id="exact-turn")
         assert proof["liveness"] == "UNKNOWN" and proof["reason"] == reason
     finally:
-        close_source(source)
+        source.close()
         a.close()
         if b:
             b.close()
 
 
 def test_normal_sample_merges_history_in_rust_without_source_callbacks(native):
-    source = CodexObservationSource(
-        native.root, "fixture", native_writer_observation=True
-    )
+    source = source_worker(native.root, native_writer_observation=True,
+        callback=lambda *args: (_ for _ in ()).throw(
+            AssertionError("Python source callback forbidden")))
     before = snapshot(native.root)
-    source._callback = lambda *args: (_ for _ in ()).throw(
-        AssertionError("Python source callback forbidden")
-    )
     try:
-        events, state = source.sample(native.metadata, {})
+        events, state = source.call("source_runtime.sample", metadata=native.metadata, state={}, canonical_db=False, live_enabled=True)
         assert events and all(e["native_thread_id"] == TID for e in events)
         assert all(e["binding_evidence"] == "THREAD_UNBOUND" for e in events)
         assert snapshot(native.root) == before
     finally:
-        close_source(source)
+        source.close()
 
 
-def test_injected_provider_keeps_old_public_hook_with_rust_cache(tmp_path):
-    source = CodexObservationSource(tmp_path, "fixture", provider_config=object())
+def test_injected_provider_callback_preserves_exact_identity_and_rust_cache(tmp_path):
     rows = [
         {
             "endpoint": "fixture",
@@ -147,22 +145,27 @@ def test_injected_provider_keeps_old_public_hook_with_rust_cache(tmp_path):
             "cwd": "/approved",
         }
     ]
+    calls = []
+
+    def probe(event):
+        calls.append(event)
+        assert event["operation"] == "source_runtime.observe_thread"
+        assert event["arguments"] == {"tid": TID}
+        return {"observations": rows}
+
+    source = source_worker(tmp_path, callback=probe, injected_provider=True)
     try:
-        with patch(
-            "clinx.provider.native_provider.observe_thread",
-            return_value={"observations": rows},
-        ) as probe:
-            first = source._observe_live(TID, "/approved", "exact-turn")
-            assert first["liveness"] == "LIVE"
-            assert source._observe_live(TID, "/approved", "exact-turn") == first
-            assert probe.call_count == 1
-            assert (
-                source._observe_live(TID, "/approved", "different")["liveness"]
-                == "UNKNOWN"
-            )
-            assert probe.call_count == 2
+        first = source.call("source_runtime.observe_live", tid=TID, project="/approved", turn_id="exact-turn")
+        assert first["liveness"] == "LIVE"
+        assert source.call("source_runtime.observe_live", tid=TID, project="/approved", turn_id="exact-turn") == first
+        assert len(calls) == 1
+        assert (
+            source.call("source_runtime.observe_live", tid=TID, project="/approved", turn_id="different")["liveness"]
+            == "UNKNOWN"
+        )
+        assert len(calls) == 2
     finally:
-        close_source(source)
+        source.close()
 
 
 def test_managed_remote_inventory_uses_rust_http_credential_and_scope(tmp_path):

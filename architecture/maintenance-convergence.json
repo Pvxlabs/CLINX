@@ -1,0 +1,3555 @@
+{
+  "schema": "CLINX_MAINTENANCE_CONVERGENCE_V1",
+  "baseline": "26af9ee3f5f76979e6b1f28a1ec2ea3ace512acf",
+  "monitor": {
+    "baseline": "26af9ee",
+    "scope": "monitor compatibility closure retirement",
+    "files": [
+      {
+        "path": "fixtures/test_rust_collector.py",
+        "source_sha256": "5e9c0d2de5f6ffe864a39a547ab0c1a0748a519d71948a6b04255b914b08d3f0",
+        "target_sha256": null,
+        "cases": [
+          {
+            "case": "test_collector_singleton_durable_stream_and_restart",
+            "line": 73,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "collector_singleton_durable_stream_and_restart",
+                "line": 198
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_unknown_upload_ack_replays_only_identical_observation_receipts",
+            "line": 89,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "unknown_upload_ack_replays_only_identical_observation_receipts",
+                "line": 219
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          }
+        ],
+        "checks": [
+          {
+            "line": 75,
+            "case": "test_collector_singleton_durable_stream_and_restart",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(NodeProtocolError, match=\"COLLECTOR_ALREADY_RUNNING\")",
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "collector_singleton_durable_stream_and_restart",
+                "line": 198
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 77,
+            "case": "test_collector_singleton_durable_stream_and_restart",
+            "kind": "assert",
+            "original": "assert c.tick() == 2",
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "collector_singleton_durable_stream_and_restart",
+                "line": 198
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 78,
+            "case": "test_collector_singleton_durable_stream_and_restart",
+            "kind": "assert",
+            "original": "assert counts(setup.path) == (1, 3)",
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "collector_singleton_durable_stream_and_restart",
+                "line": 198
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 83,
+            "case": "test_collector_singleton_durable_stream_and_restart",
+            "kind": "assert",
+            "original": "assert c.get(\"stream\") == stream and c.get(\"seq\") == seq",
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "collector_singleton_durable_stream_and_restart",
+                "line": 198
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 84,
+            "case": "test_collector_singleton_durable_stream_and_restart",
+            "kind": "assert",
+            "original": "assert counts(setup.path) == (1, 0)",
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "collector_singleton_durable_stream_and_restart",
+                "line": 198
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 86,
+            "case": "test_collector_singleton_durable_stream_and_restart",
+            "kind": "assert",
+            "original": "assert db.execute(\"SELECT count(*) FROM events\").fetchone()[0] == 3",
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "collector_singleton_durable_stream_and_restart",
+                "line": 198
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 103,
+            "case": "test_unknown_upload_ack_replays_only_identical_observation_receipts",
+            "kind": "assert",
+            "original": "assert c.status == \"OFFLINE_BUFFERING\" and counts(setup.path)[1] == 3",
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "unknown_upload_ack_replays_only_identical_observation_receipts",
+                "line": 219
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 108,
+            "case": "test_unknown_upload_ack_replays_only_identical_observation_receipts",
+            "kind": "assert",
+            "original": "assert sent[0] == sent[1] and counts(setup.path)[1] == 0 and c.get(\"seq\") == seq",
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "unknown_upload_ack_replays_only_identical_observation_receipts",
+                "line": 219
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 110,
+            "case": "test_unknown_upload_ack_replays_only_identical_observation_receipts",
+            "kind": "assert",
+            "original": "assert db.execute(\"SELECT count(*) FROM events\").fetchone()[0] == 3",
+            "targets": [
+              {
+                "path": "kernel/tests/collector_qualification.rs",
+                "case": "unknown_upload_ack_replays_only_identical_observation_receipts",
+                "line": 219
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          }
+        ]
+      },
+      {
+        "path": "fixtures/test_rust_native_observer.py",
+        "source_sha256": "d4bc4bf023e64a57e062dec237b5addad4ccdb5ed3c9e9ee0c08df75901a2c6c",
+        "target_sha256": "fff79a9ae2a5692cf5fc07cec772b90a65b4e4d0759fb4f08b7f351ec67bd0a1",
+        "cases": [
+          {
+            "case": "test_activity_cursor_codec_and_text_match_public_contract",
+            "line": 28,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "activity_cursor_codec_and_text_match_public_contract",
+                "line": 632
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "line": 128,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_native_collector_secret_binding_keeps_bytes",
+            "line": 167,
+            "parameters": [],
+            "targets": [],
+            "status": "RETIRED_CONTRACT"
+          },
+          {
+            "case": "test_managed_source_preserves_python_authority_exception",
+            "line": 176,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "managed_source_capacity_projection_recovery_and_exact_error",
+                "line": 996
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_native_desktop_limits_keep_python_tuple_and_exception",
+            "line": 193,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "native_desktop_display_does_not_promote_history_and_rechecks_scope",
+                "line": 886
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          }
+        ],
+        "checks": [
+          {
+            "line": 34,
+            "case": "test_activity_cursor_codec_and_text_match_public_contract",
+            "kind": "assert",
+            "original": "assert ActivityReader.encode(\"字😀\", \"after\", [7, \"item\"]) == expected",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "activity_cursor_codec_and_text_match_public_contract",
+                "line": 632
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 35,
+            "case": "test_activity_cursor_codec_and_text_match_public_contract",
+            "kind": "assert",
+            "original": "assert ActivityReader.decode(expected, \"字😀\", \"after\") == (7, \"item\")",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "activity_cursor_codec_and_text_match_public_contract",
+                "line": 632
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 42,
+            "case": "test_activity_cursor_codec_and_text_match_public_contract",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(APIError)",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "activity_cursor_codec_and_text_match_public_contract",
+                "line": 632
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 44,
+            "case": "test_activity_cursor_codec_and_text_match_public_contract",
+            "kind": "assert",
+            "original": "assert (\n        activity_text(\"prefix\\x00 secret=bad Bearer token\")\n        == \"prefix [REDACTED] Bearer [REDACTED]\"\n    )",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "activity_cursor_codec_and_text_match_public_contract",
+                "line": 632
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 133,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert item[\"menu_state\"] == \"PASS\" and item[\"elapsed_seconds\"] == 3600",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 134,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert item[\"final_result\"][\"execution_ref\"] == \"exec-fixture\"",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 135,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert (\n        item[\"codex_uri\"]\n        == \"codex://threads/\" + TID + \"?hostId=remote-ssh-discovered%3Ap620\"\n    )",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 139,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert item[\"native_conversation\"][\"thread_id\"] == TID",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 140,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert item[\"routing\"][\"provider\"][\"identifier\"] == \"codex_app_server\"",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 141,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert item[\"mutation_boundary\"][\"allowed_actions\"] == []",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 142,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert historical.store.list_tasks(\"active\")[\"items\"] == []",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 143,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert len(historical.store.list_tasks(\"recent\")[\"items\"]) == 1",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 145,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(sqlite3.OperationalError)",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 147,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert historical.store.task_row(c, \"task-fixture\")[\"turn_id\"] == TURN",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 151,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert projected[\"timestamps\"][\"observed_at\"] == \"fixed-observation\"",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 152,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert historical.path.read_bytes() == before",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 156,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert next_task[\"execution_ref\"] is None and next_task[\"final_result\"] is None",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 157,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert next_task[\"menu_state\"] == \"IDLE\"",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 160,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(sqlite3.OperationalError)",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 162,
+            "case": "test_historical_observer_rust_projection_exact_result_and_snapshot",
+            "kind": "assert",
+            "original": "assert not absent.path.exists()",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "historical_observer_rust_projection_exact_result_and_snapshot",
+                "line": 1210
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 171,
+            "case": "test_native_collector_secret_binding_keeps_bytes",
+            "kind": "assert",
+            "original": "assert bridge.secret == b\"new-lifetime\"",
+            "targets": [],
+            "status": "RETIRED_CONTRACT"
+          },
+          {
+            "line": 185,
+            "case": "test_managed_source_preserves_python_authority_exception",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(RustAuthorityError, match=\"IDENTITY_CONFLICT\")",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "managed_source_capacity_projection_recovery_and_exact_error",
+                "line": 996
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 187,
+            "case": "test_managed_source_preserves_python_authority_exception",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(RustAuthorityError, match=\"IDENTITY_CONFLICT\")",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "managed_source_capacity_projection_recovery_and_exact_error",
+                "line": 996
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 198,
+            "case": "test_native_desktop_limits_keep_python_tuple_and_exception",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(RustAuthorityError, match=\"INVALID_CONTEXT_LIMIT\")",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "native_desktop_display_does_not_promote_history_and_rechecks_scope",
+                "line": 886
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 200,
+            "case": "test_native_desktop_limits_keep_python_tuple_and_exception",
+            "kind": "assert",
+            "original": "assert limits(None, None) == (8, 32000)",
+            "targets": [
+              {
+                "path": "kernel/tests/native_observer_qualification.rs",
+                "case": "native_desktop_display_does_not_promote_history_and_rechecks_scope",
+                "line": 886
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          }
+        ]
+      },
+      {
+        "path": "fixtures/test_rust_observation_directory.py",
+        "source_sha256": "2bd75814d193c58f322d6c66ee34848cb95ced846c797a3d1c31d90e116f8303",
+        "target_sha256": "fda80ef127e1b5498d90b4cb5991845d37e6e2846c74583432f1f31c98b875fb",
+        "cases": [
+          {
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "line": 87,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_read_scope_revocation_and_cursor_rebinding_are_checked_without_restart",
+            "line": 114,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_read_scope_revocation_and_cursor_rebinding_are_checked_without_restart",
+                "line": 115
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_restart_keeps_exact_cursor_and_missing_state_never_bootstraps",
+            "line": 126,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_restart_keeps_exact_cursor_and_missing_state_never_bootstraps",
+                "line": 127
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+            "line": 140,
+            "parameters": [
+              "pytest.mark.parametrize(\"change\", [\"none\", \"scope\", \"projection\", \"peer_revoked\", \"identity\"])"
+            ],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+                "line": 141
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "line": 236,
+            "parameters": [
+              "pytest.mark.parametrize(\"change\", [\"none\", \"scope\", \"execution\", \"identity\"])"
+            ],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          }
+        ],
+        "checks": [
+          {
+            "line": 52,
+            "case": "<shared-fixture>",
+            "kind": "assert",
+            "original": "assert select.select([process.stdout], [], [], 10)[0], \"MCP response deadline\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "<shared-fixture>",
+                "note": "unchanged independent fixture assertion"
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 54,
+            "case": "<shared-fixture>",
+            "kind": "assert",
+            "original": "assert line, process.stderr.read() if process.poll() is not None else \"MCP EOF\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "<shared-fixture>",
+                "note": "unchanged independent fixture assertion"
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 56,
+            "case": "<shared-fixture>",
+            "kind": "assert",
+            "original": "assert response[\"id\"] == (None if \"error\" in response else sequence)",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "<shared-fixture>",
+                "note": "unchanged independent fixture assertion"
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 60,
+            "case": "<shared-fixture>",
+            "kind": "assert",
+            "original": "assert \"error\" not in response, response",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "<shared-fixture>",
+                "note": "unchanged independent fixture assertion"
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 67,
+            "case": "<shared-fixture>",
+            "kind": "assert",
+            "original": "assert process.returncode == 0, process.stderr.read()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "<shared-fixture>",
+                "note": "unchanged independent fixture assertion"
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 90,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert api.request(\"initialize\")[\"result\"][\"protocolVersion\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 93,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert tools == expected",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 95,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert names == {\"clinx_list_observations\", \"clinx_get_observation\", \"clinx_get_observation_context\", \"clinx_get_observation_activity\"}",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 97,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert listed[\"read_only\"] and len(listed[\"items\"]) == 1",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 100,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert detail[\"item\"][\"native_thread_id\"] == TID and detail[\"read_only\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 102,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert context[\"last_codex_result\"] == \"Answer 2\" and context[\"read_only\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 103,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert \"NEVER_\" not in json.dumps(context)",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 105,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert activity[\"read_only\"] and len(activity[\"items\"]) == 2",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 106,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert activity[\"coverage\"] == \"RECEIVED_EVENTS_ONLY\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 108,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert denied[\"error\"][\"code\"] == -32602",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 110,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert children.read_text().strip() == \"\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 111,
+            "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+            "kind": "assert",
+            "original": "assert state_hash(local.identity.store.root) == before",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+                "line": 88
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 119,
+            "case": "test_read_scope_revocation_and_cursor_rebinding_are_checked_without_restart",
+            "kind": "assert",
+            "original": "assert detail[\"next_cursor\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_read_scope_revocation_and_cursor_rebinding_are_checked_without_restart",
+                "line": 115
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 122,
+            "case": "test_read_scope_revocation_and_cursor_rebinding_are_checked_without_restart",
+            "kind": "assert",
+            "original": "assert result[\"isError\"] and result[\"structuredContent\"][\"read_only\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_read_scope_revocation_and_cursor_rebinding_are_checked_without_restart",
+                "line": 115
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 123,
+            "case": "test_read_scope_revocation_and_cursor_rebinding_are_checked_without_restart",
+            "kind": "assert",
+            "original": "assert api.call(\"clinx_list_observations\")[\"structuredContent\"][\"items\"] == []",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_read_scope_revocation_and_cursor_rebinding_are_checked_without_restart",
+                "line": 115
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 132,
+            "case": "test_restart_keeps_exact_cursor_and_missing_state_never_bootstraps",
+            "kind": "assert",
+            "original": "assert older[\"turns\"][0][\"turn_id\"] != page[\"turns\"][0][\"turn_id\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_restart_keeps_exact_cursor_and_missing_state_never_bootstraps",
+                "line": 127
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 136,
+            "case": "test_restart_keeps_exact_cursor_and_missing_state_never_bootstraps",
+            "kind": "assert",
+            "original": "assert run.returncode != 0 and not missing.exists()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_restart_keeps_exact_cursor_and_missing_state_never_bootstraps",
+                "line": 127
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 176,
+            "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+            "kind": "assert",
+            "original": "assert not result[\"isError\"] and result[\"structuredContent\"][\"last_codex_result\"] == \"remote exact result\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+                "line": 141
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 178,
+            "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+            "kind": "assert",
+            "original": "assert result[\"isError\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+                "line": 141
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 179,
+            "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+            "kind": "assert",
+            "original": "assert result[\"structuredContent\"][\"error_code\"] in {\"OBSERVATION_NOT_FOUND\",\"SHARING_SCOPE_DENIED\",\"EXECUTION_TURN_IDENTITY_CONFLICT\",\"NODE_IDENTITY_MISMATCH\"}",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+                "line": 141
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 181,
+            "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+            "kind": "assert",
+            "original": "assert result[\"structuredContent\"][\"error_code\"] == \"NODE_IDENTITY_MISMATCH\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+                "line": 141
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 182,
+            "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+            "kind": "assert",
+            "original": "assert len(requests)==1 and requests[0][\"node_id\"]==\"air\" and requests[0][\"user_scope\"]==\"alice\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+                "line": 141
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 184,
+            "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+            "kind": "assert",
+            "original": "assert state_hash(root)==before",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+                "line": 141
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 232,
+            "case": "<shared-fixture>",
+            "kind": "assert",
+            "original": "assert not self.thread.is_alive() and not self.errors",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "<shared-fixture>",
+                "note": "unchanged independent fixture assertion"
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 267,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert {\"clinx_get_context\", \"clinx_get_observation_context\"} <= tools",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 270,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert api.call(\"clinx_get_observation\", dict(observation_id=observation))[\"structuredContent\"][\"item\"][\"task_ref\"] == \"task-exact\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 271,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert api.call(\"clinx_get_observation_activity\", dict(observation_id=observation))[\"structuredContent\"][\"read_only\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 275,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert not result[\"isError\"] and content[\"last_codex_result\"] == \"Exact provider result\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 276,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert (content[\"task_ref\"], content[\"execution_ref\"], content[\"thread_id\"], content[\"execution_turn_ref\"], content[\"context_scope\"]) == (\n                    \"task-exact\", \"exec-exact\", TID, \"turn-2\", \"EXACT_EXECUTION_TURN\")",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 278,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert content[\"read_only\"] and state_hash(local.identity.store.root) == before",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 280,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert result[\"isError\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 281,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert result[\"structuredContent\"][\"error_code\"] in {\"OBSERVATION_NOT_FOUND\", \"EXECUTION_TURN_IDENTITY_CONFLICT\", \"NODE_IDENTITY_MISMATCH\"}",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 283,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert result[\"structuredContent\"][\"error_code\"] == \"NODE_IDENTITY_MISMATCH\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 284,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert Path(f\"/proc/{api.process.pid}/task/{api.process.pid}/children\").read_text().strip() == \"\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 285,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert [r[\"operation\"] for r in authority.calls] == [\n            \"health\", \"health\", \"business.get_status\", \"business.list_tasks\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 287,
+            "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+            "kind": "assert",
+            "original": "assert not provider.inputs and not provider.interrupts",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_directory.py",
+                "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+                "line": 238
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          }
+        ]
+      },
+      {
+        "path": "fixtures/test_rust_observation_runtime.py",
+        "source_sha256": "321d8dc403d170102510dda8f3a88eab14da65ea8d2106fe037561631c1eb2f7",
+        "target_sha256": "e2a94b51d279d71ced1567fd694823928361079431e2caaa94924f414b1e388d",
+        "cases": [
+          {
+            "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+            "line": 55,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+                "line": 57
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_provider_identity_conflict_never_becomes_live",
+            "line": 99,
+            "parameters": [
+              "pytest.mark.parametrize(\n    \"variant,reason\",\n    [\n        (\"turn\", \"ACTIVE_OWNER_EXACT_TURN_UNCONFIRMED\"),\n        (\"thread\", \"OWNER_UNCONFIRMED\"),\n        (\"conflict\", \"OWNERSHIP_CONFLICT\"),\n    ],\n)"
+            ],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_provider_identity_conflict_never_becomes_live",
+                "line": 101
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_normal_sample_merges_history_in_rust_without_source_callbacks",
+            "line": 121,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_normal_sample_merges_history_in_rust_without_source_callbacks",
+                "line": 123
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_injected_provider_keeps_old_public_hook_with_rust_cache",
+            "line": 138,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_injected_provider_callback_preserves_exact_identity_and_rust_cache",
+                "line": 137
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_managed_remote_inventory_uses_rust_http_credential_and_scope",
+            "line": 168,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_managed_remote_inventory_uses_rust_http_credential_and_scope",
+                "line": 171
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_native_writer_probe_rejects_foreign_home_without_python_exec",
+            "line": 234,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_native_writer_probe_rejects_foreign_home_without_python_exec",
+                "line": 237
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_rust_mdns_offline_lifecycle_never_imports_python_zeroconf",
+            "line": 254,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_rust_mdns_offline_lifecycle_never_imports_python_zeroconf",
+                "line": 257
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          }
+        ],
+        "checks": [
+          {
+            "line": 67,
+            "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+            "kind": "assert",
+            "original": "assert (\n                first[\"liveness\"] == \"LIVE\" and first[\"reason\"] == \"EXACT_OWNER_ACTIVE\"\n            )",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+                "line": 57
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 70,
+            "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+            "kind": "assert",
+            "original": "assert source._observe_live(TID, \"/approved\", \"exact-turn\") == first",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+                "line": 57
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 71,
+            "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+            "kind": "assert",
+            "original": "assert [c[\"method\"] for c in provider.calls] == [\n                \"initialize\",\n                \"initialized\",\n                \"thread/read\",\n                \"thread/turns/list\",\n            ]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+                "line": 57
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 81,
+            "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+            "kind": "assert",
+            "original": "assert (\n                changed[\"liveness\"] == \"UNKNOWN\"\n                and changed[\"reason\"] == \"WORKSPACE_MISMATCH\"\n            )",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+                "line": 57
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 85,
+            "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+            "kind": "assert",
+            "original": "assert len(provider.calls) == 4",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+                "line": 57
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 113,
+            "case": "test_provider_identity_conflict_never_becomes_live",
+            "kind": "assert",
+            "original": "assert proof[\"liveness\"] == \"UNKNOWN\" and proof[\"reason\"] == reason",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_provider_identity_conflict_never_becomes_live",
+                "line": 101
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 131,
+            "case": "test_normal_sample_merges_history_in_rust_without_source_callbacks",
+            "kind": "assert",
+            "original": "assert events and all(e[\"native_thread_id\"] == TID for e in events)",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_normal_sample_merges_history_in_rust_without_source_callbacks",
+                "line": 123
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 132,
+            "case": "test_normal_sample_merges_history_in_rust_without_source_callbacks",
+            "kind": "assert",
+            "original": "assert all(e[\"binding_evidence\"] == \"THREAD_UNBOUND\" for e in events)",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_normal_sample_merges_history_in_rust_without_source_callbacks",
+                "line": 123
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 133,
+            "case": "test_normal_sample_merges_history_in_rust_without_source_callbacks",
+            "kind": "assert",
+            "original": "assert snapshot(native.root) == before",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_normal_sample_merges_history_in_rust_without_source_callbacks",
+                "line": 123
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 156,
+            "case": "test_injected_provider_keeps_old_public_hook_with_rust_cache",
+            "kind": "assert",
+            "original": "assert first[\"liveness\"] == \"LIVE\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_injected_provider_callback_preserves_exact_identity_and_rust_cache",
+                "line": 137
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 157,
+            "case": "test_injected_provider_keeps_old_public_hook_with_rust_cache",
+            "kind": "assert",
+            "original": "assert source._observe_live(TID, \"/approved\", \"exact-turn\") == first",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_injected_provider_callback_preserves_exact_identity_and_rust_cache",
+                "line": 137
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 158,
+            "case": "test_injected_provider_keeps_old_public_hook_with_rust_cache",
+            "kind": "assert",
+            "original": "assert probe.call_count == 1",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_injected_provider_callback_preserves_exact_identity_and_rust_cache",
+                "line": 137
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 159,
+            "case": "test_injected_provider_keeps_old_public_hook_with_rust_cache",
+            "kind": "assert",
+            "original": "assert (\n                source._observe_live(TID, \"/approved\", \"different\")[\"liveness\"]\n                == \"UNKNOWN\"\n            )",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_injected_provider_callback_preserves_exact_identity_and_rust_cache",
+                "line": 137
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 163,
+            "case": "test_injected_provider_keeps_old_public_hook_with_rust_cache",
+            "kind": "assert",
+            "original": "assert probe.call_count == 2",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_injected_provider_callback_preserves_exact_identity_and_rust_cache",
+                "line": 137
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 224,
+            "case": "test_managed_remote_inventory_uses_rust_http_credential_and_scope",
+            "kind": "assert",
+            "original": "assert result[0][0][\"id\"] == TID and result[2] == \"INDEXED\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_managed_remote_inventory_uses_rust_http_credential_and_scope",
+                "line": 171
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 225,
+            "case": "test_managed_remote_inventory_uses_rust_http_credential_and_scope",
+            "kind": "assert",
+            "original": "assert len(seen) == 1 and seen[0][1] == \"Bearer \" + token",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_managed_remote_inventory_uses_rust_http_credential_and_scope",
+                "line": 171
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 226,
+            "case": "test_managed_remote_inventory_uses_rust_http_credential_and_scope",
+            "kind": "assert",
+            "original": "assert seen[0][0].startswith(\"/v2/native-collector/inventory?\")",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_managed_remote_inventory_uses_rust_http_credential_and_scope",
+                "line": 171
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 250,
+            "case": "test_native_writer_probe_rejects_foreign_home_without_python_exec",
+            "kind": "assert",
+            "original": "assert proof[\"liveness\"] == \"UNKNOWN\" and \"writer_pid\" not in proof",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_native_writer_probe_rejects_foreign_home_without_python_exec",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 251,
+            "case": "test_native_writer_probe_rejects_foreign_home_without_python_exec",
+            "kind": "assert",
+            "original": "assert proof[\"observer_uid\"] == os.getuid()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_native_writer_probe_rejects_foreign_home_without_python_exec",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 258,
+            "case": "test_rust_mdns_offline_lifecycle_never_imports_python_zeroconf",
+            "kind": "assert",
+            "original": "assert browser.interfaces == [] and browser.zc is None",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_rust_mdns_offline_lifecycle_never_imports_python_zeroconf",
+                "line": 257
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 259,
+            "case": "test_rust_mdns_offline_lifecycle_never_imports_python_zeroconf",
+            "kind": "assert",
+            "original": "assert index.candidates() == {}",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_rust_mdns_offline_lifecycle_never_imports_python_zeroconf",
+                "line": 257
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 260,
+            "case": "test_rust_mdns_offline_lifecycle_never_imports_python_zeroconf",
+            "kind": "assert",
+            "original": "assert not any(c.args[0] in {\"zeroconf\", \"ifaddr\"} for c in imports.call_args_list)",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observation_runtime.py",
+                "case": "test_rust_mdns_offline_lifecycle_never_imports_python_zeroconf",
+                "line": 257
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          }
+        ]
+      },
+      {
+        "path": "fixtures/test_rust_observer_http.py",
+        "source_sha256": "551de2e2c3a724307919d22aab52bb2d55eff0ea4a1e3ed0b4a66018451b1e7e",
+        "target_sha256": null,
+        "cases": [
+          {
+            "case": "test_native_collector_and_errors_use_exact_rust_route",
+            "line": 38,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "native_collector_and_errors_use_exact_rust_route",
+                "line": 235
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_wide_integer_wire_preserves_value_at_source_boundary",
+            "line": 76,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "wide_integer_wire_preserves_exact_decimal",
+                "line": 264
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_duplicate_auth_body_source_faults_and_auth_unavailable",
+            "line": 117,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "duplicate_auth_body_source_faults_and_auth_unavailable",
+                "line": 368
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          }
+        ],
+        "checks": [
+          {
+            "line": 49,
+            "case": "test_native_collector_and_errors_use_exact_rust_route",
+            "kind": "assert",
+            "original": "assert request(\n        api,\n        \"/v2/native/\" + TID + \"?context=1&recent_turns=2&max_bytes=300&cursor=exact\",\n    ) == {\"native\": True}",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "native_collector_and_errors_use_exact_rust_route",
+                "line": 235
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 53,
+            "case": "test_native_collector_and_errors_use_exact_rust_route",
+            "kind": "assert",
+            "original": "assert captured == [\n        (None, TID, dict(context=True, recent_turns=2, max_bytes=300, cursor=\"exact\"))\n    ]",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "native_collector_and_errors_use_exact_rust_route",
+                "line": 235
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 59,
+            "case": "test_native_collector_and_errors_use_exact_rust_route",
+            "kind": "assert",
+            "original": "assert request(api, \"/v2/native-collector/sample/\" + TID + \"?checkpoint=exact\") == {\n        \"route\": \"sample/\" + TID,\n        \"query\": {\"checkpoint\": \"exact\"},\n    }",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "native_collector_and_errors_use_exact_rust_route",
+                "line": 235
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 64,
+            "case": "test_native_collector_and_errors_use_exact_rust_route",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(APIError)",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "native_collector_and_errors_use_exact_rust_route",
+                "line": 235
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 66,
+            "case": "test_native_collector_and_errors_use_exact_rust_route",
+            "kind": "assert",
+            "original": "assert (error.value.status, error.value.code) == (\n        409,\n        \"NATIVE_COLLECTOR_CURSOR_RESET\",\n    )",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "native_collector_and_errors_use_exact_rust_route",
+                "line": 235
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 71,
+            "case": "test_native_collector_and_errors_use_exact_rust_route",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(APIError)",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "native_collector_and_errors_use_exact_rust_route",
+                "line": 235
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 73,
+            "case": "test_native_collector_and_errors_use_exact_rust_route",
+            "kind": "assert",
+            "original": "assert (error.value.status, error.value.code) == (404, \"OBSERVATION_NOT_FOUND\")",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "native_collector_and_errors_use_exact_rust_route",
+                "line": 235
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 81,
+            "case": "test_wide_integer_wire_preserves_value_at_source_boundary",
+            "kind": "assert",
+            "original": "assert request(api, \"/v2/observations?limit=\" + \"9\" * 100) == {\"seen\": True}",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "wide_integer_wire_preserves_exact_decimal",
+                "line": 264
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 82,
+            "case": "test_wide_integer_wire_preserves_value_at_source_boundary",
+            "kind": "assert",
+            "original": "assert seen == [int(\"9\" * 100)]",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "wide_integer_wire_preserves_exact_decimal",
+                "line": 264
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 95,
+            "case": "listening",
+            "kind": "assert",
+            "original": "assert not thread.is_alive()",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "listener_restart_close_and_new_socket_ownership",
+                "line": 420
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 125,
+            "case": "test_duplicate_auth_body_source_faults_and_auth_unavailable",
+            "kind": "assert",
+            "original": "assert response.status == 401",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "duplicate_auth_body_source_faults_and_auth_unavailable",
+                "line": 368
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 128,
+            "case": "test_duplicate_auth_body_source_faults_and_auth_unavailable",
+            "kind": "assert",
+            "original": "assert http(server, body=\"x\")[0] == 400",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "duplicate_auth_body_source_faults_and_auth_unavailable",
+                "line": 368
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 129,
+            "case": "test_duplicate_auth_body_source_faults_and_auth_unavailable",
+            "kind": "assert",
+            "original": "assert (\n            http(\n                server,\n                headers={\n                    \"Authorization\": \"Bearer \" + TOKEN,\n                    \"Transfer-Encoding\": \"chunked\",\n                },\n            )[0]\n            == 400\n        )",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "duplicate_auth_body_source_faults_and_auth_unavailable",
+                "line": 368
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 145,
+            "case": "test_duplicate_auth_body_source_faults_and_auth_unavailable",
+            "kind": "assert",
+            "original": "assert status == 503 and json.loads(body)[\"error\"] == \"SOURCE_UNAVAILABLE\"",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "duplicate_auth_body_source_faults_and_auth_unavailable",
+                "line": 368
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 148,
+            "case": "test_duplicate_auth_body_source_faults_and_auth_unavailable",
+            "kind": "assert",
+            "original": "assert status == 503 and json.loads(body)[\"error\"] == \"PROJECTION_UNAVAILABLE\"",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "duplicate_auth_body_source_faults_and_auth_unavailable",
+                "line": 368
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 151,
+            "case": "test_duplicate_auth_body_source_faults_and_auth_unavailable",
+            "kind": "assert",
+            "original": "assert status == 503 and json.loads(body)[\"error\"] == \"AUTH_UNAVAILABLE\"",
+            "targets": [
+              {
+                "path": "kernel/tests/observer_http_qualification.rs",
+                "case": "duplicate_auth_body_source_faults_and_auth_unavailable",
+                "line": 368
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          }
+        ]
+      },
+      {
+        "path": "fixtures/test_rust_observer_runtime.py",
+        "source_sha256": "a373dc33e0189a6c2bd24ec75971038f061015a37f100d2e67021ed2ca6b3279",
+        "target_sha256": "aa97eca93b21ddefd22f1b021d659bce2e92488a62a3102ceb04de1ffebee757",
+        "cases": [
+          {
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "line": 114,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_bad_configuration_never_initializes_source",
+            "line": 151,
+            "parameters": [
+              "pytest.mark.parametrize(\n    \"values,error\",\n    [\n        ({\"CLINX_OBSERVER_TOKEN\": \"bad\"}, \"CLINX_OBSERVER_TOKEN\"),\n        ({\"CLINX_OBSERVER_CODEX_HOST_IDS\": \"[]\"}, \"CLINX_OBSERVER_CODEX_HOST_IDS\"),\n        ({\"CLINX_OBSERVER_CODEX_HOST_IDS\": '{\"p620\":\"host/name\"}'}, \"CLINX_OBSERVER_CODEX_HOST_IDS\"),\n        ({\"CLINX_OBSERVER_PORT\": \"65536\"}, \"OBSERVER_HTTP_BIND_FAILED\"),\n    ],\n)"
+            ],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_bad_configuration_never_initializes_source",
+                "line": 151
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_missing_legacy_database_fails_without_creating_it",
+            "line": 164,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_missing_legacy_database_fails_without_creating_it",
+                "line": 164
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "line": 203,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+            "line": 236,
+            "parameters": [
+              "pytest.mark.parametrize(\"mode\", [\"exact\", \"wrong_workspace\", \"revoked\"])"
+            ],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+                "line": 237
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          },
+          {
+            "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+            "line": 270,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+                "line": 271
+              }
+            ],
+            "status": "RETAINED_DIRECT_RUST_IPC"
+          }
+        ],
+        "checks": [
+          {
+            "line": 29,
+            "case": "<shared-fixture>",
+            "kind": "assert",
+            "original": "assert path.is_file(), \"Build the standalone Rust Observer before qualification\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "<shared-fixture>",
+                "note": "unchanged independent fixture assertion"
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 66,
+            "case": "<shared-fixture>",
+            "kind": "assert",
+            "original": "assert self.process.poll() is None, self.stderr_path.read_text()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "<shared-fixture>",
+                "note": "unchanged independent fixture assertion"
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 72,
+            "case": "<shared-fixture>",
+            "kind": "assert",
+            "original": "assert time.monotonic() < deadline, self.stderr_path.read_text()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "<shared-fixture>",
+                "note": "unchanged independent fixture assertion"
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 122,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert observer.request(\"/v1/health\", token=\"bad\")[0] == 401",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 123,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert observer.request(\"/v1/health\", method=\"POST\")[0] == 405",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 124,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert observer.request(\"/v1/tasks?state=active&offset=-1\")[0] == 400",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 125,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert observer.request(\"/v1/tasks/absent\")[0] == 404",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 127,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert status == 200",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 128,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert without_time(item) == without_time(historical.store.task(\"task-fixture\"))",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 129,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert item[\"final_result\"][\"execution_ref\"] == \"exec-fixture\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 130,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert item[\"codex_uri\"].endswith(\"?hostId=remote-ssh-discovered%3Ap620\")",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 131,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert observer.request(\"/v1/tasks/task-fixture/events\")[0] == 200",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 132,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert observer.request(\"/v2/observations\")[1][\"error\"] == \"OBSERVATION_NOT_CONFIGURED\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 133,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert Path(f\"/proc/{observer.process.pid}/exe\").resolve() == binary().resolve()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 134,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert not Path(f\"/proc/{observer.process.pid}/task/{observer.process.pid}/children\").read_text().strip()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 135,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert observer.process.returncode == 0",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 137,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert rows and all(set(row) == {\"observer_http_method\", \"status\"} for row in rows)",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 138,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert TOKEN not in observer.stdout_path.read_text() + observer.stderr_path.read_text()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 139,
+            "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+            "kind": "assert",
+            "original": "assert historical.path.read_bytes() == before",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+                "line": 114
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 160,
+            "case": "test_bad_configuration_never_initializes_source",
+            "kind": "assert",
+            "original": "assert result.returncode == 1 and error.encode() in result.stderr",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_bad_configuration_never_initializes_source",
+                "line": 151
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 161,
+            "case": "test_bad_configuration_never_initializes_source",
+            "kind": "assert",
+            "original": "assert not absent.exists()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_bad_configuration_never_initializes_source",
+                "line": 151
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 173,
+            "case": "test_missing_legacy_database_fails_without_creating_it",
+            "kind": "assert",
+            "original": "assert result.returncode == 1 and b\"LEGACY_SOURCE_UNAVAILABLE\" in result.stderr",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_missing_legacy_database_fails_without_creating_it",
+                "line": 164
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 174,
+            "case": "test_missing_legacy_database_fails_without_creating_it",
+            "kind": "assert",
+            "original": "assert not absent.exists()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_missing_legacy_database_fails_without_creating_it",
+                "line": 164
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 209,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert status == 200 and inventory[\"read_only\"] is True",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 211,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert status == 200 and sampled[\"thread_id\"] == TID",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 212,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert sampled[\"events\"] and \"NEVER_\" not in json.dumps(sampled)",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 216,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert all(status == 200 and body[\"thread_id\"] == TID for status, body in replies)",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 218,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert status == 409 and denied[\"error\"] == \"NATIVE_COLLECTOR_CURSOR_RESET\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 220,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert status == 200 and context[\"last_user_intent\"] == \"User 2\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 221,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert context[\"codex_running\"] is False",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 222,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert context[\"native_display_state\"] == \"UNKNOWN\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 223,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert \"NEVER_\" not in json.dumps(context)",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 224,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert observer.request(f\"/v2/native/{TID}?recent_turns=999999999999999999999\")[1][\"error\"] == \"INVALID_CONTEXT_LIMIT\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 226,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert reopened.request(route)[0] == 409",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 227,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert reopened.request(f\"/v2/native-collector/sample/{TID}\")[0] == 200",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 229,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert reopened.request(\"/v2/native-collector/inventory\")[1][\"error\"] == \"SHARING_SCOPE_DENIED\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 230,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert reopened.request(f\"/v2/native/{TID}\")[1][\"error\"] == \"SHARING_SCOPE_DENIED\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 231,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert snapshot(native.root) == before",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 232,
+            "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+            "kind": "assert",
+            "original": "assert Path(registry.path).read_bytes() == registry_before",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+                "line": 204
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 246,
+            "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+            "kind": "assert",
+            "original": "assert request[\"method\"] == \"thread/read\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 247,
+            "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+            "kind": "assert",
+            "original": "assert request[\"params\"] == {\"threadId\": TID, \"includeTurns\": False}",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 258,
+            "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+            "kind": "assert",
+            "original": "assert status == 200",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 259,
+            "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+            "kind": "assert",
+            "original": "assert result[\"codex_running\"] is True",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 260,
+            "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+            "kind": "assert",
+            "original": "assert result[\"native_display_state\"] == \"RUNNING\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 261,
+            "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+            "kind": "assert",
+            "original": "assert result[\"queried_thread_id\"] == TID",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 263,
+            "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+            "kind": "assert",
+            "original": "assert status == 400",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 264,
+            "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+            "kind": "assert",
+            "original": "assert result[\"error\"] == (\"NATIVE_OBSERVATION_IDENTITY_CONFLICT\" if mode == \"wrong_workspace\" else \"SHARING_SCOPE_DENIED\")",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 267,
+            "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+            "kind": "assert",
+            "original": "assert [r[\"method\"] for r in provider.calls] == [\"initialize\", \"initialized\", \"thread/read\"]",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_native_provider_read_exact_identity_and_scope_recheck",
+                "line": 237
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 290,
+            "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+            "kind": "assert",
+            "original": "assert name in {\"clinx_get_capabilities\", \"clinx_list_observations\"}",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+                "line": 271
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 301,
+            "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+            "kind": "assert",
+            "original": "assert observer.request(\"/v1/health\")[1][\"authority\"] == \"RUST\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+                "line": 271
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 302,
+            "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+            "kind": "assert",
+            "original": "assert observer.request(\"/v1/tasks?state=active\")[1][\"legacy_history\"] is False",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+                "line": 271
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 303,
+            "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+            "kind": "assert",
+            "original": "assert observer.request(\"/v1/tasks/old\")[1][\"error\"] == \"RUST_TASKS_USE_OBSERVATIONS_V2\"",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+                "line": 271
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 304,
+            "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+            "kind": "assert",
+            "original": "assert observer.request(\"/v2/observations\")[0] == 200",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+                "line": 271
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 309,
+            "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+            "kind": "assert",
+            "original": "assert not thread.is_alive() and not errors",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+                "line": 271
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 310,
+            "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+            "kind": "assert",
+            "original": "assert calls and not absent.exists()",
+            "targets": [
+              {
+                "path": "fixtures/test_rust_observer_runtime.py",
+                "case": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+                "line": 271
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          }
+        ]
+      },
+      {
+        "path": "tests/test_node_observation_provider.py",
+        "source_sha256": "1793a7aa5d70ce89a44b0f927b6b6286736c05d0efe5642319e08d693ead901e",
+        "target_sha256": "1793a7aa5d70ce89a44b0f927b6b6286736c05d0efe5642319e08d693ead901e",
+        "cases": [
+          {
+            "case": "test_read_only_node_loads_explicit_provider_without_execution_adapter",
+            "line": 17,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "explicit_provider_loads_readonly_without_execution_or_provider_startup",
+                "line": 204
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_execution_config_is_not_implicit_observation_authority",
+            "line": 32,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "execution_config_never_implicitly_selects_observation_provider",
+                "line": 250
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_native_writer_observation_is_explicit_and_independent_of_execution",
+            "line": 39,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "native_writer_observation_is_independent_of_execution_config",
+                "line": 215
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_ambiguous_native_writer_route_fails_closed",
+            "line": 49,
+            "parameters": [
+              "pytest.mark.parametrize('config', [{'observation_native_writer': 'true'},\n    {'observation_native_writer': True, 'observation_provider_config': '/other'}])"
+            ],
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "ambiguous_native_writer_routes_fail_closed",
+                "line": 221
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_invalid_explicit_provider_route_fails_closed",
+            "line": 54,
+            "parameters": [
+              "pytest.mark.parametrize(\"path\", [\"\", \" \", False, 3, []])"
+            ],
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "invalid_explicit_provider_routes_fail_closed",
+                "line": 230
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          },
+          {
+            "case": "test_missing_provider_config_does_not_fall_back_to_execution",
+            "line": 60,
+            "parameters": [],
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "missing_provider_config_never_falls_back_to_execution",
+                "line": 239
+              }
+            ],
+            "status": "RUST_EQUIVALENT"
+          }
+        ],
+        "checks": [
+          {
+            "line": 28,
+            "case": "test_read_only_node_loads_explicit_provider_without_execution_adapter",
+            "kind": "raises_or_mock_assertion",
+            "original": "load.assert_called_once_with(tmp_path / \"provider.toml\")",
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "explicit_provider_loads_readonly_without_execution_or_provider_startup",
+                "line": 204
+              }
+            ],
+            "status": "RETIRED_CONTRACT"
+          },
+          {
+            "line": 29,
+            "case": "test_read_only_node_loads_explicit_provider_without_execution_adapter",
+            "kind": "assert",
+            "original": "assert source.provider_config is provider",
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "explicit_provider_loads_readonly_without_execution_or_provider_startup",
+                "line": 204
+              }
+            ],
+            "status": "RETIRED_CONTRACT"
+          },
+          {
+            "line": 36,
+            "case": "test_execution_config_is_not_implicit_observation_authority",
+            "kind": "assert",
+            "original": "assert source.provider_config is None",
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "execution_config_never_implicitly_selects_observation_provider",
+                "line": 250
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 43,
+            "case": "test_native_writer_observation_is_explicit_and_independent_of_execution",
+            "kind": "assert",
+            "original": "assert source.native_writer_observation is True",
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "native_writer_observation_is_independent_of_execution_config",
+                "line": 215
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 44,
+            "case": "test_native_writer_observation_is_explicit_and_independent_of_execution",
+            "kind": "assert",
+            "original": "assert source.provider_config is None",
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "native_writer_observation_is_independent_of_execution_config",
+                "line": 215
+              }
+            ],
+            "status": "RETIRED_CONTRACT"
+          },
+          {
+            "line": 50,
+            "case": "test_ambiguous_native_writer_route_fails_closed",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(ValueError)",
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "ambiguous_native_writer_routes_fail_closed",
+                "line": 221
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 55,
+            "case": "test_invalid_explicit_provider_route_fails_closed",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(ValueError, match=\"observation_provider_config\")",
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "invalid_explicit_provider_routes_fail_closed",
+                "line": 230
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          },
+          {
+            "line": 61,
+            "case": "test_missing_provider_config_does_not_fall_back_to_execution",
+            "kind": "raises_or_mock_assertion",
+            "original": "pytest.raises(FileNotFoundError)",
+            "targets": [
+              {
+                "path": "kernel/tests/helper_observation_config_qualification.rs",
+                "case": "missing_provider_config_never_falls_back_to_execution",
+                "line": 239
+              }
+            ],
+            "status": "SEMANTIC_OBLIGATION_PRESERVED"
+          }
+        ]
+      }
+    ],
+    "retired_contracts": [
+      {
+        "contract": "NativeCollectorBridge.secret Python bytes getter/setter",
+        "reason": "The Python bridge object is removed; checkpoint secret behavior remains Rust native_observer qualification. This object-specific assertion is RETIRED_CONTRACT, not a PASS."
+      },
+      {
+        "contract": "ObserverStore.snapshot Python context-manager and sqlite3.OperationalError type",
+        "reason": "The Python object API is retired. Independent SQL readonly snapshot, exact row, fixed timestamp, no file creation, unchanged DB bytes and new-turn isolation are preserved in historical_observer_rust_projection_exact_result_and_snapshot."
+      },
+      {
+        "contract": "Python APIError/NodeProtocolError/RustAuthorityError classes and tuple-vs-JSON return types",
+        "reason": "Facade types are retired. Rust status/code errors, all invalid limit parameters and default [8,32000] remain tested. Managed source exposes SOURCE_AUTHORITY_ERROR:IDENTITY_CONFLICT, rather than the removed Python prefix-stripping wrapper."
+      },
+      {
+        "contract": "configured_observation_source Python provider object identity and BridgeConfig.load mock call count",
+        "reason": "Factory removed. Real Helper validates each original illegal config and starts explicit observation/native-writer mode independently of execution. Python same-object assertions are RETIRED_CONTRACT. The no-implicit-observation semantic now has a real paired Centre/Helper test: valid execution config, execute_tasks=false, independent active native history, three durably uploaded events, zero Provider calls. An otherwise-identical explicit observation-provider positive control makes exactly initialize/initialized/thread-read/turns-list calls and records exact turn-2 LIVE evidence. Malformed execution config is not used: the established daemon separately validates relay config, which is a different contract."
+      },
+      {
+        "contract": "Python injected provider object hook",
+        "reason": "Object injection removed; exact callback operation/args, cache counts 1/2, same-key result and different-turn UNKNOWN remain in test_injected_provider_callback_preserves_exact_identity_and_rust_cache."
+      }
+    ],
+    "independent_oracles": {
+      "historical_sql": "fixtures/test_rust_native_observer.py::historical",
+      "frozen_projection": "fixtures/observer_historical_expected.json",
+      "captured_before_changes": "monitor-before/historical-task-oracle.json",
+      "ignored_timestamp": "observed_at only; existing comparison already omitted this field",
+      "sql_http_provider_assertions": "All original assertions/parameters in test_rust_observation_directory.py, test_rust_observer_runtime.py and test_rust_observation_runtime.py retained or explicitly adapted to existing Rust IPC; no external services or real tasks."
+    },
+    "qualifications": {
+      "rust": {
+        "logs": [
+          "monitor-rust-qualification.log (42 existing cases plus first 5 helper cases)",
+          "helper-observation-config-final.log (6 helper cases, supersedes 5)"
+        ],
+        "passed": 48,
+        "failed": 0,
+        "ignored": 0
+      },
+      "python": {
+        "log": "monitor-affected.log",
+        "passed": 32,
+        "failed": 0
+      },
+      "initial_fixture_errors": [
+        "monitor-env-error.log: missing task-owned basetemp parent; repaired runner only",
+        "monitor-rust-fixture-config-error.log: newly added sample lacked required linear fields; repaired fixture only",
+        "monitor-rust-fixture-project-error.log: newly added sample lacked required project mapping; repaired fixture only"
+      ]
+    },
+    "ignored_tests": {
+      "modified": false,
+      "node_observation_provider_before": "8 PASS / 3 historical FAIL; imported retired factory after removal, classify retirement impacts separately",
+      "process_entrypoint_consumers": [
+        "tests/test_node_runtime.py:122",
+        "tests/test_native_lifecycle_process.py:186",
+        "tests/test_network_observation_process.py:117"
+      ],
+      "note": "These historical tests still name the retired MonitorApp/Scripts/node_service_entrypoint.py alias. Files are unchanged. Source launch moved to actual clinx-node-daemon helper in existing process qualification; do not call these old test identities PASS."
+    },
+    "summary": {
+      "original_check_count": 176,
+      "original_test_function_count": 34,
+      "retired_check_count": 4
+    }
+  },
+  "maintenance": {
+    "baseline": "26af9ee",
+    "retired": {
+      "path": "scripts/transfer_rust_native_session.py",
+      "lines": 163,
+      "sha256": "f6f34f6a81b042315503a6e40b7579f96acc1159ef3d2596493e9fe0ad5e0386"
+    },
+    "replacement": {
+      "entrypoint": "clinx-maintenance transfer-native-session --source-receipt FILE --source-endpoint SOCKET --release DIR --output UNIQUE_RECEIPT --destination-home CURRENT_PROVIDER_HOME",
+      "classification": "DEVOPS / explicit maintenance; exclude from normal Rust release and Monitor App",
+      "source_default": "pvxlabs account home/.codex; source-home can explicitly override",
+      "destination_default": "NONE; required --destination-home replaces retired hardcoded /var/lib/clinx-rust/worker/codex160",
+      "runtime_config": "compiled /var/lib/clinx-rust/config/mcp-runtime.json selects actual destination Provider endpoint and runtime host",
+      "authority_peer": "resolved clinx-authority account UID replaces literal 993",
+      "identities": "same root orchestration; source runuser source_user; destination nsenter existing dispatcher mount then runuser clinx-transport; adoption runuser clinx-api",
+      "protocol": "native Rust existing Provider JSON-RPC and UnixAuthority business.adopt; no Python or api_compat dependency",
+      "git_snapshot": "retired script built branch/head then RustIntegration.adopt discarded it in favor of live cwd; replacement uses already verified destination cwd with existing Authority adoption contract"
+    },
+    "durability": [
+      "unique 0600 receipt created before Provider IO; atomic tempfile replacement and directory fsync",
+      "ARCHIVE_ATTEMPT before archive; COPY_ATTEMPT before exclusive target creation; DESTINATION_RESUME_ATTEMPT before resume; ADOPTION_ATTEMPT with exact args and 32-hex operation id before send",
+      "archive/source dev+inode identity checked before read, writableFD checked by inode including renamed descriptors, scan uncertainty fails closed",
+      "metadata exact thread/cwd, source and target SHA, target created exclusively and checksum verified through held FD with target inode recorded",
+      "exact destination idle thread/cwd/full turn equality mandatory; Provider result does not commit adoption",
+      "any unknown stops with original stage and receipt; no auto replay or overwrite; Authority op receipt survives restart",
+      "bounded own process group capture applies to stdin/stdout/process total time including inherited pipes; groups killed/reaped on errors"
+    ],
+    "validation": {
+      "result": "PASS",
+      "groups": 14,
+      "transfer_groups": 11,
+      "cli_groups": 3,
+      "log": "maintenance-transfer-tests.log",
+      "clippy": "PASS ordinary scoped clippy; only 10 existing lib warnings, no new maintenance warnings",
+      "clippy_log": "maintenance-clippy.log",
+      "production_runuser_namespace": "NOT_RUN; only reviewed existing identity/namespace route, fixtures use current test UID and private sockets",
+      "production_changes": "NONE; no deployment, service lifecycle, installed database, user task, or runtime data touched"
+    },
+    "coverage": [
+      "real source/destination Provider WebSocket and native IO child process, exclusive copy, real disposable Rust Authority adoption and exact receipt readback",
+      "archive ACK physically lost after rename; resume ACK physically lost after request; no replay",
+      "Authority proxy discards response after real commit; restart yields exact operation receipt; no replay",
+      "invalid source terminal receipt/id/turn, existing output, symlink/foreign source, archive inode mismatch, rollout metadata id/cwd mismatch, existing copy",
+      "real writable FD followed across archive rename using private procfs view; malformed fdinfo is UNKNOWN",
+      "destination thread/cwd/full turn/status conflicts; source nonterminal; wrong Provider peer UID before initialization/archive",
+      "exact read on seventh page preserves prior 100-page scan contract",
+      "root-free help, required explicit destination, normal child result, output limit, blocked stdin and descendant-held stdout deadline"
+    ],
+    "final_sources": [
+      {
+        "path": "kernel/src/maintenance_transfer.rs",
+        "sha256": "42be25c2141561f3f21db4f08284eec866ba70684ee36f8993d5902a534ed8d0",
+        "lines": 472
+      },
+      {
+        "path": "kernel/src/bin/clinx-maintenance.rs",
+        "sha256": "6b44589f99cbd271bb27050acba1009cdb0bc0dc9cc5325f983c06712392c418",
+        "lines": 399
+      },
+      {
+        "path": "kernel/tests/maintenance_transfer.rs",
+        "sha256": "05d4cab1f6b154b66773d462a3de7d6e88f2c3dd9019333de519ed3a3213f605",
+        "lines": 564
+      }
+    ]
+  },
+  "discovery": {
+    "schema": "CLINX_NATIVE_DISCOVERY_SMOKE_MIGRATION_V1",
+    "baseline": "26af9ee3f5f76979e6b1f28a1ec2ea3ace512acf",
+    "observed_at": "2026-10-25T11:19:12.974656+00:00",
+    "deleted": {
+      "path": "scripts/local_discovery_smoke.py",
+      "lines": 171,
+      "bytes": 6592,
+      "sha256": "cf19862af2cba9026eee03370ae5bb316e45c3e97a3d7b4463e71b82a6aec65a"
+    },
+    "replacement": {
+      "entrypoint": "kernel/examples/local_discovery_smoke.rs",
+      "build": "cargo build --manifest-path kernel/Cargo.toml --example local_discovery_smoke --bin clinx-node",
+      "opt_in_lan": "TARGET/debug/examples/local_discovery_smoke --lan",
+      "offline_qualification": "TARGET/debug/examples/local_discovery_smoke --loopback",
+      "release_or_app_entrypoint": false
+    },
+    "preserved_contracts": [
+      "two independent real Rust Node processes; both exit/restart with same private identity stores",
+      "real OPAQUE pairing and both directions of mTLS without reopening PIN windows",
+      "mDNS start/advertise/candidates/close uses existing Rust Node RPC; untrusted advertisement fingerprint checked against TLS/trust",
+      "wrong endpoint preserves legitimate peer identity, actual different-key server must fail TLS_HANDSHAKE_FAILED",
+      "successful post-rejection legitimate reconnect and persisted OPAQUE_V1 trust",
+      "empty capabilities, authority_granted=false, authorization_required=true, sharing.json absent",
+      "PIN only private child pipes and RAM; no argv/env/log/file copy; serialized PIN buffers zeroized; fixed failure codes"
+    ],
+    "qualification": {
+      "rust_smoke_tests": "2 passed; 0 failed; 0 ignored",
+      "existing_mdns_runtime_tests": "7 passed; 0 failed; 0 ignored; real private unicast UDP wire/TTL/resolve fixtures",
+      "example_and_node_debug_build": "PASS",
+      "real_example_loopback_cli": "PASS",
+      "stdout": {
+        "authorization_isolation": "PASS",
+        "bidirectional_mtls_without_pin": "PASS",
+        "contract": "RUST_DISCOVERY_SMOKE_V1",
+        "mdns": "NOT_RUN_SEPARATE_PRIVATE_UDP_QUALIFICATION",
+        "mode": "isolated_loopback",
+        "opaque_pairing": "PASS",
+        "physical_cross_device": "NOT_VERIFIED",
+        "two_process_restart": "PASS",
+        "wrong_tls_identity_rejected": "PASS"
+      },
+      "stderr_bytes": 0,
+      "clippy": "PASS with 10 existing library warnings; no example/test warning; strict -D warnings blocked by those existing warning sites",
+      "rustfmt": "PASS",
+      "git_diff_check": "PASS"
+    },
+    "not_verified": [
+      "real --lan multicast flow not invoked",
+      "physical cross-device LAN not invoked",
+      "Mac SDK/App not part of this isolated qualification"
+    ],
+    "scope": {
+      "production_io": false,
+      "real_tasks": false,
+      "service_restart": false,
+      "production_database_or_run_data": false,
+      "discovery_core_modified": false,
+      "existing_tests_removed_or_changed": false
+    },
+    "sources": {
+      "kernel/examples/local_discovery_smoke.rs": {
+        "sha256": "65de9fa034f82c4dfd468947d68f1423e9e45eb80347910b48a801d0e7321667",
+        "lines": 21
+      },
+      "kernel/examples/support/local_discovery_smoke.rs": {
+        "sha256": "794eb98b16e197fcc08c001270ebf7d26779f078c3cf2535b7c5e1fec4e0a98c",
+        "lines": 367
+      },
+      "kernel/tests/discovery_smoke_qualification.rs": {
+        "sha256": "1463cd48c013d8a5f7cb40580ad7b2b81eaa6136674590678152a067d91a5f04",
+        "lines": 38
+      }
+    },
+    "logs": [
+      "discovery-smoke-rust-final.log",
+      "discovery-smoke-mdns.log",
+      "discovery-smoke-build.log",
+      "discovery-smoke-cli.json",
+      "discovery-smoke-cli.stderr",
+      "discovery-smoke-clippy.log",
+      "discovery-smoke-clippy-warnings.log"
+    ],
+    "initial_development_failure": "Zeroizing<String> Display compile error fixed to as_str before final validation; no retained regression",
+    "cleanup_receipt": "discovery-smoke-default-target-cleanup.json"
+  },
+  "local_test_summary": {
+    "classification_counts": {
+      "PRE_EXISTING_FAILURE": 153,
+      "UNCHANGED_REPORTED_PASS": 214,
+      "UNCHANGED_SKIP": 2,
+      "CURRENT_RETIREMENT_OLD_API_FAILURE": 7,
+      "MASKED_RETIRED_API_EXPECTED_EXCEPTION": 1
+    },
+    "pre_existing_negative_cases": 153,
+    "current_retirement_old_api_failures": 7,
+    "observed_new_semantic_failures": 0,
+    "masked_retired_api_expected_exception_passes": 1,
+    "reported_after_passes": 215,
+    "unchanged_passes_without_identified_masking": 214,
+    "state_changes": 7,
+    "original_suite_result": "NOT_PASS",
+    "scope_limit": "118 collection/runtime errors and 35 original failures predate this change. Zero observed new semantic failures is not a full-suite semantic PASS. Seven newly failing retired Python entrypoint cases have independent real-process Rust replacement evidence. One unchanged PASS is masked by a pre-configuration FileNotFoundError; use Rust replacement evidence instead."
+  },
+  "local_changed_or_masked_cases": [
+    {
+      "case": "test_node_observation_provider::test_ambiguous_native_writer_route_fails_closed[config0]",
+      "before": {
+        "status": "pass",
+        "message": "",
+        "trace_sha256": null
+      },
+      "after": {
+        "status": "failure",
+        "message": "FileNotFoundError: [Errno 2] No such file or directory: '/data/artifacts/mc25final_local/clinx/nodes/node_service_entrypoint.py'",
+        "trace_sha256": "2fabf10c2304115ffe5c1971df8f972e0b6ba82a83112dcacc4985127072d640"
+      },
+      "status_changed": true,
+      "normalized_message_changed": true,
+      "classification": "CURRENT_RETIREMENT_OLD_API_FAILURE",
+      "cause": "Python entrypoint loader raises FileNotFoundError for retired clinx/nodes/node_service_entrypoint.py before configured_observation_source executes.",
+      "replacement_evidence": {
+        "parameter": {
+          "observation_native_writer": "true"
+        },
+        "rust_case": "ambiguous_native_writer_routes_fail_closed",
+        "source_line": 221,
+        "expected_reason": "Invalid native writer observation route",
+        "path": "/home/pvxlabs/dev/clinx/kernel/tests/helper_observation_config_qualification.rs",
+        "source_sha256": "b05a86136569d814f467a2e95e086659f7eb625081b7f78c4350499d3223f948",
+        "log": "/data/artifacts/clinx-maintenance-convergence-20261025/helper-observation-config-final.log",
+        "log_sha256": "03a5f256c6ad2aa8dae7f7816b8d0b130bad40a7333c6aa3a97f6891835a1649",
+        "result": "PASS",
+        "boundary": "Actual Rust Helper child process; health blocked with exact reason and no observation outbox. Same invalid input parameter retained."
+      }
+    },
+    {
+      "case": "test_node_observation_provider::test_ambiguous_native_writer_route_fails_closed[config1]",
+      "before": {
+        "status": "pass",
+        "message": "",
+        "trace_sha256": null
+      },
+      "after": {
+        "status": "failure",
+        "message": "FileNotFoundError: [Errno 2] No such file or directory: '/data/artifacts/mc25final_local/clinx/nodes/node_service_entrypoint.py'",
+        "trace_sha256": "1962cb2cb3b13d6eada7e17ea9c28dd38adc974b5cf8ec06c97a95696ca9df33"
+      },
+      "status_changed": true,
+      "normalized_message_changed": true,
+      "classification": "CURRENT_RETIREMENT_OLD_API_FAILURE",
+      "cause": "Python entrypoint loader raises FileNotFoundError for retired clinx/nodes/node_service_entrypoint.py before configured_observation_source executes.",
+      "replacement_evidence": {
+        "parameter": {
+          "observation_native_writer": true,
+          "observation_provider_config": "/other"
+        },
+        "rust_case": "ambiguous_native_writer_routes_fail_closed",
+        "source_line": 221,
+        "expected_reason": "Invalid native writer observation route",
+        "path": "/home/pvxlabs/dev/clinx/kernel/tests/helper_observation_config_qualification.rs",
+        "source_sha256": "b05a86136569d814f467a2e95e086659f7eb625081b7f78c4350499d3223f948",
+        "log": "/data/artifacts/clinx-maintenance-convergence-20261025/helper-observation-config-final.log",
+        "log_sha256": "03a5f256c6ad2aa8dae7f7816b8d0b130bad40a7333c6aa3a97f6891835a1649",
+        "result": "PASS",
+        "boundary": "Actual Rust Helper child process; health blocked with exact reason and no observation outbox. Same invalid input parameter retained."
+      }
+    },
+    {
+      "case": "test_node_observation_provider::test_invalid_explicit_provider_route_fails_closed[ ]",
+      "before": {
+        "status": "pass",
+        "message": "",
+        "trace_sha256": null
+      },
+      "after": {
+        "status": "failure",
+        "message": "FileNotFoundError: [Errno 2] No such file or directory: '/data/artifacts/mc25final_local/clinx/nodes/node_service_entrypoint.py'",
+        "trace_sha256": "fc42ff0d1f612ee49633faacc2444dcadc0a2cca67f446819aad673dfa93d3f3"
+      },
+      "status_changed": true,
+      "normalized_message_changed": true,
+      "classification": "CURRENT_RETIREMENT_OLD_API_FAILURE",
+      "cause": "Python entrypoint loader raises FileNotFoundError for retired clinx/nodes/node_service_entrypoint.py before configured_observation_source executes.",
+      "replacement_evidence": {
+        "parameter": {
+          "observation_provider_config": " "
+        },
+        "rust_case": "invalid_explicit_provider_routes_fail_closed",
+        "source_line": 230,
+        "expected_reason": "Invalid observation_provider_config",
+        "path": "/home/pvxlabs/dev/clinx/kernel/tests/helper_observation_config_qualification.rs",
+        "source_sha256": "b05a86136569d814f467a2e95e086659f7eb625081b7f78c4350499d3223f948",
+        "log": "/data/artifacts/clinx-maintenance-convergence-20261025/helper-observation-config-final.log",
+        "log_sha256": "03a5f256c6ad2aa8dae7f7816b8d0b130bad40a7333c6aa3a97f6891835a1649",
+        "result": "PASS",
+        "boundary": "Actual Rust Helper child process; health blocked with exact reason and no observation outbox. Same invalid input parameter retained."
+      }
+    },
+    {
+      "case": "test_node_observation_provider::test_invalid_explicit_provider_route_fails_closed[3]",
+      "before": {
+        "status": "pass",
+        "message": "",
+        "trace_sha256": null
+      },
+      "after": {
+        "status": "failure",
+        "message": "FileNotFoundError: [Errno 2] No such file or directory: '/data/artifacts/mc25final_local/clinx/nodes/node_service_entrypoint.py'",
+        "trace_sha256": "b43e9ef9e7e2cd53a398351fb78e0d4774f964b8f0b4264989774d0e1ae3ac0c"
+      },
+      "status_changed": true,
+      "normalized_message_changed": true,
+      "classification": "CURRENT_RETIREMENT_OLD_API_FAILURE",
+      "cause": "Python entrypoint loader raises FileNotFoundError for retired clinx/nodes/node_service_entrypoint.py before configured_observation_source executes.",
+      "replacement_evidence": {
+        "parameter": {
+          "observation_provider_config": 3
+        },
+        "rust_case": "invalid_explicit_provider_routes_fail_closed",
+        "source_line": 230,
+        "expected_reason": "Invalid observation_provider_config",
+        "path": "/home/pvxlabs/dev/clinx/kernel/tests/helper_observation_config_qualification.rs",
+        "source_sha256": "b05a86136569d814f467a2e95e086659f7eb625081b7f78c4350499d3223f948",
+        "log": "/data/artifacts/clinx-maintenance-convergence-20261025/helper-observation-config-final.log",
+        "log_sha256": "03a5f256c6ad2aa8dae7f7816b8d0b130bad40a7333c6aa3a97f6891835a1649",
+        "result": "PASS",
+        "boundary": "Actual Rust Helper child process; health blocked with exact reason and no observation outbox. Same invalid input parameter retained."
+      }
+    },
+    {
+      "case": "test_node_observation_provider::test_invalid_explicit_provider_route_fails_closed[False]",
+      "before": {
+        "status": "pass",
+        "message": "",
+        "trace_sha256": null
+      },
+      "after": {
+        "status": "failure",
+        "message": "FileNotFoundError: [Errno 2] No such file or directory: '/data/artifacts/mc25final_local/clinx/nodes/node_service_entrypoint.py'",
+        "trace_sha256": "bddbf622a7df67747ad51dcd4ee3ba2979c663b3973c5a0ac6ea61507e09addb"
+      },
+      "status_changed": true,
+      "normalized_message_changed": true,
+      "classification": "CURRENT_RETIREMENT_OLD_API_FAILURE",
+      "cause": "Python entrypoint loader raises FileNotFoundError for retired clinx/nodes/node_service_entrypoint.py before configured_observation_source executes.",
+      "replacement_evidence": {
+        "parameter": {
+          "observation_provider_config": false
+        },
+        "rust_case": "invalid_explicit_provider_routes_fail_closed",
+        "source_line": 230,
+        "expected_reason": "Invalid observation_provider_config",
+        "path": "/home/pvxlabs/dev/clinx/kernel/tests/helper_observation_config_qualification.rs",
+        "source_sha256": "b05a86136569d814f467a2e95e086659f7eb625081b7f78c4350499d3223f948",
+        "log": "/data/artifacts/clinx-maintenance-convergence-20261025/helper-observation-config-final.log",
+        "log_sha256": "03a5f256c6ad2aa8dae7f7816b8d0b130bad40a7333c6aa3a97f6891835a1649",
+        "result": "PASS",
+        "boundary": "Actual Rust Helper child process; health blocked with exact reason and no observation outbox. Same invalid input parameter retained."
+      }
+    },
+    {
+      "case": "test_node_observation_provider::test_invalid_explicit_provider_route_fails_closed[]",
+      "before": {
+        "status": "pass",
+        "message": "",
+        "trace_sha256": null
+      },
+      "after": {
+        "status": "failure",
+        "message": "FileNotFoundError: [Errno 2] No such file or directory: '/data/artifacts/mc25final_local/clinx/nodes/node_service_entrypoint.py'",
+        "trace_sha256": "5b3933995018e58feb6c856c720b4ab25346198800cf1989821a858e597a6316"
+      },
+      "status_changed": true,
+      "normalized_message_changed": true,
+      "classification": "CURRENT_RETIREMENT_OLD_API_FAILURE",
+      "cause": "Python entrypoint loader raises FileNotFoundError for retired clinx/nodes/node_service_entrypoint.py before configured_observation_source executes.",
+      "replacement_evidence": {
+        "parameter": {
+          "observation_provider_config": ""
+        },
+        "rust_case": "invalid_explicit_provider_routes_fail_closed",
+        "source_line": 230,
+        "expected_reason": "Invalid observation_provider_config",
+        "path": "/home/pvxlabs/dev/clinx/kernel/tests/helper_observation_config_qualification.rs",
+        "source_sha256": "b05a86136569d814f467a2e95e086659f7eb625081b7f78c4350499d3223f948",
+        "log": "/data/artifacts/clinx-maintenance-convergence-20261025/helper-observation-config-final.log",
+        "log_sha256": "03a5f256c6ad2aa8dae7f7816b8d0b130bad40a7333c6aa3a97f6891835a1649",
+        "result": "PASS",
+        "boundary": "Actual Rust Helper child process; health blocked with exact reason and no observation outbox. Same invalid input parameter retained."
+      }
+    },
+    {
+      "case": "test_node_observation_provider::test_invalid_explicit_provider_route_fails_closed[path4]",
+      "before": {
+        "status": "pass",
+        "message": "",
+        "trace_sha256": null
+      },
+      "after": {
+        "status": "failure",
+        "message": "FileNotFoundError: [Errno 2] No such file or directory: '/data/artifacts/mc25final_local/clinx/nodes/node_service_entrypoint.py'",
+        "trace_sha256": "53d2e0cb4fd79c2405537f39ab0c25645ac9d8adbfb7b6caa1a6530040e82c02"
+      },
+      "status_changed": true,
+      "normalized_message_changed": true,
+      "classification": "CURRENT_RETIREMENT_OLD_API_FAILURE",
+      "cause": "Python entrypoint loader raises FileNotFoundError for retired clinx/nodes/node_service_entrypoint.py before configured_observation_source executes.",
+      "replacement_evidence": {
+        "parameter": {
+          "observation_provider_config": []
+        },
+        "rust_case": "invalid_explicit_provider_routes_fail_closed",
+        "source_line": 230,
+        "expected_reason": "Invalid observation_provider_config",
+        "path": "/home/pvxlabs/dev/clinx/kernel/tests/helper_observation_config_qualification.rs",
+        "source_sha256": "b05a86136569d814f467a2e95e086659f7eb625081b7f78c4350499d3223f948",
+        "log": "/data/artifacts/clinx-maintenance-convergence-20261025/helper-observation-config-final.log",
+        "log_sha256": "03a5f256c6ad2aa8dae7f7816b8d0b130bad40a7333c6aa3a97f6891835a1649",
+        "result": "PASS",
+        "boundary": "Actual Rust Helper child process; health blocked with exact reason and no observation outbox. Same invalid input parameter retained."
+      }
+    },
+    {
+      "case": "test_node_observation_provider::test_missing_provider_config_does_not_fall_back_to_execution",
+      "before": {
+        "status": "pass",
+        "message": "",
+        "trace_sha256": null
+      },
+      "after": {
+        "status": "pass",
+        "message": "",
+        "trace_sha256": null
+      },
+      "status_changed": false,
+      "normalized_message_changed": false,
+      "classification": "MASKED_RETIRED_API_EXPECTED_EXCEPTION",
+      "qualification_limit": "pytest.raises(FileNotFoundError) now catches missing retired entrypoint before configured_observation_source executes. Reported PASS is retained in raw totals but does not prove original missing-provider/no-fallback semantics.",
+      "replacement_evidence": {
+        "path": "/home/pvxlabs/dev/clinx/kernel/tests/helper_observation_config_qualification.rs",
+        "source_sha256": "b05a86136569d814f467a2e95e086659f7eb625081b7f78c4350499d3223f948",
+        "source_line": 239,
+        "rust_case": "missing_provider_config_never_falls_back_to_execution",
+        "log": "/data/artifacts/clinx-maintenance-convergence-20261025/helper-observation-config-final.log",
+        "log_sha256": "03a5f256c6ad2aa8dae7f7816b8d0b130bad40a7333c6aa3a97f6891835a1649",
+        "result": "PASS",
+        "boundary": "Actual Rust Helper reports CONFIG_READ_FAILED for missing explicit observation config while valid execution config exists; Provider listener has no connection, proving no fallback."
+      }
+    }
+  ],
+  "reviews": {
+    "monitor-independent-review.json": {
+      "schema": "CLINX_MONITOR_RETIREMENT_INDEPENDENT_REVIEW_V1",
+      "observed_at": "2026-10-25T11:33:00.264330+00:00",
+      "verdict": "NO_ACTIONABLE_RUNTIME_FINDING",
+      "source_sha256": {
+        "fixtures/test_node_authority_route.py": "04f2329c6a4fb9efb415934fc4a9efaa2080f128cb425fea4740a1edae0a36a1",
+        "fixtures/test_rust_native_observer.py": "fff79a9ae2a5692cf5fc07cec772b90a65b4e4d0759fb4f08b7f351ec67bd0a1",
+        "fixtures/test_rust_node_runtime.py": "e9274f338419be6eab3cf96b5c0d8217f942910c70236915c043320daaf3781c",
+        "fixtures/test_rust_observation_directory.py": "fda80ef127e1b5498d90b4cb5991845d37e6e2846c74583432f1f31c98b875fb",
+        "fixtures/test_rust_observation_runtime.py": "e2a94b51d279d71ced1567fd694823928361079431e2caaa94924f414b1e388d",
+        "fixtures/test_rust_observer_runtime.py": "aa97eca93b21ddefd22f1b021d659bce2e92488a62a3102ceb04de1ffebee757",
+        "fixtures/observer_historical_expected.json": "7392baaf549dc80a3c2e5fffb1bafabbabde66b84c8eded64e4e26e57945c575",
+        "kernel/tests/helper_observation_config_qualification.rs": "b05a86136569d814f467a2e95e086659f7eb625081b7f78c4350499d3223f948",
+        "kernel/tests/collector_qualification.rs": "315b87f2388e06208383b5caf90718fb8ad670a2e7db15a8d0062e76c355699e",
+        "kernel/tests/native_observer_qualification.rs": "e0109f53d8a54ce8087d2f9876d79b5bba1abdcce091923d12252a0a7ed3166d",
+        "kernel/tests/observer_http_qualification.rs": "e0f730d33d023eeadf342f401faa84c43fa85a0596a0f6ea8d71d07789fb783d"
+      },
+      "baseline_source_hashes_match": {
+        "fixtures/test_rust_collector.py": true,
+        "fixtures/test_rust_native_observer.py": true,
+        "fixtures/test_rust_observation_directory.py": true,
+        "fixtures/test_rust_observation_runtime.py": true,
+        "fixtures/test_rust_observer_http.py": true,
+        "fixtures/test_rust_observer_runtime.py": true,
+        "tests/test_node_observation_provider.py": true
+      },
+      "original_checks": 176,
+      "obligation_classification": {
+        "SEMANTIC_OBLIGATION_PRESERVED": 172,
+        "RETIRED_CONTRACT": 4
+      },
+      "checked": [
+        "Tracked source/executable/dynamic-symbol search has no live import/path consumer of 8 retired modules; stale ignored historical tests are explicitly reported, not renamed or edited",
+        "Independent historical SQL fixture retained; frozen historical JSON exactly equals monitor-before/historical-task-oracle.json; only observed_at excluded as before",
+        "Collector singleton/durable stream/restart and unknown ACK duplicate receipt assertions retained in collector_qualification",
+        "HTTP exact route/callback args, wide integer, duplicate auth/body/fault statuses retained in observer_http_qualification",
+        "Native Unicode cursor oracle, four malformed cursor positions, redaction, historical readonly SQL snapshot/new-turn isolation, five invalid limit values+defaults and exact Authority error preserved in native_observer_qualification",
+        "ObservationDirectory original 41 asserts unchanged; Observer runtime 54 of55 unchanged and one dynamic projection comparison replaced by frozen baseline",
+        "Observation source runtime switches to native worker calls; original22 assertions adapt API/count boundary and2 stronger callback operation/arguments checks added; original parameters retained",
+        "Helper real-process qualification covers original8 passing invalid/missing config variants (2 ambiguous+5 invalid path+1 missing), no Provider connection on readonly startup, explicit native-writer path",
+        "Packaged node fixture now directly launches Rust for both Rust/Monitor payloads, asserts no Python files, and forbids retired integration import via sys.modules None",
+        "Additional no-implicit-observation process test now closes the original execution-config-only behavior: real authenticated Centre/Helper with valid execution config uploads3 independent native events without Provider calls; explicit observation config positive control reads same socket via initialize/initialized/thread-read/turn-list and exact-turn LIVE evidence; input native files unchanged. No runtime change and no weakening of existing execution/relay config validation."
+      ],
+      "specific_not_claimed_as_equivalent_pass": [
+        "Removed NativeCollectorBridge.secret byte-property object API",
+        "Python tuple/error class/object-identity introspection",
+        "Original ignored historical process-entrypoint tests still name the retired App Python launcher; no claims those old test identities now pass"
+      ],
+      "test_evidence": {
+        "monitor-rust-qualification.log": "Prior combined47PASS; now48 distinct with additional Helper case, without double-counting repeat runs",
+        "monitor-affected.log": "32 Python passed after deleting source closure",
+        "ignored_test_files_modified": false,
+        "helper-observation-config-final.log": "6 Helper cases PASS; original5 plus real positive/negative observation route process test;48 unique Rust cases total with previously reviewed collector/native/HTTP groups"
+      },
+      "scope": "Read-only review. No source edits, release build, production IO, actual task or DB operation by reviewer.",
+      "migration_map_sha256": "8d55c6a535d477b0987980b1bbcc19d99eaacc5e1091789a720fe95453fba0ad"
+    },
+    "maintenance-transfer-independent-review.json": {
+      "schema": "CLINX_MAINTENANCE_TRANSFER_INDEPENDENT_REVIEW_V1",
+      "observed_at": "2026-10-25T11:27:18.413909+00:00",
+      "verdict": "NO_ACTIONABLE_FINDING",
+      "source_sha256": {
+        "kernel/src/maintenance_transfer.rs": "42be25c2141561f3f21db4f08284eec866ba70684ee36f8993d5902a534ed8d0",
+        "kernel/src/bin/clinx-maintenance.rs": "6b44589f99cbd271bb27050acba1009cdb0bc0dc9cc5325f983c06712392c418",
+        "kernel/tests/maintenance_transfer.rs": "05d4cab1f6b154b66773d462a3de7d6e88f2c3dd9019333de519ed3a3213f605"
+      },
+      "checked": [
+        "Unique receipt create_new before Provider IO; atomic replacement + file/directory fsync; identity drift rejects overwrite",
+        "Archive/copy/resume/adopt attempts durably recorded before the corresponding mutation; unknown responses never automatically replay",
+        "Source completed exact turn and idle thread, canonical contained rollout path, archived same device/inode, session_meta thread/cwd and checksum-before/after-copy",
+        "writable_holders compares device/inode across rename; inaccessible/malformed scan returns error instead of an empty set",
+        "Destination full exact turn equals source plus thread/cwd/idle checks before Authority send",
+        "Adoption exact operation ID and arguments recorded before one UnixAuthority call; Authority remains sole business-state writer",
+        "Direct Authority adopt body equals previous mcp_api::adopt body; prior branch/head input was already projected to cwd by MCP",
+        "Existing runuser identities and dispatcher mount namespace retained; source/destination Provider peer UIDs and Authority UID verified; worker account read from current config rather than retired codex160 path",
+        "New capture bounds stdin/stdout/process-wait under one deadline, output capped, task-owned process-group kill/reap on early return; readonly systemctl MainPID capture also bounded",
+        "Receipt preserves old_worker_revocation=NOT_VERIFIED; no falsely claimed physical worker revocation",
+        "Exclusive destination FD remains open through copy fsync/checksum; pathname dev/inode compared to same FD, target_inode stored in receipt",
+        "Provider initialize must return object before initialized notification; invalid handshake never reaches archive",
+        "Destination active state produces exact DESTINATION_EXACT_TURN_CONFLICT; regression assertions narrowed accordingly",
+        "Final --help prints existing identity/default contract without root or runtime IO; 7-page exact history test preserves existing100-page loop/duplicate contract; destination wrong-thread conflict added"
+      ],
+      "reviewed_tests": "Final maintenance-transfer-tests.log: 3 CLI lifetime tests +11 real Provider/file/Authority/receipt/help/history tests PASS; read evidence only, not rerun by reviewer",
+      "boundaries_not_executed": [
+        "Real root/runuser/nsenter maintenance chain against deployed services",
+        "Real source archive or destination resume",
+        "Production Provider/Authority IO or canonical database mutation"
+      ],
+      "scope": "No source changes made by reviewer; real maintenance command never invoked"
+    }
+  }
+}

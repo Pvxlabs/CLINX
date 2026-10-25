@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from clinx.discovery.identity import NodeIdentity, PrivateStore
-from clinx.monitor.network_observation import ObservationWriter
+from clinx.nodes.network_worker import read_command
 from clinx.nodes.node_protocol import NodeAuthorizationStore, NodeRecord, NodeRegistry, NodeRPCServer, _now
 from fixtures.test_node_authority_route import route as route
 from fixtures.test_rust_observation import native as native, event, TID
@@ -76,12 +76,13 @@ def local(tmp_path, native):
     registry.register(NodeRecord("air", user_scope="alice", public_key_fingerprint=identity.public["fingerprint"],
         state="ONLINE", last_seen=_now()), scope)
     registry.close()
-    writer = ObservationWriter(tmp_path / "observations.db")
-    writer.accept("air", scope, dict(stream_id="fixture", events=[event(1), event(2, turn="turn-2", ordinal=2)]))
+    observations = tmp_path / "observations.db"
+    read_command("observation.init", path=str(observations))
+    read_command("observation.accept", path=str(observations), node="air", scope=scope.as_dict(), request=dict(stream_id="fixture", events=[event(1), event(2, turn="turn-2", ordinal=2)]))
     # Read-only startup and queries must neither replace trust nor create this file.
     (identity.store.root / "store.lock").unlink(missing_ok=True)
-    return SimpleNamespace(identity=identity, approvals=approvals, scope=scope, writer=writer, native=native,
-        env=env_for(identity.store.root, tmp_path / "registry.db", writer.path, native.root, "air"))
+    return SimpleNamespace(identity=identity, approvals=approvals, scope=scope, observations=observations, native=native,
+        env=env_for(identity.store.root, tmp_path / "registry.db", observations, native.root, "air"))
 
 
 def test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes(local):
@@ -141,8 +142,9 @@ def test_native_directory_uses_exact_paired_remote_and_rechecks_before_return(ro
     scope=route.approvals.grant("air", user_scope="alice", read_sessions=True, projects=("/approved",))
     registry=route.service.registry
     record=registry.get("air")
-    writer=ObservationWriter(tmp_path / "observations.db")
-    writer.accept("air",scope,dict(stream_id="remote",events=[event()]))
+    observations=tmp_path / "observations.db"
+    read_command("observation.init", path=str(observations))
+    read_command("observation.accept", path=str(observations), node="air", scope=scope.as_dict(), request=dict(stream_id="remote",events=[event()]))
     replacement = NodeIdentity(PrivateStore(tmp_path / "replacement"), "air") if change == "identity" else None
     requests=[]
     def respond(request, *_):
@@ -150,7 +152,7 @@ def test_native_directory_uses_exact_paired_remote_and_rechecks_before_return(ro
         if change=="scope":
             route.approvals.revoke("air",user_scope="alice")
         elif change=="projection":
-            writer.accept("air",scope,dict(stream_id="remote",events=[event(2,turn="new-turn",ordinal=2)]))
+            read_command("observation.accept", path=str(observations), node="air", scope=scope.as_dict(), request=dict(stream_id="remote",events=[event(2,turn="new-turn",ordinal=2)]))
         elif change=="peer_revoked":
             route.service.tls.peers.revoke("air")
         elif change=="identity":
@@ -168,7 +170,7 @@ def test_native_directory_uses_exact_paired_remote_and_rechecks_before_return(ro
         root=route.service.tls.identity.store.root
         (root / "store.lock").unlink(missing_ok=True)
         before=state_hash(root)
-        env=env_for(root,registry.path,writer.path,tmp_path / "no-native-history","centre")
+        env=env_for(root,registry.path,observations,tmp_path / "no-native-history","centre")
         with mcp(env) as api:
             observation=api.call("clinx_list_observations")["structuredContent"]["items"][0]["observation_id"]
             result=api.call("clinx_get_observation_context",dict(observation_id=observation))
@@ -237,7 +239,7 @@ def test_normal_mcp_managed_context_reads_exact_authority_provider_without_recur
     row = event(3, turn="turn-2", ordinal=2)
     row.update(task_ref="task-exact", binding_evidence="CANONICAL_ROUTE")
     row["turn"]["execution_ref"] = "exec-exact"
-    local.writer.accept("air", local.scope, dict(stream_id="fixture", events=[row]))
+    read_command("observation.accept", path=str(local.observations), node="air", scope=local.scope.as_dict(), request=dict(stream_id="fixture", events=[row]))
     replacement = NodeIdentity(PrivateStore(tmp_path / "replacement"), "air") if change == "identity" else None
     def hook():
         if change == "scope":
@@ -246,7 +248,7 @@ def test_normal_mcp_managed_context_reads_exact_authority_provider_without_recur
             next_execution = event(4, turn="turn-new", ordinal=3)
             next_execution.update(task_ref="task-exact", binding_evidence="CANONICAL_ROUTE")
             next_execution["turn"]["execution_ref"] = "exec-new"
-            local.writer.accept("air", local.scope, dict(stream_id="fixture", events=[next_execution]))
+            read_command("observation.accept", path=str(local.observations), node="air", scope=local.scope.as_dict(), request=dict(stream_id="fixture", events=[next_execution]))
         elif change == "identity":
             local.identity.store.write("identity.json", replacement.store.read("identity.json"))
     authority = AuthorityReads(tmp_path / "a.sock", hook)

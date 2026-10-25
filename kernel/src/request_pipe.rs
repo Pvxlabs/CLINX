@@ -97,51 +97,6 @@ impl<I: BufRead, O: Write> Backend for Delegated<I, O> {
             .callback("integration", "prepared", json!({"reference":r}), None)
     }
 }
-struct CompatReads<I: BufRead, O: Write>(Rc<RefCell<Pipe<I, O>>>);
-impl<I: BufRead, O: Write> Reads for CompatReads<I, O> {
-    fn cwd(&mut self, tid: &str) -> Result<Value, String> {
-        let cwd = self
-            .0
-            .borrow_mut()
-            .callback("read", "cwd", json!({"thread_id":tid}), None)
-            .map_err(|e| e.code)?;
-        if cwd
-            .as_str()
-            .is_none_or(|v| !v.starts_with('/') || v.contains('\0'))
-        {
-            return Err("WORKSPACE_CWD_UNREADABLE".into());
-        }
-        Ok(cwd)
-    }
-
-    fn thread(&mut self, tid: &str) -> Result<Value, String> {
-        self.0
-            .borrow_mut()
-            .callback("read", "thread", json!({"thread_id":tid}), None)
-            .map_err(|e| e.code)
-    }
-    fn page(&mut self, tid: &str, limit: u64, cursor: Option<&str>) -> Result<Value, String> {
-        self.0
-            .borrow_mut()
-            .callback(
-                "read",
-                "page",
-                json!({"thread_id":tid,"limit":limit,"cursor":cursor}),
-                None,
-            )
-            .map_err(|e| e.code)
-    }
-    fn desktop(
-        &mut self,
-        tid: &str,
-        context: bool,
-        limit: u64,
-        budget: usize,
-        cursor: Option<&str>,
-    ) -> Result<Value, String> {
-        self.0.borrow_mut().callback("read", "desktop", json!({"thread_id":tid,"context":context,"recent_turns":limit,"max_bytes":budget,"cursor":cursor}), None).map_err(|e| e.code)
-    }
-}
 fn api_call<A: Authority, R: Reads>(api: &mut Api<A, R>, op: &str, a: &Value) -> ApiResult {
     match op {
         "internal.task" => api.task(&a["reference"]),
@@ -201,19 +156,11 @@ fn execute<I: BufRead, O: Write>(pipe: Rc<RefCell<Pipe<I, O>>>, r: Value) -> Api
         }
         .invoke(op, &r["arguments"]);
     }
-    if r["mode"] != "node" && r["mode"] != "api" && r["mode"] != "api_compat" {
+    if r["mode"] != "node" && r["mode"] != "api" {
         return Err("REQUEST_PIPE_INVALID".into());
     }
     let config: mcp_api::Config = serde_json::from_value(r["config"].clone())
         .map_err(|_| Error::from("API_CONFIG_INVALID"))?;
-    if r["mode"] == "api_compat" {
-        let mut api = Api {
-            authority: PipeAuthority(pipe.clone()),
-            reads: CompatReads(pipe),
-            config,
-        };
-        return api_call(&mut api, op, &r["arguments"]);
-    }
     let mut api = Api {
         authority: PipeAuthority(pipe),
         reads: NativeReads(config.clone()),
@@ -238,6 +185,22 @@ fn execute<I: BufRead, O: Write>(pipe: Rc<RefCell<Pipe<I, O>>>, r: Value) -> Api
 mod tests {
     use super::*;
     use std::io::Cursor;
+    #[test]
+    fn retired_python_read_backend_is_rejected_without_callbacks() {
+        let request = json!({"protocol":"CLINX_REQUEST_PIPE_V1","mode":"api_compat", "operation":"clinx_prepare_execution","arguments":{"approved":true,"prompt":"must not execute"}});
+        let mut input = serde_json::to_vec(&request).unwrap();
+        input.push(b'\n');
+        let mut output = Vec::new();
+        serve(Cursor::new(input), &mut output).unwrap();
+        let frames: Vec<Value> = String::from_utf8(output)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["kind"], "result");
+        assert_eq!(frames[0]["error"]["code"], "REQUEST_PIPE_INVALID");
+    }
     fn run(reply: &str) -> Vec<Value> {
         let request = json!({"protocol":"CLINX_REQUEST_PIPE_V1","mode":"api","operation":"clinx_cancel_execution","arguments":{"execution_ref":"exec_exact","approved":true},"config":{"runtime_host":"air","provider_endpoint":"/unused","provider_timeout_seconds":1,"host_aliases":{},"codex_host_ids":{}}});
         let mut input = serde_json::to_vec(&request).unwrap();

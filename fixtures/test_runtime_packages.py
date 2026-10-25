@@ -40,6 +40,7 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     base = root/'base'
     base.mkdir(parents=True)
     previous = {'host-worker': b'native helper', 'deps/keep.dat': b'native dependency',
+        'clinx-build': b'development only', 'clinx-maintenance': b'operator tool only',
         'bridge.py': b'old root core', 'clinx/compat/task_registry.py': b'old root package',
         'control/clinx/compat/m9_integration.py': b'old qualified core',
         'control/provider_adapters/codex.py': b'old adapter', 'provider/bin/codex': b'old provider'}
@@ -107,6 +108,7 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     assert receipt['desktop_socket_maintenance'] == 'RUST_DESKTOP_SOCKET_V1'
     assert receipt['python_sources'] == receipt['python_dependencies'] == []
     assert not list(release.rglob('*.py')) and not (release/'deps').exists()
+    assert not (release/'clinx-build').exists() and not (release/'clinx-maintenance').exists()
     assert not (release/'control/clinx/provider/desktop_socket.py').exists()
     assert not (release/'control/clinx/monitor').exists()
     assert not (release/'control/clinx/discovery').exists()

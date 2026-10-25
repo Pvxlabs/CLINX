@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from clinx.authority.rust_authority import RustAuthorityError
-from clinx.authority.rust_integration import Commands
+from clinx.authority.rust_authority import Commands
 from clinx.discovery.discovery import Candidate
 from clinx.discovery.identity import NodeIdentity, PrivateStore, TrustedPeerStore
 from clinx.discovery.transport import DeviceServer, LanTransport

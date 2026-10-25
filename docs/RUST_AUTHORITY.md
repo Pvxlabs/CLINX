@@ -1,14 +1,19 @@
 # Native Rust business authority
 
+本文保留各阶段源码与已部署产物的历史记录。当前源码状态以
+[仓库架构](REPOSITORY_ARCHITECTURE.md) 和 [维护与观察兼容收敛](RUST_MAINTENANCE_CONVERGENCE.md)
+为准；历史 release 身份不代表最新源码已部署。
+
 源码清理及新的发布集合见 [2026-10-24 清理记录](cleanup/RUST_MIGRATION_CLEANUP.md)。
 Python Authority 实验退役及实际 macOS 兼容依赖见[第二轮清理记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md)。
 旧 Linear 轮询器、源码启动器收口和干净产物验证见[第三轮记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md)。
-Python Owner、MCP fallback、Centre 自动入库及 shadow 任务模型退役见[第四轮记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md)。Mac 直接执行路径尚未全部迁移到 Rust。
+Python Owner、MCP fallback、Centre 自动入库及 shadow 任务模型退役见[第四轮记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md)。该阶段 Mac 直接执行路径尚未全部迁移到 Rust。
 该源码提交未部署；实际服务可能继续使用不同的已选 release。
 
-当前状态是 Rust 接管 P620 业务状态权威，旧 Python 核心尚未完全退役。
+第四轮时 Rust 已接管 P620 业务状态权威，旧 Python 核心尚未完全退役；后续源码已删除旧核心。
 `kernel/src/runtime_lab.rs` 的 `State` 仍被 `authority_state.rs` 复用；它是现役共享状态实现。
-同文件的 Journal 和 Python `runtime_lab/` reference 属于资格用途，不能按目录名整包删除。
+同文件的 Journal 属于资格用途，不能按目录名整包删除；独立 Python `runtime_lab/` reference
+已在后续无有效消费者的资格闭包清理中退役，见当前架构记录。
 
 ## Terminal receipt capacity repair, 2026-10-24
 
