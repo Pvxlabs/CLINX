@@ -320,6 +320,10 @@ def test_packaged_node_finds_companion_rust_binary_without_checkout_or_pythonpat
         companion = package / 'clinx-provider'
     shutil.copyfile(binary, companion)
     companion.chmod(0o755)
+    # Node now owns TLS, IPC and disposable relay state in the same bundle.
+    node_binary = companion.with_name('clinx-node')
+    shutil.copyfile(binary.with_name('clinx-node'), node_binary)
+    node_binary.chmod(0o755)
     provider = MetadataProvider(ipc / 'p.sock', companion)
     code = '''
 import sys,json,importlib

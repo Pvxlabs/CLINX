@@ -1,0 +1,219 @@
+{
+  "schema": 1,
+  "date": "2026-10-25",
+  "baseline_head": "3a6372e8af57a2af83dff4d181c712ee6251e135",
+  "status": "PARTIAL_TARGET_MIGRATION",
+  "deployment": "NOT_DEPLOYED",
+  "production_mutations": false,
+  "scope": [
+    "paired TLS1.3 networking with existing authenticated identity",
+    "Centre/Node scope and authenticated reverse routing",
+    "Provider upload/read buffers and local gateway",
+    "NodeRegistry schema, request receipts and callback fences",
+    "NodeService execution requests and exact unknown-result recovery"
+  ],
+  "contracts": {
+    "node_network": "RUST_NODE_NETWORK_V1",
+    "node_api": "RUST_NODE_API_V1",
+    "provider_exchange": "RUST_PROVIDER_V1"
+  },
+  "validation": {
+    "rust_release_binaries": "PASS",
+    "rust_tests": {
+      "status": "PASS",
+      "passed": 82
+    },
+    "tracked_fixtures": {
+      "status": "PASS",
+      "passed": 98,
+      "baseline_passed": 83,
+      "added": 15
+    },
+    "historical_local_suite": {
+      "status": "EXISTING_FAILURES_UNCHANGED",
+      "before": {
+        "ERROR": 104,
+        "PASS": 295,
+        "FAIL": 31,
+        "SKIP": 2
+      },
+      "after": {
+        "ERROR": 104,
+        "PASS": 295,
+        "FAIL": 31,
+        "SKIP": 2
+      },
+      "identities": 432,
+      "changed": {}
+    },
+    "original_tests": {
+      "files": 124,
+      "unchanged": true
+    },
+    "strict_clippy": {
+      "status": "BLOCKED_EXISTING",
+      "baseline_diagnostics": 10,
+      "final_diagnostics": 10,
+      "new_diagnostics": 0
+    },
+    "source_classification_import_closure": "PASS",
+    "affected_python_lint": "PASS",
+    "new_rust_format": "PASS",
+    "helper_build_shell_syntax": "PASS",
+    "release_monitor_source_packages": "PASS",
+    "openssl_rust_interoperability": "PASS",
+    "macos_native_build_signing": "NOT_VERIFIED",
+    "physical_mac_p620_new_artifact_execution": "NOT_VERIFIED",
+    "test_changes": "No original assertions deleted or weakened; 2 tracked fixtures update required package inputs and synthetic binary probe only; local tests untouched."
+  },
+  "scale": {
+    "baseline_head": "3a6372e8af57a2af83dff4d181c712ee6251e135",
+    "before": {
+      "Python": {
+        "files": 103,
+        "lines": 21147,
+        "bytes": 1026228
+      },
+      "Rust": {
+        "files": 40,
+        "lines": 18254,
+        "bytes": 728467
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      "Go": {
+        "files": 3,
+        "lines": 849,
+        "bytes": 26718
+      },
+      "C": {
+        "files": 1,
+        "lines": 50,
+        "bytes": 2345
+      },
+      "Shell": {
+        "files": 9,
+        "lines": 245,
+        "bytes": 11415
+      },
+      "python_share_percent": 44.21858431140547,
+      "ACTIVE_RUNTIME_Python": {
+        "files": 54,
+        "lines": 12819,
+        "bytes": 632578
+      }
+    },
+    "after": {
+      "Python": {
+        "files": 105,
+        "lines": 21188,
+        "bytes": 1015845
+      },
+      "Rust": {
+        "files": 50,
+        "lines": 20656,
+        "bytes": 824735
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      "Go": {
+        "files": 3,
+        "lines": 849,
+        "bytes": 26718
+      },
+      "C": {
+        "files": 1,
+        "lines": 50,
+        "bytes": 2345
+      },
+      "Shell": {
+        "files": 9,
+        "lines": 248,
+        "bytes": 11585
+      },
+      "python_share_percent": 42.20620043857936,
+      "ACTIVE_RUNTIME_Python": {
+        "files": 55,
+        "lines": 12495,
+        "bytes": 602841
+      }
+    }
+  },
+  "deletions": {
+    "whole_files": 0,
+    "physical_lines_removed_from_three_python_runtime_modules": 843,
+    "runtime_python_net_lines_removed": 324,
+    "runtime_python_net_bytes_removed": 29737,
+    "all_python_net_lines_added": 41
+  },
+  "remaining_runtime": [
+    "native history and Provider observation projections",
+    "ObservationDirectory/association and NodeRouter observation callbacks",
+    "identity creation, OPAQUE enrollment, mDNS and LAN pairing",
+    "Helper/Centre registration, heartbeat and tunnel supervision",
+    "configuration and Authority IPC callback bindings",
+    "explicit injected Python SSL compatibility path"
+  ],
+  "evidence_directory": "/data/artifacts/clinx-node-network-rust-20261025",
+  "release_binary_hashes": {
+    "clinx-node": {
+      "sha256": "60842ac9bcccb995234f9f505cfc4128dd3df823cff4cdf43b941160554dd777",
+      "bytes": 8802736
+    },
+    "clinx-kernel-eval": {
+      "sha256": "b9ce5fdaecacc55a08a27ccf3d809c76d2af511e65ef46a8b58f56d316677b93",
+      "bytes": 1285784
+    },
+    "clinx-native-transport": {
+      "sha256": "88f3c771fd6a2ee58aec2aaf8f8b2cb0e19ed6b359f4330b25f9a4048557d0f5",
+      "bytes": 4337936
+    },
+    "clinx-owner-client": {
+      "sha256": "3082132358f8175297db8a1c85ea2dc36fb371a40c5c2c3fef52776ce6680337",
+      "bytes": 621360
+    },
+    "clinx-runtime-lab": {
+      "sha256": "d625affb1741967e117af9fabee54f0aa7df7ac4aff3ff7e864d8d73e26defae",
+      "bytes": 1427672
+    },
+    "clinx-mcp-relay": {
+      "sha256": "4ecde15cd1681de81deb545c5d3f2f1a3a8700afee42008241948a1d840e87b5",
+      "bytes": 525296
+    },
+    "clinx-runtime": {
+      "sha256": "9a91212f7db9935a35a684d366dcb2d908e96ab51d262bccdece4c98ab906b44",
+      "bytes": 4520408
+    },
+    "clinx-mcp": {
+      "sha256": "7d907387fbce4dc90f8c22fa11c106688853da9d1ce49a1f254d6e247f060f11",
+      "bytes": 4156952
+    },
+    "clinx-provider": {
+      "sha256": "025f569ab1151f1fac1a3f03aa008bb1f2a586222213964ab06cb9f137ee3624",
+      "bytes": 1435616
+    },
+    "clinx-kernel-bench": {
+      "sha256": "73dd7fd5f0cdae6b1a6ba6eec3434f94888b2b74d0e09117c23caad76f917bc5",
+      "bytes": 1055760
+    }
+  },
+  "evidence_hashes": {
+    "baseline.json": "78e0a8974fc21fbe9b43f4539b7a0560f7ed932f422440fbe0f29d2f65493d0a",
+    "fixtures-qualified.xml": "f3acc03db8fb669962bb3b30c7abf7f49a731deb74fd15185114d41aebfdf20c",
+    "fixtures-qualified.log": "c3101fe86ad6f8c06cb9d8fa1b169599afd312fefd11c56460d81d44c8099a22",
+    "rust-gate.log": "073e8a9bf1f3eedbf14b52cbda76b25f3b92aea49b7a7558f9d77dd3dffa1519",
+    "build-receipt-reviewed.log": "504352853e369127280c01c7bab42c26799066b62d0aa6a7b013348c432e255d",
+    "full-gate-comparison.json": "f9dabda12feefafb9e03b86e555b0f73e7dad17d4e7de9cf1d148acd0c1bffe2",
+    "full-gate/result.xml": "84a71612c61fef5cc5df10eefb89f05931c61fdb70298686604a1d0858dfb31d",
+    "full-before/result.xml": "ca32ba5cb788819bab474c2c4ab9c4ed39e6cefec5049e09d652b250d31a3cef",
+    "clippy-baseline.log": "d8cefeaa760af0b56af1acf426e7a7d60c02b41bcf3a9fbe197a004e577a3a0d",
+    "clippy-gate.log": "ad2fd018c1ccd7de37c128e016c1be4a00010a83a6f5942f188e0858cc407b6e",
+    "binary-hashes.json": "3c8b36d76083f5292a8fb38328ff33e7b28ca3ef3ac7e100e3921fa3aadfb196"
+  }
+}

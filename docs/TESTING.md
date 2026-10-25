@@ -17,6 +17,29 @@ Install Python 3.12 and the pinned dependencies as described in
 discovery development pins; there is one source of package versions.
 The local `tests/README.md` index maps suites and naming conventions.
 
+## Latest Node network qualification
+
+[Rust Node network migration](RUST_NODE_NETWORK_MIGRATION.md) qualifies the paired
+TLS/Centre/Owner, Provider chunk/IPC and Node Registry/request lifecycle migration.
+The release build passes 82 Rust tests and 98 tracked fixtures. The fixtures use
+real Rust child processes, existing OPAQUE pairing, OpenSSL interoperability,
+Provider protocol peers and private SQLite state. They cover concurrent claims,
+revocation, exact recovery after lost ACK/restart, cancel receipts, Unicode ledger
+compatibility and source/Helper bundle closures. They do not use production tasks.
+
+Set `CLINX_NODE_BINARY=<task-target>/release/clinx-node` as well as the Provider,
+MCP relay and `CLINX_TEST_RUST_BIN_DIR` variables below. Use **short task-owned
+paths for both `--basetemp` and `TMPDIR`**: Host fixtures also create Unix sockets
+via `tempfile`, and Linux limits their path length. A long private TMPDIR caused
+11 setup errors during qualification; the unchanged suite passes with short paths.
+
+The complete retained local suite still reports 295 PASS / 31 FAIL / 104 ERROR /
+2 existing skips on both sides, with all 432 JUnit identities unchanged and all
+124 original local test/support files protected by SHA-256. Strict Clippy with
+`-D warnings` remains blocked by the same 10 existing diagnostics; the new Node
+modules introduce none. macOS native compilation/signing and the new physical
+Mac-to-P620 artifact loop are NOT_RUN on this Linux host.
+
 ## Current Rust adapter and compatibility checks
 
 The current Provider/workspace migration is qualified by

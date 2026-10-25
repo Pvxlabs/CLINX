@@ -6,19 +6,26 @@ execution remain on their owning node; registration never starts a Provider.
 
 from __future__ import annotations
 
-import ssl
 from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urlsplit
 
 from clinx.discovery.identity import (
-    DeviceError, NodeIdentity, PrivateStore, TrustedPeerStore, certificate_public,
+    NodeIdentity,
+    PrivateStore,
+    TrustedPeerStore,
 )
-from clinx.discovery.transport import peer_certificate
 from clinx.nodes.node_protocol import (
-    NODE_PROTOCOL_VERSION, SUPPORTED_PROVIDER, NodeAuthorizationStore,
-    NodeProtocolError, NodeRecord, NodeRegistry, NodeRPCClient, NodeRPCServer,
-    NodeService, SharingScope, _now,
+    NODE_PROTOCOL_VERSION,
+    SUPPORTED_PROVIDER,
+    NodeAuthorizationStore,
+    NodeProtocolError,
+    NodeRecord,
+    NodeRegistry,
+    NodeRPCClient,
+    NodeRPCServer,
+    NodeService,
+    SharingScope,
 )
 
 
@@ -36,44 +43,32 @@ class PairedTLS:
         self.identity, self.peers = identity, peers
 
     def peer(self, node_id: str) -> dict[str, Any]:
-        peer = self.peers.all().get(node_id)
-        if not peer or peer.get("trust_state") != "TRUSTED" or peer.get("security_status") != "OPAQUE_V1":
-            raise NodeProtocolError("PAIRING_REQUIRED", "A production-paired identity is required")
-        return peer
-
-    def server_context(self) -> ssl.SSLContext:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.minimum_version = ssl.TLSVersion.TLSv1_3
-        context.verify_mode = ssl.CERT_REQUIRED
-        self.identity.load_tls_credentials(context)
-        certificates = [p["certificate"] for p in self.peers.all().values()
-                        if p.get("trust_state") == "TRUSTED" and p.get("security_status") == "OPAQUE_V1"]
-        if certificates:
-            context.load_verify_locations(cadata="".join(certificates))
-        return context
-
-    def client_context(self, node_id: str) -> ssl.SSLContext:
-        peer = self.peer(node_id)
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.minimum_version = ssl.TLSVersion.TLSv1_3
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_REQUIRED
-        context.load_verify_locations(cadata=peer["certificate"])
-        self.identity.load_tls_credentials(context)
-        return context
-
-    def authenticate(self, sock: Any) -> dict[str, Any]:
-        public_key = certificate_public(peer_certificate(sock))
-        matches = [p for p in self.peers.all().values() if p["public_key"] == public_key]
-        if len(matches) != 1:
-            raise NodeProtocolError("IDENTITY_MISMATCH", "mTLS identity has no unique paired owner")
-        peer = matches[0]
+        from clinx.authority.rust_authority import RustAuthorityError
+        from clinx.nodes.network_worker import command
         try:
-            return self.peers.authenticate(peer["node_id"], public_key)
-        except DeviceError:
-            raise NodeProtocolError("PAIRING_REQUIRED", "Paired identity is revoked or unavailable") from None
+            return command('network.peer', state=str(self.identity.store.root), peer_id=node_id)
+        except RustAuthorityError as exc:
+            raise NodeProtocolError(str(exc), 'A production-paired identity is required') from None
 
-    def client(self, node_id: str, endpoint: str, *, timeout: float = 3.0) -> NodeRPCClient:
+    def server_context(self):
+        from clinx.nodes.network_worker import PairedContext
+        return PairedContext(self.identity.store.root)
+
+    def client_context(self, node_id):
+        from clinx.nodes.network_worker import PairedContext
+        self.peer(node_id)
+        return PairedContext(self.identity.store.root, node_id)
+
+    def authenticate(self, sock):
+        from clinx.authority.rust_authority import RustAuthorityError
+        from clinx.nodes.network_worker import command
+        try:
+            return command('network.authenticate', state=str(self.identity.store.root),
+                certificate_hex=sock.getpeercert(binary_form=True).hex())
+        except RustAuthorityError as exc:
+            raise NodeProtocolError(str(exc), 'Paired identity is revoked or unavailable') from None
+
+    def client(self, node_id, endpoint, *, timeout=3.0):
         return NodeRPCClient(endpoint_address(endpoint), ssl_context=self.client_context(node_id), timeout_seconds=timeout)
 
 
@@ -110,19 +105,13 @@ class NodeRegistrationClient:
 
 
 def intersect_scope(local: SharingScope | None, centre: SharingScope | None) -> SharingScope:
-    if local is None or centre is None or local.revoked or centre.revoked:
-        return SharingScope(user_scope=(centre or local).user_scope if centre or local else "default", revoked=True)
-    if local.user_scope != centre.user_scope:
-        raise NodeProtocolError("USER_SCOPE_DENIED", "Owner and centre approvals do not share the same explicit user mapping")
-    return SharingScope(
-        user_scope=centre.user_scope,
-        read_sessions=local.read_sessions and centre.read_sessions,
-        execute_tasks=local.execute_tasks and centre.execute_tasks,
-        providers=tuple(p for p in local.providers if p in centre.providers),
-        projects=(centre.projects if "*" in local.projects else local.projects if "*" in centre.projects
-                  else tuple(p for p in local.projects if p in centre.projects)),
-        updated_at=max(local.updated_at, centre.updated_at),
-    )
+    from clinx.authority.rust_authority import RustAuthorityError
+    from clinx.nodes.network_worker import command
+    try:
+        return SharingScope(**command('scope.intersect', local=local.as_dict() if local else None,
+            centre=centre.as_dict() if centre else None))
+    except RustAuthorityError as exc:
+        raise NodeProtocolError(str(exc), 'Owner and Centre scope rejected') from None
 
 
 class CentreService:
@@ -135,87 +124,37 @@ class CentreService:
         self.authority = authority
 
     def handle(self, request: Mapping[str, Any], sock: Any, address: Any) -> dict[str, Any]:
+        from clinx.authority.request_pipe import invoke
+        from clinx.authority.rust_authority import RustAuthorityError
+        def callback(message):
+            operation, args = message['operation'], message['arguments']
+            if message['kind'] != 'network':
+                raise RustAuthorityError('NETWORK_CALLBACK_INVALID')
+            if operation == 'registry.get':
+                record = self.registry.get(args['node_id'])
+                return record.as_dict() if record else None
+            if operation == 'registry.scope':
+                scope = self.registry.scope(**args)
+                return scope.as_dict() if scope else None
+            if operation == 'registry.revoke':
+                self.registry.revoke(**args)
+                return None
+            if operation == 'registry.register':
+                self.registry.register(NodeRecord(**args['record']), SharingScope(**args['scope']))
+                return None
+            if operation == 'authority.node_request':
+                return self.authority.call('node_request', args)
+            if operation == 'observation.accept':
+                return self.observations.accept(args['node_id'], SharingScope(**args['scope']), args['request'])
+            raise RustAuthorityError('NETWORK_CALLBACK_INVALID')
         try:
-            peer = self.tls.authenticate(sock)
-            node_id = peer["node_id"]
-            if request.get("node_id") != node_id:
-                raise NodeProtocolError("NODE_IDENTITY_MISMATCH", "Claimed node does not match authenticated paired identity")
-            if request.get("protocol_version") != NODE_PROTOCOL_VERSION:
-                raise NodeProtocolError("NODE_VERSION_INCOMPATIBLE", "Unsupported node protocol")
-            if request.get("operation") not in {"node.register", "node.heartbeat", "observation.upload", "authority.request"}:
-                raise NodeProtocolError("UNKNOWN_NODE_OPERATION", "Centre accepts registration and heartbeat only")
-            local_raw = request.get("sharing_scope")
-            if not isinstance(local_raw, dict):
-                raise NodeProtocolError("SHARING_SCOPE_DENIED", "Node owner approval is required")
-            try:
-                local = SharingScope(**{key: value for key, value in local_raw.items() if key in SharingScope.__dataclass_fields__})
-            except (TypeError, ValueError, KeyError) as exc:
-                raise NodeProtocolError("INVALID_SHARING_SCOPE", "Sharing scope is invalid") from exc
-            effective = intersect_scope(local, self.approvals.get(node_id))
-            if effective.revoked or not (effective.read_sessions or effective.execute_tasks):
-                existing = self.registry.get(node_id)
-                if existing:
-                    self.registry.revoke(node_id, existing.user_scope)
-                raise NodeProtocolError("SHARING_SCOPE_DENIED", "Both owner and centre approvals are required")
-            if request.get("operation") == "authority.request":
-                # The wire supplies intent only. The authenticated certificate
-                # and current registration/approval intersection supply scope.
-                from clinx.authority.rust_authority import RustAuthorityError
-                record = self.registry.get(node_id)
-                if (record is None or not record.authorized or record.stale
-                        or record.state == "OFFLINE" or record.public_key_fingerprint != peer["fingerprint"]):
-                    raise NodeProtocolError("REGISTRATION_REQUIRED", "Current authenticated registration is required")
-                effective = intersect_scope(effective, self.registry.scope(node_id, record.user_scope))
-                if not effective.allows("execution.authority"):
-                    raise NodeProtocolError("SHARING_SCOPE_DENIED", "Existing execute_tasks grant is required")
-                if self.authority is None:
-                    raise NodeProtocolError("RUST_AUTHORITY_NOT_CONFIGURED", "Reverse Authority route is unavailable")
-                request_id = request.get("request_id")
-                if not isinstance(request_id, str) or not 0 < len(request_id) <= 128:
-                    raise NodeProtocolError("INVALID_REQUEST_ID", "A bounded request identity is required")
-                envelope = dict(scope=dict(principal=dict(node_id=node_id,
-                    user_scope=effective.user_scope, fingerprint=peer["fingerprint"]),
-                    projects=list(effective.projects)), request_id=request_id,
-                    operation=request.get("command"), payload=request.get("payload"))
-                try:
-                    result = self.authority.call("node_request", envelope)
-                    return {"request_id": request_id, "result": result}
-                except RustAuthorityError as exc:
-                    return {"request_id": request_id, "error_code": str(exc)}
-            if request.get("operation") == "observation.upload":
-                record = self.registry.get(node_id)
-                if not self.observations:
-                    raise NodeProtocolError("OBSERVATION_NOT_CONFIGURED", "Observation writer is unavailable")
-                if not record or record.user_scope != effective.user_scope or not record.authorized:
-                    raise NodeProtocolError("REGISTRATION_REQUIRED", "Current approved registration is required")
-                if not effective.allows("observation.upload"):
-                    raise NodeProtocolError("SHARING_SCOPE_DENIED", "read_sessions is required")
-                return self.observations.accept(node_id, effective, request)
-            port = request.get("port")
-            if type(port) is not int or not 1 <= port <= 65535:
-                raise NodeProtocolError("INVALID_NODE_ENDPOINT", "Node listener port is invalid")
-            host = address[0]
-            endpoint = f"tls://{'[' + host + ']' if ':' in host else host}:{port}"
-            supplied = request.get("capabilities", [])
-            if not isinstance(supplied, list) or any(not isinstance(x, str) for x in supplied):
-                raise NodeProtocolError("INVALID_NODE_CAPABILITIES", "Capabilities must be a bounded list")
-            allowed = {"session.read", "session.status", "execution.context", "execution.status"} if effective.read_sessions else set()
-            if effective.execute_tasks:
-                from clinx.nodes.node_protocol import NATIVE_HANDOFF_CAPABILITY
-                allowed |= {"execution.adopt", "execution.prepare", "execution.start", "execution.status", "execution.context", "execution.cancel", "execution.reconcile", NATIVE_HANDOFF_CAPABILITY}
-            capabilities = tuple(sorted(set(supplied) & allowed))
-            record = NodeRecord(
-                node_id=node_id, user_scope=effective.user_scope,
-                public_key_fingerprint=peer["fingerprint"], display_name=peer["display_name"],
-                capabilities=capabilities, endpoint=endpoint, state="ONLINE", last_seen=_now(),
-                stale_after_seconds=self.stale_after,
-            )
-            self.registry.register(record, effective)
-            return {"registered": True, "node_id": node_id, "centre_node_id": self.tls.identity.public["node_id"],
-                    "scope": effective.as_dict(), "heartbeat_seconds": max(1, self.stale_after // 3),
-                    "endpoint": endpoint, "observed_at": record.last_seen, "read_only": True}
-        except NodeProtocolError as exc:
-            return exc.as_dict() | {"registered": False, "read_only": True}
+            return invoke(dict(mode='centre', operation='centre.handle', arguments=dict(
+                state=str(self.tls.identity.store.root), request=dict(request),
+                certificate_hex=sock.getpeercert(binary_form=True).hex(), address=list(address),
+                stale_after=self.stale_after, authority=self.authority is not None,
+                observations=self.observations is not None)), callback)
+        except RustAuthorityError as exc:
+            return NodeProtocolError(str(exc), 'Centre route rejected').as_dict() | {'registered': False, 'read_only': True}
 
     def server(self, *, address: str, port: int) -> NodeRPCServer:
         return NodeRPCServer(self, address=address, port=port,
@@ -233,9 +172,10 @@ class NodeAuthorityClient:
         self.registration, self.scope = registration, scope
 
     def request(self, operation: str, payload: dict, *, request_id: str) -> dict:
+        import json
+
         from clinx.authority.rust_authority import RustAuthorityError
         from clinx.nodes.node_protocol import MAX_FRAME_BYTES
-        import json
         if not operation.startswith("business."):
             raise RustAuthorityError("UNSUPPORTED_OPERATION")
         scope = self.scope() if callable(self.scope) else self.scope
@@ -300,21 +240,26 @@ def remote_client_factory(identity_root: Path, host: str, registry: NodeRegistry
 def node_request_handler(service: NodeService, tls: PairedTLS, approvals: NodeAuthorizationStore, centre_id: str, active_scope: Any = None, provider_relay=None):
 
     def handle(request: Mapping[str, Any], sock: Any, address: Any) -> dict[str, Any]:
+        from clinx.authority.request_pipe import invoke
+        from clinx.authority.rust_authority import RustAuthorityError
+        def callback(event):
+            if event['kind'] != 'owner':
+                raise RustAuthorityError('NODE_CALLBACK_INVALID')
+            op, args = event['operation'], event['arguments']
+            if op == 'scope.apply':
+                service.set_scope(SharingScope(**args))
+                return None
+            if op == 'provider.handle':
+                return provider_relay.handle(args['request'], SharingScope(**args['scope']))
+            if op == 'node.handle':
+                return service.handle(args)
+            raise RustAuthorityError('NODE_CALLBACK_INVALID')
+        scope = active_scope() if callable(active_scope) else service.scope
         try:
-            peer = tls.authenticate(sock)
-            if peer["node_id"] != centre_id:
-                raise NodeProtocolError("CENTRE_IDENTITY_MISMATCH", "Authenticated peer is not the configured centre")
-            local_scope = approvals.get(centre_id)
-            centre_scope = active_scope() if callable(active_scope) else service.scope
-            if local_scope is None or local_scope.revoked or centre_scope is None or centre_scope.revoked:
-                raise NodeProtocolError("SHARING_SCOPE_DENIED", "Node owner approval was revoked")
-            service.set_scope(intersect_scope(local_scope, centre_scope))
-            if request.get("operation") in {"provider.upload", "provider.read"}:
-                if (provider_relay is None or request.get("protocol_version") != NODE_PROTOCOL_VERSION
-                        or request.get("node_id") != service.record.node_id):
-                    raise NodeProtocolError("PROVIDER_RELAY_UNAVAILABLE", "Configured Provider relay is required")
-                return provider_relay.handle(request, service.scope)
-            return service.handle(request)
-        except NodeProtocolError as exc:
-            return exc.as_dict() | {"read_only": True}
+            return invoke(dict(mode='node_owner', operation='owner.handle', arguments=dict(
+                state=str(tls.identity.store.root), centre_id=centre_id, node_id=service.record.node_id,
+                certificate_hex=sock.getpeercert(binary_form=True).hex(), request=dict(request),
+                active_scope=scope.as_dict() if scope else None, provider_relay=provider_relay is not None)), callback)
+        except RustAuthorityError as exc:
+            return NodeProtocolError(str(exc), 'Node owner route rejected').as_dict() | {'read_only': True}
     return handle

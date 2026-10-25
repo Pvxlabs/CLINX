@@ -33,6 +33,14 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
         path.write_bytes(key.encode())
         path.chmod(0o755)
         binaries[key+'_binary'] = path
+    # This packaging unit fixture uses synthetic executables. Stub only their
+    # protocol probe; binary/protocol execution is covered by the Rust fixtures.
+    real_run = stage.subprocess.run
+    def fixture_run(command, *args, **kwargs):
+        if command == [str(binaries['node_binary']), '--network-contract']:
+            return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_NODE_NETWORK_V1\n', stderr='')
+        return real_run(command, *args, **kwargs)
+    monkeypatch.setattr(stage.subprocess, 'run', fixture_run)
     real_stat = Path.stat
     def fixture_stat(path, *args, **kwargs):
         info = real_stat(path, *args, **kwargs)

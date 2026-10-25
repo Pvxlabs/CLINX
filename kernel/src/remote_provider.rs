@@ -67,6 +67,9 @@ pub struct Relay {
     uid: u32,
     context: Value,
 }
+impl Relay {
+    pub fn new(gateway:PathBuf,uid:u32,context:Value)->Self{Self{gateway,uid,context}}
+}
 impl Provider for Relay {
     fn request(&mut self, method: &str, params: Value) -> Result<Value> {
         let info = self

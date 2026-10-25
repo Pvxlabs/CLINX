@@ -75,6 +75,14 @@ def stage_desktop(args, source):
         binary = binary.resolve(strict=True)
         if not binary.is_file() or not binary.stat().st_mode & 0o111:
             raise SystemExit('RUNTIME_EXECUTABLE_REQUIRED')
+        if name == 'clinx-node':
+            try:
+                contract = subprocess.run([str(binary), '--network-contract'], input='', text=True,
+                    capture_output=True, timeout=5, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                raise SystemExit('QUALIFIED_RUST_NODE_NETWORK_REQUIRED') from None
+            if contract.returncode or contract.stdout.strip() != 'RUST_NODE_NETWORK_V1':
+                raise SystemExit('QUALIFIED_RUST_NODE_NETWORK_REQUIRED')
         binaries[name] = binary
         files[name] = hashlib.sha256(binary.read_bytes()).hexdigest()
     version = 'rust-' + hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()[:20]
@@ -94,7 +102,7 @@ def stage_desktop(args, source):
     (release / 'host-worker').chmod(0o4750)
     result = dict(version=version, source_cwd=str(source),
                   head=subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip(),
-                  base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1', host_transport='RUST_HOST_V1', mcp_runtime='RUST_MCP_V1', node_api='RUST_NODE_API_V1', provider_exchange='RUST_PROVIDER_V1', workspace_observer='RUST_PROVIDER_V1',
+                  base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1', host_transport='RUST_HOST_V1', mcp_runtime='RUST_MCP_V1', node_api='RUST_NODE_API_V1', node_network='RUST_NODE_NETWORK_V1', provider_exchange='RUST_PROVIDER_V1', workspace_observer='RUST_PROVIDER_V1',
                   source_replacements=replacements, runtime_source_profile='rust', source_layout='qualified-clinx-v1',
                   retired_files=sorted(set(manifest['files']) - set(files)),
                   files=files, status='STAGED_NOT_SELECTED')

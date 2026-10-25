@@ -541,7 +541,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+      "reason": "Typed Rust NodeRegistry/NodeService clients; Python still owns observation routing, native history cursor projection and value types pending observation migration."
     },
     {
       "path": "clinx/nodes/node_runtime.py",
@@ -550,7 +550,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Paired mTLS Node/Centre routing, including authenticated reverse Authority requests; no business state commit. Node runtime remains Python pending Rust port"
+      "reason": "Rust paired TLS/Centre client bindings plus remaining Python registration/supervision and observation route callbacks; not fully retired runtime."
     },
     {
       "path": "clinx/nodes/node_service_entrypoint.py",
@@ -567,7 +567,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Paired mTLS chunk transport and current scope checks remain Python runtime; exact Provider method/input identity and workspace observations execute in Rust clinx-provider. Not a development-only tool."
+      "reason": "Private Rust Node relay/gateway bindings and installed endpoint configuration; no Python socket, buffer state or submission decisions."
     },
     {
       "path": "clinx/nodes/rust_node_adapter.py",
@@ -982,6 +982,21 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Isolated Rust Helper request, unknown receipt identity and copied release/App closure regression"
+    },
+    {
+      "path": "clinx/nodes/network_worker.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Bounded stdio IO and callback façade for Rust Node networking; no socket, authentication or protocol state"
+    },
+    {
+      "path": "fixtures/test_rust_node_network.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Rust paired Node TLS/OpenSSL interoperability, durable registry identity, lost ACK and restart uncertainty regression"
     }
   ]
 }

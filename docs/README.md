@@ -73,3 +73,5 @@ Owner 候选标识为 `owner-shared-07da5fe20c4119dee1b4`；安装/切换证据�
 核心 Owner、authority、SQLite、transport、幂等与恢复回归继续保留。
 开发依赖仍可按贡献指南安装。pytest 套件集中保留在本机被忽略的 `tests/`，
 不随 Git 分发；新 clone 不包含测试源码。
+
+- [Rust Node 网络、Registry 与执行请求迁移](RUST_NODE_NETWORK_MIGRATION.md)：现有配对 TLS、Centre/Owner scope、Provider 分块/IPC、Node 路由账本及 ACK 不确定恢复。

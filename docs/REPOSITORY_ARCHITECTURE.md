@@ -9,13 +9,16 @@ Mac 的旧 Bridge/Registry/M9 核心和 Python Dispatcher/Host runner 已删除�
 Node 的精确 Provider 请求校验、协议调用和 workspace probe 也已迁 Rust；
 正常业务 MCP framing、请求映射和精确 Provider 上下文读取已由 Rust `clinx-mcp` 接管；
 Node 的目标校验、canonical handoff、prepare/start/cancel/context 请求映射已由 Rust `clinx-node` 接管；
-Node/Discovery 网络协议、配对传输和观察目录仍有 Python 运行时。
+Node 的 TCP/mTLS、现有配对身份校验、Centre/Owner 授权交集、反向 Authority 路由、
+Provider 分块/IPC、Node Registry 持久化及请求去重/恢复也已由 Rust 接管。
+Discovery 配对建立与 mDNS、观察目录/路由及入口 supervision 仍有 Python 运行时。
+本轮边界和验证见 [Rust Node 网络迁移](RUST_NODE_NETWORK_MIGRATION.md)。
 
 ## 布局
 
 | 位置 | 当前职责 | 分类与目标 |
 | --- | --- | --- |
-| `kernel/` | Rust Authority、原生与 Host 执行/Provider worker、状态/持久化/幂等/恢复、MCP stdio/API 与精确上下文读取、stdio byte relay、Node Provider exchange/workspace probe、Node execution API | ACTIVE_RUNTIME；长期核心 |
+| `kernel/` | Rust Authority、原生与 Host 执行/Provider worker、状态/持久化/幂等/恢复、MCP stdio/API 与精确上下文读取、stdio byte relay、Node Provider exchange/workspace probe、Node execution API、paired Node TLS/Centre/Owner、Provider gateway/chunks、Node routing registry/ledger | ACTIVE_RUNTIME；长期核心 |
 | `native/opaque_pairing/` | Rust OPAQUE 原生配对依赖 | ACTIVE_RUNTIME |
 | `MonitorApp/` | Swift macOS UI、App 构建入口、Helper shell launcher | ACTIVE_RUNTIME；UI 留在 Swift |
 | `clinx/contracts/` | 公共配置、身份选择、策略与响应契约 | ACTIVE_RUNTIME；运行职责待迁 Rust |
@@ -24,7 +27,8 @@ Node/Discovery 网络协议、配对传输和观察目录仍有 Python 运行时
 | `clinx/provider/` | Codex 协议、原生历史、精确证据读取和观测判断 | ACTIVE_RUNTIME；待迁 Rust |
 | `clinx/host/` | 安装配置的 workflow schema；冻结的操作目录参考仅用于资格验证 | 配置解析仍 ACTIVE_RUNTIME；执行、投递、恢复已迁 Rust |
 | `clinx/transport/` | Tunnel supervisor | ACTIVE_RUNTIME；待迁 Rust；Python Dispatcher 已删除 |
-| `clinx/nodes/`、`clinx/discovery/` | Node 路由、注册、Helper、mDNS/配对 | ACTIVE_RUNTIME；待迁 Rust |
+| `clinx/nodes/` | Rust Node/Registry/Provider 的私有协议客户端；观察路由、cursor 投影和 Helper/注册 supervision 仍在 Python | ACTIVE_RUNTIME；剩余观察与入口运行职责待迁 Rust |
+| `clinx/discovery/` | 身份建立、OPAQUE enrollment、mDNS/LAN discovery 与 Helper 设置 | ACTIVE_RUNTIME；配对建立/discovery 待迁 Rust；已配对 Node 的传输校验由 Rust 读取同一状态 |
 | `clinx/monitor/` | 监控与观察投影、只读历史 association | ACTIVE_RUNTIME；运行职责待迁 Rust |
 | `clinx/compat/`（已删除） | 旧 Mac Bridge/Registry/M9 及 completion/recovery/outbox | DEAD；由 Rust Authority 事务与 native Transport 替代 |
 | `tools/build/` | 共用运行源码清单处理与增量 App 拷贝 | DEVOPS |
@@ -58,7 +62,10 @@ Monitor profile 同样禁止 COMPAT；新增文件不会通过目录 glob 自动
 清单标记 `source_layout=qualified-clinx-v1`、`host_transport=RUST_HOST_V1`；新服务模板仅接受该布局。
 服务直接启动 Rust worker 和 `clinx-mcp`；安装工具把现有 TOML 编译为
 `host-runtime.json` 与 `mcp-runtime.json`，运行时不启动配置编译器。
-新 release 必须标记 `mcp_runtime=RUST_MCP_V1`、`node_api=RUST_NODE_API_V1`，并包含 `clinx-node`。`architecture/runtime-data.json`
+新 release 必须标记 `mcp_runtime=RUST_MCP_V1`、`node_api=RUST_NODE_API_V1`、
+`node_network=RUST_NODE_NETWORK_V1`，并包含 `clinx-node`。打包时实际执行
+`clinx-node --network-contract` 校验二进制；不能用旧 Node API binary 配新网络客户端。
+Monitor 源码 manifest 同样声明该契约和所需的两个 Rust Helper。`architecture/runtime-data.json`
 显式声明共享 schema 数据，Rust 在编译时嵌入，Python 观察/维护 codec 从包内读取。
 新清单还须声明 `provider_exchange=RUST_PROVIDER_V1`、`workspace_observer=RUST_PROVIDER_V1`，
 Authority 从 release 同级的 `clinx-provider` 执行观察。Mac 构建用本机 Rust toolchain 编译

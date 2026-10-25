@@ -168,6 +168,25 @@ fn execute<I: BufRead, O: Write>(pipe: Rc<RefCell<Pipe<I, O>>>, r: Value) -> Api
         return Err("REQUEST_PIPE_INVALID".into());
     }
     let op = r["operation"].as_str().ok_or("REQUEST_PIPE_INVALID")?;
+    if r["mode"] == "node_owner" {
+        return crate::node_owner::handle(&r["arguments"], |op, args| {
+            pipe.borrow_mut()
+                .callback("owner", op, args, None)
+                .map_err(|e| e.code)
+        })
+        .map_err(Error::from);
+    }
+    if r["mode"] == "centre" {
+        return crate::node_centre::handle(&r["arguments"], |op, args| {
+            pipe.borrow_mut()
+                .callback("network", op, args, None)
+                .map_err(|e| e.code)
+        })
+        .map_err(Error::from);
+    }
+    if r["mode"] == "network" {
+        return crate::node_network::command(op, &r["arguments"]).map_err(Error::from);
+    }
     if r["mode"] == "delegated_node" {
         let config = serde_json::from_value(r["node"].clone())
             .map_err(|_| Error::from("NODE_CONFIG_INVALID"))?;

@@ -92,7 +92,8 @@ def copy_monitor_sources(source: Path, resources: Path) -> None:
         shutil.copyfile(path, target)
         hashes[str(relative)] = hashlib.sha256(target.read_bytes()).hexdigest()
     (resources / 'python-sources.json').write_text(json.dumps(
-        {'schema': 1, 'profile': 'monitor', 'files': hashes}, indent=2) + '\n')
+        {'schema': 1, 'profile': 'monitor', 'node_network': 'RUST_NODE_NETWORK_V1',
+         'required_helpers': ['clinx-node', 'clinx-provider'], 'files': hashes}, indent=2) + '\n')
 
 
 def main() -> None:

@@ -18,7 +18,7 @@ cp ThirdPartyNotices.txt "$app_dir/Contents/Resources/ThirdPartyNotices.txt"
 # Copy the declared Helper protocol closure. Execution uses the paired Rust
 # authority; the shared inventory rejects legacy business cores in both bundles.
 python3 -B ../tools/build/runtime_sources.py --monitor-resources "$app_dir/Contents/Resources"
-# Provider protocol and fixed metadata commands run in Rust on this Mac.
+# Provider protocol, paired Node TLS/IPC, routing scope and request ledger run in Rust on this Mac.
 # Build for the same native architecture as the Swift application; never copy
 # a Linux release executable or inherit a stale helper from a previous bundle.
 provider_target=$(rustc -vV | sed -n 's/^host: //p')
@@ -32,6 +32,9 @@ for helper in clinx-provider clinx-node; do
     rm -f "$app_dir/Contents/Resources/$helper"
     cp "$provider_binary_dir/$provider_target/release/$helper" "$app_dir/Contents/Helpers/$helper"
     chmod 755 "$app_dir/Contents/Helpers/$helper"
+    if [ "$helper" = clinx-node ]; then
+        test "$("$app_dir/Contents/Helpers/$helper" --network-contract)" = RUST_NODE_NETWORK_V1
+    fi
     codesign --force --sign "$signing_identity" --timestamp=none "$app_dir/Contents/Helpers/$helper"
     codesign --verify --strict "$app_dir/Contents/Helpers/$helper"
 done
