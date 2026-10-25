@@ -4,6 +4,11 @@
 [仓库架构](REPOSITORY_ARCHITECTURE.md) 和 [维护与观察兼容收敛](RUST_MAINTENANCE_CONVERGENCE.md)
 为准；历史 release 身份不代表最新源码已部署。
 
+2026-10-25 的原生入口切换及 Provider 大回执修复见
+[Rust 生产切换记录](RUST_NATIVE_CUTOVER.md)。当前公开请求/所有响应仍限 1 MiB；
+经 Unix peer UID 认证的 Transport 仅对 `observe_commit`、`adoption_commit`
+允许最多 4 MiB 完整 Provider 证据。SQLite receipt 的 8 MiB 预算保持不变。
+
 源码清理及新的发布集合见 [2026-10-24 清理记录](cleanup/RUST_MIGRATION_CLEANUP.md)。
 Python Authority 实验退役及实际 macOS 兼容依赖见[第二轮清理记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md)。
 旧 Linear 轮询器、源码启动器收口和干净产物验证见[第三轮记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md)。

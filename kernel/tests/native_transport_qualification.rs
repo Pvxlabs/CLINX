@@ -508,6 +508,137 @@ fn sequence(entry: Entry, routing: Routing) {
         assert_eq!(h.state(|s| s.inputs.len()), 6);
     }
 }
+
+#[test]
+fn large_provider_evidence_lost_reply_restart_preserves_exact_checkpoint_without_replay() {
+    use std::{io::Write, os::unix::net::UnixStream};
+    let h = Harness::new(Entry::Direct, Routing::Local);
+    let execution = h.start("running", None, "large-start");
+    h.tick();
+    let status = h.r.status(&execution);
+    assert_eq!(status["dispatch_state"], "ACKED");
+    let turn = h.state(|s| {
+        let turn = &mut s.turns.get_mut("thread-1").unwrap()[0];
+        turn["status"] = json!("completed");
+        turn["items"].as_array_mut().unwrap().push(json!({
+            "id":"large-output", "type":"commandExecution",
+            "aggregatedOutput":"x".repeat(1_600_000)
+        }));
+        turn.clone()
+    });
+    let challenge = h.r.call(
+        "observe_begin",
+        json!({"execution_ref":execution["execution_ref"]}),
+    );
+    let payload = json!({"execution_ref":execution["execution_ref"],"nonce":challenge["nonce"],
+        "observations":[{"endpoint":h.endpoint,"state":"idle","thread_id":status["thread_id"],
+        "turn_id":status["native_turn_id"],"turn_status":"completed"}],"turn":turn});
+    let mut wire = serde_json::to_vec(
+        &json!({"protocol_version":clinx_decision_kernel::authority_store::PROTOCOL,
+        "request_id":"large-lost-reply","operation":"business.observe_commit","payload":payload}),
+    )
+    .unwrap();
+    wire.push(b'\n');
+    assert!(wire.len() > clinx_decision_kernel::MAX_FRAME_BYTES);
+    assert!(
+        wire.len() < clinx_decision_kernel::native_transport::MAX_PROVIDER_EVIDENCE_FRAME_BYTES
+    );
+    // Send the entire authenticated request, then lose the reply. Only exact
+    // status/receipt recovery may decide the outcome; never resend turn/start.
+    let mut socket = UnixStream::connect(&h.r.endpoint).unwrap();
+    socket.write_all(&wire).unwrap();
+    drop(socket);
+    runtime::eventually(|| h.r.status(&execution), |v| v["status"] == "SUCCEEDED");
+    h.r.restart_authority();
+    let recovered =
+        h.r.call_result("observe_commit", payload, Some("large-lost-reply"))
+            .unwrap();
+    assert_eq!(recovered["resource_state"], "RELEASED");
+    assert_eq!(recovered["dispatch_state"], "ACKED");
+    assert_eq!(
+        recovered["execution_result"]["response_text"],
+        "Exact Rust result"
+    );
+    h.tick();
+    assert_eq!(h.state(|s| s.inputs.len()), 1);
+    let db = rusqlite::Connection::open_with_flags(
+        h.r.temp.path().join("state/authority.sqlite3"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let task: String = db
+        .query_row(
+            "SELECT value FROM business_rows WHERE kind='task' AND id=?",
+            [execution["task_ref"].as_str().unwrap()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&task).unwrap()["native_checkpoint"]["turn"],
+        turn
+    );
+    let count: i64 = db
+        .query_row(
+            "SELECT count(*) FROM business_commands WHERE id='large-lost-reply'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn evidence_capacity_is_not_a_general_api_or_unbounded_transport_limit() {
+    use clinx_decision_kernel::{
+        MAX_FRAME_BYTES,
+        native_transport::{MAX_PROVIDER_EVIDENCE_FRAME_BYTES, request_frame_limit},
+    };
+    use std::{
+        io::{BufRead, BufReader, Write},
+        os::unix::net::UnixStream,
+    };
+    for op in ["business.observe_commit", "business.adoption_commit"] {
+        assert_eq!(request_frame_limit(op, false), MAX_FRAME_BYTES);
+        assert_eq!(
+            request_frame_limit(op, true),
+            MAX_PROVIDER_EVIDENCE_FRAME_BYTES
+        );
+    }
+    for op in [
+        "business.prepare",
+        "business.input_commit",
+        "health",
+        "observe_commit",
+    ] {
+        assert_eq!(request_frame_limit(op, true), MAX_FRAME_BYTES);
+    }
+    let h = Harness::new(Entry::Direct, Routing::Local);
+    assert_eq!(
+        h.r.call_result(
+            "observe_commit",
+            json!({"oversized":"x".repeat(MAX_PROVIDER_EVIDENCE_FRAME_BYTES)}),
+            Some("too-large")
+        )
+        .unwrap_err(),
+        "REQUEST_TOO_LARGE"
+    );
+    // Bypass client checks to prove the actual Authority still rejects an
+    // oversized public operation even when sent by its Transport peer.
+    let mut socket = UnixStream::connect(&h.r.endpoint).unwrap();
+    writeln!(socket,"{}",json!({"protocol_version":clinx_decision_kernel::authority_store::PROTOCOL,
+        "request_id":"large-api","operation":"business.prepare","payload":{"prompt":"x".repeat(MAX_FRAME_BYTES)}})).unwrap();
+    let mut response = String::new();
+    BufReader::new(socket).read_line(&mut response).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&response).unwrap()["error"],
+        "INVALID_FRAME"
+    );
+    assert_eq!(
+        h.r.call("list_tasks", json!({"projection":"summary","after":""}))["tasks"],
+        json!([])
+    );
+    assert_eq!(h.state(|s| s.inputs.len()), 0);
+}
 #[test]
 fn direct_local() {
     sequence(Entry::Direct, Routing::Local);

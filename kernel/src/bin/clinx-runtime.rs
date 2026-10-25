@@ -176,19 +176,26 @@ fn main() -> Result<(), String> {
             .and_then(|_| stream.set_write_timeout(timeout))
             .map_err(|e| e.to_string())?;
         let mut frame = Vec::new();
+        let transport_peer = Some(peer.uid.as_raw()) == transport_uid;
+        let read_limit = if transport_peer {
+            clinx_decision_kernel::native_transport::MAX_PROVIDER_EVIDENCE_FRAME_BYTES
+        } else {
+            MAX_FRAME_BYTES
+        };
         if BufReader::new(&stream)
-            .take((MAX_FRAME_BYTES + 1) as u64)
+            .take((read_limit + 1) as u64)
             .read_until(b'\n', &mut frame)
             .is_err()
         {
             continue;
         }
         let mut request_id = String::new();
-        let result = if frame.len() > MAX_FRAME_BYTES || frame.last() != Some(&b'\n') {
+        let result = if frame.len() > read_limit || frame.last() != Some(&b'\n') {
             Err("INVALID_FRAME".into())
         } else {
             parse_protocol_request(&frame).map_err(|_|"INVALID_REQUEST".to_owned()).and_then(|req| {
                 request_id = req.request_id;
+                if frame.len() > clinx_decision_kernel::native_transport::request_frame_limit(&req.operation, transport_peer) { return Err("INVALID_FRAME".into()); }
                 if req.protocol_version != PROTOCOL || request_id.is_empty() || request_id.len() > 128 { return Err("INVALID_PROTOCOL".into()); }
                 if let Some(op) = req.operation.strip_prefix("business.") {
                     let policy = policy.as_ref().ok_or("BUSINESS_POLICY_REQUIRED")?;

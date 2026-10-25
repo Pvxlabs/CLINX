@@ -76,6 +76,22 @@ pub fn connect_local(endpoint: &Path, timeout: Duration) -> std::io::Result<Unix
 pub trait Authority {
     fn call(&mut self, operation: &str, payload: Value, id: &str) -> Result<Value>;
 }
+// Full Provider turns are durable evidence, not public API requests. Only the
+// authenticated Transport peer's two evidence commits have this larger bound.
+// Responses and all other requests retain the public 1 MiB frame limit.
+pub const MAX_PROVIDER_EVIDENCE_FRAME_BYTES: usize = 4 * MAX_FRAME_BYTES;
+pub fn request_frame_limit(operation: &str, transport_peer: bool) -> usize {
+    if transport_peer
+        && matches!(
+            operation,
+            "business.observe_commit" | "business.adoption_commit"
+        )
+    {
+        MAX_PROVIDER_EVIDENCE_FRAME_BYTES
+    } else {
+        MAX_FRAME_BYTES
+    }
+}
 #[derive(Clone)]
 pub struct UnixAuthority {
     pub endpoint: PathBuf,
@@ -122,7 +138,7 @@ impl UnixAuthority {
         }
         let mut wire = serde_json::to_vec(&json!({"protocol_version":PROTOCOL,"operation":operation,"request_id":id,"payload":payload})).map_err(|_| "INVALID_REQUEST")?;
         wire.push(b'\n');
-        if wire.len() > MAX_FRAME_BYTES {
+        if wire.len() > request_frame_limit(operation, true) {
             return Err("REQUEST_TOO_LARGE".into());
         }
         let mut socket =
