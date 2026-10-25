@@ -36,7 +36,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Python request/read mapping to Rust IPC, including canonical adoption; currently uses same-host Provider and Linux peer credentials"
+      "reason": "Python business request mapping still used by the normal Node Helper route and explicit policy maintenance; Centre also imports Commands; normal MCP replaced by Rust, not a thin adapter"
     },
     {
       "path": "clinx/authority/rust_reads.py",
@@ -405,16 +405,13 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Python MCP framing and schemas; target owner Rust"
+      "reason": "Observation/explicit maintenance codec namespace; normal business MCP server is Rust"
     },
     {
       "path": "clinx/mcp/consultation_schema.py",
-      "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "rust",
-        "monitor"
-      ],
-      "reason": "Current Python MCP framing and schemas; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Replaced by the canonical MCP registry compiled into Rust; no remaining imports"
     },
     {
       "path": "clinx/mcp/mcp_server.py",
@@ -423,16 +420,13 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Python MCP framing and schemas; target owner Rust"
+      "reason": "Observation/explicit maintenance injectable codec and retired CLI launcher; normal business MCP is clinx-mcp Rust executable"
     },
     {
       "path": "clinx/mcp/rust_mcp.py",
-      "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "rust",
-        "monitor"
-      ],
-      "reason": "Current Python MCP framing and schemas; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Replaced by the canonical MCP registry compiled into Rust; no remaining imports"
     },
     {
       "path": "clinx/monitor/__init__.py",
@@ -967,6 +961,12 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Rust Provider exchange, fixed read-only metadata and Authority observer regression with disposable IPC and Git fixtures; no real tasks."
+    },
+    {
+      "path": "tools/build/mcp_runtime_config.py",
+      "role": "DEVOPS",
+      "profiles": [],
+      "reason": "Install-time TOML-to-Rust-MCP JSON compiler; no runtime state or execution"
     }
   ]
 }

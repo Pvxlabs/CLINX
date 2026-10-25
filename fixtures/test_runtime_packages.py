@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
-from tools.build.runtime_sources import SOURCE_ROOT, copy_monitor_sources, source_paths
+from tools.build.runtime_sources import SOURCE_ROOT, copy_monitor_sources, data_paths, source_paths
 
 
 def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monkeypatch):
@@ -28,7 +28,7 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     (base/'manifest.json').write_text(json.dumps(dict(files={
         p: hashlib.sha256(data).hexdigest() for p, data in previous.items()})))
     binaries = {}
-    for key in ('runtime', 'mcp_relay', 'native_transport', 'provider'):
+    for key in ('runtime', 'mcp_relay', 'native_transport', 'provider', 'mcp'):
         path = tmp_path/key
         path.write_bytes(key.encode())
         path.chmod(0o755)
@@ -46,6 +46,9 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     stage.stage_desktop(args, SOURCE_ROOT)
     receipt = json.loads(args.output.read_text())
     release = Path(receipt['release'])
+    assert receipt['mcp_runtime'] == 'RUST_MCP_V1'
+    assert (release/'clinx-mcp').read_bytes() == b'mcp'
+    assert (release/'control/clinx/mcp/registry.json').is_file()
     assert receipt['native_transport'] == 'RUST_NATIVE_V1'
     assert set(receipt['retired_files']) == set(previous)-{'host-worker', 'deps/keep.dat'}
     assert not (release/'clinx').exists() and not (release/'bridge.py').exists()
@@ -68,7 +71,7 @@ def test_incremental_monitor_copy_removes_legacy_and_matches_declared_closure(tm
     runtime.parent.mkdir(parents=True)
     runtime.write_text('interpreter')
     copy_monitor_sources(SOURCE_ROOT, resources)
-    expected = {str(path.relative_to(SOURCE_ROOT)) for path in source_paths(SOURCE_ROOT, 'monitor')}
+    expected = {str(path.relative_to(SOURCE_ROOT)) for path in source_paths(SOURCE_ROOT, 'monitor') + data_paths(SOURCE_ROOT, 'monitor')}
     assert set(json.loads((resources/'python-sources.json').read_text())['files']) == expected
     assert not (resources/'clinx/compat').exists()
     assert not (resources/'bridge.py').exists() and not (resources/'Discovery').exists()

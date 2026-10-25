@@ -7,18 +7,19 @@ Host、Transport、Node 与 Discovery 的长期核心；Swift 负责 macOS UI；
 当前实现尚未达到这一目标。Rust 已接管 P620 任务权威、原生执行及 Host 动态工具执行；
 Mac 的旧 Bridge/Registry/M9 核心和 Python Dispatcher/Host runner 已删除。
 Node 的精确 Provider 请求校验、协议调用和 workspace probe 也已迁 Rust；
-MCP、Node/Discovery 网络协议、配对传输及监控读取仍有 Python 运行时。
+正常业务 MCP framing、请求映射和精确 Provider 上下文读取已由 Rust `clinx-mcp` 接管；
+Node/Discovery 网络协议、配对传输、观察目录及其余调用端请求映射仍有 Python 运行时。
 
 ## 布局
 
 | 位置 | 当前职责 | 分类与目标 |
 | --- | --- | --- |
-| `kernel/` | Rust Authority、原生与 Host 执行/Provider worker、状态/持久化/幂等/恢复、stdio byte relay、Node Provider exchange/workspace probe | ACTIVE_RUNTIME；长期核心 |
+| `kernel/` | Rust Authority、原生与 Host 执行/Provider worker、状态/持久化/幂等/恢复、MCP stdio/API 与精确上下文读取、stdio byte relay、Node Provider exchange/workspace probe | ACTIVE_RUNTIME；长期核心 |
 | `native/opaque_pairing/` | Rust OPAQUE 原生配对依赖 | ACTIVE_RUNTIME |
 | `MonitorApp/` | Swift macOS UI、App 构建入口、Helper shell launcher | ACTIVE_RUNTIME；UI 留在 Swift |
 | `clinx/contracts/` | 公共配置、身份选择、策略与响应契约 | ACTIVE_RUNTIME；运行职责待迁 Rust |
 | `clinx/authority/` | 当前 Python Rust IPC 客户端、请求映射、状态读取 | ACTIVE_RUNTIME；不等于 Rust Authority 实现 |
-| `clinx/mcp/` | 当前 Python MCP framing/schema | ACTIVE_RUNTIME；待迁 Rust |
+| `clinx/mcp/` | 观察/显式维护用兼容 codec、Rust CLI launcher、共享公开 schema 数据 | 观察 codec 仍 ACTIVE_RUNTIME；正常业务入口已迁 Rust |
 | `clinx/provider/` | Codex 协议、原生历史、精确证据读取和观测判断 | ACTIVE_RUNTIME；待迁 Rust |
 | `clinx/host/` | 安装配置的 workflow schema；冻结的操作目录参考仅用于资格验证 | 配置解析仍 ACTIVE_RUNTIME；执行、投递、恢复已迁 Rust |
 | `clinx/transport/` | Tunnel supervisor | ACTIVE_RUNTIME；待迁 Rust；Python Dispatcher 已删除 |
@@ -52,9 +53,12 @@ Monitor profile 同样禁止 COMPAT；新增文件不会通过目录 glob 自动
 增量 App 构建清除旧 Python 拷贝目录，保留解释器、原生 wheel 和 Swift 资源。
 
 `scripts/stage_rust_release.py` 需要匹配新布局、已测试的 `--runtime-binary` 和
-`--mcp-relay-binary`、`--native-transport-binary`、`--provider-binary`。不能只更换 Python 文件再继承引用旧路径的 Authority binary。
+`--mcp-relay-binary`、`--native-transport-binary`、`--provider-binary`、`--mcp-binary`。不能只更换 Python 文件再继承引用旧路径的 Authority binary。
 清单标记 `source_layout=qualified-clinx-v1`、`host_transport=RUST_HOST_V1`；新服务模板仅接受该布局。
-服务直接启动 Rust worker，安装工具把现有 TOML Host 配置编译为 `host-runtime.json`。
+服务直接启动 Rust worker 和 `clinx-mcp`；安装工具把现有 TOML 编译为
+`host-runtime.json` 与 `mcp-runtime.json`，运行时不启动配置编译器。
+新 release 必须标记 `mcp_runtime=RUST_MCP_V1`。`architecture/runtime-data.json`
+显式声明共享 schema 数据，Rust 在编译时嵌入，Python 观察/维护 codec 从包内读取。
 新清单还须声明 `provider_exchange=RUST_PROVIDER_V1`、`workspace_observer=RUST_PROVIDER_V1`，
 Authority 从 release 同级的 `clinx-provider` 执行观察。Mac 构建用本机 Rust toolchain 编译
 同一入口，放入 `Contents/Helpers/clinx-provider` 并单独签名；Helper launcher 固定该路径。
@@ -69,7 +73,8 @@ Authority 从 release 同级的 `clinx-provider` 执行观察。Mac 构建用本
 
 ```sh
 # 从源码根目录运行；配置和 socket 必须属于指定的开发/资格环境。
-python -m clinx.mcp.mcp_server --config <config> --stdio
+python -m tools.build.mcp_runtime_config --config <toml> --output <new-mcp-json>
+clinx-mcp --config <new-mcp-json> --stdio
 # 安装/构建时编译配置，运行时直接启动 Rust；以下均使用独立开发环境。
 python -m tools.build.host_runtime_config --config <config> --output <new-host-json>
 clinx-native-transport --socket <authority-socket> --authority-uid <uid> --host-config <new-host-json>
@@ -113,8 +118,16 @@ take/begin/complete/ACK、successor checkpoint 和取消许可，不持有数据
 未知输入、未知创建 ACK 或未知子进程结果均不重放。验证范围见
 [Rust Host 迁移报告](RUST_HOST_RUNTIME_MIGRATION.md)。
 
-**仍是 Python 运行时**：MCP framing/schema、Node/Discovery 注册配对与网络协议、Provider mTLS 分块通道、
-历史读取与监控投影及公共请求/配置映射。这些不是纯开发工具，仍需后续迁移。
+`clinx-mcp` 的 15 个业务工具直接使用 Rust 请求映射、Authority IPC 与 Provider 精确只读契约。
+4 个观察工具暂委托同 API 身份的只读目录子进程；它使用原有 trust/project 授权交集和读后重检。
+本机 managed context 返回 Rust `--call clinx_get_context`，不回读 MCP/Observer 造成循环，
+不构造 Python `RustIntegration`。该子进程没有新 listener、service 或任务执行权限。
+详见 [Rust MCP 迁移报告](RUST_MCP_RUNTIME_MIGRATION.md)。
+
+**仍是 Python 运行时**：Node/Discovery 注册配对与网络协议、Provider mTLS 分块通道、
+历史读取与监控目录投影，以及 Centre、Node 本地兼容入口仍用的公共请求/配置映射。
+`rust_integration.py` 仍包含业务请求与读取逻辑，不被标为“薄适配”或开发工具。
+这些明确未完成迁移，25% 目标尚未达到。
 Python 的 `host_contract.py` 仅作为冻结资格参考保留，不进入 Rust release 或 Helper 包。
 
 `clinx-provider` 已接管 Node 对精确 thread/turn/execution/prompt/cwd 的请求校验与

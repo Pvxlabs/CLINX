@@ -5,26 +5,15 @@ NAMES = ("clinx_list_observations","clinx_get_observation","clinx_get_observatio
 
 
 def observation_tools():
-    common={"cursor":{"type":"string","maxLength":2048},"limit":{"type":"integer","minimum":1,"maximum":100}}
-    props=dict(common,**{k:{"type":"string","maxLength":1024} for k in ("node","project","state","native_thread_id")})
-    props["kind"]={"type":"string","enum":["managed","external"]}
-    identity={"observation_id":{"type":"string","pattern":"^obs_[a-f0-9]{40}$"}}
-    specs=[
-        (NAMES[0],"列出已授权的全网原生和受管观察项；无需 thread ID 或执行权限。",props,[]),
-        (NAMES[1],"按稳定 observation_id 读取缓存详情和有界轮次历史。",dict(common,**identity),["observation_id"]),
-        (NAMES[2],"只读分页源端用户可见上下文；离线内容未缓存时明确不可用。",
-         dict(identity,cursor=common["cursor"]),["observation_id"]),
-        (NAMES[3],"分页读取已批准并持久化的 Activity 历史；节点离线仍可查看。",dict(common,**identity),["observation_id"]),
-    ]
-    return [{"name":name,"description":description,
-        "inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":False},
-        "outputSchema":{"type":"object","properties":{"schema_version":{"type":"string"},"read_only":{"type":"boolean"}},"additionalProperties":True},
-        "annotations":{"readOnlyHint":True,"destructiveHint":False,"idempotentHint":True}}
-        for name,description,properties,required in specs]
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / 'mcp/registry.json'
+    return json.loads(path.read_text())['observations']
 
 
 def call_observation(directory,name,arguments):
-    if directory is None: raise NodeProtocolError("OBSERVATION_NOT_CONFIGURED","Observation directory is unavailable")
+    if directory is None:
+        raise NodeProtocolError("OBSERVATION_NOT_CONFIGURED","Observation directory is unavailable")
     return {NAMES[0]:directory.list,NAMES[1]:directory.detail,NAMES[2]:directory.context,NAMES[3]:directory.activity}[name](**arguments)
 
 
@@ -39,3 +28,55 @@ def standalone_server(directory):
     server.public_tools=observation_tools()
     server.public_tool_names=set(NAMES)
     return server
+
+
+def backend(config_path):
+    """Read-only directory child for Rust MCP; business reads return to Rust."""
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from clinx.authority.rust_authority import RustAuthorityError
+    from clinx.monitor.network_observation import directory_from_env
+    from clinx.monitor.rust_monitor import RustObservationDirectory
+
+    class ManagedReads:
+        cfg = SimpleNamespace(runtime_host=json.loads(Path(config_path).read_text())['runtime_host'])
+
+        def get_context(self, **arguments):
+            process = subprocess.run(
+                [os.environ['CLINX_MCP_BINARY'], '--config', str(config_path),
+                 '--call', 'clinx_get_context'],
+                input=json.dumps(arguments), capture_output=True, text=True, timeout=30, check=True)
+            response = json.loads(process.stdout)
+            if response.get('error'):
+                raise RustAuthorityError(response['error'])
+            return response['result']
+
+    directory = directory_from_env()
+    if directory is None:
+        raise ValueError('RUST_OBSERVATION_CONFIG_REQUIRED')
+    directory = RustObservationDirectory(directory, ManagedReads())
+    print(json.dumps({'ready': True}), flush=True)
+    for line in sys.stdin:
+        try:
+            request = json.loads(line)
+            if request['method'] not in NAMES or not isinstance(request['arguments'], dict):
+                raise ValueError('OBSERVATION_READ_ONLY')
+            result = call_observation(directory, request['method'], request['arguments'])
+            response = {'result': result}
+        except NodeProtocolError as exc:
+            response = {'error': exc.code}
+        except Exception:
+            response = {'error': 'OBSERVATION_UNAVAILABLE'}
+        print(json.dumps(response), flush=True)
+
+
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) != 3 or sys.argv[1] != '--backend':
+        raise SystemExit('OBSERVATION_BACKEND_ARGUMENT_INVALID')
+    backend(sys.argv[2])

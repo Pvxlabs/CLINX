@@ -196,3 +196,39 @@ production capacity, real device behavior or business acceptance.
 | `systemd-run` cannot connect to bus | Provide an isolated test user manager; retain the failure if unavailable |
 | Ruff findings in legacy files | Use `ruff-discovery.toml`, compare to the saved baseline and avoid unrelated formatting changes |
 | Collection succeeds but tests fail | Report exact failed node IDs and unmet prerequisites; do not weaken assertions or hide failures |
+
+## Rust MCP business entry qualification (2026-10-25)
+
+Normal business MCP now uses `clinx-mcp`, with an install-time JSON configuration
+compiled by `tools.build.mcp_runtime_config`. The retained Python factory is an
+observation/maintenance/test seam. It does not qualify the normal Rust service.
+
+`fixtures/mcp_api_v1.json` contains 35 original `81254e2` Python API vectors.
+Rust tests compare Authority payloads, exact Provider reads and public results,
+and cover unknown delivery identities, cursor/identity conflicts, bounded history
+and context projection. The native transport fixture runs both the original
+Authority entry and the new MCP entry over local and paired/routed Providers;
+the original Authority assertions remain active.
+
+The [MCP migration report](RUST_MCP_RUNTIME_MIGRATION.md) records 79 final Rust
+passes and 76 tracked fixtures against both Debug and Release builds. An existing
+parallel `WRITER_ALREADY_ACTIVE` failure was also reproduced with the baseline
+Rust test binary and is retained separately. The unchanged local suite under
+CPython 3.12.3 reports 51 PASS / 20 FAIL / 134 ERROR on both sides, including 109
+collection errors; the native/request subset remains 34 PASS / 2 FAIL. These
+counts do not replace older reports taken with CPython 3.14 or different source
+revisions, and do not qualify a physical Mac/P620 execution.
+
+The fixtures require all three binary settings, plus the compiled binary directory:
+
+```sh
+CLINX_TEST_RUST_BIN_DIR=<build>/release \
+CLINX_MCP_RELAY=<build>/release/clinx-mcp-relay \
+CLINX_PROVIDER_BINARY=<build>/release/clinx-provider \
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+python -B -m pytest -p no:cacheprovider fixtures --tb=short \
+  --basetemp=/data/artifacts/<task>/pytest
+```
+
+Keep test HOME/XDG/TMPDIR private and use the pinned dev requirements, including
+the native OPAQUE wheel. Do not use live opt-ins or real business tasks.

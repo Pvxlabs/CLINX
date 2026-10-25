@@ -299,7 +299,12 @@ def test_remote_workspace_observer_reuses_paired_mtls_and_exact_host_route(binar
 
 @pytest.mark.parametrize('profile', ['rust', 'monitor'])
 def test_packaged_node_finds_companion_rust_binary_without_checkout_or_pythonpath(binary, repo, tmp_path, ipc, profile):
-    from tools.build.runtime_sources import SOURCE_ROOT, copy_monitor_sources, source_paths
+    from tools.build.runtime_sources import (
+        SOURCE_ROOT,
+        copy_monitor_sources,
+        data_paths,
+        source_paths,
+    )
     package = tmp_path / 'release'
     if profile == 'monitor':
         root = package / 'Contents/Resources'
@@ -308,7 +313,7 @@ def test_packaged_node_finds_companion_rust_binary_without_checkout_or_pythonpat
         companion.parent.mkdir()
     else:
         root = package / 'control'
-        for source in source_paths(SOURCE_ROOT, profile):
+        for source in source_paths(SOURCE_ROOT, profile) + data_paths(SOURCE_ROOT, profile):
             dest = root / source.relative_to(SOURCE_ROOT)
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, dest)

@@ -1,0 +1,154 @@
+{
+  "status": "PASS_SCOPED_NOT_DEPLOYED",
+  "base_head": "81254e261df2b411c7ac4f50390266bb051a9454",
+  "scope": "Rust business MCP request mapping and exact Provider/native context reads; Python observation/Node runtime not retired",
+  "source_scale": {
+    "before": {
+      "Python": {
+        "files": 102,
+        "lines": 22142,
+        "bytes": 1093824
+      },
+      "Rust": {
+        "files": 34,
+        "lines": 15477,
+        "bytes": 620102
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      }
+    },
+    "after": {
+      "Python": {
+        "files": 101,
+        "lines": 21231,
+        "bytes": 1035146
+      },
+      "Rust": {
+        "files": 37,
+        "lines": 17591,
+        "bytes": 702967
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      }
+    }
+  },
+  "python_roles": {
+    "ACTIVE_RUNTIME": {
+      "files": 53,
+      "lines": 13071,
+      "bytes": 651335
+    },
+    "COMPAT": {
+      "files": 2,
+      "lines": 510,
+      "bytes": 24940
+    },
+    "DEVOPS": {
+      "files": 18,
+      "lines": 2056,
+      "bytes": 89766
+    },
+    "QUALIFICATION": {
+      "files": 28,
+      "lines": 5594,
+      "bytes": 269105
+    },
+    "DEAD": {
+      "files": 0,
+      "lines": 0,
+      "bytes": 0
+    }
+  },
+  "deleted_files": [
+    "clinx/mcp/consultation_schema.py",
+    "clinx/mcp/rust_mcp.py"
+  ],
+  "deleted_file_lines": 111,
+  "python_net_lines": -911,
+  "mcp_server_lines": {
+    "before": 1394,
+    "after": 392
+  },
+  "python_percent": {
+    "baseline": 47.98,
+    "candidate_estimate": 44.93,
+    "measurement": "GitHub baseline language bytes plus candidate source byte deltas; candidate is not a GitHub refresh",
+    "target": 25,
+    "achieved": false
+  },
+  "validation": {
+    "rust_tests_passed": 79,
+    "rust_ignored": 0,
+    "python_fixtures_before": 73,
+    "python_fixtures_after_debug": 76,
+    "python_fixtures_after_release": 76,
+    "python_api_golden_vectors": 35,
+    "schema_business_tools": 15,
+    "schema_observation_tools": 4,
+    "release_build": "PASS",
+    "package_imports": "PASS_RUST_AND_MONITOR",
+    "package_old_core_residue": "NONE",
+    "mac_swift_build": "NOT_RUN_LINUX",
+    "physical_mac_p620": "NOT_RUN",
+    "python_paired": {
+      "local": {
+        "before": {
+          "FAIL": 20,
+          "PASS": 51,
+          "ERROR": 134
+        },
+        "after": {
+          "FAIL": 20,
+          "PASS": 51,
+          "ERROR": 134
+        },
+        "changes": {}
+      },
+      "adapters": {
+        "before": {
+          "FAIL": 2,
+          "PASS": 34
+        },
+        "after": {
+          "FAIL": 2,
+          "PASS": 34
+        },
+        "changes": {}
+      },
+      "tests_unchanged": true
+    },
+    "existing_rust_flake": {
+      "test": "node_owner_and_receipt_commit_together_at_fault_boundaries",
+      "error": "WRITER_ALREADY_ACTIVE",
+      "baseline_reproduced_exit_codes": [
+        0,
+        101
+      ],
+      "failure_logs_preserved": true,
+      "assertions_unchanged": true
+    },
+    "systemd_templates": "PASS_OFFLINE_RENDER_VERIFY",
+    "shared_registry_golden": "EXACT_JSON_EQUALITY",
+    "original_test_and_support_file_count": 124
+  },
+  "production": {
+    "deployed": false,
+    "restarted": false,
+    "database_modified": false,
+    "real_tasks_operated": false
+  },
+  "evidence": "/data/artifacts/clinx-mcp-rust-20261025",
+  "build_hashes": {
+    "clinx-native-transport": "cd4956ed23fe2fd8241e57123e1d076a63d3e30478f24c2464cfab779f6260d3",
+    "clinx-mcp-relay": "c7f7af33c79090deeba511fd3a0361124078e63b73db70201e619f4b925b65f1",
+    "clinx-runtime": "433c33bfcce5436c5ae74348d2a04a5079327f1473c9f0bcc9d06845de6d0c0f",
+    "clinx-mcp": "ab51117f209e6cbe2bbb156c01ec8481c7ac8a3cfa36d8cb1e667d5931c0ae32",
+    "clinx-provider": "379907e773866456e0ecc348e587e66fa9fdb4e80f8486f93bd7cc6580ba1512"
+  }
+}

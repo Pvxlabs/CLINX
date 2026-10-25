@@ -63,7 +63,8 @@ flowchart LR
 Rust Core is the authoritative entrypoint for deployed P620 task state, receipts,
 recovery and resource lifecycle. The source Helper now uses the paired Rust authority
 route with independently read Mac Provider evidence; see [native core retirement](docs/RUST_NATIVE_CORE_RETIREMENT.md).
-Python MCP, Host, Node/Discovery and monitoring runtime still remain.
+Normal MCP, native and Host execution now run in Rust. Python Node/Discovery,
+observation directory, monitoring and remaining caller mappings still remain.
 Source structure, staged releases and deployed behavior require separate evidence.
 
 CLINX is not another AI agent, a code-review platform, a safety-approval system
@@ -233,16 +234,18 @@ core. Task execution and recovery use the Rust MCP/Authority contracts;
 the local Registry/M9 CLI and legacy SQLite repair utilities are retired. The old Linear polling `run`, `once` and `doctor`
 commands and the separate V1/M3 Dispatcher have been retired.
 
-For a configured Rust MCP development or qualification environment, use
-`python -m clinx.mcp.mcp_server --config <config> --stdio` with the existing `CLINX_AUTHORITY=rust`,
+For a configured Rust MCP development or qualification environment, compile
+the existing TOML at build/install time using
+`python -m tools.build.mcp_runtime_config --config <toml> --output <new-mcp-runtime.json>`.
+`clinx-mcp --config <compiled-mcp-runtime.json> --stdio` with the existing
 `CLINX_RUST_SOCKET` and `CLINX_RUST_UID` settings. These must identify the intended
 existing authority; the adapter does not create or migrate its database. A fresh
 clone does not configure an authority or reproduce an installed service.
 
-macOS Helper still has a configured local Python execution route. Its required
-capabilities and remaining retirement blockers are recorded separately from the
-P620 Rust release. Task identity, native thread, input ACK and recovery contracts
-must be preserved when this last execution route is migrated.
+macOS Helper uses the paired Centre-to-Rust Authority route. Node request mapping,
+authenticated mTLS transport, discovery and observation still execute Python;
+these are runtime responsibilities awaiting Rust migration. The Rust MCP IPC
+client is local to the Centre and does not supply cross-Mac authentication.
 
 ## Boundaries and status
 
@@ -263,3 +266,6 @@ operation remain qualification and roadmap work.
 P620 uses one canonical development repository. See
 [project convergence and historical recovery](docs/PROJECT_CONVERGENCE.md)
 for the workspace lifecycle and recovery evidence.
+
+The Rust MCP request/read migration and remaining Python runtime boundaries are recorded in
+[the MCP migration receipt](docs/RUST_MCP_RUNTIME_MIGRATION.md).

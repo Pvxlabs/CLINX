@@ -4,20 +4,21 @@ The Provider here is a protocol fixture, not physical Mac execution evidence.
 Requires CLINX_TEST_RUST_BIN_DIR pointing to the binaries under qualification.
 """
 from __future__ import annotations
+
 import base64
 import hashlib
 import json
 import os
-from pathlib import Path
+import shutil
 import socket
 import struct
 import subprocess
-import shutil
 import tempfile
 import threading
 import time
-import pytest
+from pathlib import Path
 
+import pytest
 from clinx.authority.rust_authority import RustAuthorityClient
 
 
@@ -141,8 +142,9 @@ class Provider:
             worker.join(timeout=2)
 
 
+@pytest.mark.parametrize("mcp_entry", [False, True])
 @pytest.mark.parametrize("paired", [False, True, "routed"])
-def test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart(tmp_path, paired):
+def test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart(tmp_path, paired, mcp_entry):
     binaries = Path(os.environ['CLINX_TEST_RUST_BIN_DIR'])
     runtime, worker = binaries/'clinx-runtime', binaries/'clinx-native-transport'
     assert runtime.is_file() and worker.is_file()
@@ -162,11 +164,24 @@ def test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart(tmp_pat
     remote_arguments = []
     if paired:
         from types import SimpleNamespace
-        from clinx.discovery.identity import NodeIdentity, PrivateStore, TrustedPeerStore
+
         from clinx.discovery.discovery import Candidate
+        from clinx.discovery.identity import NodeIdentity, PrivateStore, TrustedPeerStore
         from clinx.discovery.transport import DeviceServer, LanTransport
-        from clinx.nodes.node_protocol import NodeAuthorizationStore, NodeRegistry, SharingScope, NodeService, NodeRecord, NodeRPCServer
-        from clinx.nodes.node_runtime import PairedTLS, CentreService, NodeRegistrationClient, node_request_handler
+        from clinx.nodes.node_protocol import (
+            NodeAuthorizationStore,
+            NodeRecord,
+            NodeRegistry,
+            NodeRPCServer,
+            NodeService,
+            SharingScope,
+        )
+        from clinx.nodes.node_runtime import (
+            CentreService,
+            NodeRegistrationClient,
+            PairedTLS,
+            node_request_handler,
+        )
         from clinx.nodes.provider_relay import NodeProviderRelay, ProviderGateway
         node = NodeIdentity(PrivateStore(tmp_path/'node'), 'air')
         centre = NodeIdentity(PrivateStore(tmp_path/'centre'), 'centre')
@@ -228,10 +243,42 @@ def test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart(tmp_pat
     def tick():
         return json.loads(subprocess.check_output([str(worker), '--socket', str(endpoint),
             '--authority-uid', str(os.getuid()), '--timeout-seconds', '2', '--once', *remote_arguments], text=True))
+    mcp_config = tmp_path/'mcp.json'
+    mcp_config.write_text(json.dumps(dict(runtime_host='air', provider_endpoint=str(provider.path),
+        provider_timeout_seconds=2, host_aliases={'air': ['air']}, codex_host_ids={})))
+    observation_env = {}
+    if mcp_entry:
+        from clinx.discovery.identity import PrivateStore
+        from clinx.monitor.network_observation import ObservationWriter
+        from clinx.nodes.node_protocol import NodeRegistry
+
+        private = PrivateStore(tmp_path/'observation-state')
+        NodeRegistry(tmp_path/'observation-registry.sqlite3').close()
+        ObservationWriter(tmp_path/'observations.sqlite3')
+        observation_env = dict(CLINX_OBSERVATION_STATE=str(private.root),
+            CLINX_OBSERVATION_DB=str(tmp_path/'observations.sqlite3'),
+            CLINX_OBSERVATION_REGISTRY=str(tmp_path/'observation-registry.sqlite3'),
+            CLINX_OBSERVATION_USER_SCOPE='fixture', CLINX_OBSERVATION_NODE_ID='air',
+            CLINX_OBSERVATION_PYTHON=os.sys.executable)
+    def mcp_call(name, arguments):
+        request = dict(jsonrpc='2.0', id='fixture', method='tools/call',
+                       params=dict(name=name, arguments=arguments))
+        result = subprocess.run([str(binaries/'clinx-mcp'), '--config', str(mcp_config), '--stdio'],
+            input=json.dumps(request)+'\n', text=True, capture_output=True, timeout=15, check=True,
+            env=dict(os.environ, CLINX_RUST_SOCKET=str(endpoint), CLINX_RUST_UID=str(os.getuid()),
+                     CLINX_RUST_OBSERVATION_READS='1' if mcp_entry else '0', **observation_env))
+        response = json.loads(result.stdout)
+        assert response['id'] == 'fixture' and 'error' not in response
+        assert response['result']['isError'] is False, response
+        return response['result']['structuredContent']
     def prepare_start(prompt, *, task=None, key='start'):
         p = dict(host='air', project='fixture', title='Native title', prompt=prompt, approved=True)
         if task:
             p['task_ref'] = task
+        if mcp_entry:
+            prepared = mcp_call('clinx_prepare_execution', dict(p, task_action='continue' if task else 'create'))
+            return mcp_call('clinx_start_execution',
+                dict(prepared_execution_ref=prepared['prepared_execution_ref'], approved=True))
         prepared = call('prepare', p)
         return call('start', dict(prepared_execution_ref=prepared['prepared_execution_ref'], approved=True), key=key)
     try:
@@ -240,6 +287,14 @@ def test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart(tmp_pat
         tick()
         tick()
         assert call('get_status', dict(execution_ref=first['execution_ref']))['status'] == 'SUCCEEDED'
+        if mcp_entry:
+            observations = mcp_call('clinx_list_observations', dict(limit=1))
+            assert observations['read_only'] is True and observations['items'] == []
+            exact = mcp_call('clinx_get_context', dict(execution_ref=first['execution_ref']))
+            assert exact['execution_ref'] == first['execution_ref']
+            assert exact['context_scope'] == 'EXACT_EXECUTION_TURN'
+            assert exact['execution_turn_ref'] == call('get_status', dict(execution_ref=first['execution_ref']))['native_turn_id']
+            assert exact['last_user_intent'] == 'exact input'
         assert provider.threads['thread-1']['name'] == 'Native title'
         assert len(provider.inputs) == 1
         assert provider.inputs[0]['input'] == [dict(type='text', text='exact input')]
@@ -255,11 +310,22 @@ def test_rust_binary_ipc_provider_completion_ack_loss_cancel_and_restart(tmp_pat
         tick()
         assert call('get_status', dict(execution_ref=lost['execution_ref']))['status'] == 'SUCCEEDED'
         assert len(provider.inputs) == 2
-        assert call('start', dict(prepared_execution_ref=lost['prepared_execution_ref'], approved=True), key='lost-start') == lost
+        if mcp_entry:
+            duplicate = mcp_call('clinx_start_execution', dict(prepared_execution_ref=lost['prepared_execution_ref'], approved=True))
+            # A fresh MCP command has a fresh operation id. The original
+            # prepared ref resolves to the CURRENT receipt, never a new turn.
+            assert duplicate == call('get_status', dict(execution_ref=lost['execution_ref']))
+            assert duplicate['execution_ref'] == lost['execution_ref']
+            assert len(provider.inputs) == 2
+        else:
+            assert call('start', dict(prepared_execution_ref=lost['prepared_execution_ref'], approved=True), key='lost-start') == lost
         provider.lose_input = False
         running = prepare_start('running', task=first['task_ref'], key='running-start')
         tick()
-        call('cancel', dict(execution_ref=running['execution_ref'], approved=True))
+        if mcp_entry:
+            mcp_call('clinx_cancel_execution', dict(execution_ref=running['execution_ref'], approved=True))
+        else:
+            call('cancel', dict(execution_ref=running['execution_ref'], approved=True))
         provider.lose_cancel = True
         tick()
         process.kill()

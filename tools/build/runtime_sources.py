@@ -48,8 +48,30 @@ def source_paths(source: Path, profile: str) -> list[Path]:
     return sorted(paths)
 
 
+def data_paths(source: Path, profile: str) -> list[Path]:
+    """Non-Python runtime data shares the same explicit release boundary."""
+    if profile not in {'rust', 'monitor'}:
+        raise ValueError('UNKNOWN_SOURCE_PROFILE')
+    rows = json.loads((source / 'architecture/runtime-data.json').read_text())
+    paths = []
+    if len({row['path'] for row in rows}) != len(rows):
+        raise ValueError('DUPLICATE_RUNTIME_DATA')
+    for row in rows:
+        if set(row['profiles']) - {'rust', 'monitor'}:
+            raise ValueError('UNKNOWN_SOURCE_PROFILE')
+        path = Path(row['path'])
+        if path.is_absolute() or '..' in path.parts or path.suffix != '.json':
+            raise ValueError('INVALID_RUNTIME_DATA_PATH')
+        if profile in row['profiles']:
+            target = source / path
+            if not target.is_file() or target.is_symlink():
+                raise ValueError('RUNTIME_DATA_MISSING')
+            paths.append(target)
+    return sorted(paths)
+
+
 def copy_monitor_sources(source: Path, resources: Path) -> None:
-    paths = source_paths(source, 'monitor')
+    paths = source_paths(source, 'monitor') + data_paths(source, 'monitor')
     resources.mkdir(parents=True, exist_ok=True)
     # Remove only old copied Python sources; keep the interpreter, Swift assets,
     # native pairing wheel and all other application resources.

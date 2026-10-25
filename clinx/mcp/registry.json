@@ -1,0 +1,4279 @@
+{
+  "protocol": "2025-06-18",
+  "discover_protocol": "2026-07-28",
+  "server_name": "clinx",
+  "server_version": "native-conversation-relay-consultations-v1",
+  "instructions": "CLINX forwards messages to native Codex conversations without a reply format contract. Return execution_result.response_text as the original Markdown; do not rewrite it into summary fields. Native COMPLETED records turn completion only; business_outcome=NOT_EVALUATED is not a business PASS. There is one execution backend: native Codex, using its own runtime configuration. When the user supplies codex://threads/... preserve the complete URI including hostId and pass it directly as codex_uri to clinx_prepare_execution. Do not search first, read status first, or call adopt separately. Reuse a known task_ref when no URI is supplied. Only search if the destination is genuinely unknown. The user's request to send or continue work supplies approval; use approved=true without asking for the same approval again. Prepare once, then call clinx_start_execution with the returned prepared_execution_ref and approved=true. Execution stays native Codex. On the Rust connector, an exact thread uses its live native cwd; workspace_contract can otherwise supply an absolute cwd in the target repository. Branch and HEAD snapshots do not gate native forwarding. Independent tasks may share a cwd. Do not put routing requirements only in prompt. Native tasks use full access with no CLINX network gate or filesystem sandbox; legacy network_access flags do not restrict execution. Do not routinely call clinx_get_prepared_request between prepare and start. After a lost response, inspect the ORIGINAL prepared request or exact execution before retrying; never submit another preparation blindly. QUEUED is not Provider running: report execution_started and the returned state accurately. Query status only for progress, results or a concrete conflict. CLINX coordinates task identity and active execution ownership, not operation permissions. Linear is optional audit history. Cancellation uses a managed execution_ref, or a canonical native task_ref with its observed native_turn_id and approved=true. Native cancellation requires the owning node execution scope and remains pending until the native terminal event. For read requests use exact thread_id/codex_uri selectors; do not search the ID as query.",
+  "tools": [
+    {
+      "name": "clinx_find_task",
+      "description": "Find active or historical CLINX tasks by human query.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "task_ref": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "project": {
+                  "type": "string"
+                },
+                "host": {
+                  "type": "string"
+                },
+                "workspace_contract": {
+                  "type": "object",
+                  "properties": {
+                    "cwd": {
+                      "type": "string",
+                      "pattern": "^/[^\\x00]*$",
+                      "maxLength": 4096
+                    },
+                    "branch": {
+                      "type": "string"
+                    },
+                    "head": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cwd"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Optional native working directory. An exact native thread takes priority. Omission uses the project default for new threads. Repository identity is verified; legacy branch/head strings are audit metadata and do not gate native forwarding. HOST_EXECUTOR retains operation scope and exact receipt checks."
+                },
+                "thread_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "lifecycle": {
+                  "type": "string"
+                },
+                "policy_hash": {
+                  "type": "string"
+                },
+                "execution_policy": {
+                  "type": "object"
+                },
+                "active_execution": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "repository_identity": {
+                  "type": "string"
+                },
+                "workspace_resolution": {
+                  "type": "object"
+                },
+                "read_only": {
+                  "type": "boolean"
+                },
+                "authority": {
+                  "const": "RUST",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "task_ref"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tasks",
+          "read_only"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "clinx_get_context",
+      "description": "Read bounded authoritative context for one CLINX task. When the user supplies thread_id or codex://threads/..., use the exact selector directly; do not call clinx_find_task first or put the ID in query. Thread reads are read-only and separate historical execution from task_current_projection.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_ref": {
+            "type": "string",
+            "description": "Opaque CLINX task reference."
+          },
+          "node_id": {
+            "type": "string",
+            "description": "Explicit trusted node identity for an exact native thread."
+          },
+          "host": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "recent_turns": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "max_bytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 128000
+          },
+          "thread_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "codex_uri": {
+            "type": "string",
+            "maxLength": 2048,
+            "pattern": "^codex://threads/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\\?[^\\s#]*)?$"
+          },
+          "execution_ref": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "allOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "task_ref"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "query",
+                          "project"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "not": {
+                      "required": [
+                        "execution_ref"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "thread_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "codex_uri"
+                  ]
+                },
+                {
+                  "required": [
+                    "node_id"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "thread_id"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "codex_uri"
+                  ]
+                },
+                {
+                  "required": [
+                    "task_ref"
+                  ]
+                },
+                {
+                  "required": [
+                    "query"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "codex_uri"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "thread_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "task_ref"
+                  ]
+                },
+                {
+                  "required": [
+                    "query"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "execution_ref"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "query"
+                  ]
+                },
+                {
+                  "required": [
+                    "thread_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "codex_uri"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "task_context_read": {
+            "type": "string",
+            "const": "PASS"
+          },
+          "task_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_title": {
+            "type": "string"
+          },
+          "task_status": {
+            "type": "string"
+          },
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "context_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "context_range": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "context_truncated": {
+            "type": "boolean"
+          },
+          "checkpoint_stale": {
+            "type": "boolean"
+          },
+          "last_user_intent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_codex_result": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "changed_files": {
+            "type": "string"
+          },
+          "validation": {
+            "type": "string"
+          },
+          "blockers": {
+            "type": "string"
+          },
+          "current_state": {
+            "type": "string"
+          },
+          "ready_for_continuation": {
+            "type": "boolean"
+          },
+          "provenance": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "routing_identity": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "host": {
+                    "type": "object",
+                    "properties": {
+                      "stable_identifier": {
+                        "type": "string"
+                      },
+                      "display": {
+                        "type": "string"
+                      },
+                      "machine_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "alias": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "KNOWN",
+                          "UNKNOWN"
+                        ]
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  "surface": {
+                    "type": "object",
+                    "properties": {
+                      "stable_identifier": {
+                        "type": "string"
+                      },
+                      "display": {
+                        "type": "string"
+                      },
+                      "capability_boundary": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  "provider": {
+                    "type": "object",
+                    "properties": {
+                      "stable_identifier": {
+                        "type": "string"
+                      },
+                      "display": {
+                        "type": "string"
+                      },
+                      "bounded_task_backend": {
+                        "type": "boolean"
+                      },
+                      "status": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  "transport": {
+                    "type": "object",
+                    "properties": {
+                      "stable_identifier": {
+                        "type": "string"
+                      },
+                      "display": {
+                        "type": "string"
+                      },
+                      "remote": {
+                        "type": "boolean"
+                      },
+                      "status": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  "workspace": {
+                    "type": "object",
+                    "properties": {
+                      "workspace_alias": {
+                        "type": "string"
+                      },
+                      "project_alias": {
+                        "type": "string"
+                      },
+                      "worktree_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  "conversation": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string"
+                      },
+                      "binding": {
+                        "type": "string",
+                        "const": "REDACTED"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  "authority": {
+                    "type": "object",
+                    "properties": {
+                      "stable_identifier": {
+                        "type": "string"
+                      },
+                      "scopes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "identity_is_authority": {
+                        "type": "boolean",
+                        "const": false
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  "network_policy": {
+                    "type": "object",
+                    "properties": {
+                      "stable_identifier": {
+                        "type": "string"
+                      },
+                      "network_access": {
+                        "type": "boolean"
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "ENABLED",
+                          "DISABLED"
+                        ]
+                      },
+                      "remote_execution": {
+                        "type": "boolean",
+                        "const": false
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  "project_identity": {
+                    "type": "string"
+                  },
+                  "routing_contract": {
+                    "type": "string",
+                    "const": "execution -> host -> surface -> provider -> transport"
+                  },
+                  "separation": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "queried_thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "codex_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_node_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lookup_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unavailable_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current_thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relationship": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "predecessor_thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "successor_thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "adoption_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection_scope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_turn_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "context_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "context_scope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "context_unavailable_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "binding_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_existence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "absence_scope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failure_stage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failure_evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failure_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "native_turn_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "native_display_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "native_status_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_current_thread": {
+            "type": "boolean"
+          },
+          "binding_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "other_execution_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dynamic_tool_deliveries": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "host_executions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "provider_liveness": {
+            "type": "string"
+          },
+          "transport_health": {
+            "type": "string"
+          },
+          "codex_running": {
+            "type": "boolean"
+          },
+          "ownership_conflict": {
+            "type": "boolean"
+          },
+          "liveness_grace_seconds": {
+            "type": "number"
+          },
+          "liveness_reason": {
+            "type": "string"
+          },
+          "last_provider_activity_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_host_delivery_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_live_owner_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "liveness_observed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider_observation": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "native_thread": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "native_status": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "task_current_projection": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "execution_result": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "changed_files": {
+                    "type": "string"
+                  },
+                  "validation": {
+                    "type": "string"
+                  },
+                  "blockers": {
+                    "type": "string"
+                  },
+                  "next_state": {
+                    "type": "string"
+                  },
+                  "received_at": {
+                    "type": "string"
+                  },
+                  "writeback_state": {
+                    "type": "string"
+                  },
+                  "response_text": {
+                    "type": "string",
+                    "description": "Original Codex final response. Preserve its Markdown verbatim."
+                  },
+                  "response_format": {
+                    "type": "string"
+                  },
+                  "status_scope": {
+                    "type": "string"
+                  },
+                  "business_outcome": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "type": "string"
+                  },
+                  "result_ref": {
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider_delivery": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "execution_owner": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "context": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "clinx_list_projects",
+      "description": "List registered and bounded workspace projects.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "project": {
+                  "type": "string"
+                },
+                "host": {
+                  "type": "string"
+                },
+                "cwd": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projects",
+          "read_only"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "clinx_get_status",
+      "description": "Read task execution state and existing audit evidence. When the user supplies thread_id or codex://threads/..., use the exact selector directly; do not call clinx_find_task first or put the ID in query. Thread reads are read-only and separate historical execution from task_current_projection.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_ref": {
+            "type": "string",
+            "description": "Opaque CLINX task reference."
+          },
+          "node_id": {
+            "type": "string",
+            "description": "Explicit trusted node identity for an exact native thread."
+          },
+          "host": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "execution_ref": {
+            "type": "string"
+          },
+          "thread_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "codex_uri": {
+            "type": "string",
+            "maxLength": 2048,
+            "pattern": "^codex://threads/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\\?[^\\s#]*)?$"
+          }
+        },
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "task_ref"
+                ]
+              },
+              {
+                "required": [
+                  "query",
+                  "project"
+                ]
+              },
+              {
+                "required": [
+                  "execution_ref"
+                ]
+              }
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "thread_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "codex_uri"
+                  ]
+                },
+                {
+                  "required": [
+                    "node_id"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "thread_id"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "codex_uri"
+                  ]
+                },
+                {
+                  "required": [
+                    "task_ref"
+                  ]
+                },
+                {
+                  "required": [
+                    "query"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "codex_uri"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "thread_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "task_ref"
+                  ]
+                },
+                {
+                  "required": [
+                    "query"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "outputSchema": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "task_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "task_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "codex_uri": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "host": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "project": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "project_name": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string"
+              },
+              "context_available": {
+                "type": "boolean"
+              },
+              "execution_state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "current_stage": {
+                "type": "string"
+              },
+              "current_blocker": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider_liveness": {
+                "type": "string"
+              },
+              "transport_health": {
+                "type": "string"
+              },
+              "last_provider_activity_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_host_delivery_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_live_owner_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "liveness_observed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "liveness_reason": {
+                "type": "string"
+              },
+              "ownership_conflict": {
+                "type": "boolean"
+              },
+              "liveness_grace_seconds": {
+                "type": "number"
+              },
+              "last_progress_at": {
+                "type": "string"
+              },
+              "codex_running": {
+                "type": "boolean"
+              },
+              "retry_required": {
+                "type": "boolean"
+              },
+              "failure_stage": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "failure_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "failure_evidence": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "routing_identity": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "host": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "display": {
+                            "type": "string"
+                          },
+                          "machine_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "alias": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "KNOWN",
+                              "UNKNOWN"
+                            ]
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "surface": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "display": {
+                            "type": "string"
+                          },
+                          "capability_boundary": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "provider": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "display": {
+                            "type": "string"
+                          },
+                          "bounded_task_backend": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "transport": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "display": {
+                            "type": "string"
+                          },
+                          "remote": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "workspace": {
+                        "type": "object",
+                        "properties": {
+                          "workspace_alias": {
+                            "type": "string"
+                          },
+                          "project_alias": {
+                            "type": "string"
+                          },
+                          "worktree_key": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "conversation": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string"
+                          },
+                          "binding": {
+                            "type": "string",
+                            "const": "REDACTED"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "authority": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "scopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "identity_is_authority": {
+                            "type": "boolean",
+                            "const": false
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "network_policy": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "network_access": {
+                            "type": "boolean"
+                          },
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "ENABLED",
+                              "DISABLED"
+                            ]
+                          },
+                          "remote_execution": {
+                            "type": "boolean",
+                            "const": false
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "project_identity": {
+                        "type": "string"
+                      },
+                      "routing_contract": {
+                        "type": "string",
+                        "const": "execution -> host -> surface -> provider -> transport"
+                      },
+                      "separation": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "adoption_source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "adopted_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "historical_status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "historical_route_evidence": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "execution_result": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "changed_files": {
+                        "type": "string"
+                      },
+                      "validation": {
+                        "type": "string"
+                      },
+                      "blockers": {
+                        "type": "string"
+                      },
+                      "next_state": {
+                        "type": "string"
+                      },
+                      "received_at": {
+                        "type": "string"
+                      },
+                      "writeback_state": {
+                        "type": "string"
+                      },
+                      "response_text": {
+                        "type": "string",
+                        "description": "Original Codex final response. Preserve its Markdown verbatim."
+                      },
+                      "response_format": {
+                        "type": "string"
+                      },
+                      "status_scope": {
+                        "type": "string"
+                      },
+                      "business_outcome": {
+                        "type": "string"
+                      },
+                      "outcome": {
+                        "type": "string"
+                      },
+                      "result_ref": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "execution_routing_identity": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "host": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "display": {
+                            "type": "string"
+                          },
+                          "machine_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "alias": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "KNOWN",
+                              "UNKNOWN"
+                            ]
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "surface": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "display": {
+                            "type": "string"
+                          },
+                          "capability_boundary": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "provider": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "display": {
+                            "type": "string"
+                          },
+                          "bounded_task_backend": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "transport": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "display": {
+                            "type": "string"
+                          },
+                          "remote": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "workspace": {
+                        "type": "object",
+                        "properties": {
+                          "workspace_alias": {
+                            "type": "string"
+                          },
+                          "project_alias": {
+                            "type": "string"
+                          },
+                          "worktree_key": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "conversation": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string"
+                          },
+                          "binding": {
+                            "type": "string",
+                            "const": "REDACTED"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "authority": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "scopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "identity_is_authority": {
+                            "type": "boolean",
+                            "const": false
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "network_policy": {
+                        "type": "object",
+                        "properties": {
+                          "stable_identifier": {
+                            "type": "string"
+                          },
+                          "network_access": {
+                            "type": "boolean"
+                          },
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "ENABLED",
+                              "DISABLED"
+                            ]
+                          },
+                          "remote_execution": {
+                            "type": "boolean",
+                            "const": false
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "project_identity": {
+                        "type": "string"
+                      },
+                      "routing_contract": {
+                        "type": "string",
+                        "const": "execution -> host -> surface -> provider -> transport"
+                      },
+                      "separation": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "execution_policy": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "contract": {
+                        "type": "string",
+                        "const": "CLINX_EXECUTION_POLICY_V1"
+                      },
+                      "execution_surface": {
+                        "type": "string",
+                        "enum": [
+                          "SANDBOX_WORKSPACE",
+                          "NETWORKED_SANDBOX",
+                          "NATIVE_FULL_ACCESS",
+                          "HOST_EXECUTOR"
+                        ]
+                      },
+                      "required_capabilities": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "operation_classes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "production_mutation_intent": {
+                        "type": "boolean"
+                      },
+                      "host_executor_default": {
+                        "type": "boolean",
+                        "const": false
+                      },
+                      "business_action_authority": {
+                        "type": "boolean",
+                        "const": false
+                      },
+                      "operation_scopes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "capability": {
+                              "type": "string",
+                              "enum": [
+                                "LOCAL_HOST_PROCESS",
+                                "SYSTEMD_USER",
+                                "OUTBOUND_NETWORK",
+                                "SSH",
+                                "HOST_FILESYSTEM",
+                                "AWS_CLI",
+                                "CLOUDFLARE_CLI",
+                                "CLOUD_API",
+                                "GIT",
+                                "DOCKER",
+                                "POSTGRES",
+                                "TAILSCALE"
+                              ]
+                            },
+                            "operation": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "operation_class": {
+                              "type": "string",
+                              "enum": [
+                                "READ_ONLY_HOST",
+                                "DEVELOPMENT_MUTATION",
+                                "PRODUCTION_READ_ONLY",
+                                "PRODUCTION_MUTATION",
+                                "BUSINESS_ACTION"
+                              ]
+                            },
+                            "target": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "capability",
+                            "operation",
+                            "operation_class",
+                            "target"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "host_executions": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "dynamic_tool_deliveries": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "desktop_publication": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": true
+              },
+              "native_forwarding": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "provider_delivery": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "execution_owner": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "task_current_projection": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "selection_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status_source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lookup_status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "prepared_request": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "execution_present": {
+                "type": "boolean"
+              },
+              "execution_stage": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider_running": {
+                "type": "string"
+              },
+              "failure_source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "retry_allowed": {
+                "type": "boolean"
+              },
+              "recovery_action": {
+                "type": "string"
+              },
+              "execution_turn_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "EXECUTION_STATE": {
+                "type": "string"
+              },
+              "CODEX_RUNNING": {
+                "type": "boolean"
+              },
+              "CURRENT_STAGE": {
+                "type": "string"
+              },
+              "CURRENT_BLOCKER": {
+                "type": "string"
+              },
+              "LAST_PROGRESS_AT": {
+                "type": "string"
+              },
+              "TURN_PRESENT": {
+                "type": "boolean"
+              },
+              "RETRY_REQUIRED": {
+                "type": "boolean"
+              },
+              "execution_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "active_execution": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "linear_audit_sync": {
+                "type": "string"
+              },
+              "linear_retry_required": {
+                "type": "boolean"
+              },
+              "linear_last_error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "linear_issue_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "network_access": {
+                "type": "boolean"
+              },
+              "NETWORK_ACCESS": {
+                "type": "string",
+                "enum": [
+                  "ENABLED",
+                  "DISABLED"
+                ]
+              },
+              "read_only": {
+                "type": "boolean"
+              },
+              "queried_thread_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "node_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_node_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "error_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "unavailable_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "workspace": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "current_thread_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "relationship": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "predecessor_thread_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "successor_thread_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "selection_scope": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "context_status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "context_source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "context_scope": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "context_range": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "context_unavailable_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_user_intent": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_codex_result": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "observed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "binding_status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider_existence": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "absence_scope": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "next_cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "native_turn_state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "native_display_state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "native_status_source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "is_current_thread": {
+                "type": "boolean"
+              },
+              "context_truncated": {
+                "type": "boolean"
+              },
+              "binding_sources": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "other_execution_refs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "provider_observation": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "native_thread": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "native_status": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "provenance": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "thread_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "execution_ref": {
+                "type": "string"
+              },
+              "task_ref": {
+                "type": "string"
+              },
+              "prepared_execution_ref": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "dispatch_state": {
+                "type": "string"
+              },
+              "resource_state": {
+                "type": "string"
+              },
+              "delivery_certainty": {
+                "type": "string"
+              },
+              "native_turn_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "thread_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "execution_started": {
+                "type": "boolean"
+              },
+              "cancel_requested": {
+                "type": "boolean"
+              },
+              "execution_result": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "business_outcome": {
+                "type": "string",
+                "const": "NOT_ASSERTED"
+              },
+              "authority": {
+                "type": "string",
+                "const": "RUST"
+              },
+              "read_only": {
+                "type": "boolean"
+              },
+              "workspace_contract": {
+                "type": "object",
+                "properties": {
+                  "cwd": {
+                    "type": "string",
+                    "pattern": "^/[^\\x00]*$",
+                    "maxLength": 4096
+                  },
+                  "branch": {
+                    "type": "string"
+                  },
+                  "head": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cwd"
+                ],
+                "additionalProperties": false,
+                "description": "Optional native working directory. An exact native thread takes priority. Omission uses the project default for new threads. Repository identity is verified; legacy branch/head strings are audit metadata and do not gate native forwarding. HOST_EXECUTOR retains operation scope and exact receipt checks."
+              },
+              "workspace_resolution": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "host_executions": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "reconciliation_required": {
+                "type": "boolean"
+              },
+              "current_stage": {
+                "type": "string"
+              },
+              "failure_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "execution_ref",
+              "task_ref",
+              "status",
+              "resource_state",
+              "authority"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "task_ref": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "project": {
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "workspace_contract": {
+                "type": "object",
+                "properties": {
+                  "cwd": {
+                    "type": "string",
+                    "pattern": "^/[^\\x00]*$",
+                    "maxLength": 4096
+                  },
+                  "branch": {
+                    "type": "string"
+                  },
+                  "head": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cwd"
+                ],
+                "additionalProperties": false,
+                "description": "Optional native working directory. An exact native thread takes priority. Omission uses the project default for new threads. Repository identity is verified; legacy branch/head strings are audit metadata and do not gate native forwarding. HOST_EXECUTOR retains operation scope and exact receipt checks."
+              },
+              "thread_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lifecycle": {
+                "type": "string"
+              },
+              "policy_hash": {
+                "type": "string"
+              },
+              "execution_policy": {
+                "type": "object"
+              },
+              "active_execution": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "repository_identity": {
+                "type": "string"
+              },
+              "workspace_resolution": {
+                "type": "object"
+              },
+              "read_only": {
+                "type": "boolean"
+              },
+              "authority": {
+                "const": "RUST",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task_ref",
+              "lifecycle",
+              "workspace_contract",
+              "authority"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "clinx_get_capabilities",
+      "description": "Discover how CLINX context and execution work. CLINX is the command plane; Linear is optional audit history.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "authority": {
+            "const": "RUST",
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "legacy_history": {
+            "type": "boolean"
+          },
+          "host_tools": {
+            "type": "boolean"
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authority",
+          "capabilities"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "clinx_prepare_execution",
+      "description": "Prepare native Codex forwarding. An exact thread_id or codex_uri uses the live native cwd, verified against repository identity. Branch/HEAD snapshots do not gate native execution. Does not dispatch. HOST_EXECUTOR uses the same workspace resolver and retains operation scopes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "boolean",
+            "const": true
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "task_mode": {
+            "type": "string",
+            "enum": [
+              "new",
+              "continue"
+            ]
+          },
+          "task_action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "continue",
+              "reopen"
+            ]
+          },
+          "task_ref": {
+            "type": "string"
+          },
+          "codex_uri": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "host": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "reasoning": {
+            "type": "string"
+          },
+          "execution_mode": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "fast"
+            ]
+          },
+          "network_access": {
+            "type": "boolean",
+            "description": "Deprecated compatibility input. Native Codex tasks always have network access; this flag does not impose a CLINX network restriction."
+          },
+          "execution_surface": {
+            "type": "string",
+            "enum": [
+              "CODEX_NATIVE",
+              "HOST_EXECUTOR"
+            ],
+            "description": "Legacy task context; does not select an executor or grant authority."
+          },
+          "required_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "examples": [
+                "LOCAL_HOST_PROCESS",
+                "SYSTEMD_USER",
+                "OUTBOUND_NETWORK",
+                "SSH",
+                "HOST_FILESYSTEM",
+                "AWS_CLI",
+                "CLOUDFLARE_CLI",
+                "CLOUD_API",
+                "GIT",
+                "DOCKER",
+                "POSTGRES",
+                "TAILSCALE"
+              ]
+            },
+            "description": "Legacy task context; does not select an executor or grant authority."
+          },
+          "operation_classes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "examples": [
+                "READ_ONLY_HOST",
+                "DEVELOPMENT_MUTATION",
+                "PRODUCTION_READ_ONLY",
+                "PRODUCTION_MUTATION",
+                "BUSINESS_ACTION"
+              ]
+            },
+            "description": "Legacy task context; does not select an executor or grant authority."
+          },
+          "production_mutation_intent": {
+            "type": "boolean",
+            "default": false,
+            "description": "Legacy task context; does not select an executor or grant authority."
+          },
+          "requested_operations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "capability": {
+                  "type": "string"
+                },
+                "operation": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "operation_class": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "capability",
+                "operation",
+                "operation_class",
+                "target"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 128,
+            "description": "Optional legacy task context forwarded to native Codex. CLINX does not validate operation names or repository target scopes."
+          },
+          "workspace_contract": {
+            "type": "object",
+            "properties": {
+              "cwd": {
+                "type": "string",
+                "pattern": "^/[^\\x00]*$",
+                "maxLength": 4096
+              },
+              "branch": {
+                "type": "string"
+              },
+              "head": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cwd"
+            ],
+            "additionalProperties": false,
+            "description": "Optional native working directory. An exact native thread takes priority. Omission uses the project default for new threads. Repository identity is verified; legacy branch/head strings are audit metadata and do not gate native forwarding. HOST_EXECUTOR retains operation scope and exact receipt checks."
+          },
+          "thread_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "approved",
+          "prompt"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "prepared_execution_ref": {
+            "type": "string"
+          },
+          "task_ref": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "request_hash": {
+            "type": "string"
+          },
+          "policy_hash": {
+            "type": "string"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reasoning_effort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_contract": {
+            "type": "object",
+            "properties": {
+              "cwd": {
+                "type": "string",
+                "pattern": "^/[^\\x00]*$",
+                "maxLength": 4096
+              },
+              "branch": {
+                "type": "string"
+              },
+              "head": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cwd"
+            ],
+            "additionalProperties": false,
+            "description": "Optional native working directory. An exact native thread takes priority. Omission uses the project default for new threads. Repository identity is verified; legacy branch/head strings are audit metadata and do not gate native forwarding. HOST_EXECUTOR retains operation scope and exact receipt checks."
+          },
+          "workspace_resolution": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "requested_workspace_contract": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_policy": {
+            "type": "object"
+          },
+          "execution_started": {
+            "type": "boolean",
+            "const": false
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "prepared_execution_ref",
+          "task_ref",
+          "request_hash",
+          "workspace_contract",
+          "execution_started"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "clinx_start_execution",
+      "description": "Submit the prepared request to the sole Rust authority. The confined Provider receives one durable send permit. Read the same execution after an unknown response; do not prepare or dispatch another attempt.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "prepared_execution_ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Opaque reference returned by clinx_prepare_execution."
+          },
+          "approved": {
+            "type": "boolean",
+            "const": true
+          },
+          "expected_request_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "expected_task_ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "prepared_execution_ref",
+          "approved"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "execution_ref": {
+            "type": "string"
+          },
+          "task_ref": {
+            "type": "string"
+          },
+          "prepared_execution_ref": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "dispatch_state": {
+            "type": "string"
+          },
+          "resource_state": {
+            "type": "string"
+          },
+          "delivery_certainty": {
+            "type": "string"
+          },
+          "native_turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_started": {
+            "type": "boolean"
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "execution_result": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "business_outcome": {
+            "type": "string",
+            "const": "NOT_ASSERTED"
+          },
+          "authority": {
+            "type": "string",
+            "const": "RUST"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "workspace_contract": {
+            "type": "object",
+            "properties": {
+              "cwd": {
+                "type": "string",
+                "pattern": "^/[^\\x00]*$",
+                "maxLength": 4096
+              },
+              "branch": {
+                "type": "string"
+              },
+              "head": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cwd"
+            ],
+            "additionalProperties": false,
+            "description": "Optional native working directory. An exact native thread takes priority. Omission uses the project default for new threads. Repository identity is verified; legacy branch/head strings are audit metadata and do not gate native forwarding. HOST_EXECUTOR retains operation scope and exact receipt checks."
+          },
+          "workspace_resolution": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "host_executions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "reconciliation_required": {
+            "type": "boolean"
+          },
+          "current_stage": {
+            "type": "string"
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "execution_ref",
+          "task_ref",
+          "status",
+          "resource_state",
+          "authority"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "clinx_cancel_execution",
+      "description": "Cancel a managed turn by execution_ref, or an observed native turn by canonical task_ref, exact native_turn_id and approved=true through its authorized node owner. Native cancellation creates no managed execution record; acknowledgement is pending until observed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "execution_ref": {
+            "type": "string",
+            "pattern": "^exec_[A-Za-z0-9]+$"
+          },
+          "task_ref": {
+            "type": "string",
+            "pattern": "^task_[A-Za-z0-9]+$"
+          },
+          "native_turn_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "approved": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "execution_ref"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "task_ref"
+                  ]
+                },
+                {
+                  "required": [
+                    "native_turn_id"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "task_ref",
+              "native_turn_id",
+              "approved"
+            ],
+            "not": {
+              "required": [
+                "execution_ref"
+              ]
+            }
+          }
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "execution_ref": {
+            "type": "string"
+          },
+          "task_ref": {
+            "type": "string"
+          },
+          "prepared_execution_ref": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "dispatch_state": {
+            "type": "string"
+          },
+          "resource_state": {
+            "type": "string"
+          },
+          "delivery_certainty": {
+            "type": "string"
+          },
+          "native_turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_started": {
+            "type": "boolean"
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "execution_result": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "business_outcome": {
+            "type": "string",
+            "const": "NOT_ASSERTED"
+          },
+          "authority": {
+            "type": "string",
+            "const": "RUST"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "workspace_contract": {
+            "type": "object",
+            "properties": {
+              "cwd": {
+                "type": "string",
+                "pattern": "^/[^\\x00]*$",
+                "maxLength": 4096
+              },
+              "branch": {
+                "type": "string"
+              },
+              "head": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cwd"
+            ],
+            "additionalProperties": false,
+            "description": "Optional native working directory. An exact native thread takes priority. Omission uses the project default for new threads. Repository identity is verified; legacy branch/head strings are audit metadata and do not gate native forwarding. HOST_EXECUTOR retains operation scope and exact receipt checks."
+          },
+          "workspace_resolution": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "host_executions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "reconciliation_required": {
+            "type": "boolean"
+          },
+          "current_stage": {
+            "type": "string"
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "execution_ref",
+          "task_ref",
+          "status",
+          "resource_state",
+          "authority"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "clinx_get_effective_authority",
+      "description": "Read effective FUTURE execution authority for the exact canonical task. Separate policy, operation/target grants, client exposure and runtime health. Discovery never grants authority.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_ref": {
+            "type": "string"
+          },
+          "requested_operations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "capability": {
+                  "type": "string",
+                  "enum": [
+                    "LOCAL_HOST_PROCESS",
+                    "SYSTEMD_USER",
+                    "OUTBOUND_NETWORK",
+                    "SSH",
+                    "HOST_FILESYSTEM",
+                    "AWS_CLI",
+                    "CLOUDFLARE_CLI",
+                    "CLOUD_API",
+                    "GIT",
+                    "DOCKER",
+                    "POSTGRES",
+                    "TAILSCALE"
+                  ]
+                },
+                "operation": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "operation_class": {
+                  "type": "string",
+                  "enum": [
+                    "READ_ONLY_HOST",
+                    "DEVELOPMENT_MUTATION",
+                    "PRODUCTION_READ_ONLY",
+                    "PRODUCTION_MUTATION",
+                    "BUSINESS_ACTION"
+                  ]
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "capability",
+                "operation",
+                "operation_class",
+                "target"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 128
+          }
+        },
+        "required": [
+          "task_ref"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "task_ref": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "integer"
+          },
+          "policy_hash": {
+            "type": "string"
+          },
+          "expected_policy_hash": {
+            "type": "string"
+          },
+          "prepared_reauthorization_ref": {
+            "type": "string"
+          },
+          "reauthorization_ref": {
+            "type": "string"
+          },
+          "idempotent": {
+            "type": "boolean"
+          },
+          "execution_started": {
+            "type": "boolean",
+            "const": false
+          },
+          "future_execution_policy": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "new_policy": {
+            "type": "object"
+          },
+          "previous_policy": {
+            "type": "object"
+          },
+          "requested_scope": {
+            "type": "object"
+          },
+          "effective_authority": {
+            "type": "object"
+          },
+          "operations": {
+            "type": "object"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "network_access": {
+            "type": "boolean"
+          },
+          "backend_implemented": {
+            "type": "boolean"
+          },
+          "mcp_exposed": {
+            "type": "boolean"
+          },
+          "client_exposure": {
+            "type": "string"
+          },
+          "runtime_health": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "derived_git_targets": {
+            "type": "array"
+          },
+          "requirements_evaluated": {
+            "type": "boolean"
+          },
+          "requirements_covered": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "missing_operations": {
+            "type": "array"
+          },
+          "request_hash": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "clinx_get_prepared_request",
+      "description": "Read one exact prepared execution or policy change, including immutable content hash, target, scope differences, validity, applied version and exact execution/thread/turn readback. Does not apply, consume or start. Use after lost responses or to resolve a concrete target ambiguity; not a routine prerequisite to start; raw prompts and credentials are not returned.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request_ref": {
+            "type": "string",
+            "pattern": "^(prepared|reauth)_[0-9a-f]{32}$"
+          }
+        },
+        "required": [
+          "request_ref"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "request_ref": {
+            "type": "string"
+          },
+          "request_type": {
+            "type": "string"
+          },
+          "request_hash": {
+            "type": "string"
+          },
+          "request_state": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "task_action": {
+            "type": "string"
+          },
+          "expiry_semantics": {
+            "type": "string"
+          },
+          "prompt_sha256": {
+            "type": "string"
+          },
+          "provider_running": {
+            "type": "string"
+          },
+          "task_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baseline_policy_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current_policy_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_stage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turn_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "execution_owner_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "applied_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baseline_policy_version": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "current_policy_version": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "applied_policy_version": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "previous_policy": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "current_policy": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "proposed_policy": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "routing_identity": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "execution_present": {
+            "type": "boolean"
+          },
+          "network_access": {
+            "type": "boolean"
+          },
+          "previous_network_access": {
+            "type": "boolean"
+          },
+          "current_network_access": {
+            "type": "boolean"
+          },
+          "execution_started": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "object"
+          },
+          "policy_difference": {
+            "type": "object"
+          },
+          "read_only": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "request_ref",
+          "request_type",
+          "request_hash",
+          "request_state",
+          "target",
+          "read_only"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "clinx_prepare_policy_reauthorization",
+      "description": "Prepare a reviewed authority change on the SAME task. New Git target scope must identify a registered task-owned worktree. No execution starts; historical execution policies remain unchanged. Only the outer operator may call this, never the managed worker.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "boolean",
+            "const": true
+          },
+          "task_ref": {
+            "type": "string"
+          },
+          "expected_policy_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "target_policy": {
+            "type": "object",
+            "properties": {
+              "execution_surface": {
+                "type": "string",
+                "enum": [
+                  "SANDBOX_WORKSPACE",
+                  "NETWORKED_SANDBOX",
+                  "NATIVE_FULL_ACCESS",
+                  "HOST_EXECUTOR"
+                ]
+              },
+              "required_capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "LOCAL_HOST_PROCESS",
+                    "SYSTEMD_USER",
+                    "OUTBOUND_NETWORK",
+                    "SSH",
+                    "HOST_FILESYSTEM",
+                    "AWS_CLI",
+                    "CLOUDFLARE_CLI",
+                    "CLOUD_API",
+                    "GIT",
+                    "DOCKER",
+                    "POSTGRES",
+                    "TAILSCALE"
+                  ]
+                }
+              },
+              "operation_classes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "READ_ONLY_HOST",
+                    "DEVELOPMENT_MUTATION",
+                    "PRODUCTION_READ_ONLY",
+                    "PRODUCTION_MUTATION",
+                    "BUSINESS_ACTION"
+                  ]
+                }
+              },
+              "production_mutation_intent": {
+                "type": "boolean"
+              },
+              "operation_scopes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "capability": {
+                      "type": "string",
+                      "enum": [
+                        "LOCAL_HOST_PROCESS",
+                        "SYSTEMD_USER",
+                        "OUTBOUND_NETWORK",
+                        "SSH",
+                        "HOST_FILESYSTEM",
+                        "AWS_CLI",
+                        "CLOUDFLARE_CLI",
+                        "CLOUD_API",
+                        "GIT",
+                        "DOCKER",
+                        "POSTGRES",
+                        "TAILSCALE"
+                      ]
+                    },
+                    "operation": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "operation_class": {
+                      "type": "string",
+                      "enum": [
+                        "READ_ONLY_HOST",
+                        "DEVELOPMENT_MUTATION",
+                        "PRODUCTION_READ_ONLY",
+                        "PRODUCTION_MUTATION",
+                        "BUSINESS_ACTION"
+                      ]
+                    },
+                    "target": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "capability",
+                    "operation",
+                    "operation_class",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 128
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "network_access": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "approved",
+          "task_ref",
+          "expected_policy_hash",
+          "target_policy",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "task_ref": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "integer"
+          },
+          "policy_hash": {
+            "type": "string"
+          },
+          "expected_policy_hash": {
+            "type": "string"
+          },
+          "prepared_reauthorization_ref": {
+            "type": "string"
+          },
+          "reauthorization_ref": {
+            "type": "string"
+          },
+          "idempotent": {
+            "type": "boolean"
+          },
+          "execution_started": {
+            "type": "boolean",
+            "const": false
+          },
+          "future_execution_policy": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "new_policy": {
+            "type": "object"
+          },
+          "previous_policy": {
+            "type": "object"
+          },
+          "requested_scope": {
+            "type": "object"
+          },
+          "effective_authority": {
+            "type": "object"
+          },
+          "operations": {
+            "type": "object"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "network_access": {
+            "type": "boolean"
+          },
+          "backend_implemented": {
+            "type": "boolean"
+          },
+          "mcp_exposed": {
+            "type": "boolean"
+          },
+          "client_exposure": {
+            "type": "string"
+          },
+          "runtime_health": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "derived_git_targets": {
+            "type": "array"
+          },
+          "requirements_evaluated": {
+            "type": "boolean"
+          },
+          "requirements_covered": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "missing_operations": {
+            "type": "array"
+          },
+          "request_hash": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "clinx_apply_policy_reauthorization",
+      "description": "Apply exactly one prepared authority change with explicit operator approval, CAS and immutable audit. Idempotent. Active ownership or unresolved side effects block application. Does not execute or replay deployment.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "boolean",
+            "const": true
+          },
+          "prepared_reauthorization_ref": {
+            "type": "string"
+          },
+          "expected_request_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "expected_task_ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved",
+          "prepared_reauthorization_ref"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "task_ref": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "integer"
+          },
+          "policy_hash": {
+            "type": "string"
+          },
+          "expected_policy_hash": {
+            "type": "string"
+          },
+          "prepared_reauthorization_ref": {
+            "type": "string"
+          },
+          "reauthorization_ref": {
+            "type": "string"
+          },
+          "idempotent": {
+            "type": "boolean"
+          },
+          "execution_started": {
+            "type": "boolean",
+            "const": false
+          },
+          "future_execution_policy": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "new_policy": {
+            "type": "object"
+          },
+          "previous_policy": {
+            "type": "object"
+          },
+          "requested_scope": {
+            "type": "object"
+          },
+          "effective_authority": {
+            "type": "object"
+          },
+          "operations": {
+            "type": "object"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "network_access": {
+            "type": "boolean"
+          },
+          "backend_implemented": {
+            "type": "boolean"
+          },
+          "mcp_exposed": {
+            "type": "boolean"
+          },
+          "client_exposure": {
+            "type": "string"
+          },
+          "runtime_health": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "derived_git_targets": {
+            "type": "array"
+          },
+          "requirements_evaluated": {
+            "type": "boolean"
+          },
+          "requirements_covered": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "missing_operations": {
+            "type": "array"
+          },
+          "request_hash": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "clinx_register_derived_git_target",
+      "description": "Explicit operator registration of one real linked Git worktree for one active task. Supply its successful task Host worktree-add receipt when available; otherwise record explicit operator adoption evidence. Returns a stable target identity; registration alone grants no push.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "boolean",
+            "const": true
+          },
+          "task_ref": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "ownership_evidence": {
+            "type": "string",
+            "minLength": 1
+          },
+          "creation_host_execution_ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved",
+          "task_ref",
+          "path",
+          "ownership_evidence"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "worktree_key": {
+            "type": "string"
+          },
+          "common_dir": {
+            "type": "string"
+          },
+          "git_dir": {
+            "type": "string"
+          },
+          "git_dir_device": {
+            "type": "integer"
+          },
+          "git_dir_inode": {
+            "type": "integer"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "string"
+          },
+          "registered_at": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "clinx_revoke_derived_git_target",
+      "description": "Revoke one task-owned Git target. Existing policy history remains immutable; future push fails closed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "boolean",
+            "const": true
+          },
+          "task_ref": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved",
+          "task_ref",
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "task_ref": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "revoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "clinx_adopt_conversation",
+      "description": "Adopt an exact idle thread visible on the confined Provider. Supply exact_turn_id for a terminal predecessor checkpoint required by Host successor. Does not transfer a Desktop writer.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "codex_uri": {
+            "type": "string",
+            "maxLength": 2048,
+            "pattern": "^codex://threads/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\\?[^\\s#]*)?$"
+          },
+          "host": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "exact_turn_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace_contract": {
+            "type": "object",
+            "properties": {
+              "cwd": {
+                "type": "string",
+                "pattern": "^/[^\\x00]*$",
+                "maxLength": 4096
+              },
+              "branch": {
+                "type": "string"
+              },
+              "head": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cwd"
+            ],
+            "additionalProperties": false,
+            "description": "Optional native working directory. An exact native thread takes priority. Omission uses the project default for new threads. Repository identity is verified; legacy branch/head strings are audit metadata and do not gate native forwarding. HOST_EXECUTOR retains operation scope and exact receipt checks."
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "thread_id"
+            ],
+            "not": {
+              "required": [
+                "codex_uri"
+              ]
+            }
+          },
+          {
+            "required": [
+              "codex_uri"
+            ],
+            "not": {
+              "required": [
+                "thread_id"
+              ]
+            }
+          }
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "adoption_ref": {
+            "type": "string"
+          },
+          "adoption_status": {
+            "type": "string"
+          },
+          "task_ref": {
+            "type": "string"
+          },
+          "thread_id": {
+            "type": "string"
+          },
+          "workspace_contract": {
+            "type": "object",
+            "properties": {
+              "cwd": {
+                "type": "string",
+                "pattern": "^/[^\\x00]*$",
+                "maxLength": 4096
+              },
+              "branch": {
+                "type": "string"
+              },
+              "head": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cwd"
+            ],
+            "additionalProperties": false,
+            "description": "Optional native working directory. An exact native thread takes priority. Omission uses the project default for new threads. Repository identity is verified; legacy branch/head strings are audit metadata and do not gate native forwarding. HOST_EXECUTOR retains operation scope and exact receipt checks."
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "adoption_status",
+          "task_ref",
+          "thread_id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    }
+  ],
+  "observations": [
+    {
+      "name": "clinx_list_observations",
+      "description": "列出已授权的全网原生和受管观察项；无需 thread ID 或执行权限。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "node": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "project": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "state": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "native_thread_id": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "external"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clinx_get_observation",
+      "description": "按稳定 observation_id 读取缓存详情和有界轮次历史。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "observation_id": {
+            "type": "string",
+            "pattern": "^obs_[a-f0-9]{40}$"
+          }
+        },
+        "required": [
+          "observation_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clinx_get_observation_context",
+      "description": "只读分页源端用户可见上下文；离线内容未缓存时明确不可用。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "observation_id": {
+            "type": "string",
+            "pattern": "^obs_[a-f0-9]{40}$"
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "observation_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clinx_get_observation_activity",
+      "description": "分页读取已批准并持久化的 Activity 历史；节点离线仍可查看。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "observation_id": {
+            "type": "string",
+            "pattern": "^obs_[a-f0-9]{40}$"
+          }
+        },
+        "required": [
+          "observation_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

@@ -12,7 +12,11 @@ import os
 import pwd
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.build.mcp_runtime_config import compile_config
 
 
 def main():
@@ -34,6 +38,9 @@ def main():
     if (manifest.get('provider_exchange') != 'RUST_PROVIDER_V1'
             or 'clinx-provider' not in manifest['files']):
         raise RuntimeError('QUALIFIED_RUST_PROVIDER_REQUIRED')
+    if (manifest.get('mcp_runtime') != 'RUST_MCP_V1'
+            or 'clinx-mcp' not in manifest['files']):
+        raise RuntimeError('QUALIFIED_RUST_MCP_REQUIRED')
     for name, digest in manifest["files"].items():
         path = release / name
         if (
@@ -46,6 +53,16 @@ def main():
     api = pwd.getpwnam("clinx-api")
     worker = pwd.getpwnam((root / "config/worker-user").read_text().strip())
     authority = pwd.getpwnam("clinx-authority")
+    mcp_config = root / "config/mcp-runtime.json"
+    compiled_mcp = compile_config(root / 'config/bridge.toml')
+    if mcp_config.exists():
+        if json.loads(mcp_config.read_text()) != compiled_mcp:
+            raise RuntimeError('MCP_CONFIG_IDENTITY_MISMATCH')
+    else:
+        with mcp_config.open('x') as stream:
+            json.dump(compiled_mcp, stream, indent=2)
+            stream.write('\n')
+        mcp_config.chmod(0o644)
     state = root / "api/node-centre"
     state.mkdir(mode=0o700, exist_ok=False)
     os.chown(state, api.pw_uid, api.pw_gid)
@@ -101,7 +118,7 @@ Description=CLINX MCP API adapter
 After=clinx-rust-authority.service
 Requires=clinx-rust-authority.service
 [Service]
-{common}ExecStart=/usr/bin/python3 -m clinx.mcp.mcp_server --config {root}/config/bridge.toml --stdio
+{common}ExecStart={release}/clinx-mcp --config {mcp_config} --stdio
 StandardInput=socket
 StandardOutput=inherit
 StandardError=journal

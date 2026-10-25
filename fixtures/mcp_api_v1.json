@@ -1,0 +1,2639 @@
+{
+  "source_head": "81254e261df2b411c7ac4f50390266bb051a9454",
+  "config": {
+    "runtime_host": "p620",
+    "provider_endpoint": "/socket",
+    "provider_timeout_seconds": 3,
+    "host_aliases": {
+      "p620": [
+        "p620"
+      ]
+    },
+    "codex_host_ids": {
+      "mac-id": [
+        "p620"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "prepare-new",
+      "tool": "clinx_prepare_execution",
+      "arguments": {
+        "prompt": "new",
+        "approved": true,
+        "task_action": "create",
+        "project": "clinx"
+      },
+      "commands": [
+        {
+          "operation": "prepare",
+          "payload": {
+            "prompt": "new",
+            "approved": true,
+            "project": "clinx",
+            "host": "p620",
+            "task_ref": null,
+            "title": "new",
+            "workspace_contract": null,
+            "model": null,
+            "reasoning_effort": null,
+            "execution_policy": null,
+            "thread_id": null
+          },
+          "result": {
+            "prepared_execution_ref": "prepared_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "new_task": false,
+            "prompt": "secret",
+            "project": "clinx",
+            "host": "p620",
+            "workspace_contract": {
+              "cwd": "/workspace/repo",
+              "branch": "dev",
+              "head": "abc"
+            },
+            "status": "PREPARED",
+            "request_hash": "rhash",
+            "id": "internal"
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "prepared_execution_ref": "prepared_one",
+        "task_ref": "task_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "project": "clinx",
+        "host": "p620",
+        "workspace_contract": {
+          "cwd": "/workspace/repo",
+          "branch": "dev",
+          "head": "abc"
+        },
+        "status": "PREPARED",
+        "request_hash": "rhash",
+        "execution_started": false,
+        "read_only": false
+      }
+    },
+    {
+      "name": "prepare-existing",
+      "tool": "clinx_prepare_execution",
+      "arguments": {
+        "prompt": "continue",
+        "task_ref": "task_one",
+        "approved": true
+      },
+      "commands": [
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        },
+        {
+          "operation": "prepare",
+          "payload": {
+            "prompt": "continue",
+            "approved": true,
+            "project": "clinx",
+            "host": "p620",
+            "task_ref": "task_one",
+            "title": "continue",
+            "workspace_contract": {
+              "cwd": "/workspace/live"
+            },
+            "model": null,
+            "reasoning_effort": null,
+            "execution_policy": null,
+            "thread_id": "12345678-1234-1234-1234-123456789abc"
+          },
+          "result": {
+            "prepared_execution_ref": "prepared_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "new_task": false,
+            "prompt": "secret",
+            "project": "clinx",
+            "host": "p620",
+            "workspace_contract": {
+              "cwd": "/workspace/repo",
+              "branch": "dev",
+              "head": "abc"
+            },
+            "status": "PREPARED",
+            "request_hash": "rhash",
+            "id": "internal"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "method": "thread",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "result": {
+            "id": "12345678-1234-1234-1234-123456789abc",
+            "cwd": "/workspace/live",
+            "status": {
+              "type": "idle"
+            }
+          }
+        }
+      ],
+      "result": {
+        "prepared_execution_ref": "prepared_one",
+        "task_ref": "task_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "project": "clinx",
+        "host": "p620",
+        "workspace_contract": {
+          "cwd": "/workspace/repo",
+          "branch": "dev",
+          "head": "abc"
+        },
+        "status": "PREPARED",
+        "request_hash": "rhash",
+        "execution_started": false,
+        "read_only": false
+      }
+    },
+    {
+      "name": "prepare-native",
+      "tool": "clinx_prepare_execution",
+      "arguments": {
+        "prompt": "continue",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "project": "clinx",
+        "execution_surface": "CODEX_NATIVE",
+        "required_capabilities": [
+          "INVALID_IGNORED"
+        ]
+      },
+      "commands": [
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        },
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        },
+        {
+          "operation": "prepare",
+          "payload": {
+            "prompt": "continue",
+            "approved": false,
+            "project": "clinx",
+            "host": "p620",
+            "task_ref": "task_one",
+            "title": "continue",
+            "workspace_contract": {
+              "cwd": "/workspace/live"
+            },
+            "model": null,
+            "reasoning_effort": null,
+            "execution_policy": null,
+            "thread_id": "12345678-1234-1234-1234-123456789abc"
+          },
+          "result": {
+            "prepared_execution_ref": "prepared_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "new_task": false,
+            "prompt": "secret",
+            "project": "clinx",
+            "host": "p620",
+            "workspace_contract": {
+              "cwd": "/workspace/repo",
+              "branch": "dev",
+              "head": "abc"
+            },
+            "status": "PREPARED",
+            "request_hash": "rhash",
+            "id": "internal"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "method": "thread",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "result": {
+            "id": "12345678-1234-1234-1234-123456789abc",
+            "cwd": "/workspace/live",
+            "status": {
+              "type": "idle"
+            }
+          }
+        }
+      ],
+      "result": {
+        "prepared_execution_ref": "prepared_one",
+        "task_ref": "task_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "project": "clinx",
+        "host": "p620",
+        "workspace_contract": {
+          "cwd": "/workspace/repo",
+          "branch": "dev",
+          "head": "abc"
+        },
+        "status": "PREPARED",
+        "request_hash": "rhash",
+        "execution_started": false,
+        "read_only": false
+      }
+    },
+    {
+      "name": "prepare-host",
+      "tool": "clinx_prepare_execution",
+      "arguments": {
+        "prompt": "host",
+        "task_ref": "task_one",
+        "execution_surface": "HOST_EXECUTOR",
+        "required_capabilities": [
+          " git ",
+          "HOST_FILESYSTEM"
+        ],
+        "operation_classes": [
+          "READ_ONLY_HOST"
+        ],
+        "requested_operations": [
+          {
+            "capability": "git",
+            "operation": "status",
+            "operation_class": "read_only_host",
+            "target": "repo"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        },
+        {
+          "operation": "prepare",
+          "payload": {
+            "prompt": "host",
+            "approved": false,
+            "project": "clinx",
+            "host": "p620",
+            "task_ref": "task_one",
+            "title": "host",
+            "workspace_contract": {
+              "cwd": "/workspace/live"
+            },
+            "model": null,
+            "reasoning_effort": null,
+            "execution_policy": {
+              "execution_surface": "HOST_EXECUTOR",
+              "operation_scopes": [
+                {
+                  "capability": "GIT",
+                  "operation": "status",
+                  "operation_class": "READ_ONLY_HOST",
+                  "target": "repo"
+                }
+              ]
+            },
+            "thread_id": "12345678-1234-1234-1234-123456789abc"
+          },
+          "result": {
+            "prepared_execution_ref": "prepared_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "new_task": false,
+            "prompt": "secret",
+            "project": "clinx",
+            "host": "p620",
+            "workspace_contract": {
+              "cwd": "/workspace/repo",
+              "branch": "dev",
+              "head": "abc"
+            },
+            "status": "PREPARED",
+            "request_hash": "rhash",
+            "id": "internal"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "method": "thread",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "result": {
+            "id": "12345678-1234-1234-1234-123456789abc",
+            "cwd": "/workspace/live",
+            "status": {
+              "type": "idle"
+            }
+          }
+        }
+      ],
+      "result": {
+        "prepared_execution_ref": "prepared_one",
+        "task_ref": "task_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "project": "clinx",
+        "host": "p620",
+        "workspace_contract": {
+          "cwd": "/workspace/repo",
+          "branch": "dev",
+          "head": "abc"
+        },
+        "status": "PREPARED",
+        "request_hash": "rhash",
+        "execution_started": false,
+        "read_only": false
+      }
+    },
+    {
+      "name": "prepare-route-conflict",
+      "tool": "clinx_prepare_execution",
+      "arguments": {
+        "prompt": "a",
+        "task_ref": "task_one",
+        "project": "wrong"
+      },
+      "commands": [
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [],
+      "error": "TASK_ROUTE_MISMATCH"
+    },
+    {
+      "name": "prepare-selector-conflict",
+      "tool": "clinx_prepare_execution",
+      "arguments": {
+        "prompt": "a",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "codex_uri": "codex://threads/12345678-1234-1234-1234-123456789abc"
+      },
+      "commands": [],
+      "reads": [],
+      "error": "IDENTITY_SELECTOR_CONFLICT"
+    },
+    {
+      "name": "prepare-host-only",
+      "tool": "clinx_prepare_execution",
+      "arguments": {
+        "prompt": "a",
+        "task_ref": "task_one",
+        "required_capabilities": [
+          "GIT"
+        ]
+      },
+      "commands": [
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [],
+      "error": "EXACT_HOST_POLICY_REQUIRED"
+    },
+    {
+      "name": "prepare-reasoning-conflict",
+      "tool": "clinx_prepare_execution",
+      "arguments": {
+        "prompt": "a",
+        "task_ref": "task_one",
+        "reasoning": "low",
+        "reasoning_effort": "high"
+      },
+      "commands": [
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [],
+      "error": "REASONING_CONFLICT"
+    },
+    {
+      "name": "start-first",
+      "tool": "clinx_start_execution",
+      "arguments": {
+        "prepared_execution_ref": "prepared_one",
+        "approved": true,
+        "expected_task_ref": "task_one",
+        "expected_request_hash": "rhash"
+      },
+      "commands": [
+        {
+          "operation": "get_prepared",
+          "payload": {
+            "prepared_execution_ref": "prepared_one"
+          },
+          "result": {
+            "prepared_execution_ref": "prepared_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "new_task": false,
+            "prompt": "do work",
+            "project": "clinx",
+            "host": "p620",
+            "workspace_contract": {
+              "cwd": "/workspace/repo",
+              "branch": "dev",
+              "head": "abc"
+            },
+            "status": "PREPARED",
+            "request_hash": "rhash"
+          }
+        },
+        {
+          "operation": "start",
+          "payload": {
+            "prepared_execution_ref": "prepared_one",
+            "approved": true,
+            "expected_request_hash": "rhash",
+            "expected_task_ref": "task_one",
+            "native_cwd": "/workspace/live"
+          },
+          "result": {
+            "execution_ref": "exec_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "native_turn_id": "turn_old",
+            "status": "SUCCEEDED",
+            "resource_state": "RELEASED",
+            "execution_result": {
+              "outcome": "COMPLETED"
+            }
+          }
+        }
+      ],
+      "reads": [
+        {
+          "method": "thread",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "result": {
+            "id": "12345678-1234-1234-1234-123456789abc",
+            "cwd": "/workspace/live",
+            "status": {
+              "type": "idle"
+            }
+          }
+        }
+      ],
+      "result": {
+        "execution_ref": "exec_one",
+        "task_ref": "task_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "native_turn_id": "turn_old",
+        "status": "SUCCEEDED",
+        "resource_state": "RELEASED",
+        "execution_result": {
+          "outcome": "COMPLETED"
+        }
+      }
+    },
+    {
+      "name": "start-duplicate",
+      "tool": "clinx_start_execution",
+      "arguments": {
+        "prepared_execution_ref": "prepared_one",
+        "approved": true
+      },
+      "commands": [
+        {
+          "operation": "get_prepared",
+          "payload": {
+            "prepared_execution_ref": "prepared_one"
+          },
+          "result": {
+            "prepared_execution_ref": "prepared_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "new_task": false,
+            "prompt": "do work",
+            "project": "clinx",
+            "host": "p620",
+            "workspace_contract": {
+              "cwd": "/workspace/repo",
+              "branch": "dev",
+              "head": "abc"
+            },
+            "status": "PREPARED",
+            "request_hash": "rhash",
+            "execution_ref": "exec_one"
+          }
+        },
+        {
+          "operation": "start",
+          "payload": {
+            "prepared_execution_ref": "prepared_one",
+            "approved": true,
+            "expected_request_hash": null,
+            "expected_task_ref": null,
+            "native_cwd": null
+          },
+          "result": {
+            "execution_ref": "exec_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "native_turn_id": "turn_old",
+            "status": "SUCCEEDED",
+            "resource_state": "RELEASED",
+            "execution_result": {
+              "outcome": "COMPLETED"
+            }
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "execution_ref": "exec_one",
+        "task_ref": "task_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "native_turn_id": "turn_old",
+        "status": "SUCCEEDED",
+        "resource_state": "RELEASED",
+        "execution_result": {
+          "outcome": "COMPLETED"
+        }
+      }
+    },
+    {
+      "name": "cancel",
+      "tool": "clinx_cancel_execution",
+      "arguments": {
+        "execution_ref": "exec_one",
+        "approved": true
+      },
+      "commands": [
+        {
+          "operation": "cancel",
+          "payload": {
+            "execution_ref": "exec_one",
+            "approved": true
+          },
+          "result": {
+            "execution_ref": "exec_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "native_turn_id": "turn_old",
+            "status": "SUCCEEDED",
+            "resource_state": "RELEASED",
+            "execution_result": {
+              "outcome": "COMPLETED"
+            }
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "execution_ref": "exec_one",
+        "task_ref": "task_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "native_turn_id": "turn_old",
+        "status": "SUCCEEDED",
+        "resource_state": "RELEASED",
+        "execution_result": {
+          "outcome": "COMPLETED"
+        }
+      }
+    },
+    {
+      "name": "cancel-ambiguous",
+      "tool": "clinx_cancel_execution",
+      "arguments": {
+        "execution_ref": "exec_one",
+        "task_ref": "task_one"
+      },
+      "commands": [],
+      "reads": [],
+      "error": "EXACT_RUST_EXECUTION_REQUIRED"
+    },
+    {
+      "name": "lost-ack",
+      "tool": "clinx_cancel_execution",
+      "arguments": {
+        "execution_ref": "exec_one",
+        "approved": true
+      },
+      "commands": [
+        {
+          "operation": "cancel",
+          "payload": {
+            "execution_ref": "exec_one",
+            "approved": true
+          },
+          "result": {
+            "execution_ref": "exec_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "native_turn_id": "turn_old",
+            "status": "SUCCEEDED",
+            "resource_state": "RELEASED",
+            "execution_result": {
+              "outcome": "COMPLETED"
+            }
+          },
+          "error": "AUTHORITY_DELIVERY_UNKNOWN"
+        }
+      ],
+      "reads": [],
+      "error": "DELIVERY_UNKNOWN"
+    },
+    {
+      "name": "adopt",
+      "tool": "clinx_adopt_conversation",
+      "arguments": {
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "project": "clinx",
+        "exact_turn_id": "turn_old"
+      },
+      "commands": [
+        {
+          "operation": "adopt",
+          "payload": {
+            "host": "p620",
+            "project": "clinx",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "title": "Native Codex conversation",
+            "workspace_contract": {
+              "cwd": "/workspace/live"
+            },
+            "exact_turn_id": "turn_old"
+          },
+          "result": {
+            "adoption_ref": "adopt_one",
+            "adoption_status": "PENDING",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "workspace_contract": {
+              "cwd": "/workspace/live"
+            },
+            "ignored": "secret"
+          }
+        }
+      ],
+      "reads": [
+        {
+          "method": "thread",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "result": {
+            "id": "12345678-1234-1234-1234-123456789abc",
+            "cwd": "/workspace/live",
+            "status": {
+              "type": "idle"
+            }
+          }
+        }
+      ],
+      "result": {
+        "adoption_ref": "adopt_one",
+        "adoption_status": "PENDING",
+        "task_ref": "task_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "workspace_contract": {
+          "cwd": "/workspace/live"
+        },
+        "read_only": false
+      }
+    },
+    {
+      "name": "adopt-canonical",
+      "tool": "clinx_adopt_conversation",
+      "arguments": {
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "project": "clinx",
+        "canonical_identity": {
+          "cwd": "/workspace/sealed"
+        },
+        "exact_turn_id": "turn_old"
+      },
+      "commands": [
+        {
+          "operation": "adopt",
+          "payload": {
+            "host": "p620",
+            "project": "clinx",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "title": "Native Codex conversation",
+            "workspace_contract": {
+              "cwd": "/workspace/sealed"
+            },
+            "exact_turn_id": "turn_old",
+            "canonical_identity": {
+              "cwd": "/workspace/sealed"
+            }
+          },
+          "result": {
+            "adoption_ref": "adopt_one",
+            "adoption_status": "PENDING",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "workspace_contract": {
+              "cwd": "/workspace/sealed"
+            },
+            "ignored": "secret"
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "adoption_ref": "adopt_one",
+        "adoption_status": "PENDING",
+        "task_ref": "task_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "workspace_contract": {
+          "cwd": "/workspace/sealed"
+        },
+        "read_only": false
+      }
+    },
+    {
+      "name": "find-unicode",
+      "tool": "clinx_find_task",
+      "arguments": {
+        "query": "STRASSE"
+      },
+      "commands": [
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "tasks": [
+          {
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "host": "p620",
+            "project": "clinx",
+            "title": "Straße task",
+            "workspace_contract": {
+              "cwd": "/workspace/repo",
+              "branch": "dev",
+              "head": "abc"
+            },
+            "lifecycle": "ACTIVE",
+            "policy_hash": "hash",
+            "execution_policy": {
+              "execution_surface": "CODEX_NATIVE",
+              "operation_scopes": []
+            },
+            "active_execution": null,
+            "task_ref": "task_one",
+            "read_only": true,
+            "authority": "RUST"
+          }
+        ],
+        "read_only": true
+      }
+    },
+    {
+      "name": "list",
+      "tool": "clinx_list_projects",
+      "arguments": {
+        "query": "LINX"
+      },
+      "commands": [
+        {
+          "operation": "list_projects",
+          "payload": {},
+          "result": {
+            "projects": [
+              {
+                "alias": "clinx",
+                "host": "p620",
+                "cwd": "/workspace"
+              }
+            ]
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "projects": [
+          {
+            "project": "clinx",
+            "cwd": "/workspace",
+            "host": "p620"
+          }
+        ],
+        "read_only": true
+      }
+    },
+    {
+      "name": "capabilities",
+      "tool": "clinx_get_capabilities",
+      "arguments": {},
+      "commands": [],
+      "reads": [],
+      "result": {
+        "authority": "RUST",
+        "capabilities": [
+          "prepare",
+          "start",
+          "cancel",
+          "receipt_readback",
+          "native_result",
+          "native_adoption",
+          "policy_reauthorization"
+        ],
+        "legacy_history": false,
+        "host_tools": true,
+        "read_only": true
+      }
+    },
+    {
+      "name": "prepared",
+      "tool": "clinx_get_prepared_request",
+      "arguments": {
+        "request_ref": "prepared_one"
+      },
+      "commands": [
+        {
+          "operation": "get_prepared",
+          "payload": {
+            "prepared_execution_ref": "prepared_one"
+          },
+          "result": {
+            "prepared_execution_ref": "prepared_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "new_task": false,
+            "prompt": "do work",
+            "project": "clinx",
+            "host": "p620",
+            "workspace_contract": {
+              "cwd": "/workspace/repo",
+              "branch": "dev",
+              "head": "abc"
+            },
+            "status": "PREPARED",
+            "request_hash": "rhash"
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "request_ref": "prepared_one",
+        "request_type": "EXECUTION",
+        "request_hash": "rhash",
+        "request_state": "PREPARED",
+        "task_ref": "task_one",
+        "execution_ref": null,
+        "target": {
+          "project": "clinx",
+          "host": "p620",
+          "workspace_contract": {
+            "cwd": "/workspace/repo",
+            "branch": "dev",
+            "head": "abc"
+          },
+          "workspace_resolution": null,
+          "requested_workspace_contract": null
+        },
+        "prompt_sha256": "64d6f071c16a0984c4d1331002dd6f6a2ec7a503d23b38648fa52069af7330e7",
+        "read_only": true
+      }
+    },
+    {
+      "name": "prepared-policy",
+      "tool": "clinx_get_prepared_request",
+      "arguments": {
+        "request_ref": "reauth_one"
+      },
+      "commands": [
+        {
+          "operation": "get_prepared",
+          "payload": {
+            "prepared_execution_ref": "reauth_one"
+          },
+          "result": {
+            "prepared_reauthorization_ref": "reauth_one",
+            "task_ref": "task_one",
+            "expected_policy_hash": "hash",
+            "request_hash": "rhash",
+            "operation_id": "op_old",
+            "status": "PREPARED",
+            "target_policy": {
+              "execution_surface": "CODEX_NATIVE",
+              "operation_scopes": []
+            },
+            "kind": "POLICY"
+          }
+        },
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "request_ref": "reauth_one",
+        "request_type": "POLICY_REAUTHORIZATION",
+        "request_hash": "rhash",
+        "request_state": "PREPARED",
+        "task_ref": "task_one",
+        "target": {
+          "project": "clinx",
+          "host": "p620",
+          "workspace_contract": {
+            "cwd": "/workspace/repo",
+            "branch": "dev",
+            "head": "abc"
+          }
+        },
+        "baseline_policy_hash": "hash",
+        "current_policy_hash": "hash",
+        "proposed_policy": {
+          "execution_surface": "CODEX_NATIVE",
+          "operation_scopes": []
+        },
+        "current_policy": {
+          "execution_surface": "CODEX_NATIVE",
+          "operation_scopes": []
+        },
+        "execution_started": false,
+        "read_only": true
+      }
+    },
+    {
+      "name": "effective",
+      "tool": "clinx_get_effective_authority",
+      "arguments": {
+        "task_ref": "task_one",
+        "requested_operations": [
+          {
+            "capability": "GIT"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "operation": "effective_policy",
+          "payload": {
+            "task_ref": "task_one"
+          },
+          "result": {
+            "task": {
+              "task_id": "task_one",
+              "thread_id": "12345678-1234-1234-1234-123456789abc",
+              "host": "p620",
+              "project": "clinx",
+              "title": "Straße task",
+              "workspace_contract": {
+                "cwd": "/workspace/repo",
+                "branch": "dev",
+                "head": "abc"
+              },
+              "lifecycle": "ACTIVE",
+              "policy_hash": "hash",
+              "execution_policy": {
+                "execution_surface": "CODEX_NATIVE",
+                "operation_scopes": []
+              },
+              "active_execution": null
+            },
+            "operation_scopes": [],
+            "denied_scopes": []
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "task_ref": "task_one",
+        "future_execution_policy": {
+          "execution_surface": "CODEX_NATIVE",
+          "operation_scopes": []
+        },
+        "policy_hash": "hash",
+        "effective_authority": {
+          "authority": "RUST",
+          "operation_scopes": [],
+          "denied_scopes": []
+        },
+        "requirements_evaluated": true,
+        "requirements_covered": false,
+        "missing_operations": [
+          {
+            "capability": "GIT"
+          }
+        ],
+        "read_only": true
+      }
+    },
+    {
+      "name": "prepare-policy",
+      "tool": "clinx_prepare_policy_reauthorization",
+      "arguments": {
+        "task_ref": "task_one",
+        "expected_policy_hash": "hash",
+        "target_policy": {
+          "execution_surface": "NATIVE_FULL_ACCESS"
+        },
+        "reason": "native"
+      },
+      "commands": [
+        {
+          "operation": "prepare_policy",
+          "payload": {
+            "approved": false,
+            "task_ref": "task_one",
+            "expected_policy_hash": "hash",
+            "target_policy": {
+              "execution_surface": "CODEX_NATIVE",
+              "operation_scopes": []
+            },
+            "reason": "native"
+          },
+          "result": {
+            "prepared_reauthorization_ref": "reauth_one",
+            "task_ref": "task_one",
+            "expected_policy_hash": "hash",
+            "request_hash": "rhash",
+            "operation_id": "op_old",
+            "status": "PREPARED",
+            "target_policy": {
+              "execution_surface": "CODEX_NATIVE",
+              "operation_scopes": []
+            }
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "prepared_reauthorization_ref": "reauth_one",
+        "task_ref": "task_one",
+        "expected_policy_hash": "hash",
+        "request_hash": "rhash",
+        "operation_id": "op_old",
+        "status": "PREPARED",
+        "future_execution_policy": {
+          "execution_surface": "CODEX_NATIVE",
+          "operation_scopes": []
+        },
+        "execution_started": false
+      }
+    },
+    {
+      "name": "apply-policy",
+      "tool": "clinx_apply_policy_reauthorization",
+      "arguments": {
+        "prepared_reauthorization_ref": "reauth_one",
+        "approved": true
+      },
+      "commands": [
+        {
+          "operation": "apply_policy",
+          "payload": {
+            "prepared_reauthorization_ref": "reauth_one",
+            "approved": true,
+            "expected_request_hash": null,
+            "expected_task_ref": null
+          },
+          "result": {
+            "prepared_reauthorization_ref": "reauth_one",
+            "task_ref": "task_one",
+            "expected_policy_hash": "hash",
+            "request_hash": "rhash",
+            "operation_id": "op_old",
+            "status": "PREPARED",
+            "target_policy": {
+              "execution_surface": "CODEX_NATIVE",
+              "operation_scopes": []
+            }
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "prepared_reauthorization_ref": "reauth_one",
+        "task_ref": "task_one",
+        "expected_policy_hash": "hash",
+        "request_hash": "rhash",
+        "operation_id": "op_old",
+        "status": "PREPARED",
+        "future_execution_policy": {
+          "execution_surface": "CODEX_NATIVE",
+          "operation_scopes": []
+        },
+        "execution_started": false
+      }
+    },
+    {
+      "name": "register",
+      "tool": "clinx_register_derived_git_target",
+      "arguments": {
+        "task_ref": "task_one",
+        "path": "/a",
+        "ownership_evidence": {
+          "exact": "yes"
+        }
+      },
+      "commands": [
+        {
+          "operation": "register_git_target",
+          "payload": {
+            "approved": false,
+            "task_ref": "task_one",
+            "path": "/a",
+            "ownership_evidence": {
+              "exact": "yes"
+            },
+            "creation_host_execution_ref": null
+          },
+          "result": {
+            "accepted": true
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "accepted": true
+      }
+    },
+    {
+      "name": "revoke",
+      "tool": "clinx_revoke_derived_git_target",
+      "arguments": {
+        "task_ref": "task_one",
+        "target": "target"
+      },
+      "commands": [
+        {
+          "operation": "revoke_git_target",
+          "payload": {
+            "approved": false,
+            "task_ref": "task_one",
+            "target": "target"
+          },
+          "result": {
+            "accepted": true
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "accepted": true
+      }
+    },
+    {
+      "name": "status-task",
+      "tool": "clinx_get_status",
+      "arguments": {
+        "task_ref": "task_one"
+      },
+      "commands": [
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [],
+      "result": {
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "host": "p620",
+        "project": "clinx",
+        "title": "Straße task",
+        "workspace_contract": {
+          "cwd": "/workspace/repo",
+          "branch": "dev",
+          "head": "abc"
+        },
+        "lifecycle": "ACTIVE",
+        "policy_hash": "hash",
+        "execution_policy": {
+          "execution_surface": "CODEX_NATIVE",
+          "operation_scopes": []
+        },
+        "active_execution": null,
+        "task_ref": "task_one",
+        "read_only": true,
+        "authority": "RUST"
+      }
+    },
+    {
+      "name": "status-execution",
+      "tool": "clinx_get_status",
+      "arguments": {
+        "execution_ref": "exec_one"
+      },
+      "commands": [
+        {
+          "operation": "get_status",
+          "payload": {
+            "execution_ref": "exec_one"
+          },
+          "result": {
+            "execution_ref": "exec_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "native_turn_id": "turn_old",
+            "status": "SUCCEEDED",
+            "resource_state": "RELEASED",
+            "execution_result": {
+              "outcome": "COMPLETED"
+            }
+          }
+        }
+      ],
+      "reads": [
+        {
+          "method": "page",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "limit": 20,
+          "cursor": null,
+          "result": {
+            "data": [
+              {
+                "id": "turn_old",
+                "items": [
+                  {
+                    "type": "userMessage",
+                    "content": [
+                      {
+                        "type": "input_text",
+                        "text": "hello"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "agentMessage",
+                    "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                  },
+                  {
+                    "type": "agentMessage",
+                    "channel": "analysis",
+                    "text": "hidden analysis"
+                  }
+                ]
+              }
+            ],
+            "nextCursor": null
+          }
+        }
+      ],
+      "result": {
+        "execution_ref": "exec_one",
+        "task_ref": "task_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "native_turn_id": "turn_old",
+        "status": "SUCCEEDED",
+        "resource_state": "RELEASED",
+        "execution_result": {
+          "outcome": "COMPLETED"
+        }
+      }
+    },
+    {
+      "name": "context-exact",
+      "tool": "clinx_get_context",
+      "arguments": {
+        "execution_ref": "exec_one"
+      },
+      "commands": [
+        {
+          "operation": "get_status",
+          "payload": {
+            "execution_ref": "exec_one"
+          },
+          "result": {
+            "execution_ref": "exec_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "native_turn_id": "turn_old",
+            "status": "SUCCEEDED",
+            "resource_state": "RELEASED",
+            "execution_result": {
+              "outcome": "COMPLETED"
+            }
+          }
+        },
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [
+        {
+          "method": "thread",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "result": {
+            "id": "12345678-1234-1234-1234-123456789abc",
+            "cwd": "/workspace/live",
+            "status": {
+              "type": "idle"
+            }
+          }
+        },
+        {
+          "method": "page",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "limit": 20,
+          "cursor": null,
+          "result": {
+            "data": [
+              {
+                "id": "turn_old",
+                "items": [
+                  {
+                    "type": "userMessage",
+                    "content": [
+                      {
+                        "type": "input_text",
+                        "text": "hello"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "agentMessage",
+                    "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                  },
+                  {
+                    "type": "agentMessage",
+                    "channel": "analysis",
+                    "text": "hidden analysis"
+                  }
+                ]
+              }
+            ],
+            "nextCursor": null
+          }
+        },
+        {
+          "method": "page",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "limit": 20,
+          "cursor": null,
+          "result": {
+            "data": [
+              {
+                "id": "turn_old",
+                "items": [
+                  {
+                    "type": "userMessage",
+                    "content": [
+                      {
+                        "type": "input_text",
+                        "text": "hello"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "agentMessage",
+                    "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                  },
+                  {
+                    "type": "agentMessage",
+                    "channel": "analysis",
+                    "text": "hidden analysis"
+                  }
+                ]
+              }
+            ],
+            "nextCursor": null
+          }
+        }
+      ],
+      "result": {
+        "queried_thread_id": "12345678-1234-1234-1234-123456789abc",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "host": "p620",
+        "project": "clinx",
+        "task_ref": "task_one",
+        "execution_ref": "exec_one",
+        "execution_turn_ref": "turn_old",
+        "execution_state": "SUCCEEDED",
+        "execution_result": {
+          "outcome": "COMPLETED"
+        },
+        "lookup_status": "RESOLVED",
+        "read_only": true,
+        "status_source": "RUST_AUTHORITY",
+        "selection_scope": "EXACT_EXECUTION",
+        "task_current_projection": {
+          "thread_id": "12345678-1234-1234-1234-123456789abc",
+          "host": "p620",
+          "project": "clinx",
+          "title": "Straße task",
+          "workspace_contract": {
+            "cwd": "/workspace/repo",
+            "branch": "dev",
+            "head": "abc"
+          },
+          "lifecycle": "ACTIVE",
+          "policy_hash": "hash",
+          "execution_policy": {
+            "execution_surface": "CODEX_NATIVE",
+            "operation_scopes": []
+          },
+          "active_execution": null,
+          "task_ref": "task_one",
+          "read_only": true,
+          "authority": "RUST"
+        },
+        "current_thread_id": "12345678-1234-1234-1234-123456789abc",
+        "is_current_thread": true,
+        "native_thread": {
+          "id": "12345678-1234-1234-1234-123456789abc",
+          "cwd": "/workspace/live",
+          "status": {
+            "type": "idle"
+          }
+        },
+        "provider_observation": {
+          "state": "idle",
+          "source": "LIVE_THREAD_READ",
+          "writer_claimed": false
+        },
+        "native_status_source": "LIVE_THREAD_READ",
+        "native_display_state": "IDLE",
+        "context_status": "AVAILABLE",
+        "context_source": "LIVE_PROVIDER_TURNS",
+        "context_scope": "EXACT_EXECUTION_TURN",
+        "context_range": "cursor-page",
+        "context_truncated": false,
+        "next_cursor": null,
+        "last_user_intent": "hello",
+        "last_codex_result": "## Result\n\n    code\n\nauthorization: bearer [REDACTED] SECRET [REDACTED]",
+        "provenance": {
+          "queried_thread_id": "12345678-1234-1234-1234-123456789abc",
+          "context_turn_refs": [
+            "turn_old"
+          ],
+          "message_refs": {
+            "user": {
+              "turn_id": "turn_old",
+              "timestamp": null
+            },
+            "assistant": {
+              "turn_id": "turn_old",
+              "timestamp": null
+            }
+          },
+          "execution_attribution": "exec_one"
+        },
+        "context": {
+          "data": [
+            {
+              "id": "turn_old",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "hello"
+                    }
+                  ]
+                },
+                {
+                  "type": "agentMessage",
+                  "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                },
+                {
+                  "type": "agentMessage",
+                  "channel": "analysis",
+                  "text": "hidden analysis"
+                }
+              ]
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "context-thread",
+      "tool": "clinx_get_context",
+      "arguments": {
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "max_bytes": 1024
+      },
+      "commands": [
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        },
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [
+        {
+          "method": "thread",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "result": {
+            "id": "12345678-1234-1234-1234-123456789abc",
+            "cwd": "/workspace/live",
+            "status": {
+              "type": "idle"
+            }
+          }
+        },
+        {
+          "method": "page",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "limit": 8,
+          "cursor": null,
+          "result": {
+            "data": [
+              {
+                "id": "turn_old",
+                "items": [
+                  {
+                    "type": "userMessage",
+                    "content": [
+                      {
+                        "type": "input_text",
+                        "text": "hello"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "agentMessage",
+                    "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                  },
+                  {
+                    "type": "agentMessage",
+                    "channel": "analysis",
+                    "text": "hidden analysis"
+                  }
+                ]
+              }
+            ],
+            "nextCursor": null
+          }
+        }
+      ],
+      "result": {
+        "queried_thread_id": "12345678-1234-1234-1234-123456789abc",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "host": "p620",
+        "project": "clinx",
+        "task_ref": "task_one",
+        "execution_ref": null,
+        "execution_turn_ref": null,
+        "execution_state": null,
+        "execution_result": null,
+        "lookup_status": "RESOLVED",
+        "read_only": true,
+        "status_source": "RUST_AUTHORITY",
+        "selection_scope": "QUERIED_THREAD",
+        "task_current_projection": {
+          "thread_id": "12345678-1234-1234-1234-123456789abc",
+          "host": "p620",
+          "project": "clinx",
+          "title": "Straße task",
+          "workspace_contract": {
+            "cwd": "/workspace/repo",
+            "branch": "dev",
+            "head": "abc"
+          },
+          "lifecycle": "ACTIVE",
+          "policy_hash": "hash",
+          "execution_policy": {
+            "execution_surface": "CODEX_NATIVE",
+            "operation_scopes": []
+          },
+          "active_execution": null,
+          "task_ref": "task_one",
+          "read_only": true,
+          "authority": "RUST"
+        },
+        "current_thread_id": "12345678-1234-1234-1234-123456789abc",
+        "is_current_thread": true,
+        "native_thread": {
+          "id": "12345678-1234-1234-1234-123456789abc",
+          "cwd": "/workspace/live",
+          "status": {
+            "type": "idle"
+          }
+        },
+        "provider_observation": {
+          "state": "idle",
+          "source": "LIVE_THREAD_READ",
+          "writer_claimed": false
+        },
+        "native_status_source": "LIVE_THREAD_READ",
+        "native_display_state": "IDLE",
+        "context_status": "AVAILABLE",
+        "context_source": "LIVE_PROVIDER_TURNS",
+        "context_scope": "THREAD_RECENT",
+        "context_range": "cursor-page",
+        "context_truncated": false,
+        "next_cursor": null,
+        "last_user_intent": "hello",
+        "last_codex_result": "## Result\n\n    code\n\nauthorization: bearer [REDACTED] SECRET [REDACTED]",
+        "provenance": {
+          "queried_thread_id": "12345678-1234-1234-1234-123456789abc",
+          "context_turn_refs": [
+            "turn_old"
+          ],
+          "message_refs": {
+            "user": {
+              "turn_id": "turn_old",
+              "timestamp": null
+            },
+            "assistant": {
+              "turn_id": "turn_old",
+              "timestamp": null
+            }
+          },
+          "execution_attribution": "NOT_CLAIMED"
+        },
+        "context": {
+          "data": [
+            {
+              "id": "turn_old",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "hello"
+                    }
+                  ]
+                },
+                {
+                  "type": "agentMessage",
+                  "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                },
+                {
+                  "type": "agentMessage",
+                  "channel": "analysis",
+                  "text": "hidden analysis"
+                }
+              ]
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "context-historical",
+      "tool": "clinx_get_context",
+      "arguments": {
+        "execution_ref": "exec_one",
+        "thread_id": "12345678-1234-1234-1234-123456789abc"
+      },
+      "commands": [
+        {
+          "operation": "get_status",
+          "payload": {
+            "execution_ref": "exec_one"
+          },
+          "result": {
+            "execution_ref": "exec_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "native_turn_id": "turn_old",
+            "status": "SUCCEEDED",
+            "resource_state": "RELEASED",
+            "execution_result": {
+              "outcome": "COMPLETED"
+            }
+          }
+        },
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "aaaaaaaa-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [
+        {
+          "method": "thread",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "result": {
+            "id": "12345678-1234-1234-1234-123456789abc",
+            "cwd": "/workspace/live",
+            "status": {
+              "type": "idle"
+            }
+          }
+        },
+        {
+          "method": "page",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "limit": 20,
+          "cursor": null,
+          "result": {
+            "data": [
+              {
+                "id": "turn_old",
+                "items": [
+                  {
+                    "type": "userMessage",
+                    "content": [
+                      {
+                        "type": "input_text",
+                        "text": "hello"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "agentMessage",
+                    "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                  },
+                  {
+                    "type": "agentMessage",
+                    "channel": "analysis",
+                    "text": "hidden analysis"
+                  }
+                ]
+              }
+            ],
+            "nextCursor": null
+          }
+        },
+        {
+          "method": "page",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "limit": 20,
+          "cursor": null,
+          "result": {
+            "data": [
+              {
+                "id": "turn_old",
+                "items": [
+                  {
+                    "type": "userMessage",
+                    "content": [
+                      {
+                        "type": "input_text",
+                        "text": "hello"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "agentMessage",
+                    "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                  },
+                  {
+                    "type": "agentMessage",
+                    "channel": "analysis",
+                    "text": "hidden analysis"
+                  }
+                ]
+              }
+            ],
+            "nextCursor": null
+          }
+        }
+      ],
+      "result": {
+        "queried_thread_id": "12345678-1234-1234-1234-123456789abc",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "host": "p620",
+        "project": "clinx",
+        "task_ref": "task_one",
+        "execution_ref": "exec_one",
+        "execution_turn_ref": "turn_old",
+        "execution_state": "SUCCEEDED",
+        "execution_result": {
+          "outcome": "COMPLETED"
+        },
+        "lookup_status": "RESOLVED",
+        "read_only": true,
+        "status_source": "RUST_AUTHORITY",
+        "selection_scope": "EXACT_EXECUTION",
+        "task_current_projection": {
+          "thread_id": "aaaaaaaa-1234-1234-1234-123456789abc",
+          "host": "p620",
+          "project": "clinx",
+          "title": "Straße task",
+          "workspace_contract": {
+            "cwd": "/workspace/repo",
+            "branch": "dev",
+            "head": "abc"
+          },
+          "lifecycle": "ACTIVE",
+          "policy_hash": "hash",
+          "execution_policy": {
+            "execution_surface": "CODEX_NATIVE",
+            "operation_scopes": []
+          },
+          "active_execution": null,
+          "task_ref": "task_one",
+          "read_only": true,
+          "authority": "RUST"
+        },
+        "current_thread_id": "aaaaaaaa-1234-1234-1234-123456789abc",
+        "is_current_thread": false,
+        "native_thread": {
+          "id": "12345678-1234-1234-1234-123456789abc",
+          "cwd": "/workspace/live",
+          "status": {
+            "type": "idle"
+          }
+        },
+        "provider_observation": {
+          "state": "idle",
+          "source": "LIVE_THREAD_READ",
+          "writer_claimed": false
+        },
+        "native_status_source": "LIVE_THREAD_READ",
+        "native_display_state": "IDLE",
+        "context_status": "AVAILABLE",
+        "context_source": "LIVE_PROVIDER_TURNS",
+        "context_scope": "EXACT_EXECUTION_TURN",
+        "context_range": "cursor-page",
+        "context_truncated": false,
+        "next_cursor": null,
+        "last_user_intent": "hello",
+        "last_codex_result": "## Result\n\n    code\n\nauthorization: bearer [REDACTED] SECRET [REDACTED]",
+        "provenance": {
+          "queried_thread_id": "12345678-1234-1234-1234-123456789abc",
+          "context_turn_refs": [
+            "turn_old"
+          ],
+          "message_refs": {
+            "user": {
+              "turn_id": "turn_old",
+              "timestamp": null
+            },
+            "assistant": {
+              "turn_id": "turn_old",
+              "timestamp": null
+            }
+          },
+          "execution_attribution": "exec_one"
+        },
+        "context": {
+          "data": [
+            {
+              "id": "turn_old",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "hello"
+                    }
+                  ]
+                },
+                {
+                  "type": "agentMessage",
+                  "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                },
+                {
+                  "type": "agentMessage",
+                  "channel": "analysis",
+                  "text": "hidden analysis"
+                }
+              ]
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "context-cursor",
+      "tool": "clinx_get_context",
+      "arguments": {
+        "execution_ref": "exec_one",
+        "cursor": "cursor"
+      },
+      "commands": [
+        {
+          "operation": "get_status",
+          "payload": {
+            "execution_ref": "exec_one"
+          },
+          "result": {
+            "execution_ref": "exec_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "native_turn_id": "turn_old",
+            "status": "SUCCEEDED",
+            "resource_state": "RELEASED",
+            "execution_result": {
+              "outcome": "COMPLETED"
+            }
+          }
+        },
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [],
+      "error": "EXECUTION_CONTEXT_CURSOR_NOT_SUPPORTED"
+    },
+    {
+      "name": "context-bad-limit",
+      "tool": "clinx_get_context",
+      "arguments": {
+        "execution_ref": "exec_one",
+        "recent_turns": true
+      },
+      "commands": [],
+      "reads": [],
+      "error": "INVALID_CONTEXT_LIMIT"
+    },
+    {
+      "name": "context-wrong-thread",
+      "tool": "clinx_get_context",
+      "arguments": {
+        "execution_ref": "exec_one",
+        "thread_id": "aaaaaaaa-1234-1234-1234-123456789abc"
+      },
+      "commands": [
+        {
+          "operation": "get_status",
+          "payload": {
+            "execution_ref": "exec_one"
+          },
+          "result": {
+            "execution_ref": "exec_one",
+            "task_ref": "task_one",
+            "thread_id": "12345678-1234-1234-1234-123456789abc",
+            "native_turn_id": "turn_old",
+            "status": "SUCCEEDED",
+            "resource_state": "RELEASED",
+            "execution_result": {
+              "outcome": "COMPLETED"
+            }
+          }
+        },
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [],
+      "error": "EXECUTION_TURN_IDENTITY_CONFLICT"
+    },
+    {
+      "name": "uri-host",
+      "tool": "clinx_get_context",
+      "arguments": {
+        "codex_uri": "codex://threads/12345678-1234-1234-1234-123456789abc?hostId=mac-id"
+      },
+      "commands": [
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        },
+        {
+          "operation": "list_tasks",
+          "payload": {
+            "projection": "summary",
+            "after": ""
+          },
+          "result": {
+            "tasks": [
+              {
+                "task_id": "task_one",
+                "thread_id": "12345678-1234-1234-1234-123456789abc",
+                "host": "p620",
+                "project": "clinx",
+                "title": "Straße task",
+                "workspace_contract": {
+                  "cwd": "/workspace/repo",
+                  "branch": "dev",
+                  "head": "abc"
+                },
+                "lifecycle": "ACTIVE",
+                "policy_hash": "hash",
+                "execution_policy": {
+                  "execution_surface": "CODEX_NATIVE",
+                  "operation_scopes": []
+                },
+                "active_execution": null
+              }
+            ],
+            "next_after": null
+          }
+        }
+      ],
+      "reads": [
+        {
+          "method": "thread",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "result": {
+            "id": "12345678-1234-1234-1234-123456789abc",
+            "cwd": "/workspace/live",
+            "status": {
+              "type": "idle"
+            }
+          }
+        },
+        {
+          "method": "page",
+          "thread": "12345678-1234-1234-1234-123456789abc",
+          "limit": 8,
+          "cursor": null,
+          "result": {
+            "data": [
+              {
+                "id": "turn_old",
+                "items": [
+                  {
+                    "type": "userMessage",
+                    "content": [
+                      {
+                        "type": "input_text",
+                        "text": "hello"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "agentMessage",
+                    "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                  },
+                  {
+                    "type": "agentMessage",
+                    "channel": "analysis",
+                    "text": "hidden analysis"
+                  }
+                ]
+              }
+            ],
+            "nextCursor": null
+          }
+        }
+      ],
+      "result": {
+        "queried_thread_id": "12345678-1234-1234-1234-123456789abc",
+        "thread_id": "12345678-1234-1234-1234-123456789abc",
+        "host": "p620",
+        "project": "clinx",
+        "task_ref": "task_one",
+        "execution_ref": null,
+        "execution_turn_ref": null,
+        "execution_state": null,
+        "execution_result": null,
+        "lookup_status": "RESOLVED",
+        "read_only": true,
+        "status_source": "RUST_AUTHORITY",
+        "selection_scope": "QUERIED_THREAD",
+        "task_current_projection": {
+          "thread_id": "12345678-1234-1234-1234-123456789abc",
+          "host": "p620",
+          "project": "clinx",
+          "title": "Straße task",
+          "workspace_contract": {
+            "cwd": "/workspace/repo",
+            "branch": "dev",
+            "head": "abc"
+          },
+          "lifecycle": "ACTIVE",
+          "policy_hash": "hash",
+          "execution_policy": {
+            "execution_surface": "CODEX_NATIVE",
+            "operation_scopes": []
+          },
+          "active_execution": null,
+          "task_ref": "task_one",
+          "read_only": true,
+          "authority": "RUST"
+        },
+        "current_thread_id": "12345678-1234-1234-1234-123456789abc",
+        "is_current_thread": true,
+        "native_thread": {
+          "id": "12345678-1234-1234-1234-123456789abc",
+          "cwd": "/workspace/live",
+          "status": {
+            "type": "idle"
+          }
+        },
+        "provider_observation": {
+          "state": "idle",
+          "source": "LIVE_THREAD_READ",
+          "writer_claimed": false
+        },
+        "native_status_source": "LIVE_THREAD_READ",
+        "native_display_state": "IDLE",
+        "context_status": "AVAILABLE",
+        "context_source": "LIVE_PROVIDER_TURNS",
+        "context_scope": "THREAD_RECENT",
+        "context_range": "cursor-page",
+        "context_truncated": false,
+        "next_cursor": null,
+        "last_user_intent": "hello",
+        "last_codex_result": "## Result\n\n    code\n\nauthorization: bearer [REDACTED] SECRET [REDACTED]",
+        "provenance": {
+          "queried_thread_id": "12345678-1234-1234-1234-123456789abc",
+          "context_turn_refs": [
+            "turn_old"
+          ],
+          "message_refs": {
+            "user": {
+              "turn_id": "turn_old",
+              "timestamp": null
+            },
+            "assistant": {
+              "turn_id": "turn_old",
+              "timestamp": null
+            }
+          },
+          "execution_attribution": "NOT_CLAIMED"
+        },
+        "context": {
+          "data": [
+            {
+              "id": "turn_old",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "hello"
+                    }
+                  ]
+                },
+                {
+                  "type": "agentMessage",
+                  "text": "## Result\n\n    code\n\nauthorization: bearer token SECRET sk-12345678901234567890"
+                },
+                {
+                  "type": "agentMessage",
+                  "channel": "analysis",
+                  "text": "hidden analysis"
+                }
+              ]
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "name": "uri-unknown",
+      "tool": "clinx_get_context",
+      "arguments": {
+        "codex_uri": "codex://threads/12345678-1234-1234-1234-123456789abc?hostId=missing"
+      },
+      "commands": [],
+      "reads": [],
+      "error": "UNKNOWN_CODEX_HOST_ID"
+    }
+  ]
+}

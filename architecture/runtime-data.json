@@ -1,0 +1,3 @@
+[
+  {"path": "clinx/mcp/registry.json", "profiles": ["rust", "monitor"], "purpose": "Canonical MCP public schemas; compiled into Rust, shared by maintenance/observation codec"}
+]

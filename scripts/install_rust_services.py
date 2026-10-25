@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.build.host_runtime_config import compile_config
+from tools.build.mcp_runtime_config import compile_config as compile_mcp_config
 
 ROOT = Path("/var/lib/clinx-rust")
 
@@ -73,6 +74,9 @@ def main():
             or manifest.get('workspace_observer') != 'RUST_PROVIDER_V1'
             or 'clinx-provider' not in manifest['files']):
         raise RuntimeError('QUALIFIED_RUST_PROVIDER_REQUIRED')
+    if (manifest.get('mcp_runtime') != 'RUST_MCP_V1'
+            or 'clinx-mcp' not in manifest['files']):
+        raise RuntimeError('QUALIFIED_RUST_MCP_REQUIRED')
     if release.name != manifest["version"]:
         raise RuntimeError("RELEASE_IDENTITY_MISMATCH")
     import hashlib
@@ -112,6 +116,7 @@ def main():
     # Preserve configured routes and Host command definitions; no legacy DB path.
     (cfgdir / "bridge.toml").write_text("\n".join(toml(config)) + "\n")
     (cfgdir / "host-runtime.json").write_text(json.dumps(compile_config(cfgdir / "bridge.toml"), indent=2) + "\n")
+    (cfgdir / "mcp-runtime.json").write_text(json.dumps(compile_mcp_config(cfgdir / "bridge.toml"), indent=2) + "\n")
     policy = dict(
         projects=[
             dict(alias=k, host="p620", cwd=v["cwd"])
