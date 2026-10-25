@@ -68,7 +68,7 @@ def stage_desktop(args, source):
         replacements['control/' + name] = hashlib.sha256(path.read_bytes()).hexdigest()
     files.update(replacements)
     binaries = {}
-    for name, attribute in [('clinx-runtime', 'runtime_binary'), ('clinx-mcp-relay', 'mcp_relay_binary'), ('clinx-native-transport', 'native_transport_binary')]:
+    for name, attribute in [('clinx-runtime', 'runtime_binary'), ('clinx-mcp-relay', 'mcp_relay_binary'), ('clinx-native-transport', 'native_transport_binary'), ('clinx-provider', 'provider_binary')]:
         binary = getattr(args, attribute, None)
         if binary is None:
             raise SystemExit('TESTED_LAYOUT_BINARY_REQUIRED:' + name)
@@ -94,7 +94,7 @@ def stage_desktop(args, source):
     (release / 'host-worker').chmod(0o4750)
     result = dict(version=version, source_cwd=str(source),
                   head=subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip(),
-                  base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1', host_transport='RUST_HOST_V1',
+                  base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1', host_transport='RUST_HOST_V1', provider_exchange='RUST_PROVIDER_V1', workspace_observer='RUST_PROVIDER_V1',
                   source_replacements=replacements, runtime_source_profile='rust', source_layout='qualified-clinx-v1',
                   retired_files=sorted(set(manifest['files']) - set(files)),
                   files=files, status='STAGED_NOT_SELECTED')
@@ -110,6 +110,7 @@ def main():
     p.add_argument('--desktop-base-release', type=Path, required=True)
     p.add_argument('--runtime-binary', type=Path, required=True, help='Tested authority binary matching the package layout')
     p.add_argument('--native-transport-binary', type=Path, required=True, help='Tested Rust native execution/Provider worker')
+    p.add_argument('--provider-binary', type=Path, required=True, help='Tested Rust Node Provider exchange and workspace observer')
     p.add_argument('--mcp-relay-binary', type=Path, required=True, help='Tested Rust stdio relay binary')
     p.add_argument('--replace-source', action='append', default=[],
                    help='Compatibility assertion that a named source belongs to the packaged profile; all adapters are refreshed')

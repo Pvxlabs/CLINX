@@ -158,10 +158,46 @@ impl Client {
         self.rpc(method, params, Some(events))
     }
     pub fn connect(endpoint: &Path, timeout: Duration) -> Result<Self> {
+        Self::connect_inner(endpoint, timeout, None)
+    }
+    /// Metadata observers and the Node relay authenticate the local Provider
+    /// before initialize or any application request. This is a local identity,
+    /// never a UID asserted by a remote node.
+    pub fn connect_checked(endpoint: &Path, timeout: Duration, uid: u32) -> Result<Self> {
+        Self::connect_inner(endpoint, timeout, Some(uid))
+    }
+    fn connect_inner(
+        endpoint: &Path,
+        timeout: Duration,
+        expected_uid: Option<u32>,
+    ) -> Result<Self> {
         if !endpoint.is_absolute() || timeout.is_zero() {
             return Err("PROVIDER_ENDPOINT_INVALID".into());
         }
         let stream = UnixStream::connect(endpoint).map_err(|_| "PROVIDER_UNAVAILABLE")?;
+        if let Some(uid) = expected_uid {
+            #[cfg(target_os = "linux")]
+            if rustix::net::sockopt::socket_peercred(&stream)
+                .map_err(|_| "PROVIDER_PEER_IDENTITY_CONFLICT")?
+                .uid
+                .as_raw()
+                != uid
+            {
+                return Err("PROVIDER_PEER_IDENTITY_CONFLICT".into());
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                // macOS has no Linux SO_PEERCRED. Preserve the same-user
+                // configured socket boundary; mTLS authenticates remote calls.
+                use std::os::unix::fs::{FileTypeExt, MetadataExt};
+                let info = endpoint
+                    .symlink_metadata()
+                    .map_err(|_| "PROVIDER_UNAVAILABLE")?;
+                if !info.file_type().is_socket() || info.uid() != uid {
+                    return Err("PROVIDER_PEER_IDENTITY_CONFLICT".into());
+                }
+            }
+        }
         let mut client = Self {
             stream,
             timeout,

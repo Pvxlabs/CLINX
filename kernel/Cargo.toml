@@ -22,7 +22,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["float_roundtrip"] }
 sha2 = "0.10.9"
 sha1 = "=0.10.7"
-rustix = { version = "=1.1.5", features = ["net", "process", "time", "event"] }
+rustix = { version = "=1.1.5", features = ["net", "process", "time", "event", "fs"] }
 rusqlite = { version = "=0.37.0", features = ["bundled"] }
 regex = "=1.13.1"
 tempfile = "=3.27.0"

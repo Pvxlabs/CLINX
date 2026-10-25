@@ -3,13 +3,29 @@
 use super::*;
 use std::{path::PathBuf, sync::OnceLock};
 
-static OBSERVER: OnceLock<(PathBuf, BTreeMap<String, String>)> = OnceLock::new();
+static OBSERVER: OnceLock<(PathBuf, BTreeMap<String, String>, Option<u32>)> = OnceLock::new();
 
 pub fn configure(program: PathBuf, endpoint: String) -> Result<()> {
     configure_routes(program, BTreeMap::from([("*".into(), endpoint)]))
 }
 
 pub fn configure_routes(program: PathBuf, endpoints: BTreeMap<String, String>) -> Result<()> {
+    configure_inner(program, endpoints, None)
+}
+
+pub fn configure_qualification(
+    program: PathBuf,
+    endpoints: BTreeMap<String, String>,
+    uid: u32,
+) -> Result<()> {
+    configure_inner(program, endpoints, Some(uid))
+}
+
+fn configure_inner(
+    program: PathBuf,
+    endpoints: BTreeMap<String, String>,
+    uid: Option<u32>,
+) -> Result<()> {
     if !program.is_absolute()
         || endpoints.is_empty()
         || endpoints
@@ -19,12 +35,12 @@ pub fn configure_routes(program: PathBuf, endpoints: BTreeMap<String, String>) -
         return Err("INVALID_WORKSPACE_OBSERVER".into());
     }
     OBSERVER
-        .set((program, endpoints))
+        .set((program, endpoints, uid))
         .map_err(|_| "WORKSPACE_OBSERVER_ALREADY_CONFIGURED".into())
 }
 
 pub(super) fn read(host: &str, mode: &str, cwd: &str, args: &[&str]) -> Result<Option<Value>> {
-    let Some((program, endpoints)) = OBSERVER.get() else {
+    let Some((program, endpoints, uid)) = OBSERVER.get() else {
         // Direct Store tests and qualification retain their own local identity.
         // Production configures the immutable Provider adapter before serving.
         return Ok(None);
@@ -34,12 +50,17 @@ pub(super) fn read(host: &str, mode: &str, cwd: &str, args: &[&str]) -> Result<O
         .or_else(|| endpoints.get("*"))
         .ok_or("WORKSPACE_PROVIDER_ROUTE_REQUIRED")?;
     let request = json!({"host":host,"mode":mode,"cwd":cwd,"args":args});
-    let out = Command::new("/usr/bin/timeout")
-        .args(["4", "/usr/bin/python3", "-I"])
+    let mut command = Command::new("/usr/bin/timeout");
+    command
+        .arg("4")
         .arg(program)
+        .arg("--observe")
         .arg(endpoint)
-        .arg(core::canonical(&request))
-        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .arg(core::canonical(&request));
+    if let Some(uid) = uid {
+        command.args(["--qualification-provider-uid", &uid.to_string()]);
+    }
+    let out = command
         .output()
         .map_err(|_| "WORKSPACE_OBSERVER_UNAVAILABLE")?;
     if !out.status.success() || out.stdout.len() > 65536 {

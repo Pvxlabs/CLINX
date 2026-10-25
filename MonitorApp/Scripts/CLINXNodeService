@@ -2,4 +2,6 @@
 set -eu
 resource_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 export PYTHONDONTWRITEBYTECODE=1
+export CLINX_PROVIDER_BINARY="$resource_dir/../Helpers/clinx-provider"
+test -x "$CLINX_PROVIDER_BINARY"
 exec "$resource_dir/DiscoveryRuntime/bin/python" "$resource_dir/clinx/nodes/node_service_entrypoint.py" "$@"

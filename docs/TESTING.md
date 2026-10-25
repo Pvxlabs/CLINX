@@ -19,15 +19,16 @@ The local `tests/README.md` index maps suites and naming conventions.
 
 ## Current Rust adapter and compatibility checks
 
-The current Host/Dispatcher migration is qualified by
-[Rust Host migration verification](RUST_HOST_RUNTIME_MIGRATION.md): 69 Rust tests
-and 60 tracked fixtures, including real isolated Host subprocesses and exact
-Provider ACK/restart evidence. Build into a task-owned LAB directory, then use:
+The current Provider/workspace migration is qualified by
+[Rust Provider migration verification](RUST_PROVIDER_RUNTIME_MIGRATION.md): 71 Rust tests
+and 73 tracked fixtures, including isolated paired Provider metadata calls, real
+Host subprocesses and exact Provider ACK/restart evidence. Build into a task-owned LAB directory, then use:
 
 ```sh
 cargo build --release --locked --manifest-path kernel/Cargo.toml --target-dir <task-target>
 CLINX_TEST_RUST_BIN_DIR=<task-target>/release \
 CLINX_MCP_RELAY=<task-target>/release/clinx-mcp-relay \
+CLINX_PROVIDER_BINARY=<task-target>/release/clinx-provider \
   <qualification-python> -B -m pytest fixtures -q --tb=short -p no:cacheprovider \
   --basetemp=/data/artifacts/<task>/pytest
 ```

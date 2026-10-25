@@ -1,0 +1,674 @@
+{
+  "baseline_head": "bed0dc2e5240677e74780c1b105b73f6f4cf7446",
+  "status": "PASS_INDEPENDENT_QUALIFICATION_NOT_DEPLOYED",
+  "scope": "Rust Node Provider exact request validation/RPC and Provider-owned workspace observations; existing paired mTLS transport preserved",
+  "python_below_25_percent": "NOT_ACHIEVED",
+  "mcp_server_migration": "NOT_IMPLEMENTED_THIS_BATCH",
+  "deleted_files": [
+    {
+      "path": "clinx/provider/rust_workspace_probe.py",
+      "lines": 137
+    }
+  ],
+  "python_runtime_before": {
+    "modules": 56,
+    "lines": 14321,
+    "bytes": 727514
+  },
+  "python_runtime_after": {
+    "modules": 55,
+    "lines": 14143,
+    "bytes": 717932
+  },
+  "python_total_line_delta": 173,
+  "language_scale": {
+    "before": {
+      "Python": {
+        "files": 102,
+        "lines": 21969,
+        "bytes": 1084599
+      },
+      "Rust": {
+        "files": 31,
+        "lines": 14788,
+        "bytes": 594303
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      }
+    },
+    "after": {
+      "Python": {
+        "files": 102,
+        "lines": 22142,
+        "bytes": 1093824
+      },
+      "Rust": {
+        "files": 34,
+        "lines": 15477,
+        "bytes": 620102
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      }
+    },
+    "python_roles": {
+      "ACTIVE_RUNTIME": {
+        "modules": 55,
+        "lines": 14143,
+        "bytes": 717932
+      },
+      "COMPAT": {
+        "modules": 2,
+        "lines": 510,
+        "bytes": 24940
+      },
+      "DEVOPS": {
+        "modules": 17,
+        "lines": 1969,
+        "bytes": 85778
+      },
+      "QUALIFICATION": {
+        "modules": 28,
+        "lines": 5520,
+        "bytes": 265174
+      }
+    },
+    "github_before": {
+      "Python": 1084599,
+      "Rust": 594303,
+      "Swift": 525634,
+      "Go": 26718,
+      "Shell": 9994,
+      "C": 2345
+    },
+    "estimated_after_language_bytes": {
+      "Python": 1093824,
+      "Rust": 620102,
+      "Swift": 525634,
+      "Go": 26718,
+      "Shell": 11279,
+      "C": 2345
+    },
+    "before_python_percent": 48.34205669210057,
+    "estimated_after_python_percent": 47.97679900276415
+  },
+  "checks": {
+    "rust_release_build": "PASS",
+    "rust_all_tests": {
+      "passed": 71,
+      "failed": 0
+    },
+    "tracked_release_fixtures": {
+      "passed": 73,
+      "failed": 0
+    },
+    "baseline_tracked_fixtures": {
+      "passed": 60,
+      "failed": 0,
+      "package_environment_recheck": "3 passed; initial archive lacked original Git HEAD metadata"
+    },
+    "workspace_old_new_golden": {
+      "cases": 15,
+      "all_equal": true
+    },
+    "local_websocket_observer": "PASS",
+    "paired_mtls_workspace_observer": "PASS",
+    "provider_identity_and_scope_conflicts": "PASS",
+    "existing_lifecycle_ack_loss_restart_cancel_concurrency": "PASS",
+    "packaged_imports": {
+      "rust": 52,
+      "monitor": 50
+    },
+    "companion_binary_resolution_outside_checkout": "PASS",
+    "retired_source_and_dependency_residue": "PASS",
+    "structure": "PASS",
+    "ruff": "PASS",
+    "shell_syntax": "PASS",
+    "old_python_tests": {
+      "before": {
+        "error": 127,
+        "failure": 26,
+        "pass": 52
+      },
+      "after": {
+        "error": 127,
+        "failure": 26,
+        "pass": 52
+      },
+      "changed_outcomes": {},
+      "environment": "CPython 3.14.7; pytest 9.1.1; requirements-dev.txt pins; plugin autoload disabled; clean env; both source roots have original HEAD and tests/pytest.ini",
+      "identity_normalization": "Remove pytest tests. root prefix only",
+      "collection_errors": 109
+    },
+    "old_python_test_sources": {
+      "count": 121,
+      "all_sha256_unchanged": true
+    },
+    "mac_native_build_signing": "NOT_RUN",
+    "real_cross_device_business_execution": "NOT_RUN",
+    "deployment": "NOT_PERFORMED",
+    "relocated_native_request_tests": {
+      "before": {
+        "failure": 2,
+        "pass": 34
+      },
+      "after": {
+        "failure": 2,
+        "pass": 34
+      },
+      "changed_outcomes": {}
+    }
+  },
+  "release_binaries": {
+    "clinx-runtime": {
+      "sha256": "6cac92079e208cdf8c23b1021451cc1a472de0eaf1fa10e32003ac7469cb6442",
+      "bytes": 4354200
+    },
+    "clinx-mcp-relay": {
+      "sha256": "6397887f6d22d2f4923d407f44fc41f42374e97bb9982969b0f3c936b4e98200",
+      "bytes": 525288
+    },
+    "clinx-native-transport": {
+      "sha256": "ffe15d8de70a7234101f6de3f1b25d4a470e75569a39be2b6b3b50bba0c98e40",
+      "bytes": 4174040
+    },
+    "clinx-provider": {
+      "sha256": "beb504ea16126b1c94a6dfe4caf91dcb608d139d2f0aec0ca2af4722d436202e",
+      "bytes": 1281400
+    }
+  },
+  "evidence_directory": "/data/artifacts/clinx-provider-rust-20261025",
+  "source_git_integration": "Git integration and live remote receipt recorded after commit in task git-integration.json",
+  "remaining_runtime": [
+    {
+      "path": "clinx/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Package namespace; no startup side effects"
+    },
+    {
+      "path": "clinx/authority/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+    },
+    {
+      "path": "clinx/authority/rust_authority.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+    },
+    {
+      "path": "clinx/authority/rust_integration.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Python request/read mapping to Rust IPC, including canonical adoption; currently uses same-host Provider and Linux peer credentials"
+    },
+    {
+      "path": "clinx/authority/rust_reads.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+    },
+    {
+      "path": "clinx/authority/rust_worker_identity.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/dispatch_errors.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/execution_policy.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/execution_semantics.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/runtime_config.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/runtime_contracts.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/thread_identity.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/workspace_contract.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/cli.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/discovery.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/identity.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/monitor_helper.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/observer_bootstrap.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/pairing.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/discovery/transport.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+    },
+    {
+      "path": "clinx/host/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/host/derived_git_targets.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/host/production_workflows.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/mcp/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python MCP framing and schemas; target owner Rust"
+    },
+    {
+      "path": "clinx/mcp/consultation_schema.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python MCP framing and schemas; target owner Rust"
+    },
+    {
+      "path": "clinx/mcp/mcp_server.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python MCP framing and schemas; target owner Rust"
+    },
+    {
+      "path": "clinx/mcp/rust_mcp.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Python MCP framing and schemas; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/native_associations.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/native_observation_bridge.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/network_observation.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/observation_mcp.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/observation_source.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/observer_server.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/rust_monitor.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/monitor/rust_observation.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust"
+      ],
+      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/nodes/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+    },
+    {
+      "path": "clinx/nodes/node_centre_entrypoint.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust"
+      ],
+      "reason": "Centre entrypoint; wires reverse requests to Rust when Rust mode is enabled; retains existing pairing and approval boundary"
+    },
+    {
+      "path": "clinx/nodes/node_protocol.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+    },
+    {
+      "path": "clinx/nodes/node_runtime.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Paired mTLS Node/Centre routing, including authenticated reverse Authority requests; no business state commit. Node runtime remains Python pending Rust port"
+    },
+    {
+      "path": "clinx/nodes/node_service_entrypoint.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "monitor"
+      ],
+      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+    },
+    {
+      "path": "clinx/nodes/provider_relay.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Paired mTLS chunk transport and current scope checks remain Python runtime; exact Provider method/input identity and workspace observations execute in Rust clinx-provider. Not a development-only tool."
+    },
+    {
+      "path": "clinx/nodes/rust_node_adapter.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Node protocol mapping to Rust, including canonical identity and exact predecessor adoption; no local business state; cross-device Authority/Provider routing remains unimplemented"
+    },
+    {
+      "path": "clinx/provider/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/app_server.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/desktop_socket.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/liveness.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/native_history.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/provider/native_provider.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Python exact Provider evidence and cancellation reads; supports Authority-selected endpoints; still an ACTIVE_RUNTIME dependency"
+    },
+    {
+      "path": "clinx/provider/native_writer_probe.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+    },
+    {
+      "path": "clinx/transport/__init__.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Current transport and tunnel supervisor implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/transport/tunnel_reliability.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [],
+      "reason": "Current transport and tunnel supervisor implementation; target owner Rust"
+    },
+    {
+      "path": "clinx/contracts/host_config.py",
+      "role": "ACTIVE_RUNTIME",
+      "profiles": [
+        "rust",
+        "monitor"
+      ],
+      "reason": "Host configuration values required by remaining Python TOML readers; no process or state implementation."
+    }
+  ]
+}

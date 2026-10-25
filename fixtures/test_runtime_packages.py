@@ -28,7 +28,7 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     (base/'manifest.json').write_text(json.dumps(dict(files={
         p: hashlib.sha256(data).hexdigest() for p, data in previous.items()})))
     binaries = {}
-    for key in ('runtime', 'mcp_relay', 'native_transport'):
+    for key in ('runtime', 'mcp_relay', 'native_transport', 'provider'):
         path = tmp_path/key
         path.write_bytes(key.encode())
         path.chmod(0o755)
@@ -53,6 +53,9 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     for name, digest in receipt['files'].items():
         assert hashlib.sha256((release/name).read_bytes()).hexdigest() == digest
     assert (release/'clinx-native-transport').read_bytes() == b'native_transport'
+    assert (release/'clinx-provider').read_bytes() == b'provider'
+    assert receipt['provider_exchange'] == receipt['workspace_observer'] == 'RUST_PROVIDER_V1'
+    assert not (release/'control/clinx/provider/rust_workspace_probe.py').exists()
 
 
 def test_incremental_monitor_copy_removes_legacy_and_matches_declared_closure(tmp_path):
@@ -80,7 +83,7 @@ def test_dependency_overlay_cannot_smuggle_retired_host_or_second_clinx_package(
         'host-worker', 'deps/keep.dat', 'deps/httpx/client.py', 'deps/httpx/__init__.py',
         'deps/httpx/_model.py',
         'deps/clinx/host/host_executor.py', 'deps/site-packages/clinx/transport/rust_transport.py',
-        'deps/site-packages/task_registry.py', 'deps/__pycache__/bridge.cpython-313.pyc')}
+        'deps/site-packages/task_registry.py', 'deps/__pycache__/bridge.cpython-313.pyc', 'deps/rust_workspace_probe.py')}
     assert set(stage.inherited_native_files(files, SOURCE_ROOT)) == {
         'host-worker', 'deps/keep.dat', 'deps/httpx/client.py', 'deps/httpx/__init__.py',
         'deps/httpx/_model.py'}

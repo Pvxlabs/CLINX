@@ -83,26 +83,29 @@ fn main() -> Result<(), String> {
                 .map_err(|_| "WORKSPACE_OBSERVER_UNAVAILABLE")?
                 .parent()
                 .ok_or("WORKSPACE_OBSERVER_UNAVAILABLE")?
-                .join("control/clinx/provider/rust_workspace_probe.py")
+                .join("clinx-provider")
         };
         let info = program
             .symlink_metadata()
             .map_err(|_| "WORKSPACE_OBSERVER_UNAVAILABLE")?;
-        if !info.is_file() || (!qualification && (info.uid() != 0 || info.mode() & 0o022 != 0)) {
+        if !info.is_file()
+            || info.mode() & 0o111 == 0
+            || (!qualification && (info.uid() != 0 || info.mode() & 0o022 != 0))
+        {
             return Err("ROOT_CONTROLLED_WORKSPACE_OBSERVER_REQUIRED".into());
         }
         let policy = policy.as_ref().ok_or("BUSINESS_POLICY_REQUIRED")?;
-        if policy.provider_routes.is_empty() {
-            clinx_decision_kernel::business::workspace_observer::configure(
-                program,
+        let routes = if policy.provider_routes.is_empty() {
+            std::collections::BTreeMap::from([(
+                "*".into(),
                 policy
                     .endpoints
                     .first()
                     .ok_or("BUSINESS_POLICY_REQUIRED")?
                     .clone(),
-            )?;
+            )])
         } else {
-            let routes = policy
+            policy
                 .provider_routes
                 .iter()
                 .map(|(host, endpoints)| {
@@ -111,7 +114,13 @@ fn main() -> Result<(), String> {
                     }
                     Ok((host.clone(), endpoints[0].clone()))
                 })
-                .collect::<Result<_, &str>>()?;
+                .collect::<Result<_, &str>>()?
+        };
+        if qualification {
+            clinx_decision_kernel::business::workspace_observer::configure_qualification(
+                program, routes, uid,
+            )?;
+        } else {
             clinx_decision_kernel::business::workspace_observer::configure_routes(program, routes)?;
         }
     }

@@ -2,18 +2,22 @@
 
 现役任务状态由 Rust Authority 提供。Rust release 的 Python 源文件清单位于
 [runtime_sources.py](../tools/build/runtime_sources.py)，不再复制整个仓库。构建器
-`stage_rust_release.py --desktop-base-release <installed-release> --source <checkout> --runtime-binary <tested-authority> --mcp-relay-binary <tested-relay> --native-transport-binary <tested-native-worker> --output <receipt>`
+`stage_rust_release.py --desktop-base-release <installed-release> --source <checkout> --runtime-binary <tested-authority> --mcp-relay-binary <tested-relay> --native-transport-binary <tested-native-worker> --provider-binary <tested-provider-exchange> --output <receipt>`
 使用现有不可变 release 的 native 依赖，刷新完整的 Rust adapter 源码集合并移除旧 Python
-Owner、Registry、实验包和独立 Provider。必须同时提供已验证的 Authority、Rust relay 和 native Transport binary；
+Owner、Registry、实验包和独立 Provider。必须同时提供已验证的 Authority、Rust relay、native Transport 和 Provider exchange binary；
 `--replace-source` 仅保留为清单成员校验兼容参数，不再代表部分源码覆盖。
 该命令只生成候选，不选择或启动服务。独立 Provider 的旧 bootstrap 打包分支已退役。
-候选标记 `host_transport=RUST_HOST_V1`。服务模板直接执行 Rust native/Host worker；
+候选标记 `host_transport=RUST_HOST_V1`、`provider_exchange=RUST_PROVIDER_V1`、
+`workspace_observer=RUST_PROVIDER_V1`。服务模板直接执行 Rust native/Host worker；
 `python -m tools.build.host_runtime_config --config <toml> --output <new-json>`
 仅在构建/安装时编译 Host 配置。Python Dispatcher、Host runner 及投递账本实现已删除；
 `deps/` 继承同样排除重复 CLINX 包和已退役的平铺模块。
 
 macOS Helper 默认经既有配对 mTLS 调用 Rust Authority 和远端 Provider，不再构造本地
 Registry/Dispatcher/M9。Rust 与 Monitor profile 均禁止 COMPAT 源码。
+Mac 打包另编译并签名 `Contents/Helpers/clinx-provider`，须有本机 Rust 1.98+ toolchain；
+固定 workspace 探针和精确 Provider RPC 不再加载 Python 实现。
+本批隔离验证见 [Provider/workspace 迁移报告](../docs/RUST_PROVIDER_RUNTIME_MIGRATION.md)。
 实机闭环及剩余 Python 运行时见[核心退役验证](../docs/RUST_NATIVE_CORE_RETIREMENT.md)。
 旧 SQLite projection/handoff 修复脚本随该业务库契约退役；历史离线维护使用对应 Git 源码。
 

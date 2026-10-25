@@ -10,13 +10,14 @@ import base64
 import hashlib
 import json
 import os
-from pathlib import Path
 import socket
 import socketserver
 import struct
+import subprocess
 import threading
 import time
 import uuid
+from pathlib import Path
 
 from clinx.nodes.node_protocol import NODE_PROTOCOL_VERSION, NodeProtocolError
 
@@ -119,89 +120,47 @@ class NodeProviderRelay:
         return dict(request_id=reference, accepted=True, size=len(reply), digest=row['reply_digest'])
 
     def exchange(self, context, body):
-        from clinx.provider.native_provider import endpoints, existing_client
-        configured = endpoints(self.cfg)
+        # The existing paired channel checks current owner/Centre grants above.
+        # Rust validates exact method/input identity before opening the Provider;
+        # this process transports opaque bytes and never retries an unknown call.
+        configured = []
+        for value in (self.cfg.app_server.local_socket,
+                      getattr(self.cfg.app_server, 'native_socket', None)):
+            if value:
+                path = Path(value).expanduser()
+                if not path.is_absolute():
+                    path = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / path
+                if str(path) not in configured:
+                    configured.append(str(path))
         if len(configured) != 1:
             fail('EXACT_DESKTOP_ENDPOINT_REQUIRED')
-        method, params = body.get('method'), body.get('params')
-        if not isinstance(params, dict):
-            fail('INVALID_PROVIDER_PARAMS')
-        tid = context.get('thread_id')
-        reads = {'thread/read', 'thread/turns/list', 'thread/items/list'}
-        if method in reads | {'thread/resume', 'turn/start', 'turn/interrupt', 'thread/name/set'}:
-            if not tid or params.get('threadId') != tid:
-                fail('PROVIDER_THREAD_IDENTITY_CONFLICT')
-        if method == 'workspace/inspect':
-            if context.get('mode') != 'workspace' or params.get('cwd') != context['cwd']:
-                fail('WORKSPACE_CONTRACT_INVALID')
-            from clinx.provider import rust_workspace_probe
-            import sys
-            with existing_client(configured[0], self.cfg.app_server.request_timeout_seconds) as client:
-                client.read_only_observer = True
-                client.initialize(client_name='clinx-paired-workspace', client_title='Read-only workspace metadata', client_version='1')
-                command = dict(command=[sys.executable, '-I', str(Path(rust_workspace_probe.__file__).resolve()),
-                                       '--inspect', json.dumps(params)], cwd='/', timeoutMs=2500,
-                    outputBytesCap=65536, sandboxPolicy=dict(type='dangerFullAccess'))
-                client._workspace_metadata_request = command
-                result = client._request('command/exec', command)
-            if result.get('exitCode') != 0 or len(result.get('stdout', '')) > 65536:
-                fail('WORKSPACE_OBSERVER_UNAVAILABLE')
-            data = json.loads(result['stdout'])
-            if data.get('error') or data.get('observer_uid') != os.getuid() or os.getuid() == 0:
-                fail(data.get('error', 'WORKSPACE_OBSERVER_IDENTITY_CONFLICT'))
-            return dict(data, observer_source='CODEX_PROVIDER_COMMAND_EXEC')
-        if method in reads:
-            if context.get('turn_id') and params.get('turnId') not in (None, context['turn_id']):
-                fail('PROVIDER_TURN_IDENTITY_CONFLICT')
-        elif method == 'thread/start':
-            if context.get('mode') != 'dispatch' or tid or params.get('cwd') != context['cwd']:
-                fail('PROVIDER_CREATE_DENIED')
-        elif method == 'thread/resume':
-            if context.get('mode') != 'dispatch' or params != dict(threadId=tid, excludeTurns=True):
-                fail('PROVIDER_RESUME_DENIED')
-        elif method == 'turn/start':
-            execution = context.get('execution_ref')
-            client_id = str(uuid.uuid5(uuid.NAMESPACE_URL, 'clinx-native-input:' + tid + ':' + str(execution)))
-            expected = dict(threadId=tid, input=[dict(type='text', text=context.get('prompt'))],
-                cwd=context['cwd'], clientUserMessageId=client_id,
-                sandboxPolicy=dict(type='dangerFullAccess'), approvalPolicy='never')
-            for key in ('model', 'effort'):
-                if context.get(key) is not None:
-                    expected[key] = context[key]
-            if context.get('mode') != 'dispatch' or not execution or params != expected:
-                fail('PROVIDER_INPUT_IDENTITY_CONFLICT')
-        elif method == 'turn/interrupt':
-            if context.get('mode') != 'cancel' or params != dict(threadId=tid, turnId=context.get('turn_id')):
-                fail('PROVIDER_CANCEL_DENIED')
-        elif method == 'thread/name/set':
-            if context.get('mode') != 'metadata' or params != dict(threadId=tid, name=context.get('title')):
-                fail('PROVIDER_METADATA_DENIED')
-        else:
-            fail('PROVIDER_METHOD_DENIED')
-        # Use the protocol client only. This connection owns no dynamic tool,
-        # approval or execution lifecycle; the Rust Authority does that work.
-        with existing_client(configured[0], self.cfg.app_server.request_timeout_seconds) as client:
-            client.read_only_observer = True
-            client.initialize(client_name='clinx-paired-provider', client_title='CLINX paired Provider protocol', client_version='1')
-            # _request's shared-writer guards are intentionally not bypassed.
-            # Reads use the existing observer; writes retain the native writer
-            # admission attributes used by the qualified local transport.
-            if method not in reads:
-                client.read_only_observer = False
-                client.shared_desktop_daemon = True
-                client.shared_native_writer = True
-                client.native_forwarding_thread_id = tid
-                client.native_creation_cwd = context['cwd']
-                client.rust_authority_request_id = context.get('execution_ref')
-                client._workspace_metadata_request = None
-            from clinx.provider.app_server import AppServerRemoteError
-            try:
-                return client._request(method, params)
-            except AppServerRemoteError as exc:
-                if (method == 'thread/read' and exc.error.get('code') == -32600
-                        and exc.error.get('message') == 'thread not loaded: ' + str(tid)):
-                    fail('NATIVE_THREAD_NOT_LOADED')
-                raise
+        root = Path(__file__).resolve().parents[2]
+        explicit = os.environ.get('CLINX_PROVIDER_BINARY')
+        candidates = ([Path(explicit)] if explicit else
+                      [root / 'clinx-provider', root.parent / 'clinx-provider',
+                       root.parent / 'Helpers/clinx-provider'])
+        binary = next((p for p in candidates if p.is_absolute() and p.is_file()
+                       and os.access(p, os.X_OK)), None)
+        if binary is None:
+            fail('RUST_PROVIDER_BINARY_REQUIRED')
+        timeout = self.cfg.app_server.request_timeout_seconds if hasattr(
+            self.cfg.app_server, 'request_timeout_seconds') else 3
+        try:
+            result = subprocess.run([str(binary), '--exchange', configured[0], str(timeout)],
+                input=encoded(dict(context=context, body=body)), stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, timeout=3 * timeout + 5, check=False)
+            if result.returncode or len(result.stdout) > MAX_RESPONSE + 4096:
+                fail('PROVIDER_DELIVERY_UNKNOWN')
+            reply = json.loads(result.stdout)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            fail('PROVIDER_DELIVERY_UNKNOWN')
+        if not isinstance(reply, dict) or ('error' in reply) == ('result' in reply):
+            fail('PROVIDER_DELIVERY_UNKNOWN')
+        if 'error' in reply:
+            fail(reply['error'])
+        if not isinstance(reply['result'], dict):
+            fail('PROVIDER_DELIVERY_UNKNOWN')
+        return reply['result']
 
 
 def paired_exchange(tls, registry, approvals, node_id, context, body):

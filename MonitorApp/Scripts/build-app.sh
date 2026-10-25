@@ -10,7 +10,7 @@ fi
 swift build -c release
 binary_dir="$(swift build -c release --show-bin-path)"
 app_dir="$PWD/.build/CLINX.app"
-mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
+mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources" "$app_dir/Contents/Helpers"
 cp "$binary_dir/CLINXMonitor" "$app_dir/Contents/MacOS/CLINXMonitor"
 cp Info.plist "$app_dir/Contents/Info.plist"
 cp ThirdPartyNotices.txt "$app_dir/Contents/Resources/ThirdPartyNotices.txt"
@@ -18,6 +18,21 @@ cp ThirdPartyNotices.txt "$app_dir/Contents/Resources/ThirdPartyNotices.txt"
 # Copy the declared Helper protocol closure. Execution uses the paired Rust
 # authority; the shared inventory rejects legacy business cores in both bundles.
 python3 -B ../tools/build/runtime_sources.py --monitor-resources "$app_dir/Contents/Resources"
+# Provider protocol and fixed metadata commands run in Rust on this Mac.
+# Build for the same native architecture as the Swift application; never copy
+# a Linux release executable or inherit a stale helper from a previous bundle.
+provider_target=$(rustc -vV | sed -n 's/^host: //p')
+case "$provider_target" in
+    aarch64-apple-darwin|x86_64-apple-darwin) ;;
+    *) echo 'A native macOS Rust toolchain is required to build the Provider helper.' >&2; exit 1 ;;
+esac
+cargo build --release --locked --target "$provider_target" --manifest-path ../kernel/Cargo.toml --bin clinx-provider
+provider_binary_dir=$(cargo metadata --no-deps --format-version 1 --manifest-path ../kernel/Cargo.toml | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+rm -f "$app_dir/Contents/Resources/clinx-provider"
+cp "$provider_binary_dir/$provider_target/release/clinx-provider" "$app_dir/Contents/Helpers/clinx-provider"
+chmod 755 "$app_dir/Contents/Helpers/clinx-provider"
+codesign --force --sign "$signing_identity" --timestamp=none "$app_dir/Contents/Helpers/clinx-provider"
+codesign --verify --strict "$app_dir/Contents/Helpers/clinx-provider"
 cp Scripts/CLINXNodeService "$app_dir/Contents/Resources/CLINXNodeService"
 chmod 755 "$app_dir/Contents/Resources/CLINXNodeService"
 

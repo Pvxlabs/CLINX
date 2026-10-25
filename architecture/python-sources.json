@@ -564,7 +564,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Existing paired mTLS Provider protocol exchange, bounded chunk readback and Centre-local Transport UID gateway; no task state DB or lifecycle decisions"
+      "reason": "Paired mTLS chunk transport and current scope checks remain Python runtime; exact Provider method/input identity and workspace observations execute in Rust clinx-provider. Not a development-only tool."
     },
     {
       "path": "clinx/nodes/rust_node_adapter.py",
@@ -639,12 +639,9 @@
     },
     {
       "path": "clinx/provider/rust_workspace_probe.py",
-      "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "monitor",
-        "rust"
-      ],
-      "reason": "Fixed read-only workspace command executed by the selected local or paired remote Provider; required in the Mac Helper closure"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Retired: Rust workspace_probe and clinx-provider inspect/observe execute fixed metadata reads through the authenticated Provider; no Python metadata implementation remains."
     },
     {
       "path": "clinx/transport/__init__.py",
@@ -964,6 +961,12 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Real Rust Authority/Host worker processes and isolated Provider protocol fault qualification."
+    },
+    {
+      "path": "fixtures/test_rust_provider_runtime.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Rust Provider exchange, fixed read-only metadata and Authority observer regression with disposable IPC and Git fixtures; no real tasks."
     }
   ]
 }

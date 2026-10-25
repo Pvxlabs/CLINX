@@ -1627,3 +1627,6 @@ pub mod provider;
 pub mod host_executor;
 pub mod host_transport;
 pub mod remote_provider;
+
+pub mod workspace_probe;
+pub mod node_provider;

@@ -23,8 +23,9 @@ fn native_observation_drives_all_workspace_gates_without_local_filesystem_fallba
     fs::write(
         &program,
         format!(
-            r#"import json,sys,pathlib
-request=json.loads(sys.argv[2])
+            r#"#!/usr/bin/python3
+import json,sys,pathlib
+request=json.loads(sys.argv[3])
 value=json.loads(pathlib.Path({:?}).read_text())
 if request['cwd']=='/provider-only/missing':value={{'error':'WORKSPACE_CWD_UNREADABLE'}}
 if request['cwd']=='/provider-only/different':value['repository_identity']='git-common:9:99'
@@ -34,6 +35,7 @@ print(json.dumps(value))
         ),
     )
     .unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
     workspace_observer::configure(program.clone(), "/fixture/provider.sock".into()).unwrap();
     let state = root.join("state");
     fs::create_dir(&state).unwrap();

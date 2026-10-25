@@ -69,6 +69,10 @@ def main():
         raise RuntimeError('QUALIFIED_PACKAGE_LAYOUT_REQUIRED')
     if manifest.get('host_transport') != 'RUST_HOST_V1':
         raise RuntimeError('QUALIFIED_RUST_HOST_WORKER_REQUIRED')
+    if (manifest.get('provider_exchange') != 'RUST_PROVIDER_V1'
+            or manifest.get('workspace_observer') != 'RUST_PROVIDER_V1'
+            or 'clinx-provider' not in manifest['files']):
+        raise RuntimeError('QUALIFIED_RUST_PROVIDER_REQUIRED')
     if release.name != manifest["version"]:
         raise RuntimeError("RELEASE_IDENTITY_MISMATCH")
     import hashlib

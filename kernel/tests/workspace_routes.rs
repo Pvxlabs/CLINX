@@ -13,8 +13,9 @@ fn workspace_and_provider_evidence_follow_explicit_host_routes() {
     let program = root.join("probe.py");
     fs::write(
         &program,
-        r#"import json,sys
-r=json.loads(sys.argv[2]);endpoint=sys.argv[1]
+        r#"#!/usr/bin/python3
+import json,sys
+r=json.loads(sys.argv[3]);endpoint=sys.argv[2]
 assert endpoint=='/fixture/'+r['host']+'.sock'
 print(json.dumps(dict(observer_source='CODEX_PROVIDER_COMMAND_EXEC',observer_uid=501,
  repository_identity='git-common:9:'+('42' if r['host']=='air' else '99'),cwd=r['cwd'],
@@ -23,6 +24,7 @@ print(json.dumps(dict(observer_source='CODEX_PROVIDER_COMMAND_EXEC',observer_uid
 "#,
     )
     .unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
     workspace_observer::configure_routes(
         program,
         BTreeMap::from([

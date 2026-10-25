@@ -31,6 +31,9 @@ def main():
     manifest = json.loads((release / "manifest.json").read_text())
     if manifest.get('source_layout') != 'qualified-clinx-v1':
         raise RuntimeError('QUALIFIED_PACKAGE_LAYOUT_REQUIRED')
+    if (manifest.get('provider_exchange') != 'RUST_PROVIDER_V1'
+            or 'clinx-provider' not in manifest['files']):
+        raise RuntimeError('QUALIFIED_RUST_PROVIDER_REQUIRED')
     for name, digest in manifest["files"].items():
         path = release / name
         if (
