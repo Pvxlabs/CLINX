@@ -1,5 +1,10 @@
 # CLINX Local Discovery v1：生产 PAKE 配对收口报告
 
+当前源码入口：`clinx-device`、`clinx-node --discovery-gui` 与 `clinx-node-daemon`。
+OPAQUE 已直接链接 Rust；PyO3、maturin、wheel 和 Python facade 均已退役。
+当前构建/测试请使用 [测试指南](TESTING.md) 和 [源码退役报告](RUST_PYTHON_RETIREMENT.md)。
+以下 2026-10-02 的依赖、安装命令及测试数字是历史证据，不能作为当前安装步骤。
+
 日期：2026-10-02。范围：隔离开发实现、源码审查、P620 同机验证和安装路径。未部署公共服务。
 
 后续 Monitor GUI 接入见 [LAN Pairing SPEC](monitor/LAN_PAIRING_SPEC.md)：增加单独的

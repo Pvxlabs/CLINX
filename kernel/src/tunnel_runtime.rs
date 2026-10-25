@@ -1,11 +1,10 @@
-//! Independent Tunnel lifecycle. The callback transport exists only for legacy
-//! qualification hooks; both backends execute this same Rust state machine.
+//! Independent native Tunnel lifecycle and bounded recovery.
 use crate::tunnel_supervisor::{invoke, process_start};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{BufRead, Read, Write},
+    io::{Read, Write},
     net::{Ipv4Addr, SocketAddr, TcpStream},
     os::unix::{
         fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
@@ -662,65 +661,6 @@ impl Io for Native {
         }
     }
 }
-struct Callback<R: BufRead, W: Write> {
-    input: R,
-    output: W,
-}
-impl<R: BufRead, W: Write> Io for Callback<R, W> {
-    fn call(&mut self, op: &str, a: Value, s: &Value) -> Result<Value> {
-        writeln!(
-            self.output,
-            "{}",
-            json!({"kind":"callback","operation":op,"arguments":a,"snapshot":s})
-        )
-        .and_then(|_| self.output.flush())
-        .map_err(|_| "CALLBACK_UNAVAILABLE")?;
-        let mut line = String::new();
-        if self
-            .input
-            .read_line(&mut line)
-            .map_err(|_| "CALLBACK_UNAVAILABLE")?
-            == 0
-        {
-            return Err("CALLBACK_UNAVAILABLE".into());
-        }
-        let r: Value = serde_json::from_str(&line).map_err(|_| "CALLBACK_INVALID")?;
-        if let Some(error) = r["error"].as_str() {
-            return Err(error.into());
-        }
-        Ok(r["result"].clone())
-    }
-}
-fn serve_compat() -> Result<()> {
-    let input = std::io::stdin();
-    let output = std::io::stdout();
-    let mut input = input.lock();
-    let mut output = output.lock();
-    let mut line = String::new();
-    input
-        .read_line(&mut line)
-        .map_err(|_| "CALLBACK_UNAVAILABLE")?;
-    let config: Value = serde_json::from_str(&line).map_err(|_| "CALLBACK_INVALID")?;
-    let op = config["operation"].as_str().unwrap_or("").to_string();
-    let mut engine = Engine::new(
-        Callback {
-            input: &mut input,
-            output: &mut output,
-        },
-        config,
-    )?;
-    let result = match op.as_str() {
-        "run" => engine.run().map(|v| json!(v)),
-        "launch" => engine.launch().map(|v| json!(v)),
-        "terminate" => engine.terminate(false).map(|_| Value::Null),
-        _ => Err("TUNNEL_OPERATION_UNKNOWN".into()),
-    };
-    let result = match result {
-        Ok(v) => json!({"kind":"result","result":v,"snapshot":engine.snapshot()}),
-        Err(e) => json!({"kind":"result","error":e,"snapshot":engine.snapshot()}),
-    };
-    writeln!(output, "{result}").map_err(|_| "CALLBACK_UNAVAILABLE".into())
-}
 pub fn main_cli(args: Vec<String>) -> i32 {
     if args.first().is_some_and(|a| a == "--owned-child") {
         if args.len() < 2
@@ -753,12 +693,6 @@ pub fn main_cli(args: Vec<String>) -> i32 {
             }
         );
         return 0;
-    }
-    if args.first().is_some_and(|a| a == "--compat") {
-        return match serve_compat() {
-            Ok(()) => 0,
-            Err(_) => 78,
-        };
     }
     match cli(args) {
         Ok(n) => n,
@@ -872,3 +806,7 @@ mod tests {
         assert!(decode_chunks(b"100001\r\n").is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "tunnel_retirement_tests.rs"]
+mod retirement_tests;

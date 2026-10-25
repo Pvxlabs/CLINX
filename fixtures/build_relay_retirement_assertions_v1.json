@@ -1,0 +1,3211 @@
+{
+  "schema": "CLINX_BUILD_RELAY_PYTHON_RETIREMENT_V1",
+  "baseline": "52f6ce9",
+  "status": "ISOLATED_NATIVE_QUALIFICATION_PASS_NOT_DEPLOYED",
+  "files": [
+    {
+      "path": "fixtures/test_runtime_packages.py",
+      "sha256": "1132d689c57f2d27077b0456c9359e999ee5f41e9fb29378d45eb50c2d34bba9",
+      "original_ignored_tests_unchanged": false,
+      "cases": [
+        {
+          "case": "test_current_monitor_builder_uses_native_tool_without_python",
+          "line": 15,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/monitor_build.rs",
+              "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+              "line": 63,
+              "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+            },
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "current_monitor_script_uses_native_tool_without_python",
+              "line": 1060,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_current_monitor_builder_uses_native_tool_without_python",
+              "line": 25,
+              "kind": "assert",
+              "source": "assert json.loads(result.stdout)['contract'] == 'RUST_MONITOR_BUILD_V1'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "current_monitor_script_uses_native_tool_without_python",
+                  "line": 1060,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_current_monitor_builder_uses_native_tool_without_python",
+              "line": 26,
+              "kind": "assert",
+              "source": "assert json.loads((resources/'python-sources.json').read_text())['files'] == {}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "current_monitor_script_uses_native_tool_without_python",
+                  "line": 1060,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_current_monitor_builder_uses_native_tool_without_python",
+              "line": 27,
+              "kind": "assert",
+              "source": "assert not (resources/'bridge.py').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "current_monitor_script_uses_native_tool_without_python",
+                  "line": 1060,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_current_monitor_builder_uses_native_tool_without_python",
+              "line": 28,
+              "kind": "assert",
+              "source": "assert (resources/'AppIcon.icns').read_bytes() == b'swift asset'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "current_monitor_script_uses_native_tool_without_python",
+                  "line": 1060,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_current_monitor_builder_uses_native_tool_without_python",
+              "line": 30,
+              "kind": "assert",
+              "source": "assert 'python3' not in script and 'runtime_sources.py' not in script",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "current_monitor_script_uses_native_tool_without_python",
+                  "line": 1060,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_current_monitor_builder_uses_native_tool_without_python",
+              "line": 31,
+              "kind": "assert",
+              "source": "assert 'clinx-build\" native-monitor-resources' in script",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "current_monitor_script_uses_native_tool_without_python",
+                  "line": 1060,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_current_monitor_builder_uses_native_tool_without_python",
+              "line": 32,
+              "kind": "assert",
+              "source": "assert 'for helper in clinx-provider clinx-node clinx-node-daemon;' in script",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "current_monitor_script_uses_native_tool_without_python",
+                  "line": 1060,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+          "line": 35,
+          "parameters": [],
+          "loops": [
+            "previous.items()",
+            "('runtime', 'mcp_relay', 'native_transport', 'provider', 'mcp', 'node', 'node_daemon', 'observer', 'device')",
+            "receipt['files'].items()",
+            "(\n            ('provider', '--desktop-socket-contract', 'RUST_DESKTOP_SOCKET_V1'),\n            ('mcp', '--observation-runtime-contract', 'RUST_OBSERVATION_DIRECTORY_V1'),\n            ('observer', '--observer-contract', 'RUST_OBSERVER_V1'),\n            ('device', '--device-cli-contract', 'RUST_DEVICE_CLI_V1'),\n        )"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+              "line": 130,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            },
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "successful_empty_compiler_marker_cannot_stage",
+              "line": 213,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 108,
+              "kind": "assert",
+              "source": "assert receipt['desktop_socket_maintenance'] == 'RUST_DESKTOP_SOCKET_V1'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 109,
+              "kind": "assert",
+              "source": "assert receipt['python_sources'] == receipt['python_dependencies'] == []",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 110,
+              "kind": "assert",
+              "source": "assert not list(release.rglob('*.py')) and not (release/'deps').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 111,
+              "kind": "assert",
+              "source": "assert not (release/'clinx-build').exists() and not (release/'clinx-maintenance').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 112,
+              "kind": "assert",
+              "source": "assert not (release/'control/clinx/provider/desktop_socket.py').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 113,
+              "kind": "assert",
+              "source": "assert not (release/'control/clinx/monitor').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 114,
+              "kind": "assert",
+              "source": "assert not (release/'control/clinx/discovery').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 115,
+              "kind": "assert",
+              "source": "assert (release/'clinx-observer').read_bytes() == b'observer'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 116,
+              "kind": "assert",
+              "source": "assert (release/'clinx-device').read_bytes() == b'device'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 117,
+              "kind": "assert",
+              "source": "assert receipt['node_api'] == 'RUST_NODE_API_V1'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 118,
+              "kind": "assert",
+              "source": "assert receipt['config_compiler'] == 'RUST_CONFIG_COMPILER_V1'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 119,
+              "kind": "assert",
+              "source": "assert compiler_probes == [[str(binaries['node_binary']), '--config-compile-contract']]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 120,
+              "kind": "assert",
+              "source": "assert (release/'clinx-node').read_bytes() == b'node'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 121,
+              "kind": "assert",
+              "source": "assert receipt['mcp_runtime'] == 'RUST_MCP_V1'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 122,
+              "kind": "assert",
+              "source": "assert (release/'clinx-mcp').read_bytes() == b'mcp'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 123,
+              "kind": "assert",
+              "source": "assert (release/'control/clinx/mcp/registry.json').is_file()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 124,
+              "kind": "assert",
+              "source": "assert receipt['native_transport'] == 'RUST_NATIVE_V1'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 125,
+              "kind": "assert",
+              "source": "assert set(receipt['retired_files']) == set(previous)-{'host-worker'}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 126,
+              "kind": "assert",
+              "source": "assert not (release/'clinx').exists() and not (release/'bridge.py').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 127,
+              "kind": "assert",
+              "source": "assert not (release/'control/clinx/compat').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 129,
+              "kind": "assert",
+              "source": "assert hashlib.sha256((release/name).read_bytes()).hexdigest() == digest",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 130,
+              "kind": "assert",
+              "source": "assert (release/'clinx-native-transport').read_bytes() == b'native_transport'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 131,
+              "kind": "assert",
+              "source": "assert (release/'clinx-provider').read_bytes() == b'provider'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 132,
+              "kind": "assert",
+              "source": "assert receipt['provider_exchange'] == receipt['workspace_observer'] == 'RUST_PROVIDER_V1'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 133,
+              "kind": "assert",
+              "source": "assert not (release/'control/clinx/provider/rust_workspace_probe.py').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 138,
+              "kind": "raises",
+              "source": "pytest.raises(SystemExit, match='QUALIFIED_RUST_CONFIG_COMPILER_REQUIRED')",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_release_cannot_inherit_retired_python_from_any_old_root",
+              "line": 140,
+              "kind": "assert",
+              "source": "assert not args.output.exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "successful_empty_compiler_marker_cannot_stage",
+                  "line": 213,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_incremental_monitor_copy_removes_legacy_and_matches_declared_closure",
+          "line": 143,
+          "parameters": [],
+          "loops": [
+            "('bridge.py', 'clinx/compat/task_registry.py', 'domain/event.py', 'Discovery/bridge.py')"
+          ],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Python monitor copy closure retaining DiscoveryRuntime interpreter retired. Native App removes that interpreter; absence of obsolete cores preserved separately.",
+          "targets": [
+            {
+              "path": "kernel/tests/monitor_build.rs",
+              "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+              "line": 63,
+              "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_incremental_monitor_copy_removes_legacy_and_matches_declared_closure",
+              "line": 154,
+              "kind": "assert",
+              "source": "assert set(json.loads((resources/'python-sources.json').read_text())['files']) == expected",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Python monitor copy closure retaining DiscoveryRuntime interpreter retired. Native App removes that interpreter; absence of obsolete cores preserved separately.",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_incremental_monitor_copy_removes_legacy_and_matches_declared_closure",
+              "line": 155,
+              "kind": "assert",
+              "source": "assert not (resources/'clinx/compat').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "reason": "Python monitor copy closure retaining DiscoveryRuntime interpreter retired. Native App removes that interpreter; absence of obsolete cores preserved separately.",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_incremental_monitor_copy_removes_legacy_and_matches_declared_closure",
+              "line": 156,
+              "kind": "assert",
+              "source": "assert not (resources/'bridge.py').exists() and not (resources/'Discovery').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "reason": "Python monitor copy closure retaining DiscoveryRuntime interpreter retired. Native App removes that interpreter; absence of obsolete cores preserved separately.",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_incremental_monitor_copy_removes_legacy_and_matches_declared_closure",
+              "line": 157,
+              "kind": "assert",
+              "source": "assert runtime.read_text() == 'interpreter'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Python monitor copy closure retaining DiscoveryRuntime interpreter retired. Native App removes that interpreter; absence of obsolete cores preserved separately.",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63,
+                  "sha256": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_dependency_overlay_cannot_smuggle_retired_host_or_second_clinx_package",
+          "line": 160,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+              "line": 130,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "fixtures/test_runtime_packages.py",
+              "case": "test_dependency_overlay_cannot_smuggle_retired_host_or_second_clinx_package",
+              "line": 172,
+              "kind": "assert",
+              "source": "assert set(stage.inherited_native_files(files, SOURCE_ROOT)) == {'host-worker'}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "stage_exact_native_closure_drops_all_old_python_and_dev_tools",
+                  "line": 130,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "support_assertions": []
+    },
+    {
+      "path": "tests/test_tunnel_release.py",
+      "sha256": "f8d4bd743374e5796229896d6ead0064cdf699a1ee257ea10354d1c2208fedd4",
+      "original_ignored_tests_unchanged": true,
+      "cases": [
+        {
+          "case": "test_roundtrip_restores_exact_contents_modes_and_absence",
+          "line": 63,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "config_cas_roundtrip_exact_contents_modes_and_absence",
+              "line": 331,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_roundtrip_restores_exact_contents_modes_and_absence",
+              "line": 67,
+              "kind": "assert",
+              "source": "assert tree(root) != before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_roundtrip_exact_contents_modes_and_absence",
+                  "line": 331,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_roundtrip_restores_exact_contents_modes_and_absence",
+              "line": 69,
+              "kind": "assert",
+              "source": "assert tree(root) == before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_roundtrip_exact_contents_modes_and_absence",
+                  "line": 331,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_stale_install_or_rollback_refuses_before_any_write",
+          "line": 74,
+          "parameters": [
+            "pytest.mark.parametrize(\"direction\", [\"forward\", \"rollback\"])",
+            "pytest.mark.parametrize(\"drift\", [\"content\", \"mode\", \"guard\", \"new_dropin\", \"missing_file\"])"
+          ],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "config_cas_all_ten_direction_drift_cases_refuse_before_any_write",
+              "line": 340,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_stale_install_or_rollback_refuses_before_any_write",
+              "line": 93,
+              "kind": "raises",
+              "source": "pytest.raises(CASRefused)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_all_ten_direction_drift_cases_refuse_before_any_write",
+                  "line": 340,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_stale_install_or_rollback_refuses_before_any_write",
+              "line": 95,
+              "kind": "assert",
+              "source": "assert tree(root) == before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_all_ten_direction_drift_cases_refuse_before_any_write",
+                  "line": 340,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_live_root_is_always_refused_by_write_cli",
+          "line": 98,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+              "line": 379,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_live_root_is_always_refused_by_write_cli",
+              "line": 100,
+              "kind": "raises",
+              "source": "pytest.raises(CASRefused, match=\"OFFLINE_FIXTURE\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+                  "line": 379,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_symlink_escape_refused_without_changing_target",
+          "line": 104,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+              "line": 379,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_symlink_escape_refused_without_changing_target",
+              "line": 111,
+              "kind": "raises",
+              "source": "pytest.raises(CASRefused, match=\"SYMLINK\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+                  "line": 379,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_symlink_escape_refused_without_changing_target",
+              "line": 113,
+              "kind": "assert",
+              "source": "assert victim.read_text() == \"preserve\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+                  "line": 379,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_corrupt_rollback_blob_refused_before_any_write",
+          "line": 116,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+              "line": 379,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_corrupt_rollback_blob_refused_before_any_write",
+              "line": 122,
+              "kind": "raises",
+              "source": "pytest.raises(CASRefused, match=\"BLOB_HASH\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+                  "line": 379,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_corrupt_rollback_blob_refused_before_any_write",
+              "line": 124,
+              "kind": "assert",
+              "source": "assert tree(root) == before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+                  "line": 379,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_database_or_state_paths_cannot_be_added",
+          "line": 127,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+              "line": 379,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_database_or_state_paths_cannot_be_added",
+              "line": 131,
+              "kind": "raises",
+              "source": "pytest.raises(CASRefused, match=\"CONFIG_ONLY_SCOPE\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+                  "line": 379,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_partial_switch_fails_both_directions_for_manual_review",
+          "line": 135,
+          "parameters": [],
+          "loops": [
+            "(\"forward\", \"rollback\")"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+              "line": 379,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_partial_switch_fails_both_directions_for_manual_review",
+              "line": 145,
+              "kind": "raises",
+              "source": "pytest.raises(CASRefused)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+                  "line": 379,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_partial_switch_fails_both_directions_for_manual_review",
+              "line": 147,
+              "kind": "assert",
+              "source": "assert tree(root) == before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "config_cas_live_root_symlink_corrupt_blob_broad_scope_and_partial_switch",
+                  "line": 379,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_paired_templates_and_candidate_budget_match_runtime_defaults",
+          "line": 150,
+          "parameters": [],
+          "loops": [],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Historical template requires clinx-provider.service dependency and Python status entrypoint already absent at baseline 52f6ce9. Not executed as PASS or modified. Remaining runtime policy obligations delegated to parent tunnel qualification.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_paired_templates_and_candidate_budget_match_runtime_defaults",
+              "line": 157,
+              "kind": "assert",
+              "source": "assert policy[\"policy\"] == asdict(Policy())",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Historical template requires clinx-provider.service dependency and Python status entrypoint already absent at baseline 52f6ce9. Not executed as PASS or modified. Remaining runtime policy obligations delegated to parent tunnel qualification.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_paired_templates_and_candidate_budget_match_runtime_defaults",
+              "line": 158,
+              "kind": "assert",
+              "source": "assert policy[\"budget\"][\"max_generations_per_incident\"] == Policy().max_restarts + 1",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Historical template requires clinx-provider.service dependency and Python status entrypoint already absent at baseline 52f6ce9. Not executed as PASS or modified. Remaining runtime policy obligations delegated to parent tunnel qualification.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_paired_templates_and_candidate_budget_match_runtime_defaults",
+              "line": 161,
+              "kind": "assert",
+              "source": "assert \"PartOf=\" not in tunnel",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Historical template requires clinx-provider.service dependency and Python status entrypoint already absent at baseline 52f6ce9. Not executed as PASS or modified. Remaining runtime policy obligations delegated to parent tunnel qualification.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_paired_templates_and_candidate_budget_match_runtime_defaults",
+              "line": 162,
+              "kind": "assert",
+              "source": "assert \"clinx-provider.service\" in tunnel",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Historical template requires clinx-provider.service dependency and Python status entrypoint already absent at baseline 52f6ce9. Not executed as PASS or modified. Remaining runtime policy obligations delegated to parent tunnel qualification.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_paired_templates_and_candidate_budget_match_runtime_defaults",
+              "line": 163,
+              "kind": "assert",
+              "source": "assert \"tunnel_reliability.py status --state-dir\" in health",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Historical template requires clinx-provider.service dependency and Python status entrypoint already absent at baseline 52f6ce9. Not executed as PASS or modified. Remaining runtime policy obligations delegated to parent tunnel qualification.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_release.py",
+              "case": "test_paired_templates_and_candidate_budget_match_runtime_defaults",
+              "line": 164,
+              "kind": "assert",
+              "source": "assert \"--pid\" not in health",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Historical template requires clinx-provider.service dependency and Python status entrypoint already absent at baseline 52f6ce9. Not executed as PASS or modified. Remaining runtime policy obligations delegated to parent tunnel qualification.",
+              "targets": []
+            }
+          ]
+        }
+      ],
+      "support_assertions": [
+        {
+          "function": "capsule",
+          "line": 21,
+          "source": "assert tmp_path.is_relative_to(\"/data/artifacts\")",
+          "status": "SUPPORT_FIXTURE_PRECONDITION",
+          "note": "Cargo binary path and task-owned artifact root are explicit native test preconditions."
+        }
+      ]
+    },
+    {
+      "path": "tests/test_transport_runtime_build.py",
+      "sha256": "a84d0851b32a84618aaada84a40fbbc587545f33fc3ce171821836fd1a862373",
+      "original_ignored_tests_unchanged": true,
+      "cases": [
+        {
+          "case": "test_real_transport_dependencies_are_required",
+          "line": 26,
+          "parameters": [],
+          "loops": [
+            "packages"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "transport_exact_dependencies_and_all_forbidden_package_variants",
+              "line": 448,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_real_transport_dependencies_are_required",
+              "line": 30,
+              "kind": "raises",
+              "source": "pytest.raises(ValueError, match=\"MISSING\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "transport_exact_dependencies_and_all_forbidden_package_variants",
+                  "line": 448,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_full_client_or_executor_dependency_fails_closed",
+          "line": 36,
+          "parameters": [
+            "pytest.mark.parametrize(\"package\", sorted(FORBIDDEN))",
+            "pytest.mark.parametrize(\"suffix\", [\"\", \"/nested\"])"
+          ],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "transport_exact_dependencies_and_all_forbidden_package_variants",
+              "line": 448,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_full_client_or_executor_dependency_fails_closed",
+              "line": 38,
+              "kind": "raises",
+              "source": "pytest.raises(ValueError, match=\"LINKED\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "transport_exact_dependencies_and_all_forbidden_package_variants",
+                  "line": 448,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_hash_mismatch_prevents_extraction",
+          "line": 42,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "transport_archive_hash_and_all_escape_types_are_rejected_before_writes",
+              "line": 471,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_hash_mismatch_prevents_extraction",
+              "line": 46,
+              "kind": "raises",
+              "source": "pytest.raises(ValueError, match=\"HASH_MISMATCH\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "transport_archive_hash_and_all_escape_types_are_rejected_before_writes",
+                  "line": 471,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_hash_mismatch_prevents_extraction",
+              "line": 48,
+              "kind": "assert",
+              "source": "assert not destination.exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "transport_archive_hash_and_all_escape_types_are_rejected_before_writes",
+                  "line": 471,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_archive_paths_cannot_escape_task_directory",
+          "line": 52,
+          "parameters": [
+            "pytest.mark.parametrize(\"kind\", [\"traversal\", \"absolute\", \"symlink\", \"device\"])"
+          ],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "transport_archive_hash_and_all_escape_types_are_rejected_before_writes",
+              "line": 471,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_archive_paths_cannot_escape_task_directory",
+              "line": 61,
+              "kind": "raises",
+              "source": "pytest.raises(ValueError, match=\"TRAVERSAL\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "transport_archive_hash_and_all_escape_types_are_rejected_before_writes",
+                  "line": 471,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_archive_paths_cannot_escape_task_directory",
+              "line": 63,
+              "kind": "assert",
+              "source": "assert not (tmp_path / \"escape\").exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "transport_archive_hash_and_all_escape_types_are_rejected_before_writes",
+                  "line": 471,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_builder_rejects_live_or_existing_output",
+          "line": 66,
+          "parameters": [],
+          "loops": [
+            "(tmp_path, \"/home/pvxlabs/.local/bin\", \"/\")"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "transport_refuses_live_existing_output_and_removes_readonly_cache",
+              "line": 611,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_builder_rejects_live_or_existing_output",
+              "line": 68,
+              "kind": "raises",
+              "source": "pytest.raises(ValueError, match=\"NEW_TASK_ARTIFACT\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "transport_refuses_live_existing_output_and_removes_readonly_cache",
+                  "line": 611,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_readonly_go_cache_is_removed_without_touching_other_files",
+          "line": 72,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "transport_refuses_live_existing_output_and_removes_readonly_cache",
+              "line": 611,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_readonly_go_cache_is_removed_without_touching_other_files",
+              "line": 82,
+              "kind": "assert",
+              "source": "assert not transient.exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "transport_refuses_live_existing_output_and_removes_readonly_cache",
+                  "line": 611,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_readonly_go_cache_is_removed_without_touching_other_files",
+              "line": 83,
+              "kind": "assert",
+              "source": "assert sibling.read_text() == \"existing dirty data\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "transport_refuses_live_existing_output_and_removes_readonly_cache",
+                  "line": 611,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_package_refuses_candidate_drift",
+          "line": 111,
+          "parameters": [
+            "pytest.mark.parametrize(\"drift\", [\"binary\", \"deps\", \"entrypoint\", \"full_dependency\", \"unqualified\"])"
+          ],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "transport_candidate_all_five_original_drift_cases_fail_closed",
+              "line": 671,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_package_refuses_candidate_drift",
+              "line": 125,
+              "kind": "raises",
+              "source": "pytest.raises(ValueError)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "transport_candidate_all_five_original_drift_cases_fail_closed",
+                  "line": 671,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+          "line": 129,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+              "line": 703,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+              "line": 132,
+              "kind": "assert",
+              "source": "assert tmp_path.is_relative_to(\"/data/artifacts\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+              "line": 142,
+              "kind": "assert",
+              "source": "assert receipts[0] == receipts[1]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+              "line": 146,
+              "kind": "assert",
+              "source": "assert manifest[\"install_path\"] + \"/tunnel-client-runtime run\" in unit",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+              "line": 147,
+              "kind": "assert",
+              "source": "assert str(candidate.parent) not in unit",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+              "line": 148,
+              "kind": "assert",
+              "source": "assert manifest[\"files\"][\"tunnel-client-runtime\"][\"mode\"] == 0o755",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+              "line": 149,
+              "kind": "assert",
+              "source": "assert (release / \"tunnel-client-runtime\").stat().st_mode & 0o777 == 0o755",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+              "line": 150,
+              "kind": "assert",
+              "source": "assert receipts[0][\"managed_file_count\"] == 3",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+              "line": 152,
+              "kind": "assert",
+              "source": "assert plan[\"guards\"][str(old)][\"sha256\"] == sha(old)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+              "line": 153,
+              "kind": "assert",
+              "source": "assert plan[\"production_authorization\"] == \"NOT_GRANTED\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "tests/test_transport_runtime_build.py",
+              "case": "test_release_binds_immutable_runtime_and_keeps_three_file_rollback",
+              "line": 154,
+              "kind": "assert",
+              "source": "assert old.read_text() == \"preserve installed full client\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "support_assertions": []
+    },
+    {
+      "path": "fixtures/test_rust_tunnel_runtime.py",
+      "sha256": "7c816842a792b141dd1b101f2bfce3e4e23886ee5560ec88bbd9f4b32fb0b6d9",
+      "original_ignored_tests_unchanged": false,
+      "cases": [
+        {
+          "case": "test_staged_release_is_reproducible_rust_only_runtime",
+          "line": 17,
+          "parameters": [],
+          "loops": [
+            "('release.tar.gz', 'rollback-capsule.tar.gz')",
+            "[('clinx-tunnel.service', 'run'), ('clinx-tunnel-health.service', 'status')]"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+              "line": 703,
+              "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 23,
+              "kind": "assert",
+              "source": "assert first == second",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 25,
+              "kind": "assert",
+              "source": "assert (tmp_path / 'first' / name).read_bytes() == (tmp_path / 'second' / name).read_bytes()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 28,
+              "kind": "assert",
+              "source": "assert manifest['status'] == 'NOT_DEPLOYED'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 29,
+              "kind": "assert",
+              "source": "assert 'tunnel_reliability.py' not in manifest['files']",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 30,
+              "kind": "assert",
+              "source": "assert 'clinx-node' not in manifest['files']",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 31,
+              "kind": "assert",
+              "source": "assert manifest['files']['clinx-tunnel']['sha256'] == hashlib.sha256(BINARY.read_bytes()).hexdigest()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 32,
+              "kind": "assert",
+              "source": "assert manifest['inputs']['supervisor_runtime']['contract'] == 'RUST_TUNNEL_SUPERVISOR_V1'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 36,
+              "kind": "assert",
+              "source": "assert '/clinx-tunnel ' + mode + ' --state-dir ' in start",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 37,
+              "kind": "assert",
+              "source": "assert 'python' not in start and '@' not in start",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 40,
+              "kind": "assert",
+              "source": "assert result.returncode == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_staged_release_is_reproducible_rust_only_runtime",
+              "line": 41,
+              "kind": "assert",
+              "source": "assert json.loads(result.stdout)['currently_healthy'] is False",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas",
+                  "line": 703,
+                  "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_native_launch_reuses_legacy_python_identity_and_budget",
+          "line": 44,
+          "parameters": [],
+          "loops": [],
+          "status": "MAPPED_IN_PARENT_TUNNEL_QUALIFICATION",
+          "reason": "Parent owns original legacy durable identity/budget test migration; package case owned here.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_native_launch_reuses_legacy_python_identity_and_budget",
+              "line": 54,
+              "kind": "assert",
+              "source": "assert result.returncode == 78",
+              "status": "MAPPED_IN_PARENT_TUNNEL_QUALIFICATION",
+              "reason": "Parent owns original legacy durable identity/budget test migration; package case owned here.",
+              "targets": []
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_native_launch_reuses_legacy_python_identity_and_budget",
+              "line": 56,
+              "kind": "assert",
+              "source": "assert receipt['identity'] == identity",
+              "status": "MAPPED_IN_PARENT_TUNNEL_QUALIFICATION",
+              "reason": "Parent owns original legacy durable identity/budget test migration; package case owned here.",
+              "targets": []
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_native_launch_reuses_legacy_python_identity_and_budget",
+              "line": 57,
+              "kind": "assert",
+              "source": "assert receipt['launches'] == 3 and receipt['launch_sequence'] == 8",
+              "status": "MAPPED_IN_PARENT_TUNNEL_QUALIFICATION",
+              "reason": "Parent owns original legacy durable identity/budget test migration; package case owned here.",
+              "targets": []
+            },
+            {
+              "source_file": "fixtures/test_rust_tunnel_runtime.py",
+              "case": "test_native_launch_reuses_legacy_python_identity_and_budget",
+              "line": 58,
+              "kind": "assert",
+              "source": "assert receipt['reason'] == 'RECOVERY_BUDGET_EXHAUSTED'",
+              "status": "MAPPED_IN_PARENT_TUNNEL_QUALIFICATION",
+              "reason": "Parent owns original legacy durable identity/budget test migration; package case owned here.",
+              "targets": []
+            }
+          ]
+        }
+      ],
+      "support_assertions": []
+    },
+    {
+      "path": "fixtures/test_mcp_relay.py",
+      "sha256": "916fc5feecd8e5eaa314c2fbb329079e61fd6feed651a7d0d41293f47098b1fd",
+      "original_ignored_tests_unchanged": false,
+      "cases": [
+        {
+          "case": "test_large_binary_stream_and_reply_after_stdin_eof",
+          "line": 19,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/mcp_relay_retirement.rs",
+              "case": "test_large_binary_stream_and_reply_after_stdin_eof",
+              "line": 72,
+              "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_large_binary_stream_and_reply_after_stdin_eof",
+              "line": 35,
+              "kind": "assert",
+              "source": "assert b''.join(chunks) == sent",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_large_binary_stream_and_reply_after_stdin_eof",
+                  "line": 72,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_large_binary_stream_and_reply_after_stdin_eof",
+              "line": 45,
+              "kind": "assert",
+              "source": "assert not worker.is_alive() and not errors",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_large_binary_stream_and_reply_after_stdin_eof",
+                  "line": 72,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_large_binary_stream_and_reply_after_stdin_eof",
+              "line": 46,
+              "kind": "assert",
+              "source": "assert result.returncode == 0 and result.stdout == reply and not result.stderr",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_large_binary_stream_and_reply_after_stdin_eof",
+                  "line": 72,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_remote_eof_exits_while_parent_keeps_stdin_open",
+          "line": 49,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/mcp_relay_retirement.rs",
+              "case": "test_remote_eof_exits_while_parent_keeps_stdin_open",
+              "line": 119,
+              "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_remote_eof_exits_while_parent_keeps_stdin_open",
+              "line": 58,
+              "kind": "assert",
+              "source": "assert child.wait(timeout=3) == 0",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_remote_eof_exits_while_parent_keeps_stdin_open",
+                  "line": 119,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_remote_eof_exits_while_parent_keeps_stdin_open",
+              "line": 59,
+              "kind": "assert",
+              "source": "assert child.stdout.read() == b'final bytes'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_remote_eof_exits_while_parent_keeps_stdin_open",
+                  "line": 119,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_unavailable_peer_fails_without_reply_or_replay",
+          "line": 66,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/mcp_relay_retirement.rs",
+              "case": "test_unavailable_peer_fails_without_reply_or_replay",
+              "line": 141,
+              "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_unavailable_peer_fails_without_reply_or_replay",
+              "line": 69,
+              "kind": "assert",
+              "source": "assert result.returncode != 0 and result.stdout == b''",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_unavailable_peer_fails_without_reply_or_replay",
+                  "line": 141,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_partial_response_is_visible_before_newline_or_eof",
+          "line": 72,
+          "parameters": [],
+          "loops": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/mcp_relay_retirement.rs",
+              "case": "test_partial_response_is_visible_before_newline_or_eof",
+              "line": 158,
+              "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+            }
+          ],
+          "assertions": [
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_partial_response_is_visible_before_newline_or_eof",
+              "line": 83,
+              "kind": "assert",
+              "source": "assert peer.recv(5) == b'input'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_partial_response_is_visible_before_newline_or_eof",
+                  "line": 158,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_partial_response_is_visible_before_newline_or_eof",
+              "line": 85,
+              "kind": "assert",
+              "source": "assert select.select([child.stdout], [], [], 2)[0]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_partial_response_is_visible_before_newline_or_eof",
+                  "line": 158,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_partial_response_is_visible_before_newline_or_eof",
+              "line": 86,
+              "kind": "assert",
+              "source": "assert os.read(child.stdout.fileno(), 7) == b'partial'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_partial_response_is_visible_before_newline_or_eof",
+                  "line": 158,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_partial_response_is_visible_before_newline_or_eof",
+              "line": 88,
+              "kind": "assert",
+              "source": "assert peer.recv(1) == b''",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_partial_response_is_visible_before_newline_or_eof",
+                  "line": 158,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            },
+            {
+              "source_file": "fixtures/test_mcp_relay.py",
+              "case": "test_partial_response_is_visible_before_newline_or_eof",
+              "line": 89,
+              "kind": "assert",
+              "source": "assert child.wait(timeout=3) == 0",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/mcp_relay_retirement.rs",
+                  "case": "test_partial_response_is_visible_before_newline_or_eof",
+                  "line": 158,
+                  "sha256": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "support_assertions": [
+        {
+          "function": "binary",
+          "line": 15,
+          "source": "assert path.is_file() and os.access(path, os.X_OK)",
+          "status": "SUPPORT_FIXTURE_PRECONDITION",
+          "note": "Cargo binary path and task-owned artifact root are explicit native test preconditions."
+        }
+      ]
+    },
+    {
+      "path": "tests/test_forwarding_release.py",
+      "sha256": "9cc4bd0ccbac2fc9495ab30df71f161143a2356706c6ab23b107909d2fbfa8d1",
+      "original_ignored_tests_unchanged": true,
+      "cases": [
+        {
+          "case": "test_referenced_experiment_is_rejected_instead_of_silently_removed",
+          "line": 22,
+          "parameters": [
+            "pytest.mark.parametrize('source', [\n    'import maintenance_operator',\n    'from maintenance_authorization import Grant',\n    'from package import maintenance_witness',\n    'from package.policy_maintenance import Policy',\n])"
+          ],
+          "loops": [],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_referenced_experiment_is_rejected_instead_of_silently_removed",
+              "line": 23,
+              "kind": "raises",
+              "source": "pytest.raises(ValueError, match='EXPERIMENTAL_IMPORT')",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        },
+        {
+          "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+          "line": 27,
+          "parameters": [],
+          "loops": [
+            "{\n        'mcp_server.py': 'from workspace_contract import workspace_from_prompt\\n',\n        'workspace_contract.py': '# old parser\\n',\n        'native_execution.py': '# installed dependency; do not replace with dirty source\\n',\n        'task_registry.py': 'class TaskRegistryError(ValueError): pass\\n',\n    }.items()",
+            "manifest['files'].items()"
+          ],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 47,
+              "kind": "assert",
+              "source": "assert a == b",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 51,
+              "kind": "assert",
+              "source": "assert set(archive.getnames()) == set(manifest['files']) | {'manifest.json'}",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 53,
+              "kind": "assert",
+              "source": "assert sha(archive.extractfile(name).read()) == entry['sha256']",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 54,
+              "kind": "assert",
+              "source": "assert archive.getmember(name).mode == entry['mode']",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 55,
+              "kind": "assert",
+              "source": "assert Path(name).stem not in EXPERIMENTS",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 56,
+              "kind": "assert",
+              "source": "assert archive.extractfile('control/native_execution.py').read() == (\n            installed / 'native_execution.py').read_bytes()",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 58,
+              "kind": "assert",
+              "source": "assert archive.extractfile('control/workspace_contract.py').read() == (\n            ROOT / 'workspace_contract.py').read_bytes()",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 73,
+              "kind": "assert",
+              "source": "assert len(plan['changes']) == 4",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 74,
+              "kind": "assert",
+              "source": "assert plan['changes'][str(launcher)] == dict(\n        before=state(launcher), after=state(package / 'release/launch-mcp'))",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 76,
+              "kind": "assert",
+              "source": "assert (package / 'rollback/loader.before').read_bytes() == launcher.read_bytes()",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 77,
+              "kind": "assert",
+              "source": "assert 'repo_root=' + plan['installs']['control'] in (\n        package / 'release/launch-mcp').read_text()",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 79,
+              "kind": "assert",
+              "source": "assert str(installed / '.venv-node/bin/python') in (\n        package / 'release/launch-mcp').read_text()",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_release.py",
+              "case": "test_bundle_loads_parser_from_clean_base_and_pairs_exact_rollback",
+              "line": 82,
+              "kind": "assert",
+              "source": "assert (installed / 'workspace_contract.py').read_text() == '# old parser\\n'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        }
+      ],
+      "support_assertions": []
+    },
+    {
+      "path": "tests/test_forwarding_deploy.py",
+      "sha256": "faff462f1ebe33f5f74bf7f156df05029b274ac6f3f4c8ab3f4762026861773c",
+      "original_ignored_tests_unchanged": true,
+      "cases": [
+        {
+          "case": "test_nonempty_history_success_and_exact_explicit_rollback",
+          "line": 80,
+          "parameters": [],
+          "loops": [
+            "deploy.PRESERVED"
+          ],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_nonempty_history_success_and_exact_explicit_rollback",
+              "line": 85,
+              "kind": "assert",
+              "source": "assert installer.activate()['state'] == 'DEPLOYED'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_nonempty_history_success_and_exact_explicit_rollback",
+              "line": 86,
+              "kind": "assert",
+              "source": "assert states(installer) == {n: e['after'] for n, e in installer.package.plan['changes'].items()}",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_nonempty_history_success_and_exact_explicit_rollback",
+              "line": 87,
+              "kind": "assert",
+              "source": "assert installer.rollback()['state'] == 'ROLLED_BACK'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_nonempty_history_success_and_exact_explicit_rollback",
+              "line": 88,
+              "kind": "assert",
+              "source": "assert states(installer) == original",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_nonempty_history_success_and_exact_explicit_rollback",
+              "line": 90,
+              "kind": "assert",
+              "source": "assert installer.rollback()['state'] == 'ROLLED_BACK'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_nonempty_history_success_and_exact_explicit_rollback",
+              "line": 91,
+              "kind": "assert",
+              "source": "assert installer.services.calls == calls",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_nonempty_history_success_and_exact_explicit_rollback",
+              "line": 92,
+              "kind": "assert",
+              "source": "assert db.read_bytes() == history",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_nonempty_history_success_and_exact_explicit_rollback",
+              "line": 94,
+              "kind": "assert",
+              "source": "assert installer.services.snapshot()[name] == preserved[name]",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        },
+        {
+          "case": "test_health_failure_restores_pair_and_original_service_health",
+          "line": 97,
+          "parameters": [],
+          "loops": [],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_health_failure_restores_pair_and_original_service_health",
+              "line": 105,
+              "kind": "raises",
+              "source": "pytest.raises(RuntimeError, match='fixture stale poll')",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_health_failure_restores_pair_and_original_service_health",
+              "line": 107,
+              "kind": "assert",
+              "source": "assert installer.record['state'] == 'ROLLED_BACK'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_health_failure_restores_pair_and_original_service_health",
+              "line": 108,
+              "kind": "assert",
+              "source": "assert states(installer) == original",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        },
+        {
+          "case": "test_partial_file_failure_is_compensated_even_if_replace_response_lost",
+          "line": 111,
+          "parameters": [],
+          "loops": [],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_partial_file_failure_is_compensated_even_if_replace_response_lost",
+              "line": 124,
+              "kind": "raises",
+              "source": "pytest.raises(OSError, match='response lost')",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_partial_file_failure_is_compensated_even_if_replace_response_lost",
+              "line": 126,
+              "kind": "assert",
+              "source": "assert injected and installer.record['state'] == 'ROLLED_BACK'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_partial_file_failure_is_compensated_even_if_replace_response_lost",
+              "line": 127,
+              "kind": "assert",
+              "source": "assert states(installer) == original",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        },
+        {
+          "case": "test_stale_preflight_writes_nothing_and_touches_no_service",
+          "line": 130,
+          "parameters": [],
+          "loops": [],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_stale_preflight_writes_nothing_and_touches_no_service",
+              "line": 135,
+              "kind": "raises",
+              "source": "pytest.raises(CASRefused, match='STALE_PAIRED_STATE')",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_stale_preflight_writes_nothing_and_touches_no_service",
+              "line": 137,
+              "kind": "assert",
+              "source": "assert states(installer) == stale",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_stale_preflight_writes_nothing_and_touches_no_service",
+              "line": 138,
+              "kind": "assert",
+              "source": "assert installer.services.calls == []",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        },
+        {
+          "case": "test_concurrent_writer_after_stop_is_preserved",
+          "line": 141,
+          "parameters": [],
+          "loops": [],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_concurrent_writer_after_stop_is_preserved",
+              "line": 145,
+              "kind": "raises",
+              "source": "pytest.raises(CASRefused, match='STALE_PAIRED_STATE')",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_concurrent_writer_after_stop_is_preserved",
+              "line": 147,
+              "kind": "assert",
+              "source": "assert installer.record['state'] == 'BLOCKED_ROLLBACK'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_concurrent_writer_after_stop_is_preserved",
+              "line": 148,
+              "kind": "assert",
+              "source": "assert target.read_bytes() == b'user change during stop'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_concurrent_writer_after_stop_is_preserved",
+              "line": 149,
+              "kind": "assert",
+              "source": "assert installer.record['attempted'] == []",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        },
+        {
+          "case": "test_systemd_permission_refusal_does_not_update_targets",
+          "line": 152,
+          "parameters": [],
+          "loops": [],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_systemd_permission_refusal_does_not_update_targets",
+              "line": 156,
+              "kind": "raises",
+              "source": "pytest.raises(PermissionError, match='systemd permission denied')",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_systemd_permission_refusal_does_not_update_targets",
+              "line": 158,
+              "kind": "assert",
+              "source": "assert states(installer) == original",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_systemd_permission_refusal_does_not_update_targets",
+              "line": 159,
+              "kind": "assert",
+              "source": "assert installer.record['attempted'] == []",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        },
+        {
+          "case": "test_interrupted_partial_update_can_use_durable_receipt_for_rollback",
+          "line": 162,
+          "parameters": [],
+          "loops": [
+            "attempted"
+          ],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_interrupted_partial_update_can_use_durable_receipt_for_rollback",
+              "line": 173,
+              "kind": "assert",
+              "source": "assert other.rollback()['state'] == 'ROLLED_BACK'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_interrupted_partial_update_can_use_durable_receipt_for_rollback",
+              "line": 174,
+              "kind": "assert",
+              "source": "assert states(other) == original",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_forwarding_deploy.py",
+              "case": "test_interrupted_partial_update_can_use_durable_receipt_for_rollback",
+              "line": 175,
+              "kind": "assert",
+              "source": "assert json.loads(installer.path.read_text())['state'] == 'ROLLED_BACK'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        }
+      ],
+      "support_assertions": []
+    },
+    {
+      "path": "tests/test_tunnel_control_overlay.py",
+      "sha256": "51932359db7b67a6cd23d73c2a6f4863fc601965abd74eee322666223dbfdb3d",
+      "original_ignored_tests_unchanged": true,
+      "cases": [
+        {
+          "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+          "line": 29,
+          "parameters": [],
+          "loops": [
+            "('release.tar.gz', 'rollback-capsule.tar.gz')",
+            "CONTROL_OVERLAY_FILES"
+          ],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+              "line": 31,
+              "kind": "assert",
+              "source": "assert first == second",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+              "line": 33,
+              "kind": "assert",
+              "source": "assert (tmp / 'a' / name).read_bytes() == (tmp / 'b' / name).read_bytes()",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+              "line": 36,
+              "kind": "assert",
+              "source": "assert meta['activation'] == 'NOT_WIRED_SEPARATE_OPERATOR_PUBLICATION_REQUIRED'",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+              "line": 38,
+              "kind": "assert",
+              "source": "assert (overlay / name).read_bytes() == (ROOT / name).read_bytes()",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+              "line": 42,
+              "kind": "assert",
+              "source": "assert old['mode'] == 0o640",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+              "line": 43,
+              "kind": "assert",
+              "source": "assert (capsule / 'blobs' / old['sha256']).read_bytes() == (base / 'workspace_contract.py').read_bytes()",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+              "line": 44,
+              "kind": "assert",
+              "source": "assert restore['files']['policy_maintenance.py']['before'] is None",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+              "line": 46,
+              "kind": "assert",
+              "source": "assert len(plan['changes']) == 3",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+              "line": 47,
+              "kind": "assert",
+              "source": "assert not any(str(base) in p for p in plan['changes'])",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_is_reproducible_and_contains_exact_parser_and_recovery",
+              "line": 48,
+              "kind": "assert",
+              "source": "assert plan['guards'][str(base / 'workspace_contract.py')]['sha256'] == old['sha256']",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        },
+        {
+          "case": "test_control_dependency_drift_refuses_before_config_write",
+          "line": 51,
+          "parameters": [],
+          "loops": [],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_control_dependency_drift_refuses_before_config_write",
+              "line": 60,
+              "kind": "raises",
+              "source": "pytest.raises(CASRefused, match='DEPENDENCY_DRIFT')",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            },
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_control_dependency_drift_refuses_before_config_write",
+              "line": 62,
+              "kind": "assert",
+              "source": "assert {str(p): sha(p.read_bytes()) for p in root.rglob('*') if p.is_file()} == before",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        },
+        {
+          "case": "test_overlay_does_not_allow_ambiguous_base",
+          "line": 65,
+          "parameters": [],
+          "loops": [],
+          "status": "RETIRED_CONTRACT_NOT_PASS",
+          "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+          "targets": [],
+          "assertions": [
+            {
+              "source_file": "tests/test_tunnel_control_overlay.py",
+              "case": "test_overlay_does_not_allow_ambiguous_base",
+              "line": 71,
+              "kind": "raises",
+              "source": "pytest.raises(ValueError, match='EXACT_CONTROL_SOURCE_REQUIRED')",
+              "status": "RETIRED_CONTRACT_NOT_PASS",
+              "reason": "Frozen CLINX_FORWARDING_P1 or flat control-overlay artifact/deploy contract retired; builder already refused structured repository at baseline. No migration PASS claim; original ignored test bytes preserved.",
+              "targets": []
+            }
+          ]
+        }
+      ],
+      "support_assertions": []
+    }
+  ],
+  "assertion_count": 157,
+  "native_tests": 28,
+  "native_test_log": "build-network-deadline-release-final.log",
+  "deleted_sources": [
+    {
+      "path": "scripts/stage_rust_release.py",
+      "sha256": "55c6665ed3a84eead8c15045a629a4ffdbd7fac087c0546e674da97972fc356d",
+      "lines": 192,
+      "classification": "DEVOPS",
+      "replacement": "clinx-build"
+    },
+    {
+      "path": "scripts/build_transport_runtime.py",
+      "sha256": "98f0da85bf358c1b2850ebeb52e3292e961bf14f069bc327585db912a754b14f",
+      "lines": 179,
+      "classification": "DEVOPS",
+      "replacement": "clinx-build"
+    },
+    {
+      "path": "scripts/build_tunnel_release.py",
+      "sha256": "5ea0ead446bfaf93baf1a4ffcb54f70422846dbb83d83b790895bf45f414560c",
+      "lines": 333,
+      "classification": "DEVOPS",
+      "replacement": "clinx-build"
+    },
+    {
+      "path": "scripts/build_forwarding_release.py",
+      "sha256": "ca3ab246790fd8909b15e02390d407a6340beeda81948063a50d79c24f0f6c1e",
+      "lines": 150,
+      "classification": "DEAD",
+      "replacement": "RETIRED_ARTIFACT_CONTRACT"
+    },
+    {
+      "path": "scripts/deploy_forwarding_release.py",
+      "sha256": "7cdcd866c530f0602dcea3a0fa500253205bf0cec7dd7f20f0457bb49576c31d",
+      "lines": 360,
+      "classification": "DEAD",
+      "replacement": "RETIRED_ARTIFACT_CONTRACT"
+    },
+    {
+      "path": "scripts/tunnel_release_cas.py",
+      "sha256": "d5c4aa871eb3ebfaf8cc74db0129cb9c72347a14f9e7e80ce2b5230286940a47",
+      "lines": 178,
+      "classification": "DEVOPS",
+      "replacement": "clinx-build"
+    },
+    {
+      "path": "tools/build/runtime_sources.py",
+      "sha256": "0d5c623c44725bc27f0563af25753333c85498ceb79cb78a04b389fe643031b2",
+      "lines": 119,
+      "classification": "DEVOPS",
+      "replacement": "clinx-build"
+    },
+    {
+      "path": "fixtures/test_runtime_packages.py",
+      "sha256": "1132d689c57f2d27077b0456c9359e999ee5f41e9fb29378d45eb50c2d34bba9",
+      "lines": 172,
+      "classification": "QUALIFICATION",
+      "replacement": "kernel/tests"
+    },
+    {
+      "path": "fixtures/test_mcp_relay.py",
+      "sha256": "916fc5feecd8e5eaa314c2fbb329079e61fd6feed651a7d0d41293f47098b1fd",
+      "lines": 93,
+      "classification": "QUALIFICATION",
+      "replacement": "kernel/tests"
+    }
+  ],
+  "deleted_lines": 1776,
+  "not_run": [
+    "privileged production stage ownership/group mutation",
+    "real macOS SDK/signing/App launch",
+    "production service installation or lifecycle"
+  ],
+  "notes": [
+    "Original fixture scripts are replaced by native process/byte/file qualification, not silently skipped.",
+    "Original ignored tests remain unchanged and frozen historical contract cases are explicitly not counted PASS.",
+    "Every original decorator, parameter expression, loop expression and assertion/raises text is retained here."
+  ],
+  "supplemental_archive_test": {
+    "path": "kernel/tests/build_release_qualification.rs",
+    "case": "github_global_pax_commit_comment_is_inert_and_overrides_fail_before_writes",
+    "line": 513,
+    "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+  },
+  "supplemental_real_artifact_test": {
+    "path": "kernel/tests/build_release_qualification.rs",
+    "case": "all_nine_real_binaries_stage_with_exact_hashes_and_no_retired_runtime",
+    "line": 959,
+    "sha256": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088"
+  },
+  "final_validation": {
+    "schema": "CLINX_BUILD_RELAY_FINAL_GROUP_V1",
+    "status": "SOURCE_AND_NATIVE_PACKAGING_PASS_FRESH_GO_BLOCKED_NETWORK",
+    "native_tests": 28,
+    "native_test_log": "build-network-deadline-release-final.log",
+    "native_test_log_sha256": "83c69a965718e19c7e3ed4c4c8c6a1ba2806cf5cc094446259d4950dd0e87fd3",
+    "transport_build_validation": {
+      "status": "BLOCKED_NETWORK",
+      "phase": "go list -mod=readonly -deps ./cmd/client-runtime",
+      "source_archive_sha256": "0281b17c0979f9db1ae2b41b0b66df697d646e726995756a003c6ffc51a64c10",
+      "go_archive_sha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+      "toolchain_version": "go version go1.27.3 linux/amd64",
+      "upstream_tests": "NOT_RUN",
+      "build_a": "NOT_RUN",
+      "build_b": "NOT_RUN",
+      "fresh_binary": "NOT_PRODUCED",
+      "failure": "unexpected EOF from proxy.golang.org",
+      "modules": [
+        "github.com/modelcontextprotocol/go-sdk@v1.7.0",
+        "go.opentelemetry.io/otel/sdk@v1.41.0"
+      ],
+      "diagnostics": "transport-real-rust-network/dependencies.stderr.log",
+      "diagnostics_sha256": "26dc01a0ff89a595de7b8e1ab47d78e658a2da9df6da109ece68f4405b2b988b",
+      "failed_attempts": [
+        {
+          "path": "/data/artifacts/clinx-python-final-20261025/transport-real-rust/manifest.json",
+          "sha256": "4c8e0fb981f39a850a891c10b0999ba5a6563cff268e6d2966710cc6a87d7f69",
+          "status": "BUILD_FAILED",
+          "error": "ARCHIVE_NON_REGULAR_OR_TRAVERSAL"
+        },
+        {
+          "path": "/data/artifacts/clinx-python-final-20261025/transport-real-rust-pax/manifest.json",
+          "sha256": "aa4b7e62e554c68adb4127f67359190a460aeea4577a6acc5e62f39cef317467",
+          "status": "BUILD_FAILED",
+          "error": "BUILD_COMMAND_TIMEOUT"
+        },
+        {
+          "path": "/data/artifacts/clinx-python-final-20261025/transport-real-rust-network/manifest.json",
+          "sha256": "f424a143e00752b9b87d712f3f177af4fc9aa01428a4aa04cbe161ac854bc28c",
+          "status": "BUILD_FAILED",
+          "error": "BUILD_COMMAND_FAILED:go: downloading github.com/spf13/cobra v1.9.1\ngo: downloading go.uber.org/fx v1.23.0\ngo: downloading github.com/spf13/pflag v1.0.6\ngo: downloading gopkg.in/yaml.v3 v3.0.1\ngo: downloading go.uber.org/dig v1.19.0\ngo: downloading go.uber.org/multierr v1.11.0\ngo: downloading golang.org/x/sys v0.41.0\ngo: downloading go.uber.org/zap v1.27.0\ngo: downloading go.opentelemetry.io/otel/sdk/metric v1.41.0\ngo: downloading github.com/modelcontextprotocol/go-sdk v1.7.0\ngo: downloading go.opentelemetry.io/otel/sdk v1.41.0\ngo: downloading go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0\ngo: downloading golang.org/x/sync v0.20.0\ngo: downloading github.com/prometheus/client_golang v1.23.2\ngo: downloading go.opentelemetry.io/otel v1.41.0\ngo: downloading go.opentelemetry.io/otel/exporters/prometheus v0.60.0\ngo: downloading github.com/jpillora/backoff v1.0.0\ngo: downloading github.com/invopop/jsonschema v0.13.0\ngo: downloading go.opentelemetry.io/otel/metric v1.41.0\ngo: downloading golang.org/x/net v0.43.0\ngo: downloading github.com/panjf2000/ants/v2 v2.11.3\ngo: downloading github.com/felixge/httpsnoop v1.0.4\ngo: downloading go.opentelemetry.io/otel/trace v1.41.0\ngo: downloading github.com/prometheus/client_model v0.6.2\ngo: downloading github.com/prometheus/common v0.66.1\ngo: downloading github.com/go-logr/logr v1.4.3\ngo: downloading github.com/prometheus/otlptranslator v0.0.2\ngo: downloading google.golang.org/protobuf v1.36.8\ngo: downloading github.com/wk8/go-ordered-map/v2 v2.1.8\ngo: downloading github.com/beorn7/perks v1.0.1\ngo: downloading github.com/cespare/xxhash/v2 v2.3.0\ngo: downloading github.com/prometheus/procfs v0.17.0\ngo: downloading github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822\ngo: downloading github.com/go-logr/stdr v1.2.2\ngo: downloading go.opentelemetry.io/auto/sdk v1.2.1\ngo: downloading go.yaml.in/yaml/v2 v2.4.2\ngo: downloading github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc\ngo: downloading github.com/bahlo/generic-list-go v0.2.0\ngo: downloading github.com/buger/jsonparser v1.1.2\ngo: downloading github.com/mailru/easyjson v0.7.7\npkg/controlplane/polled_command.go:8:2: github.com/modelcontextprotocol/go-sdk@v1.7.0: read \"https://proxy.golang.org/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.zip\": unexpected EOF\npkg/mcpclient/channel_transport_factory.go:12:2: github.com/modelcontextprotocol/go-sdk@v1.7.0: read \"https://proxy.golang.org/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.zip\": unexpected EOF\n../modcache/go.opentelemetry.io/otel/exporters/prometheus@v0.60.0/config.go:15:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\n../modcache/go.opentelemetry.io/otel/exporters/prometheus@v0.60.0/exporter.go:25:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\n../modcache/go.opentelemetry.io/otel/exporters/prometheus@v0.60.0/exporter.go:26:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\npkg/metrics/fxmodule.go:11:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\npkg/oauth/discovery.go:14:2: github.com/modelcontextprotocol/go-sdk@v1.7.0: read \"https://proxy.golang.org/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.zip\": unexpected EOF\n"
+        }
+      ],
+      "dependency_timeout_seconds": 900,
+      "compiler_timeout_seconds": 300,
+      "go_test_timeout_seconds": 90
+    },
+    "actual_native_tunnel_package": {
+      "status": "PASS_NOT_DEPLOYED",
+      "fresh_transport_rebuilt": false,
+      "transport": "existing immutable candidate-v2 with original source/toolchain pins; no new transport build PASS claim",
+      "audit": "native-tunnel-package-audit.json",
+      "audit_sha256": "a7f59615c3334cbe0872cb140afac2e305cb0419a6cc3941423eff91ca068dcc",
+      "archives_byte_equal_across_directories": true,
+      "archives": {
+        "release.tar.gz": "11ad56a6f66cb4f38124cdd5f8cc8b2fb42b7100d8c5cd6c2ee06eea39a460e9",
+        "rollback-capsule.tar.gz": "67a60b2e1f6e9001137ef28c4dc9021b11b8ac4cefab8aed2060c912a2bc4fb4"
+      },
+      "runtime_python_files": 0,
+      "runtime_devops_tools": 0,
+      "cas_exact_before_after_restored": true,
+      "retained_package": "tunnel-real-historical-a"
+    },
+    "not_run": [
+      "privileged production stage ownership/group mutation",
+      "real macOS SDK/signing/App launch",
+      "production service installation or lifecycle"
+    ],
+    "production_mutations": false,
+    "implementation_sha256": {
+      "kernel/src/bin/clinx-build.rs": "7ecd000ead8728da84c01066ddc66b10163ef413e038951c885a1d56cb3261ec",
+      "kernel/src/build_tunnel.rs": "d5900fa15a00ea313f3f1b2ce2e1ea2cf551448d433ab231e21e6272bc23bad7",
+      "kernel/src/build_archive.rs": "68b0df3114d927c3f607f61589bd33638f9cd4665e9cf13a8836b43f6dadd9c7",
+      "kernel/src/build_cas.rs": "e02055d0e7c2d855e0455232af2b212418ea0a0c66c1edd34734f51bafed9c7f",
+      "kernel/src/build_release.rs": "1a490fabd71db353d14646a93d96038dd4b4afbcc26268b567471a694e202e02",
+      "kernel/src/build_transport.rs": "ea1f36f84d626eb35f4331c8f173566b5b43a31a740a2dec0014d7a08fc2e38d",
+      "kernel/tests/build_release_qualification.rs": "1fc9d10a53b380c019a371b6e1bd19fbe348556305cc2c86fe5d3a1c7426f088",
+      "kernel/tests/mcp_relay_retirement.rs": "72751d1ecec011800367272103aa6695946bc89168d4e85e91b3dfc8e90fef28"
+    },
+    "qualified_builder": {
+      "path": "/lab/runtime-worktrees/p620/cargo-target/clinx-python-final-20261025/release/clinx-build",
+      "sha256": "7b4367d189475e0ba601f0660f7eff78dc07df9203d6d7301d31937591252a25"
+    }
+  }
+}

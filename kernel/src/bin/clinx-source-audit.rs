@@ -3,6 +3,92 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::Path, process::Command};
 
+fn structure() -> Result<Value, String> {
+    let inventory: Value =
+        serde_json::from_slice(&source(None, "architecture/python-sources.json")?)
+            .map_err(|_| "INVALID_SOURCE_MANIFEST")?;
+    if inventory["schema"] != 1 {
+        return Err("UNKNOWN_SOURCE_MANIFEST_SCHEMA".into());
+    }
+    let rows = inventory["modules"]
+        .as_array()
+        .ok_or("INVALID_SOURCE_MANIFEST")?;
+    let mut seen = std::collections::BTreeSet::new();
+    for row in rows {
+        let name = row["path"].as_str().ok_or("INVALID_SOURCE_PATH")?;
+        let p = Path::new(name);
+        if p.is_absolute()
+            || p.components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+            || p.extension().and_then(|s| s.to_str()) != Some("py")
+        {
+            return Err("INVALID_SOURCE_PATH".into());
+        }
+        if !seen.insert(name) {
+            return Err("DUPLICATE_SOURCE_MODULE".into());
+        }
+        if row["role"] != "DEAD" || row["profiles"] != json!([]) {
+            return Err(format!("PYTHON_RETIREMENT_INCOMPLETE:{name}"));
+        }
+        if std::fs::symlink_metadata(p).is_ok() {
+            return Err(format!("RETIRED_SOURCE_PRESENT:{name}"));
+        }
+    }
+    let names = git(&[
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "-z",
+    ])?;
+    for raw in names.split(|b| *b == 0).filter(|b| !b.is_empty()) {
+        let name = std::str::from_utf8(raw).map_err(|_| "NON_UTF8_SOURCE_PATH")?;
+        if name.ends_with(".py") && std::fs::symlink_metadata(name).is_ok() {
+            return Err(format!("UNDECLARED_PYTHON_SOURCE:{name}"));
+        }
+    }
+    let native: Value = serde_json::from_slice(&source(None, "architecture/native-runtime.json")?)
+        .map_err(|_| "INVALID_NATIVE_MANIFEST")?;
+    for key in [
+        "monitor_python_sources",
+        "monitor_python_dependencies",
+        "release_python_sources",
+        "release_python_dependencies",
+    ] {
+        if native[key] != json!([]) {
+            return Err(format!("PYTHON_IN_RUNTIME:{key}"));
+        }
+    }
+    if native["monitor_helpers"] != json!(["clinx-provider", "clinx-node", "clinx-node-daemon"]) {
+        return Err("NATIVE_HELPER_MANIFEST_INVALID".into());
+    }
+    let data: Value = serde_json::from_slice(&source(None, "architecture/runtime-data.json")?)
+        .map_err(|_| "INVALID_RUNTIME_DATA")?;
+    let mut seen = std::collections::BTreeSet::new();
+    for row in data.as_array().ok_or("INVALID_RUNTIME_DATA")? {
+        let name = row["path"].as_str().ok_or("INVALID_RUNTIME_DATA_PATH")?;
+        let p = Path::new(name);
+        if p.is_absolute()
+            || p.components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+            || p.extension().and_then(|s| s.to_str()) != Some("json")
+        {
+            return Err("INVALID_RUNTIME_DATA_PATH".into());
+        }
+        if !seen.insert(name) {
+            return Err("DUPLICATE_RUNTIME_DATA".into());
+        }
+        if !p.is_file() || p.is_symlink() {
+            return Err(format!("RUNTIME_DATA_MISSING:{name}"));
+        }
+        serde_json::from_slice::<Value>(&source(None, name)?)
+            .map_err(|_| format!("RUNTIME_DATA_INVALID:{name}"))?;
+    }
+    Ok(
+        json!({"status":"PASS","python_modules":0,"root_python_modules":0,"runtime_python_sources":0,"retired_python_records":rows.len(),"monitor_native_helpers":native["monitor_helpers"]}),
+    )
+}
+
 #[derive(Default, Serialize)]
 struct Size {
     files: usize,
@@ -115,6 +201,16 @@ fn audit(revision: Option<&str>, limit: f64) -> Result<Value, String> {
 }
 fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args == ["--check-structure"] {
+        match structure() {
+            Ok(v) => println!("{v}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     let mut rev = None;
     let mut limit = 5.;
     let mut i = 0;
@@ -130,7 +226,7 @@ fn main() {
             }
             "--help" => {
                 println!(
-                    "clinx-source-audit [--revision COMMIT] [--max-python-percent 5]\nRead-only source census. Exit 0 only when Python bytes are strictly below the limit; exit 2 for an unmet target."
+                    "clinx-source-audit [--revision COMMIT] [--max-python-percent 5]\nclinx-source-audit --check-structure\nRead-only source census. Exit 0 only when Python bytes are strictly below the limit; exit 2 for an unmet target. Structure mode rejects Python source or runtime dependencies and validates retained data."
                 );
                 return;
             }

@@ -1,0 +1,1238 @@
+{
+  "schema": "CLINX_PYTHON_SOURCE_RETIREMENT_V1",
+  "baseline_commit": "52f6ce9244baa1dcfb4a7b514f2ca9c569e67e12",
+  "date_utc": "2026-10-25",
+  "source_status": "PASS_PYTHON_SOURCE_ZERO",
+  "deployment_status": "NOT_DEPLOYED",
+  "scope": "Current tracked and nonignored source, native tests and isolated candidate builds. No production lifecycle or data operations.",
+  "size_before": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 553115,
+        "files": 91,
+        "lines": 12527
+      },
+      "Rust": {
+        "bytes": 2157670,
+        "files": 124,
+        "lines": 55620
+      },
+      "Shell": {
+        "bytes": 10218,
+        "files": 9,
+        "lines": 224
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 16.88718227098506,
+    "python_line_percent": 15.537749773637795,
+    "python_roles": {
+      "COMPAT": {
+        "bytes": 225064,
+        "files": 38,
+        "lines": 5446
+      },
+      "DEVOPS": {
+        "bytes": 81953,
+        "files": 13,
+        "lines": 1795
+      },
+      "QUALIFICATION": {
+        "bytes": 246098,
+        "files": 40,
+        "lines": 5286
+      }
+    },
+    "revision": "52f6ce9244baa1dcfb4a7b514f2ca9c569e67e12",
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "size_after": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 1423,
+        "files": 1,
+        "lines": 40
+      },
+      "Python": {
+        "bytes": 0,
+        "files": 0,
+        "lines": 0
+      },
+      "Rust": {
+        "bytes": 2496114,
+        "files": 149,
+        "lines": 64784
+      },
+      "Shell": {
+        "bytes": 10218,
+        "files": 9,
+        "lines": 224
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 0.0,
+    "python_line_percent": 0.0,
+    "python_roles": {},
+    "revision": null,
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": true
+  },
+  "deletion": {
+    "baseline": "52f6ce9244baa1dcfb4a7b514f2ca9c569e67e12",
+    "deleted_files": 100,
+    "deleted_lines": 13570,
+    "deleted_bytes": 584491,
+    "python_files": 91,
+    "python_lines": 12527
+  },
+  "deleted_files": [
+    {
+      "path": "clinx/__init__.py",
+      "lines": 1,
+      "bytes": 27,
+      "sha256": "67c9be7c721a7018c7595120a319f7b9a2d18c40c1faea8625a7b46201b5d335"
+    },
+    {
+      "path": "clinx/authority/__init__.py",
+      "lines": 1,
+      "bytes": 63,
+      "sha256": "f965142f9f4ea715b90fe4217e63b3a5c3298467447410723fe7d64c7e7b9eba"
+    },
+    {
+      "path": "clinx/authority/request_pipe.py",
+      "lines": 141,
+      "bytes": 6497,
+      "sha256": "a01cd7e07ed4dd6ace31964a851a3c2f20110c3f7b19f614ce442a181ef66fc0"
+    },
+    {
+      "path": "clinx/authority/rust_authority.py",
+      "lines": 65,
+      "bytes": 2332,
+      "sha256": "ab7981e8ff122a1ed7c2704de7c4759d97922ae66039630c49eb2b09c0981298"
+    },
+    {
+      "path": "clinx/authority/rust_worker_identity.py",
+      "lines": 21,
+      "bytes": 966,
+      "sha256": "f6bfbb7188f439c30f9b05229b173031b78185fb81252e41c259d7fde74367b5"
+    },
+    {
+      "path": "clinx/contracts/__init__.py",
+      "lines": 1,
+      "bytes": 63,
+      "sha256": "fc1c832ea4c07c7df1e054e8e4de75dfcb599cd0ea1de32d1b24d975ba26b632"
+    },
+    {
+      "path": "clinx/contracts/dispatch_errors.py",
+      "lines": 83,
+      "bytes": 5438,
+      "sha256": "146432b67bb2d3053a76cb042644994ce5a3ad35a27a9164ada2cdc08b2235ec"
+    },
+    {
+      "path": "clinx/contracts/execution_policy.py",
+      "lines": 211,
+      "bytes": 7014,
+      "sha256": "83767152df150225ec4f45fdeb03cca0b20677611469ffde3d8ccbd0334d765c"
+    },
+    {
+      "path": "clinx/contracts/execution_semantics.py",
+      "lines": 265,
+      "bytes": 8249,
+      "sha256": "8cd29bb086509f70014040ba35f568e084af36879466a2d9f1615051fdbcb97a"
+    },
+    {
+      "path": "clinx/contracts/host_config.py",
+      "lines": 32,
+      "bytes": 983,
+      "sha256": "465b55e366ffdd169386e47668c1f3cb23a90fcac4fbb34d368a7e6ff30404e7"
+    },
+    {
+      "path": "clinx/contracts/runtime_config.py",
+      "lines": 245,
+      "bytes": 8957,
+      "sha256": "98ad91013a1ba564f1c6cca875f40d45b74857a0fb5323c4749ef4a3307ed8ab"
+    },
+    {
+      "path": "clinx/contracts/runtime_contracts.py",
+      "lines": 44,
+      "bytes": 932,
+      "sha256": "ca9d65b0b6fca2da60fca719c0947338ed581324123e33dc9e495e0229bab1d2"
+    },
+    {
+      "path": "clinx/contracts/thread_identity.py",
+      "lines": 176,
+      "bytes": 7927,
+      "sha256": "a19dc54a8db386ec6f74dc807fdbb37a8b23855226ae1017e25f7047e4b5fdb5"
+    },
+    {
+      "path": "clinx/discovery/__init__.py",
+      "lines": 6,
+      "bytes": 266,
+      "sha256": "15f14c863835e00638e6d309c0dbf22052f629f73b2e22e754bd6bdaa53a0be9"
+    },
+    {
+      "path": "clinx/discovery/cli.py",
+      "lines": 66,
+      "bytes": 2516,
+      "sha256": "03b28276e0711a4bb23d8841922b61d10132cc2f15f0eb807f1081b584c8a381"
+    },
+    {
+      "path": "clinx/discovery/discovery.py",
+      "lines": 253,
+      "bytes": 8488,
+      "sha256": "899ccca398a10a5a675916a5cf443846b1a69fba309e673e0ebc6008d8d27417"
+    },
+    {
+      "path": "clinx/discovery/identity.py",
+      "lines": 222,
+      "bytes": 8664,
+      "sha256": "e7021d8c5ef648ab9f24e548693079533578a2fb962052a69a47e3bfd5221552"
+    },
+    {
+      "path": "clinx/discovery/observer_bootstrap.py",
+      "lines": 20,
+      "bytes": 650,
+      "sha256": "9ab188a2557163e3a3ae410b4227e7cc76edc2c0f2069b75b0ade07a1e6080d2"
+    },
+    {
+      "path": "clinx/discovery/pairing.py",
+      "lines": 229,
+      "bytes": 7817,
+      "sha256": "629521624132c70d27214abeed20508544f52c77b9ea2e888cf52fd1f981ef6f"
+    },
+    {
+      "path": "clinx/discovery/transport.py",
+      "lines": 221,
+      "bytes": 8210,
+      "sha256": "1327d46bdb0f035cd95d32406e98ff7be703b7b56b836688adb81e6e0cbfd75e"
+    },
+    {
+      "path": "clinx/host/__init__.py",
+      "lines": 1,
+      "bytes": 58,
+      "sha256": "f355d95540653367a3dc0089ecfbb2a1033eb4c6ab4329512de262139e0652b3"
+    },
+    {
+      "path": "clinx/host/host_contract.py",
+      "lines": 158,
+      "bytes": 10915,
+      "sha256": "759505c6e2d5f74affec5f4f526f65f1fd5e565f7e57dd3ad02825698ca3fdd5"
+    },
+    {
+      "path": "clinx/host/production_workflows.py",
+      "lines": 44,
+      "bytes": 1442,
+      "sha256": "36623879f3d40b5088c91b28a83147dccc262f6379bd27a8dd9c3087a3865fa2"
+    },
+    {
+      "path": "clinx/mcp/__init__.py",
+      "lines": 1,
+      "bytes": 57,
+      "sha256": "4a370372ae1e0fdbc6434ceedbb0e65f2d5e1ad9273b39ba77fff9574134ff16"
+    },
+    {
+      "path": "clinx/nodes/__init__.py",
+      "lines": 1,
+      "bytes": 59,
+      "sha256": "4db173bc54caaac2ac23b62cd836caf9e9be9ad4910c36a68c13c1ab7b82852f"
+    },
+    {
+      "path": "clinx/nodes/network_worker.py",
+      "lines": 160,
+      "bytes": 6297,
+      "sha256": "e2632d49c17d9b86dee23a973ba11b3180a473e797cee17569b1d2badc97edce"
+    },
+    {
+      "path": "clinx/nodes/node_centre_entrypoint.py",
+      "lines": 33,
+      "bytes": 1144,
+      "sha256": "7775afb875e34d6f1cd1e550d003aae402ddde622a525c8078057b195e4ec251"
+    },
+    {
+      "path": "clinx/nodes/node_protocol.py",
+      "lines": 734,
+      "bytes": 34428,
+      "sha256": "627f1b22f14b6a3630c9d33bbcee3da185fe2d82b647ef68b6f0a7a2ab5117a7"
+    },
+    {
+      "path": "clinx/nodes/node_runtime.py",
+      "lines": 273,
+      "bytes": 13510,
+      "sha256": "eaa4e6b1d033321277e4ffb657800860ff594092a6e5b8b26a3aa2d04874d570"
+    },
+    {
+      "path": "clinx/nodes/provider_relay.py",
+      "lines": 154,
+      "bytes": 6305,
+      "sha256": "b5049265d71d9fc3af496c59a0ed6326b8cdbfab397a40e291a1a01999d957f9"
+    },
+    {
+      "path": "clinx/nodes/rust_node_adapter.py",
+      "lines": 64,
+      "bytes": 3755,
+      "sha256": "652155647e10b78496ec1a5fffe01366e869ec9e9fb1f309a4d87033387a8c7c"
+    },
+    {
+      "path": "clinx/provider/__init__.py",
+      "lines": 1,
+      "bytes": 62,
+      "sha256": "52844fd282905937b2289ea6535a370d6275e7b8d16a131d7d59c933c07d7bd1"
+    },
+    {
+      "path": "clinx/provider/app_server.py",
+      "lines": 795,
+      "bytes": 33337,
+      "sha256": "ed7351403820a64ab67862ca4293e98e0797c042dc9f0ec66759fb3b86d5a041"
+    },
+    {
+      "path": "clinx/provider/native_history.py",
+      "lines": 101,
+      "bytes": 3142,
+      "sha256": "ff00f0f9429d9398e3f10d2d107c75b98d6419cc0fbc492f45b24666583095b1"
+    },
+    {
+      "path": "clinx/provider/native_provider.py",
+      "lines": 149,
+      "bytes": 6297,
+      "sha256": "43ace5f4fd84f718ebed4c7ccc844b4f4dd2df5ff65bf80c7ca536857fae08a9"
+    },
+    {
+      "path": "clinx/provider/native_writer_probe.py",
+      "lines": 121,
+      "bytes": 4109,
+      "sha256": "e44d66ba2bf1adb918b7b56b543dd7c0ebb1ba70038bf3ffdcc16eafcf7dc6e4"
+    },
+    {
+      "path": "clinx/transport/__init__.py",
+      "lines": 1,
+      "bytes": 63,
+      "sha256": "39d79a556b6f247cbb756999aa0c336f01efa58703820677313372d23f3cd3d2"
+    },
+    {
+      "path": "clinx/transport/tunnel_reliability.py",
+      "lines": 200,
+      "bytes": 8552,
+      "sha256": "42cc0bf0f09acb14ca66cd3f3d801a79fab6793ccc81ee937f301954dcccdf42"
+    },
+    {
+      "path": "fixtures/bridge_migration_codex.py",
+      "lines": 45,
+      "bytes": 1594,
+      "sha256": "33470d7f4183d776b62d526f0ec65366605874a694f163f428b53964742544d6"
+    },
+    {
+      "path": "fixtures/bridge_transport_control.go",
+      "lines": 424,
+      "bytes": 13515,
+      "sha256": "fb26347d231132246850195f708d2f24290b4e15a3c07af59ab1604a3464614e"
+    },
+    {
+      "path": "fixtures/bridge_transport_control.patch",
+      "lines": 192,
+      "bytes": 4857,
+      "sha256": "d6fc33cf8a24e4a70f2132ddfeb505ec049f387b5ca7f34693f1829a56b61c7d"
+    },
+    {
+      "path": "fixtures/bridge_transport_control_test.go",
+      "lines": 385,
+      "bytes": 11780,
+      "sha256": "a63fdeb002b79a5f68efa25c94dd2a59233de41b2ef513324118621062829f24"
+    },
+    {
+      "path": "fixtures/test_mcp_relay.py",
+      "lines": 93,
+      "bytes": 3784,
+      "sha256": "916fc5feecd8e5eaa314c2fbb329079e61fd6feed651a7d0d41293f47098b1fd"
+    },
+    {
+      "path": "fixtures/test_native_transport_binary.py",
+      "lines": 209,
+      "bytes": 10135,
+      "sha256": "2b744360f99ba8746bd150d5a99e238ea2a8e5bd5a093acec06ab5ead55e7418"
+    },
+    {
+      "path": "fixtures/test_node_authority_route.py",
+      "lines": 89,
+      "bytes": 4634,
+      "sha256": "04f2329c6a4fb9efb415934fc4a9efaa2080f128cb425fea4740a1edae0a36a1"
+    },
+    {
+      "path": "fixtures/test_provider_relay.py",
+      "lines": 104,
+      "bytes": 5201,
+      "sha256": "71ee59c947ae73cac8ac51719c0df2ca242a3a821b3361531c9c85d024439b8f"
+    },
+    {
+      "path": "fixtures/test_runtime_packages.py",
+      "lines": 172,
+      "bytes": 10724,
+      "sha256": "1132d689c57f2d27077b0456c9359e999ee5f41e9fb29378d45eb50c2d34bba9"
+    },
+    {
+      "path": "fixtures/test_rust_authority_client.py",
+      "lines": 95,
+      "bytes": 3918,
+      "sha256": "be8717d2515646e3fc64d76d15d5b74f0fa2aca913f07089da84ef6bbab73148"
+    },
+    {
+      "path": "fixtures/test_rust_device_cli.py",
+      "lines": 131,
+      "bytes": 6619,
+      "sha256": "10f2f8a3deb825043d8b190112017a251ecdc2848f5c2a8e99444fb98c021890"
+    },
+    {
+      "path": "fixtures/test_rust_device_config.py",
+      "lines": 122,
+      "bytes": 5392,
+      "sha256": "b6f019409410faf06127184948146f81258587fb0a30e28f82a1adb39ad72dba"
+    },
+    {
+      "path": "fixtures/test_rust_device_enrollment.py",
+      "lines": 153,
+      "bytes": 7140,
+      "sha256": "1539f8d124ecdc66cb6d6c5c0afc3c3e45d5bd80a9b3242ec8d9f6ee07719b1b"
+    },
+    {
+      "path": "fixtures/test_rust_discovery_index.py",
+      "lines": 88,
+      "bytes": 2786,
+      "sha256": "e75369b3b9775e185192198f8deeb170fca61c71d7a50c3ca252189c87776c0c"
+    },
+    {
+      "path": "fixtures/test_rust_discovery_state.py",
+      "lines": 116,
+      "bytes": 4618,
+      "sha256": "400dd959d73bebfe2b80535d92e727fd6801d6642f9237d2b9441358fc38c7fb"
+    },
+    {
+      "path": "fixtures/test_rust_execution_contracts.py",
+      "lines": 37,
+      "bytes": 1842,
+      "sha256": "2d419ec0b8504e363b142ab406ae347afcfa54c3cd9c454c9f4646dca21ccf20"
+    },
+    {
+      "path": "fixtures/test_rust_native_observer.py",
+      "lines": 94,
+      "bytes": 4161,
+      "sha256": "fff79a9ae2a5692cf5fc07cec772b90a65b4e4d0759fb4f08b7f351ec67bd0a1"
+    },
+    {
+      "path": "fixtures/test_rust_node_daemon.py",
+      "lines": 317,
+      "bytes": 16488,
+      "sha256": "9e08d9f4dfb055734814741f95725c258916dd96f937b0aacf2668f0e065bdab"
+    },
+    {
+      "path": "fixtures/test_rust_node_network.py",
+      "lines": 93,
+      "bytes": 4538,
+      "sha256": "d6fd3f4df3cfb84a3d25f2c94cb4a60da7a45ef8e9c506d973509b389369d630"
+    },
+    {
+      "path": "fixtures/test_rust_node_router.py",
+      "lines": 242,
+      "bytes": 9354,
+      "sha256": "5e81616df2e0e596c16a61d0bdeb6f43551c26dd88402295a17d6aa936b82f86"
+    },
+    {
+      "path": "fixtures/test_rust_node_runtime.py",
+      "lines": 84,
+      "bytes": 4132,
+      "sha256": "e9274f338419be6eab3cf96b5c0d8217f942910c70236915c043320daaf3781c"
+    },
+    {
+      "path": "fixtures/test_rust_observation.py",
+      "lines": 179,
+      "bytes": 6447,
+      "sha256": "d6092c810311799e949fa85288101e4bc9cdfaa676ca37e2094112de9f1f18e4"
+    },
+    {
+      "path": "fixtures/test_rust_observation_directory.py",
+      "lines": 292,
+      "bytes": 17223,
+      "sha256": "fda80ef127e1b5498d90b4cb5991845d37e6e2846c74583432f1f31c98b875fb"
+    },
+    {
+      "path": "fixtures/test_rust_observation_runtime.py",
+      "lines": 263,
+      "bytes": 9389,
+      "sha256": "e2a94b51d279d71ced1567fd694823928361079431e2caaa94924f414b1e388d"
+    },
+    {
+      "path": "fixtures/test_rust_observer_runtime.py",
+      "lines": 311,
+      "bytes": 13365,
+      "sha256": "aa97eca93b21ddefd22f1b021d659bce2e92488a62a3102ceb04de1ffebee757"
+    },
+    {
+      "path": "fixtures/test_rust_provider_api.py",
+      "lines": 89,
+      "bytes": 4198,
+      "sha256": "d43b6dd483b1c2d471ad0dc2471a83063497e39fd1df3d2787ef488d9d90cb32"
+    },
+    {
+      "path": "fixtures/test_rust_provider_client.py",
+      "lines": 200,
+      "bytes": 9430,
+      "sha256": "a9f1288fc4331568476214caa337c0f33a40eba1cd14f16e655c03852e2f576e"
+    },
+    {
+      "path": "fixtures/test_rust_provider_runtime.py",
+      "lines": 182,
+      "bytes": 7934,
+      "sha256": "fdc542b43a5d6a29f6c37c463933c17f79d104fd2bdd324e4e0c547dde3d1d9f"
+    },
+    {
+      "path": "fixtures/test_rust_runtime_config.py",
+      "lines": 43,
+      "bytes": 1285,
+      "sha256": "77c7213ae43d4b645f40fd6de9a92680a2624b7eb61bf88c8b0566bc53ffcbc2"
+    },
+    {
+      "path": "fixtures/test_rust_tunnel_runtime.py",
+      "lines": 58,
+      "bytes": 3185,
+      "sha256": "7c816842a792b141dd1b101f2bfce3e4e23886ee5560ec88bbd9f4b32fb0b6d9"
+    },
+    {
+      "path": "fixtures/transport_only_mcp.py",
+      "lines": 23,
+      "bytes": 960,
+      "sha256": "7c1b5993f20658b81def544129e45e419fa6fcb021f485f3a45bd12d3eda3e09"
+    },
+    {
+      "path": "mypy-discovery.ini",
+      "lines": 6,
+      "bytes": 133,
+      "sha256": "6440be8ff56785c599513818a1fa91fe247092b7cd594c1fdbc2c2ce4ee72ae9"
+    },
+    {
+      "path": "native/opaque_pairing/pyproject.toml",
+      "lines": 14,
+      "bytes": 309,
+      "sha256": "d2a574bece2080c2703132606febbe92ad41132060cca97426229b207977cbda"
+    },
+    {
+      "path": "requirements-dev.txt",
+      "lines": 2,
+      "bytes": 118,
+      "sha256": "71e634baeb1382167dfd6583e8ffccc8466c781152ddc4883e4ea839504dc52a"
+    },
+    {
+      "path": "requirements-discovery-dev.txt",
+      "lines": 6,
+      "bytes": 113,
+      "sha256": "a3e775b5b9dd7215e53140fe0cd2ab5003f9ef1ca0aac28a84e5aea734dce558"
+    },
+    {
+      "path": "requirements-discovery.txt",
+      "lines": 7,
+      "bytes": 345,
+      "sha256": "38bfe6a6e1992cb7df6bd5645b2e843f89bf6617b148ef70f66be7d4475aac50"
+    },
+    {
+      "path": "ruff-discovery.toml",
+      "lines": 7,
+      "bytes": 206,
+      "sha256": "a4e7c637cea87cbb21915e7df694aacbed42e60aa55f9c63b06b242c0aaa0af5"
+    },
+    {
+      "path": "scripts/build_forwarding_release.py",
+      "lines": 150,
+      "bytes": 8052,
+      "sha256": "ca3ab246790fd8909b15e02390d407a6340beeda81948063a50d79c24f0f6c1e"
+    },
+    {
+      "path": "scripts/build_transport_runtime.py",
+      "lines": 179,
+      "bytes": 8992,
+      "sha256": "98f0da85bf358c1b2850ebeb52e3292e961bf14f069bc327585db912a754b14f"
+    },
+    {
+      "path": "scripts/build_tunnel_release.py",
+      "lines": 333,
+      "bytes": 15820,
+      "sha256": "5ea0ead446bfaf93baf1a4ffcb54f70422846dbb83d83b790895bf45f414560c"
+    },
+    {
+      "path": "scripts/check_embedded_bridge_idle.py",
+      "lines": 21,
+      "bytes": 916,
+      "sha256": "b648703a3e5c7dffe9d655ef59505784b9360e0ab82db607dbc53bd7bd423b62"
+    },
+    {
+      "path": "scripts/check_tunnel_health.py",
+      "lines": 86,
+      "bytes": 2378,
+      "sha256": "39a758ba08a596f0d5893443d6e5a57dfff7e70fcf26130d6a6169cbdcd3d43f"
+    },
+    {
+      "path": "scripts/deploy_forwarding_release.py",
+      "lines": 360,
+      "bytes": 16888,
+      "sha256": "7cdcd866c530f0602dcea3a0fa500253205bf0cec7dd7f20f0457bb49576c31d"
+    },
+    {
+      "path": "scripts/install_rust_services.py",
+      "lines": 262,
+      "bytes": 11106,
+      "sha256": "1b1b75446cbe7c4ed47a7e743d9a72c470c547f5079887b0db4f5dd89194940a"
+    },
+    {
+      "path": "scripts/qualify_bridge_transport.py",
+      "lines": 108,
+      "bytes": 5342,
+      "sha256": "51695c989ac087f0c38c9c18fbdbf8d0d1b984f1aab9c2d8dc568164024cdf06"
+    },
+    {
+      "path": "scripts/qualify_rust_legacy_cgroup.py",
+      "lines": 164,
+      "bytes": 6497,
+      "sha256": "5a4a903b4075921da1fca391aadf704d485561c8f89c5edaec43a68fd9cfdaf3"
+    },
+    {
+      "path": "scripts/qualify_rust_physical_revocation.py",
+      "lines": 161,
+      "bytes": 6083,
+      "sha256": "89c11817f18c9ae7bd4290ceb6e3b6bbf5c52b157caddbf6be4f031fbb6b7ea0"
+    },
+    {
+      "path": "scripts/qualify_rust_service_isolation.py",
+      "lines": 82,
+      "bytes": 3969,
+      "sha256": "08ca92f23f537be1c201721079b7cb40870f944996efafdaa0fc3e231603b73e"
+    },
+    {
+      "path": "scripts/rust_authority_isolation.py",
+      "lines": 240,
+      "bytes": 10269,
+      "sha256": "574420f47f2440a8ff592831b60705259494c72eeb8eeeaf60c10339eaeba1c7"
+    },
+    {
+      "path": "scripts/stage_rust_callers.py",
+      "lines": 182,
+      "bytes": 7639,
+      "sha256": "c1a1bf25fefd2e381df172367700d44b80bf5dcc8a017545d710a5e389fd1a2f"
+    },
+    {
+      "path": "scripts/stage_rust_release.py",
+      "lines": 192,
+      "bytes": 12607,
+      "sha256": "55c6665ed3a84eead8c15045a629a4ffdbd7fac087c0546e674da97972fc356d"
+    },
+    {
+      "path": "scripts/tunnel_release_cas.py",
+      "lines": 178,
+      "bytes": 6801,
+      "sha256": "d5c4aa871eb3ebfaf8cc74db0129cb9c72347a14f9e7e80ce2b5230286940a47"
+    },
+    {
+      "path": "tools/__init__.py",
+      "lines": 1,
+      "bytes": 27,
+      "sha256": "468d37599f5f36bf4de3279cdb4a659ef10bee17bd1c778e1dbb5d077e05001b"
+    },
+    {
+      "path": "tools/build/__init__.py",
+      "lines": 1,
+      "bytes": 59,
+      "sha256": "e9665ce8310d37bd43ae5b6b7131326cfa39c6561ac32597ee1de0f3a01b91b1"
+    },
+    {
+      "path": "tools/build/runtime_sources.py",
+      "lines": 119,
+      "bytes": 5274,
+      "sha256": "0d5c623c44725bc27f0563af25753333c85498ceb79cb78a04b389fe643031b2"
+    },
+    {
+      "path": "tools/maintenance/__init__.py",
+      "lines": 1,
+      "bytes": 65,
+      "sha256": "b368041aba587baf136ebcfc66b1175411acba72d044235c5b5d4340392244aa"
+    },
+    {
+      "path": "tools/qualification/__init__.py",
+      "lines": 1,
+      "bytes": 67,
+      "sha256": "49f49451d2ae65740b3b5b0a7a380eb304b1269d4dbba381fc0ae7584c9c9e03"
+    },
+    {
+      "path": "tools/qualification/check_structure.py",
+      "lines": 57,
+      "bytes": 3166,
+      "sha256": "35c1ca297600e4a27a8f7ff24fa20cbf9f1da32d9a4a1caa7edb65d68f8e6feb"
+    },
+    {
+      "path": "tools/qualification/embedded_bridge_readiness.py",
+      "lines": 146,
+      "bytes": 6841,
+      "sha256": "025fa94642372129c7b2bb6ed6ee7b2effb5bbcd93190ed14a84d29765b75730"
+    },
+    {
+      "path": "tools/qualification/provider_qualification.py",
+      "lines": 100,
+      "bytes": 5069,
+      "sha256": "c33e07f32fa8cddcd9699cd3731bee8664cf8ad0ae64eaa1542b156284d895d1"
+    },
+    {
+      "path": "tools/qualification/relocate_tests.py",
+      "lines": 138,
+      "bytes": 6815,
+      "sha256": "2dc5bba6aedb6f9de6000b165e09aba35a569b8bafccf51400dd825877757f2d"
+    },
+    {
+      "path": "tools/qualification/run_local_tests.py",
+      "lines": 47,
+      "bytes": 2306,
+      "sha256": "66f2073933cd7c3acdd552100fe0d5c41ede8da1827f75fd08d768cb82631c9e"
+    }
+  ],
+  "retained_python_modules": [],
+  "python_runtime_sources": [],
+  "python_runtime_dependencies": [],
+  "required_non_python_data": [
+    "clinx/mcp/registry.json"
+  ],
+  "assertion_maps": [
+    "fixtures/provider_retirement_assertions_v1.json",
+    "fixtures/observer_process_retirement_assertions_v1.json",
+    "fixtures/node_discovery_retirement_assertions_v1.json",
+    "fixtures/build_relay_retirement_assertions_v1.json",
+    "fixtures/root_retirement_assertions_v1.json",
+    "fixtures/diagnostics_retirement_assertions_v1.json"
+  ],
+  "verification": {
+    "kernel_full": {
+      "passed": 587,
+      "failed": 0,
+      "ignored": 0,
+      "status": "PASS",
+      "note": "Complete suite before final development-only archive format patch; all affected suites rerun in Release afterward."
+    },
+    "final_affected_release": {
+      "passed": 28,
+      "failed": 0,
+      "ignored": 0,
+      "status": "PASS",
+      "suites": {
+        "build_release_qualification": 18,
+        "mcp_relay_retirement": 4,
+        "monitor_build": 6
+      },
+      "nine_real_release_binaries_staged": true
+    },
+    "opaque": {
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "status": "PASS"
+    },
+    "final_template_sql_format_parity": {
+      "passed": 19,
+      "failed": 0,
+      "ignored": 0,
+      "status": "PASS",
+      "reason": "Source whitespace normalization retains original frozen unit output bytes and SQL semantics; no assertion changes."
+    },
+    "release_build": "PASS_ALL_18_BINARIES_AND_EXAMPLES",
+    "release_binary_hashes": [
+      {
+        "binary": "clinx-build",
+        "sha256": "7b4367d189475e0ba601f0660f7eff78dc07df9203d6d7301d31937591252a25",
+        "bytes": 1646560,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffc3cfcc000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007287873e2000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000728787000000)\n\t/lib64/ld-linux-x86-64.so.2 (0x0000728787560000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-device",
+        "sha256": "eee7da58ce93f9c4941adb5ae8f6344b439175409c2bd84da31f09fe6325534d",
+        "bytes": 7751728,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffdb87d1000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007b866cbc4000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007b866c800000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007b866d1c9000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-diagnostics",
+        "sha256": "285bdaeeaf7c04428c3b0f84d651ee6727177f6bbd09d58f1dcc92e5b591ab6f",
+        "bytes": 4254280,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007fff70b18000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007208a948e000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007208a8c00000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007208a94cc000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-install",
+        "sha256": "8eb9d644bc11238ca933ace3223aa714b2d931cf18302661d8b785e228c98b25",
+        "bytes": 1367216,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffdf89e3000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x000073650cca4000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000073650ca00000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000073650cde9000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-kernel-bench",
+        "sha256": "167fe567481751a09dde057cc6cc3e0c0ade137eb590e3a717f00305cea72a18",
+        "bytes": 1582296,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007fffc53b0000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x000074df5d8ba000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000074df5d600000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000074df5da18000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-kernel-eval",
+        "sha256": "708649f207d719cc7baee5cc2d6170469dace392af054b03823c676333730253",
+        "bytes": 1823096,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffe663d9000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007525240b4000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000752523e00000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000075252423e000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-maintenance",
+        "sha256": "c4c4ae704f6f135a9afd373e44befb3be72771d3150913d3f897a57d51b9a4b0",
+        "bytes": 2089200,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffdc7ba4000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x000079408e2a5000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000079408e000000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000079408e462000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-mcp-relay",
+        "sha256": "c1872978aafd4e8b3d19d3fdfc0df3bdc296ad90c38bd003ab0e03020f7d3d96",
+        "bytes": 1420224,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffe1e3d4000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007b8403cd1000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007b8403a00000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007b8403e0c000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-mcp",
+        "sha256": "46d881dc60001fde2241384bc8526b5718e20b26894f9c0410dc6e5cc3e533a5",
+        "bytes": 10144792,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffc7276c000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x0000737b7bb76000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x0000737b7ba8d000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000737b7ae00000)\n\t/lib64/ld-linux-x86-64.so.2 (0x0000737b7bbb4000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-native-transport",
+        "sha256": "61b43e4401702cbb6393787dde40452f69580902c00b5c1be131d436f510dc16",
+        "bytes": 4913296,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007fffe135d000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007231598bb000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000723159000000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007231598f9000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-node-daemon",
+        "sha256": "6dd75f139742c24795f75750d197593f90adeb4341f15f53b6e843420ae7d438",
+        "bytes": 12901440,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffe089f8000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007cb69cd02000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007cb69c117000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007cb69be00000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007cb69cd40000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-node",
+        "sha256": "3ec26131badc82f113f0180725a809de0322af64e785d1e7428b92308a290d04",
+        "bytes": 14322752,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffd36999000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x000075b3c44a9000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x000075b3c43c0000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000075b3c3400000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000075b3c44e7000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-observer",
+        "sha256": "e357d32ffe043578272c92a2db809d69e2ed20954bcbc4d5c2818355ca0b9583",
+        "bytes": 12138704,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffcb850a000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x0000744606f22000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x0000744606e39000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000744606000000)\n\t/lib64/ld-linux-x86-64.so.2 (0x0000744606f60000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-owner-client",
+        "sha256": "72849d5f4a4ba9c3957a0002994462cb1a3b52f14ab2fe7a34185db254ecf8a4",
+        "bytes": 621544,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffc4fd8e000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x000071c0f7e49000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000071c0f7c00000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000071c0f7eff000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-provider",
+        "sha256": "b3544c54eb479f3023839fd21af3e9ec81745b779e7b1524f3d5518f08184fd8",
+        "bytes": 2049776,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffe343fd000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x000079dafe18a000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000079dafde00000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000079dafe33d000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-runtime",
+        "sha256": "aed34d6406a564dab1f0f0c50d7141c697d0909f1550524aa60df8a9fce70bf0",
+        "bytes": 5041368,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffdc1742000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007f92b23d2000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f92b22e9000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f92b2000000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007f92b2832000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-source-audit",
+        "sha256": "b8b6c57766fa44caca428dcb49e5a2754ce23cec4818f72a2aa01cb8086ba0fc",
+        "bytes": 781160,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffffc0da000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007539568c8000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000753956600000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000075395699e000)",
+        "libpython_linked": false
+      },
+      {
+        "binary": "clinx-tunnel",
+        "sha256": "b4f141087db26a1d3ba2ef24a8c470f08362043d099d866d8c50e105a9b2d56f",
+        "bytes": 4156424,
+        "ldd_exit": 0,
+        "ldd": "linux-vdso.so.1 (0x00007ffeb3db0000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x000072522f3a6000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000072522ec00000)\n\t/lib64/ld-linux-x86-64.so.2 (0x000072522f3e4000)",
+        "libpython_linked": false
+      }
+    ],
+    "structure": {
+      "monitor_native_helpers": [
+        "clinx-provider",
+        "clinx-node",
+        "clinx-node-daemon"
+      ],
+      "python_modules": 0,
+      "retired_python_records": 161,
+      "root_python_modules": 0,
+      "runtime_python_sources": 0,
+      "status": "PASS"
+    },
+    "shell_syntax": {
+      "status": "PASS",
+      "files": 9
+    },
+    "style": {
+      "baseline_warning_count": 11,
+      "final_warning_count": 11,
+      "new_warnings": [],
+      "format_baseline_identical": true,
+      "format_existing_files": [
+        "/home/pvxlabs/dev/clinx/kernel/src/authority_store.rs",
+        "/home/pvxlabs/dev/clinx/kernel/src/bin/clinx-owner-client.rs",
+        "/home/pvxlabs/dev/clinx/kernel/src/node_network.rs",
+        "/home/pvxlabs/dev/clinx/kernel/src/remote_provider.rs",
+        "/home/pvxlabs/dev/clinx/kernel/src/request_pipe.rs",
+        "/home/pvxlabs/dev/clinx/kernel/src/runtime_config.rs",
+        "/home/pvxlabs/dev/clinx/kernel/tests/native_routing.rs"
+      ]
+    },
+    "original_ignored_local_files": {
+      "original_files": 294,
+      "changed_files": [],
+      "status": "PASS"
+    },
+    "pinned_transport": {
+      "deployed": false,
+      "error": "BUILD_COMMAND_FAILED:go: downloading github.com/spf13/cobra v1.9.1\ngo: downloading go.uber.org/fx v1.23.0\ngo: downloading github.com/spf13/pflag v1.0.6\ngo: downloading gopkg.in/yaml.v3 v3.0.1\ngo: downloading go.uber.org/dig v1.19.0\ngo: downloading go.uber.org/multierr v1.11.0\ngo: downloading golang.org/x/sys v0.41.0\ngo: downloading go.uber.org/zap v1.27.0\ngo: downloading go.opentelemetry.io/otel/sdk/metric v1.41.0\ngo: downloading github.com/modelcontextprotocol/go-sdk v1.7.0\ngo: downloading go.opentelemetry.io/otel/sdk v1.41.0\ngo: downloading go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0\ngo: downloading golang.org/x/sync v0.20.0\ngo: downloading github.com/prometheus/client_golang v1.23.2\ngo: downloading go.opentelemetry.io/otel v1.41.0\ngo: downloading go.opentelemetry.io/otel/exporters/prometheus v0.60.0\ngo: downloading github.com/jpillora/backoff v1.0.0\ngo: downloading github.com/invopop/jsonschema v0.13.0\ngo: downloading go.opentelemetry.io/otel/metric v1.41.0\ngo: downloading golang.org/x/net v0.43.0\ngo: downloading github.com/panjf2000/ants/v2 v2.11.3\ngo: downloading github.com/felixge/httpsnoop v1.0.4\ngo: downloading go.opentelemetry.io/otel/trace v1.41.0\ngo: downloading github.com/prometheus/client_model v0.6.2\ngo: downloading github.com/prometheus/common v0.66.1\ngo: downloading github.com/go-logr/logr v1.4.3\ngo: downloading github.com/prometheus/otlptranslator v0.0.2\ngo: downloading google.golang.org/protobuf v1.36.8\ngo: downloading github.com/wk8/go-ordered-map/v2 v2.1.8\ngo: downloading github.com/beorn7/perks v1.0.1\ngo: downloading github.com/cespare/xxhash/v2 v2.3.0\ngo: downloading github.com/prometheus/procfs v0.17.0\ngo: downloading github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822\ngo: downloading github.com/go-logr/stdr v1.2.2\ngo: downloading go.opentelemetry.io/auto/sdk v1.2.1\ngo: downloading go.yaml.in/yaml/v2 v2.4.2\ngo: downloading github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc\ngo: downloading github.com/bahlo/generic-list-go v0.2.0\ngo: downloading github.com/buger/jsonparser v1.1.2\ngo: downloading github.com/mailru/easyjson v0.7.7\npkg/controlplane/polled_command.go:8:2: github.com/modelcontextprotocol/go-sdk@v1.7.0: read \"https://proxy.golang.org/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.zip\": unexpected EOF\npkg/mcpclient/channel_transport_factory.go:12:2: github.com/modelcontextprotocol/go-sdk@v1.7.0: read \"https://proxy.golang.org/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.zip\": unexpected EOF\n../modcache/go.opentelemetry.io/otel/exporters/prometheus@v0.60.0/config.go:15:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\n../modcache/go.opentelemetry.io/otel/exporters/prometheus@v0.60.0/exporter.go:25:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\n../modcache/go.opentelemetry.io/otel/exporters/prometheus@v0.60.0/exporter.go:26:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\npkg/metrics/fxmodule.go:11:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\npkg/oauth/discovery.go:14:2: github.com/modelcontextprotocol/go-sdk@v1.7.0: read \"https://proxy.golang.org/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.zip\": unexpected EOF\n",
+      "status": "BUILD_FAILED",
+      "transient_removed": true,
+      "assessment": "BLOCKED_NETWORK",
+      "blocked_phase": "go list -mod=readonly -deps ./cmd/client-runtime",
+      "network_errors": [
+        "proxy.golang.org github.com/modelcontextprotocol/go-sdk@v1.7.0: unexpected EOF",
+        "proxy.golang.org go.opentelemetry.io/otel/sdk@v1.41.0: unexpected EOF"
+      ],
+      "not_run": [
+        "upstream tests",
+        "build-a",
+        "build-b",
+        "fresh two-directory binary equality"
+      ],
+      "original_failure_log": "transport-real-rust-network/dependencies.stderr.log"
+    },
+    "native_tunnel_package": {
+      "schema": "CLINX_ACTUAL_NATIVE_TUNNEL_PACKAGE_V1",
+      "status": "PASS_NOT_DEPLOYED",
+      "source_supervisor": "current Release/clinx-tunnel",
+      "source_builder": "current Release/clinx-build",
+      "transport_source": "existing immutable pinned candidate-v2, not claimed as rebuilt this round",
+      "transport_candidate_manifest": "/data/artifacts/clinx-p1-transport-only-20261022T005407Z/candidate-v2/manifest.json",
+      "transport_candidate_manifest_sha256": "8603803cef8a35dd98bf92ea430d8e8c58edfbbd324ba87d1fb00756228bfc3c",
+      "release_manifest_sha256": "6687e5d0563154169932438ab989afa8291d8920c4cb5f7fe396621d206d9583",
+      "archives_byte_equal_across_output_directories": true,
+      "archives": {
+        "release.tar.gz": "11ad56a6f66cb4f38124cdd5f8cc8b2fb42b7100d8c5cd6c2ee06eea39a460e9",
+        "rollback-capsule.tar.gz": "67a60b2e1f6e9001137ef28c4dc9021b11b8ac4cefab8aed2060c912a2bc4fb4"
+      },
+      "runtime_files": {
+        "clinx-tunnel": {
+          "mode": 493,
+          "sha256": "b4f141087db26a1d3ba2ef24a8c470f08362043d099d866d8c50e105a9b2d56f"
+        },
+        "policy.json": {
+          "mode": 420,
+          "sha256": "c1fa257f761346947b358a192109205e3ecd94edb2a963474fbde52b94ad1628"
+        },
+        "transport-runtime-dependencies.txt": {
+          "mode": 420,
+          "sha256": "f4c4ec4b53a5304672f08f3b553973c5726b32406ce5d01d49d9fbf303f4253b"
+        },
+        "transport-runtime-manifest.json": {
+          "mode": 420,
+          "sha256": "8603803cef8a35dd98bf92ea430d8e8c58edfbbd324ba87d1fb00756228bfc3c"
+        },
+        "tunnel-client-runtime": {
+          "mode": 493,
+          "sha256": "31f83c5cab00cdb17b594085706190106d174a88d49ea6e7edec8e3823183f9d"
+        },
+        "units/99-p1-reliability.conf": {
+          "mode": 420,
+          "sha256": "c1fa088d6f6ba9c4113c735d691bab64b6baf79ba6ef0930347e92504e79c640"
+        },
+        "units/clinx-tunnel-health.service": {
+          "mode": 420,
+          "sha256": "6e955ba607dac7a145c533cb5976709f83ce11b109bacd39a96ef7e1c0e5e454"
+        },
+        "units/clinx-tunnel.service": {
+          "mode": 420,
+          "sha256": "f8d2e872bc1f2bdee5ed8f0f0b3bb1c19017e9e95401fe93416dc775a1b3c637"
+        }
+      },
+      "python_runtime_sources": [],
+      "runtime_devops_tools": [],
+      "offline_rollback_native_builder_sha256": "7b4367d189475e0ba601f0660f7eff78dc07df9203d6d7301d31937591252a25",
+      "status_without_python": {
+        "currently_healthy": false,
+        "dispatch_verified": false,
+        "status": "UNKNOWN"
+      },
+      "cas": {
+        "forward": {
+          "direction": "forward",
+          "scope": "OFFLINE_CONFIG_ONLY",
+          "status": "PASS"
+        },
+        "rollback": {
+          "direction": "rollback",
+          "scope": "OFFLINE_CONFIG_ONLY",
+          "status": "PASS"
+        }
+      },
+      "cas_exact_before_after_restored": true,
+      "production_mutations": false
+    }
+  },
+  "historical_python": {
+    "status": "NOT_PASS",
+    "baseline": {
+      "passed": 213,
+      "failed": 44,
+      "errors": 118,
+      "skipped": 2
+    },
+    "after": {
+      "passed": 23,
+      "failed": 15,
+      "errors": 114,
+      "skipped": 0
+    },
+    "unchanged_common": {
+      "passed": 23,
+      "failed": 15,
+      "collection_errors": 99
+    },
+    "new_retired_module_collection_errors": 15,
+    "previous_individual_cases_uncollectable": {
+      "passed": 190,
+      "failed": 29,
+      "setup_errors": 19,
+      "skipped": 2
+    },
+    "new_failures_among_common_cases": 0,
+    "prior_round_baseline_difference": "Two old native_writer_probe tests require /usr/bin/python3 -I; the same baseline with native probe binary invokes clinx-node --native-writer-probe. Original assertions preserved.",
+    "before_log": "historical-before/pytest.log",
+    "before_junit": "historical-before/result.xml",
+    "after_log": "historical-after/pytest.log",
+    "after_junit": "historical-after/result.xml",
+    "comparison": "historical-after-comparison.json"
+  },
+  "production": {
+    "services_unchanged": true,
+    "service_readbacks": [
+      "services-before.txt",
+      "services-after.txt"
+    ],
+    "installed_dispatcher_and_centre_still_use_old_python_releases": true,
+    "deployed": false,
+    "services_restarted": false,
+    "production_database_modified": false,
+    "real_tasks_operated": false
+  },
+  "not_verified": [
+    "Physical Mac-to-P620 execution/cancel/recovery",
+    "Physical LAN multicast",
+    "macOS/Xcode App build/signing",
+    "Real administrator provisioning/install",
+    "Production switch and isolation qualification",
+    "Historical transient-systemd qualification"
+  ],
+  "preserved_outside_current_source": [
+    "Original ignored Python tests and their assertions",
+    "Preexisting virtual environments and native target cache",
+    "Installed immutable releases and rollback dependencies",
+    "Production databases, credentials and runtime data"
+  ],
+  "evidence_root": "/data/artifacts/clinx-python-final-20261025",
+  "integration_receipt": "/data/artifacts/clinx-python-final-20261025/integration-receipt.json",
+  "temporary_cleanup_receipt": "/data/artifacts/clinx-python-final-20261025/cleanup-receipt.json",
+  "evidence": [
+    {
+      "path": "source-before.bundle",
+      "sha256": "808c21302fd1d9aafaa17d6855237466a2c2b1c6351a75a58833a41ff9f44ad1"
+    },
+    {
+      "path": "original-local-tests.tar.gz",
+      "sha256": "f8cf9dbd63a950d7420cf2ac9bb8dc33412059c3fe953be32c41c2e154b73ad0"
+    },
+    {
+      "path": "built-source-sha256.json",
+      "sha256": "8c5385f4bc2404d66ada03ad60c375c13a6940a533a0a31072dd860f62abbf76"
+    },
+    {
+      "path": "release-binaries.json",
+      "sha256": "acc597c4acd88e2fb8bdd85684523d83e5175c545d35700d6ab41885fba47cdf"
+    },
+    {
+      "path": "rust-complete.log",
+      "sha256": "03e4e74c1692ed756c57418d864374b23144fd750fd470376e2e778b34f4bf7a"
+    },
+    {
+      "path": "opaque-final.log",
+      "sha256": "76c98045def69f13ae5dc2373010ff98dbc03aa18a6456220d9b7e87fbf4691e"
+    },
+    {
+      "path": "release-verified.log",
+      "sha256": "3997fc6790b8063b86c119e91f87ac7395ac6cf26135da637dcb229006bc32dc"
+    },
+    {
+      "path": "build-global-pax-release-reviewed.log",
+      "sha256": "cde98355e2f0c0a8e0128d102420857e30f482b8f3852037c18aff699bb7dd90"
+    },
+    {
+      "path": "structure-verified.log",
+      "sha256": "e96fece547b19bf2f034b7c1dd2a55f6e06ae84548309046ab0c152b1d38c140"
+    },
+    {
+      "path": "size-before.json",
+      "sha256": "6988a9d693cd3d79589b5db03d9e0b4be7f65c93b9958d4f1710b6bb59f241a7"
+    },
+    {
+      "path": "size-verified.log",
+      "sha256": "eb48d49344eadd8b89900491e8468a2aad870e140f74444269745430ea0d3bb7"
+    },
+    {
+      "path": "final-style-comparison.json",
+      "sha256": "2d01fc48ec67ddb2bdb9ca7d8a3be22422def905c44d608fe3f65afa1c8e3894"
+    },
+    {
+      "path": "historical-after-comparison.json",
+      "sha256": "cede370264510a70b1dc44d34f0505b327ef7cc09b9c0added44ce1fbe75505d"
+    },
+    {
+      "path": "original-local-preservation.json",
+      "sha256": "ccbac9781efbf53e6a45470143c9bcc38d1081ccbeca3034d714b852f3ad70f3"
+    },
+    {
+      "path": "independent-fixture-map-audit.json",
+      "sha256": "1b3bd771efa5f5607f30a5abdac9f564e1fa3bc6004d14f309924e328ef9e710"
+    },
+    {
+      "path": "final-runtime-devops-independent-review.json",
+      "sha256": "ccc5d44e861c2a7e75bc24cffefd7b1508183fbdc9b54844d51ad440138cef87"
+    },
+    {
+      "path": "transport-build-input-availability.json",
+      "sha256": "05f83d06c9faa4feb87359c649023c69630327fef575741c4560f39fac5b9a0b"
+    },
+    {
+      "path": "native-tunnel-package-audit.json",
+      "sha256": "a7f59615c3334cbe0872cb140afac2e305cb0419a6cc3941423eff91ca068dcc"
+    },
+    {
+      "path": "build-network-deadline-release-final.log",
+      "sha256": "83c69a965718e19c7e3ed4c4c8c6a1ba2806cf5cc094446259d4950dd0e87fd3"
+    },
+    {
+      "path": "pax-and-tunnel-package-independent-review.json",
+      "sha256": "dedcf60508dff2218e7b76f8eaf47d5261930cbb4a54323014592e3746eb08ec"
+    },
+    {
+      "path": "build-final-validation.json",
+      "sha256": "6bbe937ccf31ae0da71461cd8219227fb4f5e5d9006757c33cf5b3d460c1a306"
+    },
+    {
+      "path": "nonexecuted-mapping-finalization.json",
+      "sha256": "04e0304f0bebbbf727acefe4557bcc4a6b644ff25f85e3439ea6fba3bb343b84"
+    },
+    {
+      "path": "final-whitespace-parity.log",
+      "sha256": "bff6477a38f342bea90ee40608103684289ca07a5087016e2b40609556588c6f"
+    },
+    {
+      "path": "whitespace-finalization.json",
+      "sha256": "accaad5f56fe338e6333a21f7c502af84cd5c91ebd06ed55e974af8858d24e20"
+    },
+    {
+      "path": "final-whitespace-independent-review.json",
+      "sha256": "cc8f754d638c83f411f5d09c225437e897a77d76b01754d9c30af6adea839ce1"
+    }
+  ],
+  "transport_build_attempts": [
+    {
+      "path": "transport-real-rust/manifest.json",
+      "sha256": "4c8e0fb981f39a850a891c10b0999ba5a6563cff268e6d2966710cc6a87d7f69",
+      "result": {
+        "deployed": false,
+        "error": "ARCHIVE_NON_REGULAR_OR_TRAVERSAL",
+        "status": "BUILD_FAILED",
+        "transient_removed": true
+      }
+    },
+    {
+      "path": "transport-real-rust-pax/manifest.json",
+      "sha256": "aa4b7e62e554c68adb4127f67359190a460aeea4577a6acc5e62f39cef317467",
+      "result": {
+        "deployed": false,
+        "error": "BUILD_COMMAND_TIMEOUT",
+        "status": "BUILD_FAILED",
+        "transient_removed": true
+      }
+    },
+    {
+      "path": "transport-real-rust-network/manifest.json",
+      "sha256": "f424a143e00752b9b87d712f3f177af4fc9aa01428a4aa04cbe161ac854bc28c",
+      "result": {
+        "deployed": false,
+        "error": "BUILD_COMMAND_FAILED:go: downloading github.com/spf13/cobra v1.9.1\ngo: downloading go.uber.org/fx v1.23.0\ngo: downloading github.com/spf13/pflag v1.0.6\ngo: downloading gopkg.in/yaml.v3 v3.0.1\ngo: downloading go.uber.org/dig v1.19.0\ngo: downloading go.uber.org/multierr v1.11.0\ngo: downloading golang.org/x/sys v0.41.0\ngo: downloading go.uber.org/zap v1.27.0\ngo: downloading go.opentelemetry.io/otel/sdk/metric v1.41.0\ngo: downloading github.com/modelcontextprotocol/go-sdk v1.7.0\ngo: downloading go.opentelemetry.io/otel/sdk v1.41.0\ngo: downloading go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0\ngo: downloading golang.org/x/sync v0.20.0\ngo: downloading github.com/prometheus/client_golang v1.23.2\ngo: downloading go.opentelemetry.io/otel v1.41.0\ngo: downloading go.opentelemetry.io/otel/exporters/prometheus v0.60.0\ngo: downloading github.com/jpillora/backoff v1.0.0\ngo: downloading github.com/invopop/jsonschema v0.13.0\ngo: downloading go.opentelemetry.io/otel/metric v1.41.0\ngo: downloading golang.org/x/net v0.43.0\ngo: downloading github.com/panjf2000/ants/v2 v2.11.3\ngo: downloading github.com/felixge/httpsnoop v1.0.4\ngo: downloading go.opentelemetry.io/otel/trace v1.41.0\ngo: downloading github.com/prometheus/client_model v0.6.2\ngo: downloading github.com/prometheus/common v0.66.1\ngo: downloading github.com/go-logr/logr v1.4.3\ngo: downloading github.com/prometheus/otlptranslator v0.0.2\ngo: downloading google.golang.org/protobuf v1.36.8\ngo: downloading github.com/wk8/go-ordered-map/v2 v2.1.8\ngo: downloading github.com/beorn7/perks v1.0.1\ngo: downloading github.com/cespare/xxhash/v2 v2.3.0\ngo: downloading github.com/prometheus/procfs v0.17.0\ngo: downloading github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822\ngo: downloading github.com/go-logr/stdr v1.2.2\ngo: downloading go.opentelemetry.io/auto/sdk v1.2.1\ngo: downloading go.yaml.in/yaml/v2 v2.4.2\ngo: downloading github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc\ngo: downloading github.com/bahlo/generic-list-go v0.2.0\ngo: downloading github.com/buger/jsonparser v1.1.2\ngo: downloading github.com/mailru/easyjson v0.7.7\npkg/controlplane/polled_command.go:8:2: github.com/modelcontextprotocol/go-sdk@v1.7.0: read \"https://proxy.golang.org/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.zip\": unexpected EOF\npkg/mcpclient/channel_transport_factory.go:12:2: github.com/modelcontextprotocol/go-sdk@v1.7.0: read \"https://proxy.golang.org/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.zip\": unexpected EOF\n../modcache/go.opentelemetry.io/otel/exporters/prometheus@v0.60.0/config.go:15:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\n../modcache/go.opentelemetry.io/otel/exporters/prometheus@v0.60.0/exporter.go:25:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\n../modcache/go.opentelemetry.io/otel/exporters/prometheus@v0.60.0/exporter.go:26:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\npkg/metrics/fxmodule.go:11:2: go.opentelemetry.io/otel/sdk@v1.41.0: Get \"https://proxy.golang.org/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip\": unexpected EOF\npkg/oauth/discovery.go:14:2: github.com/modelcontextprotocol/go-sdk@v1.7.0: read \"https://proxy.golang.org/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.zip\": unexpected EOF\n",
+        "status": "BUILD_FAILED",
+        "transient_removed": true
+      }
+    }
+  ]
+}

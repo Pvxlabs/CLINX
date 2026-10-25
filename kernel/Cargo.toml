@@ -47,6 +47,8 @@ toml = { version = "=0.9.8", features = ["preserve_order"] }
 nix = { version = "=0.30.1", default-features = false, features = ["user"] }
 
 pkcs8 = { version = "=0.10.2", features = ["pem", "std"] }
+tar = { version = "=0.4.46", default-features = false }
+flate2 = "=1.1.10"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

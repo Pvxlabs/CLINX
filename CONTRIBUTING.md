@@ -1,79 +1,47 @@
 # Contributing to CLINX
 
-Use the setup below, then [the test guide](docs/TESTING.md). Read applicable `AGENTS.md` files and inspect
-`git status`/`git diff` before editing a shared checkout. Preserve unrelated work.
+Read applicable `AGENTS.md` and inspect the checkout before editing. Preserve unrelated
+changes. The current runtime, compatibility contracts, build/maintenance tools and
+portable qualification suite use Rust; macOS UI uses Swift. Python is not a build or
+test prerequisite for current source.
 
-The Python pytest suite is local-only under the ignored `tests/` directory.
-It is not distributed through Git. The commands below require that retained
-local directory; installing dependencies after a fresh clone does not recreate it.
-The current runner copies the suite into a new task-owned directory and translates
-historical imports/patch targets using `architecture/module-moves.json`. It never
-edits retained tests or installs flat runtime import aliases. Tracked portable
-fixtures remain in `fixtures/`; see the test guide for Rust relay/node checks.
+Use Rust 1.98 or later, Git, a C linker and OpenSSL CLI for the independent wire tests.
+On P620 use a task-owned target under `/lab/runtime-worktrees/p620` and private,
+short temporary paths under `/data/artifacts`; Unix socket paths have a finite limit.
+See [Testing](docs/TESTING.md) for exact commands and platform limits.
 
-## Development setup
-
-Use Python 3.12 and Git. From the repository root:
+Build the test examples before running the suite. They are independent child programs
+used by real process/Provider/transport qualifications; they are never runtime release members.
 
 ```sh
-python3.12 -m venv .venv-test
-.venv-test/bin/python -m pip install -r requirements-dev.txt
-.venv-test/bin/python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/adapter-tests test_rust_native_routing.py test_rust_request_contract.py
-.venv-test/bin/python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only
+cargo build --locked --manifest-path kernel/Cargo.toml --bins --examples
+cargo test --locked --manifest-path kernel/Cargo.toml
+cargo test --locked --manifest-path native/opaque_pairing/Cargo.toml
+cargo build --locked --release --manifest-path kernel/Cargo.toml --bins --examples
+"$CARGO_TARGET_DIR/release/clinx-source-audit" --check-structure
+"$CARGO_TARGET_DIR/release/clinx-source-audit"
+git diff --check
 ```
 
-If your Python distribution omits `venv`/`ensurepip`, install its venv package or
-use `uv venv --python 3.12 --seed .venv-test`. On P620 put environments/builds in
-your task-owned LAB directory and use that Python path. Keep `.venv-node` under
-its deployment contract; it may link to an installed release.
+Set `CARGO_TARGET_DIR` to your task-owned build directory before these commands.
+Use private HOME/XDG/TMPDIR for process tests; never substitute production sockets,
+identities, databases or Provider endpoints. A test must not replay an unknown request
+or fabricate terminal evidence to make teardown pass.
 
-The Rust adapter fixtures use disposable state and scripted transports and need no
-production CLINX, Linear account, Codex daemon, API key or production database.
-`collect` discovers tests without running them. Profiles are listed in
-the local `tests/suites.toml`. For isolated Owner integration and special
-prerequisites, see [Testing](docs/TESTING.md); runtime setup remains in [README.md](README.md).
-The retained historical profiles include retired Python experiments and currently
-fail collection. Preserve these local files; report their retirement separately
-from current runtime regressions as described in the phase 2 cleanup record.
+Place native tests in `kernel/tests/`; preserve unique identity, request, concurrency,
+WAL, ACK, cancellation, recovery, process ownership and failure-boundary assertions.
+Frozen JSON/SQL oracles belong in `fixtures/`. Keep independent expectations separate
+from the implementation under test. Do not convert failures into skips or weaken assertions.
 
-## Before submitting a change
+The ignored local Python `tests/` is a historical archive. Do not edit or force-add it.
+Recovery of an old test uses its exact Git source and pinned dependencies in a disposable,
+task-owned checkout. The historical relocation runner and Python requirements are no
+longer current source dependencies. See the [retirement evidence](docs/RUST_PYTHON_RETIREMENT.md).
 
-1. Install `requirements-dev.txt` in a separate virtual environment.
-2. Run the Rust adapter fixtures above and the tests for the changed behavior.
-3. Run `python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only`; compare node IDs if changing collection.
-4. Run `python -m ruff check --no-cache --config ruff-discovery.toml <changed-python-files>`
-   and `git diff --check`. Use the repository configuration, not Ruff defaults.
-5. Report exact commands, interpreter/dependency versions, failures, existing
-   skips and any prerequisites you could not exercise. Keep failure evidence.
+Report current PASS separately from existing formatting/lint failures, historical API
+failures, unavailable external artifacts, native macOS build/signing and real-device
+acceptance. A successful private test or source commit does not prove a deployed release.
 
-Do not convert missing dependencies, authority failures or uncertain recovery
-into skips or weaker assertions. A portable smoke profile is not the complete
-regression suite. A passing fixture is not real Provider/device acceptance.
-
-## Test layout and naming
-
-All Python pytest modules, shared fixtures, profiles, configuration and the
-runner belong directly under the local `tests/` directory. Name modules
-`test_<behavior>.py`; preserve existing module basenames because tests import
-fixtures from one another. Repository-relative paths resolve from the parent of
-`tests/`, and `tests/conftest.py` supplies imports and marker registration.
-Do not add root-level test modules or force-add this ignored directory to Git.
-
-Run `python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only` after changes and compare case identities.
-Markers describe behavior and may overlap; no automatic hook filters old tests.
-Keep unique ownership, transport, SQLite, idempotency and recovery assertions.
-
-## State and authority
-
-Use temporary SQLite databases and local fake Providers. Owner tests should start
-their own Owner thread/socket with an explicit temporary registry, assert shutdown,
-and test missing Owner as a failure boundary. Never point fixtures at production
-state, replay an old event to obtain a pass, or start real Provider tests by default.
-Retain unique regressions for ownership, transport, idempotency, WAL/transactions,
-recovery, uncertain delivery and stale writers.
-
-Generated reports may go in `.test-results/` (ignored). Ignored is not disposable:
-delete only output created by your own task after checking references and ownership.
-Do not delete unknown caches, release packages, manifests, DB/WAL/SHM files,
-archives, logs, backups or rollback evidence. On P620 follow the task-owned artifact
-and LAB storage rules in `AGENTS.md`; never create another long-lived CLINX checkout.
+Remove only your own disposable checkouts and regenerable build outputs after retaining
+logs, hashes and recovery bundles. Do not remove installed releases, credentials,
+DB/WAL/SHM files, rollback dependencies, pre-existing caches or runtime data.

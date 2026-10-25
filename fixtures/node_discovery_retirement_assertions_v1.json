@@ -1,0 +1,3919 @@
+{
+  "schema": "CLINX_NODE_DISCOVERY_ASSERTION_MIGRATION_V1",
+  "baseline": "52f6ce9",
+  "source_files": [
+    {
+      "path": "clinx/discovery/__init__.py",
+      "sha256": "15f14c863835e00638e6d309c0dbf22052f629f73b2e22e754bd6bdaa53a0be9",
+      "lines": 6
+    },
+    {
+      "path": "clinx/discovery/cli.py",
+      "sha256": "03b28276e0711a4bb23d8841922b61d10132cc2f15f0eb807f1081b584c8a381",
+      "lines": 66
+    },
+    {
+      "path": "clinx/discovery/discovery.py",
+      "sha256": "899ccca398a10a5a675916a5cf443846b1a69fba309e673e0ebc6008d8d27417",
+      "lines": 253
+    },
+    {
+      "path": "clinx/discovery/identity.py",
+      "sha256": "e7021d8c5ef648ab9f24e548693079533578a2fb962052a69a47e3bfd5221552",
+      "lines": 222
+    },
+    {
+      "path": "clinx/discovery/observer_bootstrap.py",
+      "sha256": "9ab188a2557163e3a3ae410b4227e7cc76edc2c0f2069b75b0ade07a1e6080d2",
+      "lines": 20
+    },
+    {
+      "path": "clinx/discovery/pairing.py",
+      "sha256": "629521624132c70d27214abeed20508544f52c77b9ea2e888cf52fd1f981ef6f",
+      "lines": 229
+    },
+    {
+      "path": "clinx/discovery/transport.py",
+      "sha256": "1327d46bdb0f035cd95d32406e98ff7be703b7b56b836688adb81e6e0cbfd75e",
+      "lines": 221
+    },
+    {
+      "path": "clinx/nodes/__init__.py",
+      "sha256": "4db173bc54caaac2ac23b62cd836caf9e9be9ad4910c36a68c13c1ab7b82852f",
+      "lines": 1
+    },
+    {
+      "path": "clinx/nodes/network_worker.py",
+      "sha256": "e2632d49c17d9b86dee23a973ba11b3180a473e797cee17569b1d2badc97edce",
+      "lines": 160
+    },
+    {
+      "path": "clinx/nodes/node_centre_entrypoint.py",
+      "sha256": "7775afb875e34d6f1cd1e550d003aae402ddde622a525c8078057b195e4ec251",
+      "lines": 33
+    },
+    {
+      "path": "clinx/nodes/node_protocol.py",
+      "sha256": "627f1b22f14b6a3630c9d33bbcee3da185fe2d82b647ef68b6f0a7a2ab5117a7",
+      "lines": 734
+    },
+    {
+      "path": "clinx/nodes/node_runtime.py",
+      "sha256": "eaa4e6b1d033321277e4ffb657800860ff594092a6e5b8b26a3aa2d04874d570",
+      "lines": 273
+    },
+    {
+      "path": "clinx/nodes/provider_relay.py",
+      "sha256": "b5049265d71d9fc3af496c59a0ed6326b8cdbfab397a40e291a1a01999d957f9",
+      "lines": 154
+    },
+    {
+      "path": "clinx/nodes/rust_node_adapter.py",
+      "sha256": "652155647e10b78496ec1a5fffe01366e869ec9e9fb1f309a4d87033387a8c7c",
+      "lines": 64
+    }
+  ],
+  "qualification_files": [
+    {
+      "path": "fixtures/test_rust_node_daemon.py",
+      "sha256": "9e08d9f4dfb055734814741f95725c258916dd96f937b0aacf2668f0e065bdab",
+      "cases": [
+        {
+          "case": "test_standalone_pair_registration_read_and_exact_reverse_route",
+          "line": 182,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+              "line": 407
+            }
+          ],
+          "assertions": [
+            {
+              "line": 185,
+              "original": "assert result[\"error_code\"] == \"FIXTURE_AUTHORITY_BOUNDARY\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 186,
+              "original": "assert len(daemons.authority.calls) == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 188,
+              "original": "assert wire[\"operation\"] == \"business.node_request\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 189,
+              "original": "assert wire[\"payload\"][\"operation\"] == \"get_prepared\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 190,
+              "original": "assert wire[\"payload\"][\"payload\"] == {\"prepared_execution_ref\": \"prepared_one\"}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 191,
+              "original": "assert wire[\"payload\"][\"scope\"] == dict(principal=dict(node_id=\"air\", user_scope=\"alice\",\n            fingerprint=daemons.public[\"fingerprint\"]), projects=[\"*\"])",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 193,
+              "original": "assert wire[\"payload\"][\"request_id\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 194,
+              "original": "assert client.call(start_request())[\"idempotent\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 195,
+              "original": "assert [v[\"payload\"][\"operation\"] for v in daemons.authority.calls] == [\"get_prepared\", \"get_status\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 196,
+              "original": "assert client.call(dict(start_request(\"other\"), user_scope=\"bob\"))[\"error_code\"] == \"USER_SCOPE_DENIED\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 198,
+              "original": "assert client.call(start_request(\"revoked\"))[\"error_code\"] == \"SHARING_SCOPE_DENIED\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            },
+            {
+              "line": 199,
+              "original": "assert len(daemons.authority.calls) == 2",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_pair_registration_reverse_identity_and_scope_match_original_contract",
+                  "line": 407
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_unknown_after_lost_ack_is_read_back_after_restart_without_replaying_start",
+          "line": 202,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "standalone_lost_ack_restart_reads_exact_receipt_without_replaying_start",
+              "line": 452
+            }
+          ],
+          "assertions": [
+            {
+              "line": 206,
+              "original": "assert result[\"operation_state\"] == \"FAILED\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_lost_ack_restart_reads_exact_receipt_without_replaying_start",
+                  "line": 452
+                }
+              ]
+            },
+            {
+              "line": 207,
+              "original": "assert result[\"error_code\"] == \"DELIVERY_UNKNOWN\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_lost_ack_restart_reads_exact_receipt_without_replaying_start",
+                  "line": 452
+                }
+              ]
+            },
+            {
+              "line": 208,
+              "original": "assert result[\"side_effect\"] == \"UNKNOWN\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_lost_ack_restart_reads_exact_receipt_without_replaying_start",
+                  "line": 452
+                }
+              ]
+            },
+            {
+              "line": 210,
+              "original": "assert len(first) == 1 and first[0][\"payload\"][\"operation\"] == \"get_prepared\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_lost_ack_restart_reads_exact_receipt_without_replaying_start",
+                  "line": 452
+                }
+              ]
+            },
+            {
+              "line": 213,
+              "original": "assert result[\"operation_state\"] == \"UNKNOWN\" and result[\"idempotent\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_lost_ack_restart_reads_exact_receipt_without_replaying_start",
+                  "line": 452
+                }
+              ]
+            },
+            {
+              "line": 215,
+              "original": "assert operations.count(\"get_prepared\") == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_lost_ack_restart_reads_exact_receipt_without_replaying_start",
+                  "line": 452
+                }
+              ]
+            },
+            {
+              "line": 216,
+              "original": "assert \"start\" not in operations",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_lost_ack_restart_reads_exact_receipt_without_replaying_start",
+                  "line": 452
+                }
+              ]
+            },
+            {
+              "line": 217,
+              "original": "assert operations[1:]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_lost_ack_restart_reads_exact_receipt_without_replaying_start",
+                  "line": 452
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_concurrent_exact_request_claim_and_payload_conflict",
+          "line": 220,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "standalone_concurrent_requests_claim_once_and_conflicting_payload_fails",
+              "line": 474
+            }
+          ],
+          "assertions": [
+            {
+              "line": 224,
+              "original": "assert all(r.get(\"error_code\") == \"FIXTURE_AUTHORITY_BOUNDARY\" or r.get(\"operation_state\") == \"UNKNOWN\" for r in results)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_concurrent_requests_claim_once_and_conflicting_payload_fails",
+                  "line": 474
+                }
+              ]
+            },
+            {
+              "line": 225,
+              "original": "assert sum(v[\"payload\"][\"operation\"] == \"get_prepared\" for v in daemons.authority.calls) == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_concurrent_requests_claim_once_and_conflicting_payload_fails",
+                  "line": 474
+                }
+              ]
+            },
+            {
+              "line": 227,
+              "original": "assert conflict[\"error_code\"] == \"IDEMPOTENCY_KEY_REUSE\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_concurrent_requests_claim_once_and_conflicting_payload_fails",
+                  "line": 474
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_standalone_helper_provider_evidence_identity_and_no_duplicate_submission",
+          "line": 230,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "standalone_provider_evidence_has_exact_identity_and_single_submission",
+              "line": 496
+            }
+          ],
+          "assertions": [
+            {
+              "line": 244,
+              "original": "assert client.call(request)[\"accepted\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_provider_evidence_has_exact_identity_and_single_submission",
+                  "line": 496
+                }
+              ]
+            },
+            {
+              "line": 245,
+              "original": "assert client.call(request)[\"error_code\"] == \"PROVIDER_REQUEST_IDENTITY_CONFLICT\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_provider_evidence_has_exact_identity_and_single_submission",
+                  "line": 496
+                }
+              ]
+            },
+            {
+              "line": 248,
+              "original": "assert hashlib.sha256(decoded).hexdigest() == result[\"digest\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_provider_evidence_has_exact_identity_and_single_submission",
+                  "line": 496
+                }
+              ]
+            },
+            {
+              "line": 249,
+              "original": "assert json.loads(decoded) == {\"result\": {\"thread\": evidence}}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_provider_evidence_has_exact_identity_and_single_submission",
+                  "line": 496
+                }
+              ]
+            },
+            {
+              "line": 251,
+              "original": "assert denied[\"error_code\"] == \"PROVIDER_SCOPE_DENIED\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_provider_evidence_has_exact_identity_and_single_submission",
+                  "line": 496
+                }
+              ]
+            },
+            {
+              "line": 252,
+              "original": "assert [v[\"method\"] for v in provider.calls] == [\"initialize\", \"initialized\", \"thread/read\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_provider_evidence_has_exact_identity_and_single_submission",
+                  "line": 496
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_cancel_routes_exact_execution_and_preserves_pending_until_authority_evidence",
+          "line": 257,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "standalone_cancel_preserves_exact_turn_pending_state_and_restart_idempotency",
+              "line": 541
+            }
+          ],
+          "assertions": [
+            {
+              "line": 263,
+              "original": "assert result[\"operation_state\"] == \"CANCELLATION_PENDING\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_cancel_preserves_exact_turn_pending_state_and_restart_idempotency",
+                  "line": 541
+                }
+              ]
+            },
+            {
+              "line": 264,
+              "original": "assert result[\"resource_state\"] == \"HELD\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_cancel_preserves_exact_turn_pending_state_and_restart_idempotency",
+                  "line": 541
+                }
+              ]
+            },
+            {
+              "line": 266,
+              "original": "assert len(cancels) == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_cancel_preserves_exact_turn_pending_state_and_restart_idempotency",
+                  "line": 541
+                }
+              ]
+            },
+            {
+              "line": 267,
+              "original": "assert cancels[0][\"payload\"][\"payload\"] == dict(execution_ref=\"exec-exact\", approved=True)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_cancel_preserves_exact_turn_pending_state_and_restart_idempotency",
+                  "line": 541
+                }
+              ]
+            },
+            {
+              "line": 268,
+              "original": "assert client.call(request)[\"idempotent\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_cancel_preserves_exact_turn_pending_state_and_restart_idempotency",
+                  "line": 541
+                }
+              ]
+            },
+            {
+              "line": 270,
+              "original": "assert wrong[\"error_code\"] == \"EXECUTION_TURN_IDENTITY_CONFLICT\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_cancel_preserves_exact_turn_pending_state_and_restart_idempotency",
+                  "line": 541
+                }
+              ]
+            },
+            {
+              "line": 272,
+              "original": "assert client.call(request)[\"operation_state\"] == \"CANCELLATION_PENDING\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_cancel_preserves_exact_turn_pending_state_and_restart_idempotency",
+                  "line": 541
+                }
+              ]
+            },
+            {
+              "line": 273,
+              "original": "assert len([v for v in daemons.authority.calls if v[\"payload\"][\"operation\"] == \"cancel\"]) == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_cancel_preserves_exact_turn_pending_state_and_restart_idempotency",
+                  "line": 541
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_unavailable_execution_route_preserves_independent_read_permission",
+          "line": 277,
+          "parameters": [
+            "pytest.mark.parametrize(\"reason\", [\"wrong_host\", \"no_socket\"])"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "standalone_wrong_host_and_missing_socket_preserve_independent_read_permission",
+              "line": 576
+            }
+          ],
+          "assertions": [
+            {
+              "line": 284,
+              "original": "assert \"session.read\" in row.capabilities",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_wrong_host_and_missing_socket_preserve_independent_read_permission",
+                  "line": 576
+                }
+              ]
+            },
+            {
+              "line": 285,
+              "original": "assert \"execution.start\" not in row.capabilities",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_wrong_host_and_missing_socket_preserve_independent_read_permission",
+                  "line": 576
+                }
+              ]
+            },
+            {
+              "line": 287,
+              "original": "assert result[\"error_code\"] == \"OPERATION_NOT_IMPLEMENTED\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_wrong_host_and_missing_socket_preserve_independent_read_permission",
+                  "line": 576
+                }
+              ]
+            },
+            {
+              "line": 288,
+              "original": "assert not daemons.authority.calls",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "standalone_wrong_host_and_missing_socket_preserve_independent_read_permission",
+                  "line": 576
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_pairing_terminal_cancellation_restores_echo",
+          "line": 291,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "pairing_terminal_cancellation_restores_every_original_termios_field",
+              "line": 284
+            }
+          ],
+          "assertions": [
+            {
+              "line": 305,
+              "original": "assert time.monotonic() < until",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "pairing_terminal_cancellation_restores_every_original_termios_field",
+                  "line": 284
+                }
+              ]
+            },
+            {
+              "line": 309,
+              "original": "assert process.returncode == 1 and b\"PAIRING_CANCELLED\" in stderr",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "pairing_terminal_cancellation_restores_every_original_termios_field",
+                  "line": 284
+                }
+              ]
+            },
+            {
+              "line": 310,
+              "original": "assert not stdout",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "pairing_terminal_cancellation_restores_every_original_termios_field",
+                  "line": 284
+                }
+              ]
+            },
+            {
+              "line": 311,
+              "original": "assert termios.tcgetattr(slave) == before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "pairing_terminal_cancellation_restores_every_original_termios_field",
+                  "line": 284
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_node_network.py",
+      "sha256": "d6fd3f4df3cfb84a3d25f2c94cb4a60da7a45ef8e9c506d973509b389369d630",
+      "cases": [
+        {
+          "case": "test_existing_openssl_and_rust_node_are_bidirectionally_wire_compatible",
+          "line": 29,
+          "parameters": [
+            "pytest.mark.parametrize('terminator', [b'\\n', b''])"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "independent_openssl_and_rust_nodes_preserve_bidirectional_json_lines_and_eof",
+              "line": 831
+            }
+          ],
+          "assertions": [
+            {
+              "line": 39,
+              "original": "assert reply == {'request_id': 'openssl-to-rust', 'result': {'accepted_by_fixture': True}}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "independent_openssl_and_rust_nodes_preserve_bidirectional_json_lines_and_eof",
+                  "line": 831
+                }
+              ]
+            },
+            {
+              "line": 58,
+              "original": "assert not errors and not thread.is_alive()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "independent_openssl_and_rust_nodes_preserve_bidirectional_json_lines_and_eof",
+                  "line": 831
+                }
+              ]
+            },
+            {
+              "line": 59,
+              "original": "assert result == {'old_openssl_server': True}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "independent_openssl_and_rust_nodes_preserve_bidirectional_json_lines_and_eof",
+                  "line": 831
+                }
+              ]
+            },
+            {
+              "line": 60,
+              "original": "assert calls == [{'operation': 'node.status'}]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "independent_openssl_and_rust_nodes_preserve_bidirectional_json_lines_and_eof",
+                  "line": 831
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_rust_listener_reloads_revoked_trust_without_restart",
+          "line": 63,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "live_tls_listener_reloads_revocation_and_expired_certificate_before_dispatch",
+              "line": 941
+            }
+          ],
+          "assertions": [
+            {
+              "line": 67,
+              "original": "pytest.raises((TimeoutError, OSError))",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "live_tls_listener_reloads_revocation_and_expired_certificate_before_dispatch",
+                  "line": 941
+                }
+              ]
+            },
+            {
+              "line": 70,
+              "original": "assert not route.calls",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "live_tls_listener_reloads_revocation_and_expired_certificate_before_dispatch",
+                  "line": 941
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_expired_certificate_is_rejected_before_dispatch",
+          "line": 73,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "live_tls_listener_reloads_revocation_and_expired_certificate_before_dispatch",
+              "line": 941
+            }
+          ],
+          "assertions": [
+            {
+              "line": 91,
+              "original": "pytest.raises(RustAuthorityError, match='DELIVERY_UNKNOWN')",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "live_tls_listener_reloads_revocation_and_expired_certificate_before_dispatch",
+                  "line": 941
+                }
+              ]
+            },
+            {
+              "line": 93,
+              "original": "assert not route.calls",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "live_tls_listener_reloads_revocation_and_expired_certificate_before_dispatch",
+                  "line": 941
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_node_router.py",
+      "sha256": "5e81616df2e0e596c16a61d0bdeb6f43551c26dd88402295a17d6aa936b82f86",
+      "cases": [
+        {
+          "case": "test_cursor_python_exception_type_and_reason",
+          "line": 24,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_router_qualification.rs",
+              "case": "deployed_cursor_bytes_roundtrip_and_cross_identity_rejection",
+              "line": 92
+            }
+          ],
+          "assertions": [
+            {
+              "line": 29,
+              "original": "pytest.raises(NodeProtocolError, match=\"another node\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_router_qualification.rs",
+                  "case": "deployed_cursor_bytes_roundtrip_and_cross_identity_rejection",
+                  "line": 92
+                }
+              ]
+            },
+            {
+              "line": 31,
+              "original": "pytest.raises(NodeProtocolError)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_router_qualification.rs",
+                  "case": "deployed_cursor_bytes_roundtrip_and_cross_identity_rejection",
+                  "line": 92
+                }
+              ]
+            },
+            {
+              "line": 35,
+              "original": "pytest.raises(NodeProtocolError)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_router_qualification.rs",
+                  "case": "deployed_cursor_bytes_roundtrip_and_cross_identity_rejection",
+                  "line": 92
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_read_identity_validation_precedes_provider_io",
+          "line": 65,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "service_read_validates_every_original_source_version_before_provider_io",
+              "line": 976
+            }
+          ],
+          "assertions": [
+            {
+              "line": 80,
+              "original": "assert result[\"error_code\"] == \"ValueError\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "service_read_validates_every_original_source_version_before_provider_io",
+                  "line": 976
+                }
+              ]
+            },
+            {
+              "line": 81,
+              "original": "assert not calls",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "service_read_validates_every_original_source_version_before_provider_io",
+                  "line": 976
+                }
+              ]
+            },
+            {
+              "line": 83,
+              "original": "assert calls == [(\"t\", {})]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "service_read_validates_every_original_source_version_before_provider_io",
+                  "line": 976
+                }
+              ]
+            },
+            {
+              "line": 84,
+              "original": "assert (\n            _decode_node_cursor(\n                result[\"next_cursor\"],\n                node_id=\"air\",\n                user_scope=\"alice\",\n                provider=\"codex_app_server\",\n                native_thread_id=\"t\",\n                source=\"native\",\n                source_version=\"v1\",\n                secret=r.registry.cursor_secret,\n            )\n            == \"page2\"\n        )",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "service_read_validates_every_original_source_version_before_provider_io",
+                  "line": 976
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_cached_remote_request_rechecks_bilateral_scope_and_io_uncertainty",
+          "line": 99,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "cached_remote_request_rechecks_bilateral_scope_user_and_lost_ack_without_replay",
+              "line": 1014
+            }
+          ],
+          "assertions": [
+            {
+              "line": 127,
+              "original": "assert client.call(request)[\"read_only\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "cached_remote_request_rechecks_bilateral_scope_user_and_lost_ack_without_replay",
+                  "line": 1014
+                }
+              ]
+            },
+            {
+              "line": 128,
+              "original": "assert sent[0][\"node_id\"] == \"air\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "cached_remote_request_rechecks_bilateral_scope_user_and_lost_ack_without_replay",
+                  "line": 1014
+                }
+              ]
+            },
+            {
+              "line": 130,
+              "original": "assert client.call(request)[\"error_code\"] == \"SHARING_SCOPE_DENIED\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "cached_remote_request_rechecks_bilateral_scope_user_and_lost_ack_without_replay",
+                  "line": 1014
+                }
+              ]
+            },
+            {
+              "line": 131,
+              "original": "assert len(sent) == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "cached_remote_request_rechecks_bilateral_scope_user_and_lost_ack_without_replay",
+                  "line": 1014
+                }
+              ]
+            },
+            {
+              "line": 133,
+              "original": "assert (\n            client.call(dict(request, user_scope=\"other\"))[\"error_code\"]\n            == \"USER_SCOPE_DENIED\"\n        )",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "cached_remote_request_rechecks_bilateral_scope_user_and_lost_ack_without_replay",
+                  "line": 1014
+                }
+              ]
+            },
+            {
+              "line": 137,
+              "original": "assert len(sent) == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "cached_remote_request_rechecks_bilateral_scope_user_and_lost_ack_without_replay",
+                  "line": 1014
+                }
+              ]
+            },
+            {
+              "line": 139,
+              "original": "pytest.raises(TimeoutError, match=\"ACK lost\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "cached_remote_request_rechecks_bilateral_scope_user_and_lost_ack_without_replay",
+                  "line": 1014
+                }
+              ]
+            },
+            {
+              "line": 141,
+              "original": "assert len(sent) == 2",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "cached_remote_request_rechecks_bilateral_scope_user_and_lost_ack_without_replay",
+                  "line": 1014
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_packaged_helper_registers_reads_and_restarts_without_business_execution",
+          "line": 144,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+              "line": 611
+            }
+          ],
+          "assertions": [
+            {
+              "line": 155,
+              "original": "assert not list(resources.rglob(\"*.py\"))",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                }
+              ]
+            },
+            {
+              "line": 156,
+              "original": "assert not (resources / \"DiscoveryRuntime\").exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                }
+              ]
+            },
+            {
+              "line": 216,
+              "original": "assert process.poll() is None, (\n                        tmp_path / f\"helper-{generation}.log\"\n                    ).read_text()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                }
+              ]
+            },
+            {
+              "line": 234,
+              "original": "assert result.get(\"lookup_status\") == \"THREAD_NOT_FOUND\", result",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                }
+              ]
+            },
+            {
+              "line": 235,
+              "original": "assert (\n                    result[\"provider_existence\"] == \"NOT_FOUND\" and result[\"read_only\"]\n                )",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                }
+              ]
+            },
+            {
+              "line": 238,
+              "original": "assert not route.calls",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                }
+              ]
+            },
+            {
+              "line": 242,
+              "original": "assert process.returncode == 0",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_node_runtime.py",
+      "sha256": "e9274f338419be6eab3cf96b5c0d8217f942910c70236915c043320daaf3781c",
+      "cases": [
+        {
+          "case": "test_normal_helper_never_constructs_python_integration_and_preserves_unknown_key",
+          "line": 19,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "native_helper_prepare_preserves_exact_prompt_and_generated_identity_after_lost_ack",
+              "line": 1056
+            }
+          ],
+          "assertions": [
+            {
+              "line": 28,
+              "original": "pytest.raises(RustAuthorityError, match='DELIVERY_UNKNOWN')",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "native_helper_prepare_preserves_exact_prompt_and_generated_identity_after_lost_ack",
+                  "line": 1056
+                }
+              ]
+            },
+            {
+              "line": 30,
+              "original": "assert len(sent) == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "native_helper_prepare_preserves_exact_prompt_and_generated_identity_after_lost_ack",
+                  "line": 1056
+                }
+              ]
+            },
+            {
+              "line": 31,
+              "original": "assert sent[0][0] == 'business.prepare'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "native_helper_prepare_preserves_exact_prompt_and_generated_identity_after_lost_ack",
+                  "line": 1056
+                }
+              ]
+            },
+            {
+              "line": 32,
+              "original": "assert len(sent[0][2]) == 32 and error.value.operation_id == sent[0][2]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "native_helper_prepare_preserves_exact_prompt_and_generated_identity_after_lost_ack",
+                  "line": 1056
+                }
+              ]
+            },
+            {
+              "line": 33,
+              "original": "assert sent[0][1]['prompt'] == 'Exact input'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "native_helper_prepare_preserves_exact_prompt_and_generated_identity_after_lost_ack",
+                  "line": 1056
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_route_serialization_deduplicates_host_aliases",
+          "line": 36,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_toml_preserves_original_bridge_config_symlinks_order_and_aliases",
+              "line": 77
+            }
+          ],
+          "assertions": [
+            {
+              "line": 39,
+              "original": "assert routes['host_aliases']['air'] == ['air']",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_toml_preserves_original_bridge_config_symlinks_order_and_aliases",
+                  "line": 77
+                }
+              ]
+            },
+            {
+              "line": 40,
+              "original": "assert routes['codex_host_ids'] == {'desktop-air': ['air']}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_toml_preserves_original_bridge_config_symlinks_order_and_aliases",
+                  "line": 77
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_packaged_node_calls_rust_without_checkout_or_path",
+          "line": 44,
+          "parameters": [
+            "pytest.mark.parametrize('profile', ['rust', 'monitor'])"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+              "line": 611
+            },
+            {
+              "path": "kernel/tests/build_release_qualification.rs",
+              "case": "staged_real_node_uses_native_api_without_checkout_or_python_path",
+              "line": 810
+            }
+          ],
+          "assertions": [
+            {
+              "line": 52,
+              "original": "assert json.loads((package/'python-sources.json').read_text())['files'] == {}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "staged_real_node_uses_native_api_without_checkout_or_python_path",
+                  "line": 810
+                }
+              ]
+            },
+            {
+              "line": 53,
+              "original": "assert not list(package.rglob('*.py'))",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "staged_real_node_uses_native_api_without_checkout_or_python_path",
+                  "line": 810
+                }
+              ]
+            },
+            {
+              "line": 81,
+              "original": "assert receipt['binary'] == str(binary)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "staged_real_node_uses_native_api_without_checkout_or_python_path",
+                  "line": 810
+                }
+              ]
+            },
+            {
+              "line": 82,
+              "original": "assert receipt['result']['authority'] == 'RUST'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "staged_real_node_uses_native_api_without_checkout_or_python_path",
+                  "line": 810
+                }
+              ]
+            },
+            {
+              "line": 83,
+              "original": "assert receipt['result']['host_tools'] is True",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "staged_real_node_uses_native_api_without_checkout_or_python_path",
+                  "line": 810
+                }
+              ]
+            },
+            {
+              "line": 84,
+              "original": "assert hashlib.sha256(binary.read_bytes()).digest() == hashlib.sha256((binaries/'clinx-node').read_bytes()).digest()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                },
+                {
+                  "path": "kernel/tests/build_release_qualification.rs",
+                  "case": "staged_real_node_uses_native_api_without_checkout_or_python_path",
+                  "line": 810
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_discovery_state.py",
+      "sha256": "400dd959d73bebfe2b80535d92e727fd6801d6642f9237d2b9441358fc38c7fb",
+      "cases": [
+        {
+          "case": "test_read_only_peer_snapshot_creates_no_write_lock_and_never_mutates",
+          "line": 17,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/discovery_qualification.rs",
+              "case": "read_only_peer_snapshot_creates_no_write_lock_and_never_mutates",
+              "line": 395
+            }
+          ],
+          "assertions": [
+            {
+              "line": 35,
+              "original": "assert read.all()['beta']['trust_state'] == 'TRUSTED'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "read_only_peer_snapshot_creates_no_write_lock_and_never_mutates",
+                  "line": 395
+                }
+              ]
+            },
+            {
+              "line": 36,
+              "original": "pytest.raises(DeviceError, match='READ_ONLY_OBSERVATION_IDENTITY')",
+              "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+              "reason": "Custom Python PrivateStore subclass refusing writes is removed; native readonly peer snapshot never acquires/creates a lock or mutates files.",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "read_only_peer_snapshot_creates_no_write_lock_and_never_mutates",
+                  "line": 395
+                }
+              ]
+            },
+            {
+              "line": 38,
+              "original": "assert digest(a.store.root) == before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "read_only_peer_snapshot_creates_no_write_lock_and_never_mutates",
+                  "line": 395
+                }
+              ]
+            },
+            {
+              "line": 39,
+              "original": "assert not (a.store.root / 'store.lock').exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "read_only_peer_snapshot_creates_no_write_lock_and_never_mutates",
+                  "line": 395
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_pairing_commit_failure_is_exact_and_consumed_before_io",
+          "line": 42,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/discovery_qualification.rs",
+              "case": "pairing_commit_failure_is_exact_and_consumed_before_io",
+              "line": 462
+            }
+          ],
+          "assertions": [
+            {
+              "line": 46,
+              "original": "assert code == actual",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "pairing_commit_failure_is_exact_and_consumed_before_io",
+                  "line": 462
+                }
+              ]
+            },
+            {
+              "line": 50,
+              "original": "pytest.raises(OSError)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "pairing_commit_failure_is_exact_and_consumed_before_io",
+                  "line": 462
+                }
+              ]
+            },
+            {
+              "line": 52,
+              "original": "assert error.value is failure",
+              "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+              "reason": "Python exception object identity is retired; exact error text and consumed pairing reservation are preserved.",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "pairing_commit_failure_is_exact_and_consumed_before_io",
+                  "line": 462
+                }
+              ]
+            },
+            {
+              "line": 53,
+              "original": "pytest.raises(DeviceError, match='PAIRING_CLOSED')",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "pairing_commit_failure_is_exact_and_consumed_before_io",
+                  "line": 462
+                }
+              ]
+            },
+            {
+              "line": 55,
+              "original": "pytest.raises(DeviceError, match='PAIRING_REPLAY')",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "pairing_commit_failure_is_exact_and_consumed_before_io",
+                  "line": 462
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_pairing_gc_finalizer_does_not_reenter_held_runtime_locks",
+          "line": 61,
+          "parameters": [
+            "pytest.mark.parametrize('held_lock', ['worker', 'runtime'])"
+          ],
+          "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+          "reason": "Python cyclic GC/weakref/finalizer and Python worker/runtime mutex ownership no longer exist. Rust pairing reservation single-consumption/error propagation remain qualified; no claim that Rust has a Python GC contract.",
+          "targets": [
+            {
+              "path": "kernel/tests/discovery_qualification.rs",
+              "case": "pairing_commit_failure_is_exact_and_consumed_before_io",
+              "line": 462
+            },
+            {
+              "path": "kernel/tests/discovery_qualification.rs",
+              "case": "pairing_window_concurrency_has_one_commit_and_no_secret_restoration",
+              "line": 493
+            }
+          ],
+          "assertions": [
+            {
+              "line": 116,
+              "original": "assert result.returncode == 0, result.stderr",
+              "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+              "reason": "Python cyclic GC/weakref/finalizer and Python worker/runtime mutex ownership no longer exist. Rust pairing reservation single-consumption/error propagation remain qualified; no claim that Rust has a Python GC contract.",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "pairing_commit_failure_is_exact_and_consumed_before_io",
+                  "line": 462
+                },
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "pairing_window_concurrency_has_one_commit_and_no_secret_restoration",
+                  "line": 493
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_discovery_index.py",
+      "sha256": "e75369b3b9775e185192198f8deeb170fca61c71d7a50c3ca252189c87776c0c",
+      "cases": [
+        {
+          "case": "test_python_discovery_envelope_serializes_concurrent_updates",
+          "line": 18,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/discovery_qualification.rs",
+              "case": "concurrent_discovery_updates_and_untrusted_device_projection",
+              "line": 177
+            }
+          ],
+          "assertions": [
+            {
+              "line": 29,
+              "original": "assert len(index.candidates()) == 40",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "concurrent_discovery_updates_and_untrusted_device_projection",
+                  "line": 177
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_actual_dns_remaining_ttl_and_interface_policy",
+          "line": 32,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/discovery_qualification.rs",
+              "case": "actual_dns_remaining_ttl_and_interface_policy",
+              "line": 279
+            }
+          ],
+          "assertions": [
+            {
+              "line": 49,
+              "original": "assert local_addresses() == [\"10.1.1.2\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "actual_dns_remaining_ttl_and_interface_policy",
+                  "line": 279
+                }
+              ]
+            },
+            {
+              "line": 81,
+              "original": "assert \"alpha\" in index.candidates()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "actual_dns_remaining_ttl_and_interface_policy",
+                  "line": 279
+                }
+              ]
+            },
+            {
+              "line": 83,
+              "original": "assert \"alpha\" in index.candidates()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "actual_dns_remaining_ttl_and_interface_policy",
+                  "line": 279
+                }
+              ]
+            },
+            {
+              "line": 85,
+              "original": "assert \"alpha\" not in index.candidates()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "actual_dns_remaining_ttl_and_interface_policy",
+                  "line": 279
+                }
+              ]
+            },
+            {
+              "line": 88,
+              "original": "assert \"alpha\" not in index.candidates()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/discovery_qualification.rs",
+                  "case": "actual_dns_remaining_ttl_and_interface_policy",
+                  "line": 279
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_device_config.py",
+      "sha256": "b6f019409410faf06127184948146f81258587fb0a30e28f82a1adb39ad72dba",
+      "cases": [
+        {
+          "case": "test_native_toml_matches_existing_config_and_provider_identity",
+          "line": 23,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_toml_preserves_original_bridge_config_symlinks_order_and_aliases",
+              "line": 77
+            }
+          ],
+          "assertions": [
+            {
+              "line": 56,
+              "original": "assert native == expected",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_toml_preserves_original_bridge_config_symlinks_order_and_aliases",
+                  "line": 77
+                }
+              ]
+            },
+            {
+              "line": 57,
+              "original": "assert [p[\"alias\"] for p in native[\"projects\"]] == [\"z\", \"a\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_toml_preserves_original_bridge_config_symlinks_order_and_aliases",
+                  "line": 77
+                }
+              ]
+            },
+            {
+              "line": 58,
+              "original": "assert native[\"projects\"][0][\"repo\"] == str(tmp_path / \"deep/absent\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_toml_preserves_original_bridge_config_symlinks_order_and_aliases",
+                  "line": 77
+                }
+              ]
+            },
+            {
+              "line": 59,
+              "original": "assert rust(\"api_config\", config=native) == api_config(old)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_toml_preserves_original_bridge_config_symlinks_order_and_aliases",
+                  "line": 77
+                }
+              ]
+            },
+            {
+              "line": 60,
+              "original": "assert rust(\"api_config\", config=native)[\"host_aliases\"][\"ss\"] == [\"air\", \"imac\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_toml_preserves_original_bridge_config_symlinks_order_and_aliases",
+                  "line": 77
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_native_config_missing_provider_is_explicit_and_does_not_fabricate_socket",
+          "line": 63,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/config_compile.rs",
+              "case": "host_compiles_without_provider_and_mcp_missing_endpoint_fails_without_output",
+              "line": 101
+            }
+          ],
+          "assertions": [
+            {
+              "line": 68,
+              "original": "pytest.raises(RustAuthorityError, match=\"PROVIDER_ENDPOINT_REQUIRED\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/config_compile.rs",
+                  "case": "host_compiles_without_provider_and_mcp_missing_endpoint_fails_without_output",
+                  "line": 101
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_current_monitor_resources_are_python_free_and_remove_old_readonly_runtime",
+          "line": 72,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/monitor_build.rs",
+              "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+              "line": 63
+            }
+          ],
+          "assertions": [
+            {
+              "line": 86,
+              "original": "assert receipt[\"files\"] == {}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63
+                }
+              ]
+            },
+            {
+              "line": 87,
+              "original": "assert receipt[\"required_helpers\"] == [\"clinx-provider\", \"clinx-node\", \"clinx-node-daemon\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63
+                }
+              ]
+            },
+            {
+              "line": 88,
+              "original": "assert not list(root.rglob(\"*.py\"))",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63
+                }
+              ]
+            },
+            {
+              "line": 89,
+              "original": "assert not (root / \"DiscoveryRuntime\").exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63
+                }
+              ]
+            },
+            {
+              "line": 90,
+              "original": "assert (root / \"icon.icns\").read_bytes() == b\"asset\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/monitor_build.rs",
+                  "case": "current_app_closure_removes_retired_python_and_keeps_swift_assets",
+                  "line": 63
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_native_gui_private_pipe_has_no_python_dependency_or_unbounded_error",
+          "line": 93,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_gui_private_pipe_is_bounded_python_free_and_forget_idempotent",
+              "line": 108
+            }
+          ],
+          "assertions": [
+            {
+              "line": 99,
+              "original": "assert json.loads(result.stdout) == {\"error\": \"DISCOVERY_UNAVAILABLE\"}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_gui_private_pipe_is_bounded_python_free_and_forget_idempotent",
+                  "line": 108
+                }
+              ]
+            },
+            {
+              "line": 100,
+              "original": "assert result.stderr == \"\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_gui_private_pipe_is_bounded_python_free_and_forget_idempotent",
+                  "line": 108
+                }
+              ]
+            },
+            {
+              "line": 105,
+              "original": "assert json.loads(result.stdout) == {\"forgotten\": True}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_gui_private_pipe_is_bounded_python_free_and_forget_idempotent",
+                  "line": 108
+                }
+              ]
+            },
+            {
+              "line": 106,
+              "original": "assert result.stderr == \"\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_gui_private_pipe_is_bounded_python_free_and_forget_idempotent",
+                  "line": 108
+                }
+              ]
+            },
+            {
+              "line": 108,
+              "original": "assert raw[\"peers\"] == {}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_gui_private_pipe_is_bounded_python_free_and_forget_idempotent",
+                  "line": 108
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_legacy_cli_locator_uses_installed_sibling_and_respects_explicit_identity",
+          "line": 111,
+          "parameters": [],
+          "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+          "reason": "Retired Python centre entrypoint and monkeypatched ROOT locator have no callers. Native packaged CLINXNodeService resolves the explicit three sibling Helper executables and is launched/restarted in an actual App layout.",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+              "line": 611
+            }
+          ],
+          "assertions": [
+            {
+              "line": 119,
+              "original": "assert entrypoint.daemon_binary() == str(binary)",
+              "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+              "reason": "Retired Python centre entrypoint and monkeypatched ROOT locator have no callers. Native packaged CLINXNodeService resolves the explicit three sibling Helper executables and is launched/restarted in an actual App layout.",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                }
+              ]
+            },
+            {
+              "line": 121,
+              "original": "pytest.raises(RuntimeError, match=\"RUST_NODE_DAEMON_REQUIRED\")",
+              "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+              "reason": "Retired Python centre entrypoint and monkeypatched ROOT locator have no callers. Native packaged CLINXNodeService resolves the explicit three sibling Helper executables and is launched/restarted in an actual App layout.",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_device_cli.py",
+      "sha256": "10f2f8a3deb825043d8b190112017a251ecdc2848f5c2a8e99444fb98c021890",
+      "cases": [
+        {
+          "case": "test_native_cli_contract_and_launchers_need_no_python_runtime",
+          "line": 19,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_device_cli_and_shell_launcher_require_no_python_and_keep_exact_arguments",
+              "line": 155
+            }
+          ],
+          "assertions": [
+            {
+              "line": 21,
+              "original": "assert result.returncode == 0 and result.stdout.strip() == 'RUST_DEVICE_CLI_V1'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_device_cli_and_shell_launcher_require_no_python_and_keep_exact_arguments",
+                  "line": 155
+                }
+              ]
+            },
+            {
+              "line": 25,
+              "original": "assert result.returncode == 0, result.stderr",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_device_cli_and_shell_launcher_require_no_python_and_keep_exact_arguments",
+                  "line": 155
+                }
+              ]
+            },
+            {
+              "line": 26,
+              "original": "assert 'devices|pair' in result.stdout",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_device_cli_and_shell_launcher_require_no_python_and_keep_exact_arguments",
+                  "line": 155
+                }
+              ]
+            },
+            {
+              "line": 38,
+              "original": "assert result.returncode == 0, result.stderr",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_device_cli_and_shell_launcher_require_no_python_and_keep_exact_arguments",
+                  "line": 155
+                }
+              ]
+            },
+            {
+              "line": 39,
+              "original": "assert 'devices|pair' in result.stdout",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_device_cli_and_shell_launcher_require_no_python_and_keep_exact_arguments",
+                  "line": 155
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_native_cli_rejects_invalid_inputs_before_state_or_network",
+          "line": 49,
+          "parameters": [
+            "pytest.mark.parametrize('arguments,code', [\n    (['pair','accept','--json'], 'PAIRING_REQUIRES_LOCAL_TTY'),\n    (['pair','accept'], 'PAIRING_REQUIRES_LOCAL_TTY'),\n    (['devices','--wait','nan'], 'INVALID_DISCOVERY_INTERVAL'),\n    (['devices','--wait','31'], 'INVALID_DISCOVERY_INTERVAL'),\n    (['devices','--allow-dev-pairing'], 'SECURITY_BLOCKER_DEV_ONLY'),\n])"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+              "line": 221
+            }
+          ],
+          "assertions": [
+            {
+              "line": 53,
+              "original": "assert result.returncode == 2",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+                  "line": 221
+                }
+              ]
+            },
+            {
+              "line": 54,
+              "original": "assert result.stderr.strip() == 'DEVICE_ERROR: '+code",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+                  "line": 221
+                }
+              ]
+            },
+            {
+              "line": 55,
+              "original": "assert not result.stdout and not state.exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+                  "line": 221
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_shell_launcher_preserves_argument_values_without_python",
+          "line": 58,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_device_cli_and_shell_launcher_require_no_python_and_keep_exact_arguments",
+              "line": 155
+            }
+          ],
+          "assertions": [
+            {
+              "line": 65,
+              "original": "assert result.returncode == 0,result.stderr",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_device_cli_and_shell_launcher_require_no_python_and_keep_exact_arguments",
+                  "line": 155
+                }
+              ]
+            },
+            {
+              "line": 66,
+              "original": "assert json.loads(result.stdout)==['--config',str(ROOT/'bridge.toml'),*args]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_device_cli_and_shell_launcher_require_no_python_and_keep_exact_arguments",
+                  "line": 155
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_launchers_reject_retired_development_pairing_without_python_backend",
+          "line": 70,
+          "parameters": [
+            "pytest.mark.parametrize('entry', ['shell', 'python_exec', 'python_argparse'])"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+              "line": 221
+            }
+          ],
+          "assertions": [
+            {
+              "line": 99,
+              "original": "assert result.returncode == 2",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+                  "line": 221
+                }
+              ]
+            },
+            {
+              "line": 100,
+              "original": "assert result.stderr.strip() == 'DEVICE_ERROR: SECURITY_BLOCKER_DEV_ONLY'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+                  "line": 221
+                }
+              ]
+            },
+            {
+              "line": 101,
+              "original": "assert not result.stdout and not state.exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+                  "line": 221
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_url_codec_matches_original_urllib_fields_and_existing_policy",
+          "line": 119,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "every_original_urllib_field_combination_retains_frozen_independent_result",
+              "line": 62
+            }
+          ],
+          "assertions": [
+            {
+              "line": 129,
+              "original": "assert outcome(validate_connection,raw)==outcome(old_url_codec,raw),repr(endpoint)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "every_original_urllib_field_combination_retains_frozen_independent_result",
+                  "line": 62
+                }
+              ]
+            },
+            {
+              "line": 131,
+              "original": "assert outcome(validate_connection,raw)==outcome(old_url_codec,raw)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "every_original_urllib_field_combination_retains_frozen_independent_result",
+                  "line": 62
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_device_enrollment.py",
+      "sha256": "1539f8d124ecdc66cb6d6c5c0afc3c3e45d5bd80a9b3242ec8d9f6ee07719b1b",
+      "cases": [
+        {
+          "case": "test_retired_dev_protocol_fails_before_identity_window_tls_or_key_exchange",
+          "line": 18,
+          "parameters": [],
+          "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+          "reason": "Seven removed Python constructors/helpers exposing retired SPAKE2/allow_dev are no longer importable or packaged. The remaining native CLI rejects --allow-dev-pairing before initialization; production Rust OPAQUE protocol/trust invariants remain tested.",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+              "line": 221
+            },
+            {
+              "path": "kernel/tests/discovery_retirement_qualification.rs",
+              "case": "anonymous_tls_cannot_reconnect_or_dispatch_and_does_not_revoke_trust",
+              "line": 43
+            }
+          ],
+          "assertions": [
+            {
+              "line": 37,
+              "original": "pytest.raises(DeviceError, match='^SECURITY_BLOCKER_DEV_ONLY$')",
+              "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+              "reason": "Seven removed Python constructors/helpers exposing retired SPAKE2/allow_dev are no longer importable or packaged. The remaining native CLI rejects --allow-dev-pairing before initialization; production Rust OPAQUE protocol/trust invariants remain tested.",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+                  "line": 221
+                },
+                {
+                  "path": "kernel/tests/discovery_retirement_qualification.rs",
+                  "case": "anonymous_tls_cannot_reconnect_or_dispatch_and_does_not_revoke_trust",
+                  "line": 43
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_rust_backend_binary_missing_fails_closed",
+          "line": 69,
+          "parameters": [],
+          "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+          "reason": "The Python dynamically selected worker backend and production_backend() object are retired. Native enrollment uses statically linked pinned OPAQUE; the actual native CLI locator still fails before startup for a missing selected executable.",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+              "line": 221
+            }
+          ],
+          "assertions": []
+        },
+        {
+          "case": "test_rust_backend_marker_fails_closed_before_any_network_request",
+          "line": 79,
+          "parameters": [
+            "pytest.mark.parametrize('marker', [None, {},\n    {'BACKEND_ID': 'unsupported', 'OPAQUE_KE_VERSION': '4.0.1'},\n    {'BACKEND_ID': 'OPAQUE-3DH-RISTRETTO255-SHA512-ARGON2I-v1', 'OPAQUE_KE_VERSION': 'unknown'},\n])"
+          ],
+          "status": "RETIRED_PYTHON_OBJECT_CONTRACT",
+          "reason": "The removed Python backend selector no longer accepts an external worker returning None/object/unsupported BACKEND_ID/version markers. Four malformed backend-object parameters have no native callable interface. Native CLI rejects retired protocol and real Rust OPAQUE/TLS enrollment is qualified.",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_cli_rejects_every_original_invalid_input_before_state_or_network",
+              "line": 221
+            },
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+              "line": 416
+            }
+          ],
+          "assertions": []
+        },
+        {
+          "case": "test_normal_pairing_needs_no_python_crypto_ssl_or_extension_backend",
+          "line": 101,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+              "line": 416
+            }
+          ],
+          "assertions": [
+            {
+              "line": 112,
+              "original": "assert not session.authority_granted and session.authorization_required",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+                  "line": 416
+                }
+              ]
+            },
+            {
+              "line": 113,
+              "original": "assert session.capabilities==()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+                  "line": 416
+                }
+              ]
+            },
+            {
+              "line": 114,
+              "original": "assert pa.all()['beta']['public_key']==b.public['public_key']",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+                  "line": 416
+                }
+              ]
+            },
+            {
+              "line": 115,
+              "original": "assert pb.all()['alpha']['public_key']==a.public['public_key']",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+                  "line": 416
+                }
+              ]
+            },
+            {
+              "line": 116,
+              "original": "assert not any(key in pa.all()['beta'] for key in ('private_key','code','pin','session_key'))",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+                  "line": 416
+                }
+              ]
+            },
+            {
+              "line": 118,
+              "original": "assert identity.store.root.stat().st_mode&0o777==0o700",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+                  "line": 416
+                }
+              ]
+            },
+            {
+              "line": 119,
+              "original": "assert (identity.store.root/'identity.json').stat().st_mode&0o777==0o600",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+                  "line": 416
+                }
+              ]
+            },
+            {
+              "line": 120,
+              "original": "pytest.raises(DeviceError)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+                  "line": 416
+                }
+              ]
+            },
+            {
+              "line": 123,
+              "original": "assert LanTransport(restarted,TrustedPeerStore(restarted.store)).reconnect(target)==session",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+                  "line": 416
+                }
+              ]
+            },
+            {
+              "line": 126,
+              "original": "pytest.raises(DeviceError)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "native_pairing_keeps_private_files_zero_authority_reconnect_and_rejects_business_commands",
+                  "line": 416
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_concurrent_network_confirmation_has_one_durable_pair",
+          "line": 129,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "concurrent_network_confirmation_has_exactly_one_durable_pair",
+              "line": 500
+            }
+          ],
+          "assertions": [
+            {
+              "line": 137,
+              "original": "assert sum(pool.map(attempt,range(4)))==1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "concurrent_network_confirmation_has_exactly_one_durable_pair",
+                  "line": 500
+                }
+              ]
+            },
+            {
+              "line": 138,
+              "original": "assert len(pa.all())==len(pb.all())==1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "concurrent_network_confirmation_has_exactly_one_durable_pair",
+                  "line": 500
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_tls_substitution_and_revocation_never_repair_or_repairing_implicitly",
+          "line": 141,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "tls_substitution_and_revocation_cannot_repair_or_repair_trust_implicitly",
+              "line": 550
+            }
+          ],
+          "assertions": [
+            {
+              "line": 148,
+              "original": "pytest.raises(ssl.SSLError)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "tls_substitution_and_revocation_cannot_repair_or_repair_trust_implicitly",
+                  "line": 550
+                }
+              ]
+            },
+            {
+              "line": 151,
+              "original": "pytest.raises((DeviceError,ssl.SSLError))",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "tls_substitution_and_revocation_cannot_repair_or_repair_trust_implicitly",
+                  "line": 550
+                }
+              ]
+            },
+            {
+              "line": 153,
+              "original": "assert pb.all()['alpha']['trust_state']=='REVOKED'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "tls_substitution_and_revocation_cannot_repair_or_repair_trust_implicitly",
+                  "line": 550
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_observation.py",
+      "sha256": "d6092c810311799e949fa85288101e4bc9cdfaa676ca37e2094112de9f1f18e4",
+      "cases": [
+        {
+          "case": "test_installed_monitor_history_uses_companion_rust_without_checkout",
+          "line": 145,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+              "line": 611
+            }
+          ],
+          "assertions": [
+            {
+              "line": 171,
+              "original": "assert json.loads(p.stdout) == [\"assistant\", \"password=[REDACTED]\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "actual_native_monitor_package_registers_reads_and_restarts_without_business_calls",
+                  "line": 611
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_missing_native_index_never_creates_database",
+          "line": 174,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_qualification.rs",
+              "case": "missing_native_index_never_creates_database",
+              "line": 507
+            }
+          ],
+          "assertions": [
+            {
+              "line": 176,
+              "original": "pytest.raises(ThreadLookupError)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_qualification.rs",
+                  "case": "missing_native_index_never_creates_database",
+                  "line": 507
+                }
+              ]
+            },
+            {
+              "line": 178,
+              "original": "assert error.value.code == \"NATIVE_INDEX_UNAVAILABLE\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_qualification.rs",
+                  "case": "missing_native_index_never_creates_database",
+                  "line": 507
+                }
+              ]
+            },
+            {
+              "line": 179,
+              "original": "assert list(tmp_path.iterdir()) == []",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_qualification.rs",
+                  "case": "missing_native_index_never_creates_database",
+                  "line": 507
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_observation_directory.py",
+      "sha256": "fda80ef127e1b5498d90b4cb5991845d37e6e2846c74583432f1f31c98b875fb",
+      "cases": [
+        {
+          "case": "test_standalone_four_tools_read_exact_private_history_without_python_or_state_writes",
+          "line": 88,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+              "line": 429
+            }
+          ],
+          "assertions": [
+            {
+              "line": 91,
+              "original": "assert api.request(\"initialize\")[\"result\"][\"protocolVersion\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 94,
+              "original": "assert tools == expected",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 96,
+              "original": "assert names == {\"clinx_list_observations\", \"clinx_get_observation\", \"clinx_get_observation_context\", \"clinx_get_observation_activity\"}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 98,
+              "original": "assert listed[\"read_only\"] and len(listed[\"items\"]) == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 101,
+              "original": "assert detail[\"item\"][\"native_thread_id\"] == TID and detail[\"read_only\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 103,
+              "original": "assert context[\"last_codex_result\"] == \"Answer 2\" and context[\"read_only\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 104,
+              "original": "assert \"NEVER_\" not in json.dumps(context)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 106,
+              "original": "assert activity[\"read_only\"] and len(activity[\"items\"]) == 2",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 107,
+              "original": "assert activity[\"coverage\"] == \"RECEIVED_EVENTS_ONLY\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 109,
+              "original": "assert denied[\"error\"][\"code\"] == -32602",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 111,
+              "original": "assert children.read_text().strip() == \"\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            },
+            {
+              "line": 112,
+              "original": "assert state_hash(local.identity.store.root) == before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_four_tools_read_exact_private_history_without_python_or_state_writes",
+                  "line": 429
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_read_scope_revocation_and_cursor_rebinding_are_checked_without_restart",
+          "line": 115,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "actual_mcp_rechecks_revocation_and_cursor_binding_without_restart",
+              "line": 490
+            }
+          ],
+          "assertions": [
+            {
+              "line": 120,
+              "original": "assert detail[\"next_cursor\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_rechecks_revocation_and_cursor_binding_without_restart",
+                  "line": 490
+                }
+              ]
+            },
+            {
+              "line": 123,
+              "original": "assert result[\"isError\"] and result[\"structuredContent\"][\"read_only\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_rechecks_revocation_and_cursor_binding_without_restart",
+                  "line": 490
+                }
+              ]
+            },
+            {
+              "line": 124,
+              "original": "assert api.call(\"clinx_list_observations\")[\"structuredContent\"][\"items\"] == []",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_rechecks_revocation_and_cursor_binding_without_restart",
+                  "line": 490
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_restart_keeps_exact_cursor_and_missing_state_never_bootstraps",
+          "line": 127,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "actual_mcp_restart_preserves_exact_cursor_and_missing_state_never_bootstraps",
+              "line": 514
+            }
+          ],
+          "assertions": [
+            {
+              "line": 133,
+              "original": "assert older[\"turns\"][0][\"turn_id\"] != page[\"turns\"][0][\"turn_id\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_restart_preserves_exact_cursor_and_missing_state_never_bootstraps",
+                  "line": 514
+                }
+              ]
+            },
+            {
+              "line": 137,
+              "original": "assert run.returncode != 0 and not missing.exists()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_restart_preserves_exact_cursor_and_missing_state_never_bootstraps",
+                  "line": 514
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_native_directory_uses_exact_paired_remote_and_rechecks_before_return",
+          "line": 141,
+          "parameters": [
+            "pytest.mark.parametrize(\"change\", [\"none\", \"scope\", \"projection\", \"peer_revoked\", \"identity\"])"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "actual_mcp_paired_context_rechecks_all_five_original_scope_identity_cases",
+              "line": 756
+            }
+          ],
+          "assertions": [
+            {
+              "line": 178,
+              "original": "assert not result[\"isError\"] and result[\"structuredContent\"][\"last_codex_result\"] == \"remote exact result\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_paired_context_rechecks_all_five_original_scope_identity_cases",
+                  "line": 756
+                }
+              ]
+            },
+            {
+              "line": 180,
+              "original": "assert result[\"isError\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_paired_context_rechecks_all_five_original_scope_identity_cases",
+                  "line": 756
+                }
+              ]
+            },
+            {
+              "line": 181,
+              "original": "assert result[\"structuredContent\"][\"error_code\"] in {\"OBSERVATION_NOT_FOUND\",\"SHARING_SCOPE_DENIED\",\"EXECUTION_TURN_IDENTITY_CONFLICT\",\"NODE_IDENTITY_MISMATCH\"}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_paired_context_rechecks_all_five_original_scope_identity_cases",
+                  "line": 756
+                }
+              ]
+            },
+            {
+              "line": 183,
+              "original": "assert result[\"structuredContent\"][\"error_code\"] == \"NODE_IDENTITY_MISMATCH\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_paired_context_rechecks_all_five_original_scope_identity_cases",
+                  "line": 756
+                }
+              ]
+            },
+            {
+              "line": 184,
+              "original": "assert len(requests)==1 and requests[0][\"node_id\"]==\"air\" and requests[0][\"user_scope\"]==\"alice\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_paired_context_rechecks_all_five_original_scope_identity_cases",
+                  "line": 756
+                }
+              ]
+            },
+            {
+              "line": 186,
+              "original": "assert state_hash(root)==before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_mcp_paired_context_rechecks_all_five_original_scope_identity_cases",
+                  "line": 756
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_normal_mcp_managed_context_reads_exact_authority_provider_without_recursion",
+          "line": 238,
+          "parameters": [
+            "pytest.mark.parametrize(\"change\", [\"none\", \"scope\", \"execution\", \"identity\"])"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+              "line": 618
+            }
+          ],
+          "assertions": [
+            {
+              "line": 269,
+              "original": "assert {\"clinx_get_context\", \"clinx_get_observation_context\"} <= tools",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 272,
+              "original": "assert api.call(\"clinx_get_observation\", dict(observation_id=observation))[\"structuredContent\"][\"item\"][\"task_ref\"] == \"task-exact\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 273,
+              "original": "assert api.call(\"clinx_get_observation_activity\", dict(observation_id=observation))[\"structuredContent\"][\"read_only\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 277,
+              "original": "assert not result[\"isError\"] and content[\"last_codex_result\"] == \"Exact provider result\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 278,
+              "original": "assert (content[\"task_ref\"], content[\"execution_ref\"], content[\"thread_id\"], content[\"execution_turn_ref\"], content[\"context_scope\"]) == (\n                    \"task-exact\", \"exec-exact\", TID, \"turn-2\", \"EXACT_EXECUTION_TURN\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 280,
+              "original": "assert content[\"read_only\"] and state_hash(local.identity.store.root) == before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 282,
+              "original": "assert result[\"isError\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 283,
+              "original": "assert result[\"structuredContent\"][\"error_code\"] in {\"OBSERVATION_NOT_FOUND\", \"EXECUTION_TURN_IDENTITY_CONFLICT\", \"NODE_IDENTITY_MISMATCH\"}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 285,
+              "original": "assert result[\"structuredContent\"][\"error_code\"] == \"NODE_IDENTITY_MISMATCH\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 286,
+              "original": "assert Path(f\"/proc/{api.process.pid}/task/{api.process.pid}/children\").read_text().strip() == \"\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 287,
+              "original": "assert [r[\"operation\"] for r in authority.calls] == [\n            \"health\", \"health\", \"business.get_status\", \"business.list_tasks\"]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            },
+            {
+              "line": 289,
+              "original": "assert not provider.inputs and not provider.interrupts",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_normal_mcp_managed_context_rechecks_all_four_original_identity_cases",
+                  "line": 618
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_observation_runtime.py",
+      "sha256": "e2a94b51d279d71ced1567fd694823928361079431e2caaa94924f414b1e388d",
+      "cases": [
+        {
+          "case": "test_real_provider_read_cache_exact_turn_and_workspace_without_python_probe",
+          "line": 57,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "actual_provider_cache_exact_turn_workspace_and_all_conflicts",
+              "line": 64
+            }
+          ],
+          "assertions": [
+            {
+              "line": 69,
+              "original": "assert (\n                first[\"liveness\"] == \"LIVE\" and first[\"reason\"] == \"EXACT_OWNER_ACTIVE\"\n            )",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_provider_cache_exact_turn_workspace_and_all_conflicts",
+                  "line": 64
+                }
+              ]
+            },
+            {
+              "line": 72,
+              "original": "assert source.call(\"source_runtime.observe_live\", tid=TID, project=\"/approved\", turn_id=\"exact-turn\") == first",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_provider_cache_exact_turn_workspace_and_all_conflicts",
+                  "line": 64
+                }
+              ]
+            },
+            {
+              "line": 73,
+              "original": "assert [c[\"method\"] for c in provider.calls] == [\n                \"initialize\",\n                \"initialized\",\n                \"thread/read\",\n                \"thread/turns/list\",\n            ]",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_provider_cache_exact_turn_workspace_and_all_conflicts",
+                  "line": 64
+                }
+              ]
+            },
+            {
+              "line": 83,
+              "original": "assert (\n                changed[\"liveness\"] == \"UNKNOWN\"\n                and changed[\"reason\"] == \"WORKSPACE_MISMATCH\"\n            )",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_provider_cache_exact_turn_workspace_and_all_conflicts",
+                  "line": 64
+                }
+              ]
+            },
+            {
+              "line": 87,
+              "original": "assert len(provider.calls) == 4",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_provider_cache_exact_turn_workspace_and_all_conflicts",
+                  "line": 64
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_provider_identity_conflict_never_becomes_live",
+          "line": 101,
+          "parameters": [
+            "pytest.mark.parametrize(\n    \"variant,reason\",\n    [\n        (\"turn\", \"ACTIVE_OWNER_EXACT_TURN_UNCONFIRMED\"),\n        (\"thread\", \"OWNER_UNCONFIRMED\"),\n        (\"conflict\", \"OWNERSHIP_CONFLICT\"),\n    ],\n)"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "actual_provider_cache_exact_turn_workspace_and_all_conflicts",
+              "line": 64
+            }
+          ],
+          "assertions": [
+            {
+              "line": 115,
+              "original": "assert proof[\"liveness\"] == \"UNKNOWN\" and proof[\"reason\"] == reason",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "actual_provider_cache_exact_turn_workspace_and_all_conflicts",
+                  "line": 64
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_normal_sample_merges_history_in_rust_without_source_callbacks",
+          "line": 123,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "normal_sample_reads_native_history_without_source_callbacks_or_writes",
+              "line": 131
+            }
+          ],
+          "assertions": [
+            {
+              "line": 130,
+              "original": "assert events and all(e[\"native_thread_id\"] == TID for e in events)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "normal_sample_reads_native_history_without_source_callbacks_or_writes",
+                  "line": 131
+                }
+              ]
+            },
+            {
+              "line": 131,
+              "original": "assert all(e[\"binding_evidence\"] == \"THREAD_UNBOUND\" for e in events)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "normal_sample_reads_native_history_without_source_callbacks_or_writes",
+                  "line": 131
+                }
+              ]
+            },
+            {
+              "line": 132,
+              "original": "assert snapshot(native.root) == before",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "normal_sample_reads_native_history_without_source_callbacks_or_writes",
+                  "line": 131
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_injected_provider_callback_preserves_exact_identity_and_rust_cache",
+          "line": 137,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "injected_provider_io_retains_exact_callback_arguments_and_identity_cache",
+              "line": 151
+            }
+          ],
+          "assertions": [
+            {
+              "line": 152,
+              "original": "assert event[\"operation\"] == \"source_runtime.observe_thread\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "injected_provider_io_retains_exact_callback_arguments_and_identity_cache",
+                  "line": 151
+                }
+              ]
+            },
+            {
+              "line": 153,
+              "original": "assert event[\"arguments\"] == {\"tid\": TID}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "injected_provider_io_retains_exact_callback_arguments_and_identity_cache",
+                  "line": 151
+                }
+              ]
+            },
+            {
+              "line": 159,
+              "original": "assert first[\"liveness\"] == \"LIVE\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "injected_provider_io_retains_exact_callback_arguments_and_identity_cache",
+                  "line": 151
+                }
+              ]
+            },
+            {
+              "line": 160,
+              "original": "assert source.call(\"source_runtime.observe_live\", tid=TID, project=\"/approved\", turn_id=\"exact-turn\") == first",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "injected_provider_io_retains_exact_callback_arguments_and_identity_cache",
+                  "line": 151
+                }
+              ]
+            },
+            {
+              "line": 161,
+              "original": "assert len(calls) == 1",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "injected_provider_io_retains_exact_callback_arguments_and_identity_cache",
+                  "line": 151
+                }
+              ]
+            },
+            {
+              "line": 162,
+              "original": "assert (\n            source.call(\"source_runtime.observe_live\", tid=TID, project=\"/approved\", turn_id=\"different\")[\"liveness\"]\n            == \"UNKNOWN\"\n        )",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "injected_provider_io_retains_exact_callback_arguments_and_identity_cache",
+                  "line": 151
+                }
+              ]
+            },
+            {
+              "line": 166,
+              "original": "assert len(calls) == 2",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "injected_provider_io_retains_exact_callback_arguments_and_identity_cache",
+                  "line": 151
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_managed_remote_inventory_uses_rust_http_credential_and_scope",
+          "line": 171,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "managed_inventory_uses_native_http_private_credential_and_scope",
+              "line": 172
+            }
+          ],
+          "assertions": [
+            {
+              "line": 227,
+              "original": "assert result[0][0][\"id\"] == TID and result[2] == \"INDEXED\"",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "managed_inventory_uses_native_http_private_credential_and_scope",
+                  "line": 172
+                }
+              ]
+            },
+            {
+              "line": 228,
+              "original": "assert len(seen) == 1 and seen[0][1] == \"Bearer \" + token",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "managed_inventory_uses_native_http_private_credential_and_scope",
+                  "line": 172
+                }
+              ]
+            },
+            {
+              "line": 229,
+              "original": "assert seen[0][0].startswith(\"/v2/native-collector/inventory?\")",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "managed_inventory_uses_native_http_private_credential_and_scope",
+                  "line": 172
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_native_writer_probe_rejects_foreign_home_without_python_exec",
+          "line": 237,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/observation_python_retirement_qualification.rs",
+              "case": "native_writer_rejects_foreign_home_and_injected_io_always_uses_native_program",
+              "line": 215
+            }
+          ],
+          "assertions": [
+            {
+              "line": 253,
+              "original": "assert proof[\"liveness\"] == \"UNKNOWN\" and \"writer_pid\" not in proof",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "native_writer_rejects_foreign_home_and_injected_io_always_uses_native_program",
+                  "line": 215
+                }
+              ]
+            },
+            {
+              "line": 254,
+              "original": "assert proof[\"observer_uid\"] == os.getuid()",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/observation_python_retirement_qualification.rs",
+                  "case": "native_writer_rejects_foreign_home_and_injected_io_always_uses_native_program",
+                  "line": 215
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_rust_mdns_offline_lifecycle_never_imports_python_zeroconf",
+          "line": 257,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/device_python_retirement_qualification.rs",
+              "case": "empty_interface_mdns_lifecycle_needs_no_python_resolver_or_network",
+              "line": 591
+            }
+          ],
+          "assertions": [
+            {
+              "line": 261,
+              "original": "assert browser.interfaces == [] and browser.zc is None",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "empty_interface_mdns_lifecycle_needs_no_python_resolver_or_network",
+                  "line": 591
+                }
+              ]
+            },
+            {
+              "line": 262,
+              "original": "assert index.candidates() == {}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "empty_interface_mdns_lifecycle_needs_no_python_resolver_or_network",
+                  "line": 591
+                }
+              ]
+            },
+            {
+              "line": 263,
+              "original": "assert not any(c.args[0] in {\"zeroconf\", \"ifaddr\"} for c in imports.call_args_list)",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/device_python_retirement_qualification.rs",
+                  "case": "empty_interface_mdns_lifecycle_needs_no_python_resolver_or_network",
+                  "line": 591
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    },
+    {
+      "path": "fixtures/test_rust_native_observer.py",
+      "sha256": "fff79a9ae2a5692cf5fc07cec772b90a65b4e4d0759fb4f08b7f351ec67bd0a1",
+      "cases": [],
+      "fixture_only": true
+    },
+    {
+      "path": "fixtures/test_node_authority_route.py",
+      "sha256": "04f2329c6a4fb9efb415934fc4a9efaa2080f128cb425fea4740a1edae0a36a1",
+      "cases": [
+        {
+          "case": "test_reverse_gateway_uses_authenticated_scope_and_preserves_request_id",
+          "line": 45,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+              "line": 741
+            }
+          ],
+          "assertions": [
+            {
+              "line": 47,
+              "original": "assert client.call('prepare', {'prompt': 'intent'}, key='exact-id') == {'accepted_by_fixture': True}",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+                  "line": 741
+                }
+              ]
+            },
+            {
+              "line": 49,
+              "original": "assert op == 'node_request'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+                  "line": 741
+                }
+              ]
+            },
+            {
+              "line": 50,
+              "original": "assert envelope == dict(scope=dict(principal=dict(node_id='air', user_scope='alice',\n        fingerprint=route.node.public['fingerprint']), projects=['/fixture/repo']),\n        operation='prepare', request_id='exact-id', payload={'prompt': 'intent'})",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+                  "line": 741
+                }
+              ]
+            },
+            {
+              "line": 57,
+              "original": "assert remote.call(wire)['result']",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+                  "line": 741
+                }
+              ]
+            },
+            {
+              "line": 58,
+              "original": "assert route.calls[-1][1]['scope'] == envelope['scope']",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+                  "line": 741
+                }
+              ]
+            },
+            {
+              "line": 60,
+              "original": "assert remote.call(wire)['error_code'] == 'NODE_IDENTITY_MISMATCH'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+                  "line": 741
+                }
+              ]
+            },
+            {
+              "line": 61,
+              "original": "assert len(route.calls) == 2",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+                  "line": 741
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_revocation_and_user_conflict_prevent_forwarding",
+          "line": 64,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+              "line": 741
+            }
+          ],
+          "assertions": [
+            {
+              "line": 66,
+              "original": "pytest.raises(RustAuthorityError, match='USER_SCOPE_DENIED')",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+                  "line": 741
+                }
+              ]
+            },
+            {
+              "line": 69,
+              "original": "pytest.raises(RustAuthorityError, match='SHARING_SCOPE_DENIED')",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+                  "line": 741
+                }
+              ]
+            },
+            {
+              "line": 71,
+              "original": "assert not route.calls",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "reverse_gateway_uses_authenticated_identity_and_rechecks_user_and_revocation",
+                  "line": 741
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_lost_ack_is_not_retried_and_keeps_receipt_key",
+          "line": 74,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_router_qualification.rs",
+              "case": "reverse_authority_ack_identity_frame_limit_and_no_replay",
+              "line": 354
+            },
+            {
+              "path": "kernel/tests/node_python_retirement_qualification.rs",
+              "case": "native_helper_prepare_preserves_exact_prompt_and_generated_identity_after_lost_ack",
+              "line": 1056
+            }
+          ],
+          "assertions": [
+            {
+              "line": 80,
+              "original": "pytest.raises(RustAuthorityError, match='DELIVERY_UNKNOWN')",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_router_qualification.rs",
+                  "case": "reverse_authority_ack_identity_frame_limit_and_no_replay",
+                  "line": 354
+                },
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "native_helper_prepare_preserves_exact_prompt_and_generated_identity_after_lost_ack",
+                  "line": 1056
+                }
+              ]
+            },
+            {
+              "line": 82,
+              "original": "assert error.value.operation_id == 'recover-this-id'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_router_qualification.rs",
+                  "case": "reverse_authority_ack_identity_frame_limit_and_no_replay",
+                  "line": 354
+                },
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "native_helper_prepare_preserves_exact_prompt_and_generated_identity_after_lost_ack",
+                  "line": 1056
+                }
+              ]
+            },
+            {
+              "line": 83,
+              "original": "assert len(sent) == 1 and sent[0]['request_id'] == 'recover-this-id'",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_router_qualification.rs",
+                  "case": "reverse_authority_ack_identity_frame_limit_and_no_replay",
+                  "line": 354
+                },
+                {
+                  "path": "kernel/tests/node_python_retirement_qualification.rs",
+                  "case": "native_helper_prepare_preserves_exact_prompt_and_generated_identity_after_lost_ack",
+                  "line": 1056
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "case": "test_frame_limit_rejects_before_send",
+          "line": 86,
+          "parameters": [],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "targets": [
+            {
+              "path": "kernel/tests/node_router_qualification.rs",
+              "case": "reverse_authority_ack_identity_frame_limit_and_no_replay",
+              "line": 354
+            }
+          ],
+          "assertions": [
+            {
+              "line": 87,
+              "original": "pytest.raises(RustAuthorityError, match='REQUEST_TOO_LARGE')",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_router_qualification.rs",
+                  "case": "reverse_authority_ack_identity_frame_limit_and_no_replay",
+                  "line": 354
+                }
+              ]
+            },
+            {
+              "line": 89,
+              "original": "assert not route.calls",
+              "status": "SEMANTIC_OBLIGATION_PRESERVED",
+              "targets": [
+                {
+                  "path": "kernel/tests/node_router_qualification.rs",
+                  "case": "reverse_authority_ack_identity_frame_limit_and_no_replay",
+                  "line": 354
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "fixture_only": false
+    }
+  ],
+  "summary": {
+    "original_test_functions": 56,
+    "original_direct_checks": 231,
+    "preserved_checks": 225,
+    "retired_object_checks": 6
+  },
+  "baseline_qualification": {
+    "log": "node-original-short.log",
+    "junit": "node-original-short.xml",
+    "result": "78 passed",
+    "harness_retry": "Original long basetemp exceeded AF_UNIX path limit (70 passed, 1 failure, 7 setup errors); unchanged original tests all pass with short private socket paths."
+  },
+  "independent_oracles": [
+    "fixtures/device_connection_oracle_v1.json: all 812 exact original urllib inputs/results",
+    "fixtures/device_config_oracle_v1.json: original BridgeConfig complete config/API output",
+    "Existing literal cursor/digest oracles retained in node_router/network qualification; OpenSSL CLI independently validates both TLS wire directions including newline and EOF"
+  ],
+  "coverage_notes": [
+    "Every listed test assertion and original parametrization remains recorded. Python-only object interfaces, injected external backend markers, cyclic-GC behavior and retired centre locator are explicitly classified rather than claimed as semantic passes.",
+    "Helper fixture setup assertions are enforced by Rust Process readiness, CLI exit, actual OPAQUE pair results, registry registration and exact readonly session checks.",
+    "fixtures/test_rust_native_observer.py contains no tests; its independent historical SQL fixture moves to fixtures/observer_historical_v1.sql, qualified by observer_process_retirement_qualification.rs against unchanged observer_historical_expected.json.",
+    "Observer process 11 original parametrized cases and 52 assertions have a separate complete mapping: fixtures/observer_process_retirement_assertions_v1.json."
+  ]
+}

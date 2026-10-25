@@ -1,0 +1,483 @@
+{
+  "schema": "CLINX_OBSERVER_PROCESS_RETIREMENT_ASSERTIONS_V1",
+  "baseline_commit": "52f6ce9244baa1dcfb4a7b514f2ca9c569e67e12",
+  "original_source": {
+    "path": "fixtures/test_rust_observer_runtime.py",
+    "sha256": "aa97eca93b21ddefd22f1b021d659bce2e92488a62a3102ceb04de1ffebee757",
+    "lines": 311
+  },
+  "original_parameterized_case_count": 11,
+  "native_case_count": 11,
+  "tests": [
+    {
+      "source": "fixtures/test_rust_observer_runtime.py",
+      "function": "test_standalone_legacy_exact_projection_auth_audit_and_no_python",
+      "parameterization": [],
+      "rust_targets": [
+        "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+      ],
+      "assertions": [
+        {
+          "line": 135,
+          "original": "assert observer.process.returncode == 0",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 137,
+          "original": "assert rows and all(set(row) == {\"observer_http_method\", \"status\"} for row in rows)",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 138,
+          "original": "assert TOKEN not in observer.stdout_path.read_text() + observer.stderr_path.read_text()",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 139,
+          "original": "assert historical.path.read_bytes() == before",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 122,
+          "original": "assert observer.request(\"/v1/health\", token=\"bad\")[0] == 401",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 123,
+          "original": "assert observer.request(\"/v1/health\", method=\"POST\")[0] == 405",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 124,
+          "original": "assert observer.request(\"/v1/tasks?state=active&offset=-1\")[0] == 400",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 125,
+          "original": "assert observer.request(\"/v1/tasks/absent\")[0] == 404",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 127,
+          "original": "assert status == 200",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 128,
+          "original": "assert without_time(item) == historical.expected",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 129,
+          "original": "assert item[\"final_result\"][\"execution_ref\"] == \"exec-fixture\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 130,
+          "original": "assert item[\"codex_uri\"].endswith(\"?hostId=remote-ssh-discovered%3Ap620\")",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 131,
+          "original": "assert observer.request(\"/v1/tasks/task-fixture/events\")[0] == 200",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 132,
+          "original": "assert observer.request(\"/v2/observations\")[1][\"error\"] == \"OBSERVATION_NOT_CONFIGURED\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 133,
+          "original": "assert Path(f\"/proc/{observer.process.pid}/exe\").resolve() == binary().resolve()",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        },
+        {
+          "line": 134,
+          "original": "assert not Path(f\"/proc/{observer.process.pid}/task/{observer.process.pid}/children\").read_text().strip()",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::standalone_historical_projection_auth_audit_native_process_and_readonly_source"
+          ]
+        }
+      ],
+      "retired_behavior": null
+    },
+    {
+      "source": "fixtures/test_rust_observer_runtime.py",
+      "function": "test_bad_configuration_never_initializes_source",
+      "parameterization": [
+        "pytest.mark.parametrize(\n    \"values,error\",\n    [\n        ({\"CLINX_OBSERVER_TOKEN\": \"bad\"}, \"CLINX_OBSERVER_TOKEN\"),\n        ({\"CLINX_OBSERVER_CODEX_HOST_IDS\": \"[]\"}, \"CLINX_OBSERVER_CODEX_HOST_IDS\"),\n        ({\"CLINX_OBSERVER_CODEX_HOST_IDS\": '{\"p620\":\"host/name\"}'}, \"CLINX_OBSERVER_CODEX_HOST_IDS\"),\n        ({\"CLINX_OBSERVER_PORT\": \"65536\"}, \"OBSERVER_HTTP_BIND_FAILED\"),\n    ],\n)"
+      ],
+      "rust_targets": [
+        "kernel/tests/observer_process_retirement_qualification.rs::invalid_token_never_initializes_source",
+        "kernel/tests/observer_process_retirement_qualification.rs::invalid_host_map_never_initializes_source",
+        "kernel/tests/observer_process_retirement_qualification.rs::invalid_host_id_never_initializes_source",
+        "kernel/tests/observer_process_retirement_qualification.rs::invalid_port_never_initializes_source"
+      ],
+      "assertions": [
+        {
+          "line": 160,
+          "original": "assert result.returncode == 1 and error.encode() in result.stderr",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::invalid_token_never_initializes_source",
+            "kernel/tests/observer_process_retirement_qualification.rs::invalid_host_map_never_initializes_source",
+            "kernel/tests/observer_process_retirement_qualification.rs::invalid_host_id_never_initializes_source",
+            "kernel/tests/observer_process_retirement_qualification.rs::invalid_port_never_initializes_source"
+          ]
+        },
+        {
+          "line": 161,
+          "original": "assert not absent.exists()",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::invalid_token_never_initializes_source",
+            "kernel/tests/observer_process_retirement_qualification.rs::invalid_host_map_never_initializes_source",
+            "kernel/tests/observer_process_retirement_qualification.rs::invalid_host_id_never_initializes_source",
+            "kernel/tests/observer_process_retirement_qualification.rs::invalid_port_never_initializes_source"
+          ]
+        }
+      ],
+      "retired_behavior": null
+    },
+    {
+      "source": "fixtures/test_rust_observer_runtime.py",
+      "function": "test_missing_legacy_database_fails_without_creating_it",
+      "parameterization": [],
+      "rust_targets": [
+        "kernel/tests/observer_process_retirement_qualification.rs::missing_historical_database_is_never_created"
+      ],
+      "assertions": [
+        {
+          "line": 173,
+          "original": "assert result.returncode == 1 and b\"LEGACY_SOURCE_UNAVAILABLE\" in result.stderr",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::missing_historical_database_is_never_created"
+          ]
+        },
+        {
+          "line": 174,
+          "original": "assert not absent.exists()",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::missing_historical_database_is_never_created"
+          ]
+        }
+      ],
+      "retired_behavior": null
+    },
+    {
+      "source": "fixtures/test_rust_observer_runtime.py",
+      "function": "test_native_collector_checkpoints_concurrency_restart_revocation_and_no_writes",
+      "parameterization": [],
+      "rust_targets": [
+        "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+      ],
+      "assertions": [
+        {
+          "line": 232,
+          "original": "assert snapshot(native.root) == before",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 233,
+          "original": "assert Path(registry.path).read_bytes() == registry_before",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 210,
+          "original": "assert status == 200 and inventory[\"read_only\"] is True",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 212,
+          "original": "assert status == 200 and sampled[\"thread_id\"] == TID",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 213,
+          "original": "assert sampled[\"events\"] and \"NEVER_\" not in json.dumps(sampled)",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 217,
+          "original": "assert all(status == 200 and body[\"thread_id\"] == TID for status, body in replies)",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 219,
+          "original": "assert status == 409 and denied[\"error\"] == \"NATIVE_COLLECTOR_CURSOR_RESET\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 221,
+          "original": "assert status == 200 and context[\"last_user_intent\"] == \"User 2\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 222,
+          "original": "assert context[\"codex_running\"] is False",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 223,
+          "original": "assert context[\"native_display_state\"] == \"UNKNOWN\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 224,
+          "original": "assert \"NEVER_\" not in json.dumps(context)",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 225,
+          "original": "assert observer.request(f\"/v2/native/{TID}?recent_turns=999999999999999999999\")[1][\"error\"] == \"INVALID_CONTEXT_LIMIT\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 227,
+          "original": "assert reopened.request(route)[0] == 409",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 228,
+          "original": "assert reopened.request(f\"/v2/native-collector/sample/{TID}\")[0] == 200",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 230,
+          "original": "assert reopened.request(\"/v2/native-collector/inventory\")[1][\"error\"] == \"SHARING_SCOPE_DENIED\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        },
+        {
+          "line": 231,
+          "original": "assert reopened.request(f\"/v2/native/{TID}\")[1][\"error\"] == \"SHARING_SCOPE_DENIED\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::collector_checkpoints_concurrency_restart_revocation_and_readonly_sources"
+          ]
+        }
+      ],
+      "retired_behavior": null
+    },
+    {
+      "source": "fixtures/test_rust_observer_runtime.py",
+      "function": "test_native_provider_read_exact_identity_and_scope_recheck",
+      "parameterization": [
+        "pytest.mark.parametrize(\"mode\", [\"exact\", \"wrong_workspace\", \"revoked\"])"
+      ],
+      "rust_targets": [
+        "kernel/tests/observer_process_retirement_qualification.rs::provider_read_exact_identity",
+        "kernel/tests/observer_process_retirement_qualification.rs::provider_read_wrong_workspace",
+        "kernel/tests/observer_process_retirement_qualification.rs::provider_read_revoked_scope"
+      ],
+      "assertions": [
+        {
+          "line": 268,
+          "original": "assert [r[\"method\"] for r in provider.calls] == [\"initialize\", \"initialized\", \"thread/read\"]",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_exact_identity",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_wrong_workspace",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_revoked_scope"
+          ]
+        },
+        {
+          "line": 247,
+          "original": "assert request[\"method\"] == \"thread/read\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_exact_identity",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_wrong_workspace",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_revoked_scope"
+          ]
+        },
+        {
+          "line": 248,
+          "original": "assert request[\"params\"] == {\"threadId\": TID, \"includeTurns\": False}",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_exact_identity",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_wrong_workspace",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_revoked_scope"
+          ]
+        },
+        {
+          "line": 259,
+          "original": "assert status == 200",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_exact_identity",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_wrong_workspace",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_revoked_scope"
+          ]
+        },
+        {
+          "line": 260,
+          "original": "assert result[\"codex_running\"] is True",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_exact_identity",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_wrong_workspace",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_revoked_scope"
+          ]
+        },
+        {
+          "line": 261,
+          "original": "assert result[\"native_display_state\"] == \"RUNNING\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_exact_identity",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_wrong_workspace",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_revoked_scope"
+          ]
+        },
+        {
+          "line": 262,
+          "original": "assert result[\"queried_thread_id\"] == TID",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_exact_identity",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_wrong_workspace",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_revoked_scope"
+          ]
+        },
+        {
+          "line": 264,
+          "original": "assert status == 400",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_exact_identity",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_wrong_workspace",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_revoked_scope"
+          ]
+        },
+        {
+          "line": 265,
+          "original": "assert result[\"error\"] == (\"NATIVE_OBSERVATION_IDENTITY_CONFLICT\" if mode == \"wrong_workspace\" else \"SHARING_SCOPE_DENIED\")",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_exact_identity",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_wrong_workspace",
+            "kernel/tests/observer_process_retirement_qualification.rs::provider_read_revoked_scope"
+          ]
+        }
+      ],
+      "retired_behavior": null
+    },
+    {
+      "source": "fixtures/test_rust_observer_runtime.py",
+      "function": "test_rust_monitor_uses_existing_mcp_read_transport_and_no_legacy_database",
+      "parameterization": [],
+      "rust_targets": [
+        "kernel/tests/observer_process_retirement_qualification.rs::monitor_reuses_mcp_read_transport_without_historical_database"
+      ],
+      "assertions": [
+        {
+          "line": 310,
+          "original": "assert not thread.is_alive() and not errors",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::monitor_reuses_mcp_read_transport_without_historical_database"
+          ]
+        },
+        {
+          "line": 311,
+          "original": "assert calls and not absent.exists()",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::monitor_reuses_mcp_read_transport_without_historical_database"
+          ]
+        },
+        {
+          "line": 302,
+          "original": "assert observer.request(\"/v1/health\")[1][\"authority\"] == \"RUST\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::monitor_reuses_mcp_read_transport_without_historical_database"
+          ]
+        },
+        {
+          "line": 303,
+          "original": "assert observer.request(\"/v1/tasks?state=active\")[1][\"legacy_history\"] is False",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::monitor_reuses_mcp_read_transport_without_historical_database"
+          ]
+        },
+        {
+          "line": 304,
+          "original": "assert observer.request(\"/v1/tasks/old\")[1][\"error\"] == \"RUST_TASKS_USE_OBSERVATIONS_V2\"",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::monitor_reuses_mcp_read_transport_without_historical_database"
+          ]
+        },
+        {
+          "line": 305,
+          "original": "assert observer.request(\"/v2/observations\")[0] == 200",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::monitor_reuses_mcp_read_transport_without_historical_database"
+          ]
+        },
+        {
+          "line": 291,
+          "original": "assert name in {\"clinx_get_capabilities\", \"clinx_list_observations\"}",
+          "rust_targets": [
+            "kernel/tests/observer_process_retirement_qualification.rs::monitor_reuses_mcp_read_transport_without_historical_database"
+          ]
+        }
+      ],
+      "retired_behavior": null
+    }
+  ],
+  "shared_fixture_contracts": {
+    "historical_sql": "fixtures/observer_historical_v1.sql",
+    "frozen_original_projection": "fixtures/observer_historical_expected.json",
+    "native_rollout_and_index": "kernel/tests/support/observation.rs",
+    "independent_websocket_oracle": "kernel/tests/support/provider.rs"
+  },
+  "qualification_limit": "Linux private child process only; not real Mac or deployed service acceptance"
+}

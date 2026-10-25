@@ -303,16 +303,7 @@ impl Source {
         }
         let request =
             json!({"root":root,"thread_id":a["tid"],"turn_id":a["turn_id"],"project":a["project"]});
-        let command = if injected && self.config["injected_legacy_script"].is_string() {
-            json!([
-                "/usr/bin/python3",
-                "-I",
-                self.config["injected_legacy_script"],
-                request.to_string()
-            ])
-        } else {
-            json!([program, "--native-writer-probe", request.to_string()])
-        };
+        let command = json!([program, "--native-writer-probe", request.to_string()]);
         let params = json!({"command":command,"cwd":"/","timeoutMs":2500,"outputBytesCap":4096,"sandboxPolicy":{"type":"dangerFullAccess"}});
         let result = if let Some(c) = client.as_mut() {
             c.request("command/exec", params)?

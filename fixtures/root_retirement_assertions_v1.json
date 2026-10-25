@@ -1,0 +1,787 @@
+{
+  "schema": "CLINX_ROOT_PYTHON_RETIREMENT_V1",
+  "baseline_commit": "52f6ce9244baa1dcfb4a7b514f2ca9c569e67e12",
+  "deleted_sources": [
+    {
+      "path": "scripts/stage_rust_callers.py",
+      "lines": 182,
+      "bytes": 7639,
+      "sha256": "c1a1bf25fefd2e381df172367700d44b80bf5dcc8a017545d710a5e389fd1a2f",
+      "replacement_or_retirement": "Rust clinx-install callers; frozen original units and private filesystem/command-boundary tests"
+    },
+    {
+      "path": "scripts/install_rust_services.py",
+      "lines": 262,
+      "bytes": 11106,
+      "sha256": "1b1b75446cbe7c4ed47a7e743d9a72c470c547f5079887b0db4f5dd89194940a",
+      "replacement_or_retirement": "Rust clinx-install services; exact config compiler, manifest, units and no lifecycle activation"
+    },
+    {
+      "path": "scripts/rust_authority_isolation.py",
+      "lines": 240,
+      "bytes": 10269,
+      "sha256": "574420f47f2440a8ff592831b60705259494c72eeb8eeeaf60c10339eaeba1c7",
+      "replacement_or_retirement": "Provisioning migrated to clinx-install provision. Old whole-plane revoke/inspect targets retired Python unit/database inventory; historical exact source retained in baseline bundle, not current Authority control."
+    },
+    {
+      "path": "scripts/qualify_rust_physical_revocation.py",
+      "lines": 161,
+      "bytes": 6083,
+      "sha256": "89c11817f18c9ae7bd4290ceb6e3b6bbf5c52b157caddbf6be4f031fbb6b7ea0",
+      "replacement_or_retirement": "One-time privileged Python-to-Rust cutover prerequisite using retired worker isolation inventory, not current unattended qualification. Historical proof and exact source retained; no equivalent new production proof claimed."
+    },
+    {
+      "path": "scripts/qualify_rust_legacy_cgroup.py",
+      "lines": 164,
+      "bytes": 6497,
+      "sha256": "5a4a903b4075921da1fca391aadf704d485561c8f89c5edaec43a68fd9cfdaf3",
+      "replacement_or_retirement": "Requires live legacy clinx.service; readback confirms that service inactive/MainPID0. One-time migration proof preserved in Git and reports."
+    },
+    {
+      "path": "scripts/qualify_rust_service_isolation.py",
+      "lines": 82,
+      "bytes": 3969,
+      "sha256": "08ca92f23f537be1c201721079b7cb40870f944996efafdaa0fc3e231603b73e",
+      "replacement_or_retirement": "Requires old dedicated provider unit and writes privileged probe aliases. Current native Provider/Host contract has different process assembly; historical deployment qualification not a current source entrypoint."
+    },
+    {
+      "path": "scripts/qualify_bridge_transport.py",
+      "lines": 108,
+      "bytes": 5342,
+      "sha256": "51695c989ac087f0c38c9c18fbdbf8d0d1b984f1aab9c2d8dc568164024cdf06",
+      "replacement_or_retirement": "Retired embedded Codex Bridge control experiment; current transport-only builder forbids pkg/codexappserver. No runtime/script consumer outside this closed experiment."
+    },
+    {
+      "path": "tools/qualification/check_structure.py",
+      "lines": 57,
+      "bytes": 3166,
+      "sha256": "35c1ca297600e4a27a8f7ff24fa20cbf9f1da32d9a4a1caa7edb65d68f8e6feb",
+      "replacement_or_retirement": "Rust clinx-source-audit --check-structure verifies complete Python retirement and runtime data, with negative fixture."
+    },
+    {
+      "path": "tools/qualification/relocate_tests.py",
+      "lines": 138,
+      "bytes": 6815,
+      "sha256": "2dc5bba6aedb6f9de6000b165e09aba35a569b8bafccf51400dd825877757f2d",
+      "replacement_or_retirement": "Historical Python source relocation harness only. Original local tests preserved; frozen baseline harness retained externally for final comparison and Git recovery."
+    },
+    {
+      "path": "tools/qualification/run_local_tests.py",
+      "lines": 47,
+      "bytes": 2306,
+      "sha256": "66f2073933cd7c3acdd552100fe0d5c41ede8da1827f75fd08d768cb82631c9e",
+      "replacement_or_retirement": "Historical Python-only qualification launcher. Current tests are tracked Rust; old test evidence recovered using matching Git source."
+    },
+    {
+      "path": "clinx/transport/tunnel_reliability.py",
+      "lines": 200,
+      "bytes": 8552,
+      "sha256": "42cc0bf0f09acb14ca66cd3f3d801a79fab6793ccc81ee937f301954dcccdf42",
+      "replacement_or_retirement": "Rust standalone supervisor; original parameter/clock/budget cases migrated directly to native engine; retired Python callback backend removed."
+    },
+    {
+      "path": "fixtures/test_rust_tunnel_runtime.py",
+      "lines": 58,
+      "bytes": 3185,
+      "sha256": "7c816842a792b141dd1b101f2bfce3e4e23886ee5560ec88bbd9f4b32fb0b6d9",
+      "replacement_or_retirement": "Two original cases moved to native build-release and tunnel identity tests, including frozen Unicode identity hash."
+    },
+    {
+      "path": "clinx/__init__.py",
+      "lines": 1,
+      "bytes": 27,
+      "sha256": "67c9be7c721a7018c7595120a319f7b9a2d18c40c1faea8625a7b46201b5d335",
+      "replacement_or_retirement": "Empty Python package namespace with no remaining source consumers; retained JSON data has native include_str consumers."
+    },
+    {
+      "path": "clinx/mcp/__init__.py",
+      "lines": 1,
+      "bytes": 57,
+      "sha256": "4a370372ae1e0fdbc6434ceedbb0e65f2d5e1ad9273b39ba77fff9574134ff16",
+      "replacement_or_retirement": "Empty Python package namespace with no remaining source consumers; retained JSON data has native include_str consumers."
+    },
+    {
+      "path": "clinx/transport/__init__.py",
+      "lines": 1,
+      "bytes": 63,
+      "sha256": "39d79a556b6f247cbb756999aa0c336f01efa58703820677313372d23f3cd3d2",
+      "replacement_or_retirement": "Empty Python package namespace with no remaining source consumers; retained JSON data has native include_str consumers."
+    },
+    {
+      "path": "tools/__init__.py",
+      "lines": 1,
+      "bytes": 27,
+      "sha256": "468d37599f5f36bf4de3279cdb4a659ef10bee17bd1c778e1dbb5d077e05001b",
+      "replacement_or_retirement": "Empty Python package namespace with no remaining source consumers; retained JSON data has native include_str consumers."
+    },
+    {
+      "path": "tools/build/__init__.py",
+      "lines": 1,
+      "bytes": 59,
+      "sha256": "e9665ce8310d37bd43ae5b6b7131326cfa39c6561ac32597ee1de0f3a01b91b1",
+      "replacement_or_retirement": "Empty Python package namespace with no remaining source consumers; retained JSON data has native include_str consumers."
+    },
+    {
+      "path": "tools/maintenance/__init__.py",
+      "lines": 1,
+      "bytes": 65,
+      "sha256": "b368041aba587baf136ebcfc66b1175411acba72d044235c5b5d4340392244aa",
+      "replacement_or_retirement": "Empty Python package namespace with no remaining source consumers; retained JSON data has native include_str consumers."
+    },
+    {
+      "path": "tools/qualification/__init__.py",
+      "lines": 1,
+      "bytes": 67,
+      "sha256": "49f49451d2ae65740b3b5b0a7a380eb304b1269d4dbba381fc0ae7584c9c9e03",
+      "replacement_or_retirement": "Empty Python package namespace with no remaining source consumers; retained JSON data has native include_str consumers."
+    }
+  ],
+  "tunnel_original_cases": [
+    {
+      "path": "tests/test_tunnel_reliability.py",
+      "sha256": "81fe08352b42b4a4d4486e45ac381a5927c4896ff4132b4f204faeb90385cd19",
+      "original_ignored_tests_unchanged": true,
+      "cases": [
+        {
+          "case": "test_unproved_poll_cannot_be_healthy",
+          "line": 61,
+          "parameters": [
+            "pytest.mark.parametrize(\n    \"value\", [\"\", \"NaN\", \"Inf\", \"-Inf\", \"nonsense\", \"-1\", \"0\", \"1001\"]\n)"
+          ],
+          "checks": [
+            {
+              "line": 62,
+              "kind": "Assert",
+              "original": "assert not poll_sample(\n        \"commands_poll_last_successful_timestamp_seconds \" + value,\n        now=1000,\n        max_age=120,\n    )[\"fresh\"]",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::all_original_poll_budget_and_saved_health_parameters_fail_closed"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::all_original_poll_budget_and_saved_health_parameters_fail_closed"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_ambiguous_samples_and_error_observability",
+          "line": 69,
+          "parameters": [],
+          "checks": [
+            {
+              "line": 71,
+              "kind": "Assert",
+              "original": "assert poll_sample(line, now=1000, max_age=120)[\"fresh\"]",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::all_original_poll_budget_and_saved_health_parameters_fail_closed"
+              ]
+            },
+            {
+              "line": 72,
+              "kind": "Assert",
+              "original": "assert not poll_sample(line * 2, now=1000, max_age=120)[\"fresh\"]",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::all_original_poll_budget_and_saved_health_parameters_fail_closed"
+              ]
+            },
+            {
+              "line": 78,
+              "kind": "Assert",
+              "original": "assert sample[\"poll_age\"] == 1 and sample[\"poll_errors\"] == {\"timeout\": 7}",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::all_original_poll_budget_and_saved_health_parameters_fail_closed"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::all_original_poll_budget_and_saved_health_parameters_fail_closed"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_saved_healthy_state_is_not_current_health_without_live_identity",
+          "line": 82,
+          "parameters": [
+            "pytest.mark.parametrize(\"fault\", [None, \"stale\", \"dead\", \"pid_reuse\", \"old_snapshot\"])"
+          ],
+          "checks": [
+            {
+              "line": 105,
+              "kind": "Assert",
+              "original": "assert read_status(tmp_path)[\"currently_healthy\"] == (fault is None)",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::all_original_poll_budget_and_saved_health_parameters_fail_closed"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::all_original_poll_budget_and_saved_health_parameters_fail_closed"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_invalid_budget_is_refused",
+          "line": 118,
+          "parameters": [
+            "pytest.mark.parametrize(\n    \"field,value\",\n    [\n        (\"interval\", 0),\n        (\"probe_timeout\", float(\"nan\")),\n        (\"cooldown\", -1),\n        (\"max_restarts\", 1.5),\n        (\"stable_for\", float(\"inf\")),\n    ],\n)"
+          ],
+          "checks": [
+            {
+              "line": 119,
+              "kind": "Call",
+              "original": "pytest.raises(ValueError)",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::all_original_poll_budget_and_saved_health_parameters_fail_closed",
+                "kernel/tests/tunnel_runtime.rs::native_cli_rejects_nonfinite_policy_before_any_launch"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::all_original_poll_budget_and_saved_health_parameters_fail_closed",
+            "kernel/tests/tunnel_runtime.rs::native_cli_rejects_nonfinite_policy_before_any_launch"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_private_state_and_single_owner_lock",
+          "line": 123,
+          "parameters": [],
+          "checks": [
+            {
+              "line": 136,
+              "kind": "Call",
+              "original": "pytest.raises(ValueError, match=\"PRIVATE_STATE\")",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_private_directory_and_identity_are_fail_closed",
+                "kernel/tests/tunnel_runtime.rs::native_exact_owner_lock_signal_and_term_resistant_descendant"
+              ]
+            },
+            {
+              "line": 129,
+              "kind": "Call",
+              "original": "pytest.raises(BlockingIOError)",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_private_directory_and_identity_are_fail_closed",
+                "kernel/tests/tunnel_runtime.rs::native_exact_owner_lock_signal_and_term_resistant_descendant"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::native_private_directory_and_identity_are_fail_closed",
+            "kernel/tests/tunnel_runtime.rs::native_exact_owner_lock_signal_and_term_resistant_descendant"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_unknown_prior_state_never_spawns_or_signals",
+          "line": 141,
+          "parameters": [
+            "pytest.mark.parametrize(\"fault\", [\"corrupt\", \"identity\", \"live\", \"spawn_unknown\"])"
+          ],
+          "checks": [
+            {
+              "line": 157,
+              "kind": "Assert",
+              "original": "assert s.child is None",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::unknown_spawn_receipt_and_live_prior_child_never_replay",
+                "kernel/tests/tunnel_runtime.rs::corrupt_foreign_and_retired_callback_entries_never_launch"
+              ]
+            },
+            {
+              "line": 159,
+              "kind": "Assert",
+              "original": "assert s.lock_fd is None",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::unknown_spawn_receipt_and_live_prior_child_never_replay",
+                "kernel/tests/tunnel_runtime.rs::corrupt_foreign_and_retired_callback_entries_never_launch"
+              ]
+            },
+            {
+              "line": 155,
+              "kind": "Call",
+              "original": "pytest.raises((ValueError, json.JSONDecodeError))",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::unknown_spawn_receipt_and_live_prior_child_never_replay",
+                "kernel/tests/tunnel_runtime.rs::corrupt_foreign_and_retired_callback_entries_never_launch"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::unknown_spawn_receipt_and_live_prior_child_never_replay",
+            "kernel/tests/tunnel_runtime.rs::corrupt_foreign_and_retired_callback_entries_never_launch"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_persistent_exit_budget_and_healthy_recovery",
+          "line": 162,
+          "parameters": [],
+          "checks": [
+            {
+              "line": 167,
+              "kind": "Assert",
+              "original": "assert s.run() == 78",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_exit_budget_survives_supervisor_restart"
+              ]
+            },
+            {
+              "line": 168,
+              "kind": "Assert",
+              "original": "assert time.monotonic() - started < 4",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_exit_budget_survives_supervisor_restart"
+              ]
+            },
+            {
+              "line": 170,
+              "kind": "Assert",
+              "original": "assert before[\"status\"] == \"HOLD\" and before[\"launches\"] == 3",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_exit_budget_survives_supervisor_restart"
+              ]
+            },
+            {
+              "line": 172,
+              "kind": "Assert",
+              "original": "assert again.run() == 78",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_exit_budget_survives_supervisor_restart"
+              ]
+            },
+            {
+              "line": 173,
+              "kind": "Assert",
+              "original": "assert read_state(state)[\"launch_sequence\"] == 3",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_exit_budget_survives_supervisor_restart"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::native_exit_budget_survives_supervisor_restart"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_continuous_fresh_polls_required_before_budget_resets",
+          "line": 176,
+          "parameters": [],
+          "checks": [
+            {
+              "line": 194,
+              "kind": "Assert",
+              "original": "assert s.run() == 0",
+              "targets": [
+                "kernel/src/tunnel_retirement_tests.rs::continuous_fresh_polls_are_required_to_reset_existing_budget"
+              ]
+            },
+            {
+              "line": 195,
+              "kind": "Assert",
+              "original": "assert s.state[\"launches\"] == 1",
+              "targets": [
+                "kernel/src/tunnel_retirement_tests.rs::continuous_fresh_polls_are_required_to_reset_existing_budget"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/src/tunnel_retirement_tests.rs::continuous_fresh_polls_are_required_to_reset_existing_budget"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_probe_has_parent_enforced_total_deadline_and_no_proxy",
+          "line": 198,
+          "parameters": [],
+          "checks": [
+            {
+              "line": 219,
+              "kind": "Assert",
+              "original": "assert s.sample()[\"probe_error\"] == \"PROBE_DEADLINE\"",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::probe_total_deadline_bounds_trickling_body_and_refuses_redirect"
+              ]
+            },
+            {
+              "line": 220,
+              "kind": "Assert",
+              "original": "assert entered.is_set() and time.monotonic() - started < 1",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::probe_total_deadline_bounds_trickling_body_and_refuses_redirect"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::probe_total_deadline_bounds_trickling_body_and_refuses_redirect"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_health_endpoint_cannot_redirect_probe_outside_local_process",
+          "line": 232,
+          "parameters": [
+            "pytest.mark.parametrize(\n    \"url\",\n    [\"https://127.0.0.1:80\", \"http://example.com\", \"http://127.0.0.1:80/?key=secret\"],\n)"
+          ],
+          "checks": [
+            {
+              "line": 235,
+              "kind": "Call",
+              "original": "pytest.raises(ValueError)",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::invalid_urls_reject_without_network"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::invalid_urls_reject_without_network"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_cli_stops_only_its_owned_tree",
+          "line": 239,
+          "parameters": [],
+          "checks": [
+            {
+              "line": 261,
+              "kind": "Assert",
+              "original": "assert process.wait(5) == 0",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_exact_owner_lock_signal_and_term_resistant_descendant"
+              ]
+            },
+            {
+              "line": 264,
+              "kind": "Assert",
+              "original": "assert bystander.poll() is None",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_exact_owner_lock_signal_and_term_resistant_descendant"
+              ]
+            },
+            {
+              "line": 265,
+              "kind": "Assert",
+              "original": "assert read_state(state)[\"status\"] == \"STOPPED\"",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_exact_owner_lock_signal_and_term_resistant_descendant"
+              ]
+            },
+            {
+              "line": 262,
+              "kind": "Call",
+              "original": "pytest.raises(ProcessLookupError)",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_exact_owner_lock_signal_and_term_resistant_descendant"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::native_exact_owner_lock_signal_and_term_resistant_descendant"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_unconfirmed_child_termination_holds_instead_of_starting_another",
+          "line": 274,
+          "parameters": [],
+          "checks": [
+            {
+              "line": 292,
+              "kind": "Assert",
+              "original": "assert report[\"status\"] == \"HOLD\"",
+              "targets": [
+                "kernel/src/tunnel_retirement_tests.rs::unconfirmed_termination_retains_exact_child_and_stops_recovery"
+              ]
+            },
+            {
+              "line": 293,
+              "kind": "Assert",
+              "original": "assert report[\"child_pid\"] == 999999999",
+              "targets": [
+                "kernel/src/tunnel_retirement_tests.rs::unconfirmed_termination_retains_exact_child_and_stops_recovery"
+              ]
+            },
+            {
+              "line": 294,
+              "kind": "Assert",
+              "original": "assert s.stop_unconfirmed",
+              "targets": [
+                "kernel/src/tunnel_retirement_tests.rs::unconfirmed_termination_retains_exact_child_and_stops_recovery"
+              ]
+            },
+            {
+              "line": 295,
+              "kind": "Assert",
+              "original": "assert signals == [(999999999, signal.SIGTERM), (999999999, signal.SIGKILL)]",
+              "targets": [
+                "kernel/src/tunnel_retirement_tests.rs::unconfirmed_termination_retains_exact_child_and_stops_recovery"
+              ]
+            },
+            {
+              "line": 289,
+              "kind": "Call",
+              "original": "pytest.raises(ChildStopUnconfirmed)",
+              "targets": [
+                "kernel/src/tunnel_retirement_tests.rs::unconfirmed_termination_retains_exact_child_and_stops_recovery"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/src/tunnel_retirement_tests.rs::unconfirmed_termination_retains_exact_child_and_stops_recovery"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_transient_systemd_fixture_stops_at_budget_without_restarting_owner",
+          "line": 300,
+          "parameters": [],
+          "checks": [
+            {
+              "line": 334,
+              "kind": "Assert",
+              "original": "assert result.returncode == 78, result.stdout + result.stderr",
+              "targets": []
+            },
+            {
+              "line": 336,
+              "kind": "Assert",
+              "original": "assert report[\"status\"] == \"HOLD\" and report[\"launch_sequence\"] == 2",
+              "targets": []
+            }
+          ],
+          "targets": [],
+          "status": "NOT_RUN_SYSTEMD_INTEGRATION",
+          "qualification_boundary": "Original ignored test retained unchanged. Real transient systemd launcher not re-run in this source-only round; private budget and restart tests do not claim that proof."
+        },
+        {
+          "case": "test_default_policy_deadlines_with_deterministic_fault_clock",
+          "line": 358,
+          "parameters": [
+            "pytest.mark.parametrize(\"restored\", [True, False])"
+          ],
+          "checks": [
+            {
+              "line": 415,
+              "kind": "Assert",
+              "original": "assert s.run() == (0 if restored else 78)",
+              "targets": [
+                "kernel/src/tunnel_retirement_tests.rs::default_policy_deadlines_preserve_both_original_fault_clock_bounds"
+              ]
+            },
+            {
+              "line": 417,
+              "kind": "Assert",
+              "original": "assert elapsed <= (219 if restored else 370)",
+              "targets": [
+                "kernel/src/tunnel_retirement_tests.rs::default_policy_deadlines_preserve_both_original_fault_clock_bounds"
+              ]
+            },
+            {
+              "line": 418,
+              "kind": "Assert",
+              "original": "assert s.state[\"launch_sequence\"] == (2 if restored else 4)",
+              "targets": [
+                "kernel/src/tunnel_retirement_tests.rs::default_policy_deadlines_preserve_both_original_fault_clock_bounds"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/src/tunnel_retirement_tests.rs::default_policy_deadlines_preserve_both_original_fault_clock_bounds"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        }
+      ]
+    },
+    {
+      "path": "fixtures/test_rust_tunnel_runtime.py",
+      "sha256": "7c816842a792b141dd1b101f2bfce3e4e23886ee5560ec88bbd9f4b32fb0b6d9",
+      "original_ignored_tests_unchanged": false,
+      "cases": [
+        {
+          "case": "test_staged_release_is_reproducible_rust_only_runtime",
+          "line": 17,
+          "parameters": [],
+          "checks": [
+            {
+              "line": 23,
+              "kind": "Assert",
+              "original": "assert first == second",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            },
+            {
+              "line": 28,
+              "kind": "Assert",
+              "original": "assert manifest['status'] == 'NOT_DEPLOYED'",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            },
+            {
+              "line": 29,
+              "kind": "Assert",
+              "original": "assert 'tunnel_reliability.py' not in manifest['files']",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            },
+            {
+              "line": 30,
+              "kind": "Assert",
+              "original": "assert 'clinx-node' not in manifest['files']",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            },
+            {
+              "line": 31,
+              "kind": "Assert",
+              "original": "assert manifest['files']['clinx-tunnel']['sha256'] == hashlib.sha256(BINARY.read_bytes()).hexdigest()",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            },
+            {
+              "line": 32,
+              "kind": "Assert",
+              "original": "assert manifest['inputs']['supervisor_runtime']['contract'] == 'RUST_TUNNEL_SUPERVISOR_V1'",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            },
+            {
+              "line": 40,
+              "kind": "Assert",
+              "original": "assert result.returncode == 1",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            },
+            {
+              "line": 41,
+              "kind": "Assert",
+              "original": "assert json.loads(result.stdout)['currently_healthy'] is False",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            },
+            {
+              "line": 25,
+              "kind": "Assert",
+              "original": "assert (tmp_path / 'first' / name).read_bytes() == (tmp_path / 'second' / name).read_bytes()",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            },
+            {
+              "line": 36,
+              "kind": "Assert",
+              "original": "assert '/clinx-tunnel ' + mode + ' --state-dir ' in start",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            },
+            {
+              "line": 37,
+              "kind": "Assert",
+              "original": "assert 'python' not in start and '@' not in start",
+              "targets": [
+                "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/build_release_qualification.rs::native_tunnel_package_reproducible_runtime_free_of_python_and_exact_three_file_cas"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        },
+        {
+          "case": "test_native_launch_reuses_legacy_python_identity_and_budget",
+          "line": 44,
+          "parameters": [],
+          "checks": [
+            {
+              "line": 54,
+              "kind": "Assert",
+              "original": "assert result.returncode == 78",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_launch_preserves_original_unicode_identity_and_budget"
+              ]
+            },
+            {
+              "line": 56,
+              "kind": "Assert",
+              "original": "assert receipt['identity'] == identity",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_launch_preserves_original_unicode_identity_and_budget"
+              ]
+            },
+            {
+              "line": 57,
+              "kind": "Assert",
+              "original": "assert receipt['launches'] == 3 and receipt['launch_sequence'] == 8",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_launch_preserves_original_unicode_identity_and_budget"
+              ]
+            },
+            {
+              "line": 58,
+              "kind": "Assert",
+              "original": "assert receipt['reason'] == 'RECOVERY_BUDGET_EXHAUSTED'",
+              "targets": [
+                "kernel/tests/tunnel_runtime.rs::native_launch_preserves_original_unicode_identity_and_budget"
+              ]
+            }
+          ],
+          "targets": [
+            "kernel/tests/tunnel_runtime.rs::native_launch_preserves_original_unicode_identity_and_budget"
+          ],
+          "status": "SEMANTIC_OBLIGATION_PRESERVED",
+          "qualification_boundary": "Private process/clock/HTTP fixtures; not production SLO or service isolation proof."
+        }
+      ]
+    }
+  ],
+  "installer": {
+    "oracle": "fixtures/install_historical_expected.json",
+    "oracle_origin": "Exact baseline Python render output; remove only retired PYTHONPATH/PYTHONDONTWRITEBYTECODE service environment lines.",
+    "tests": [
+      "kernel/tests/install_tools.rs::historical_units_preserve_identity_paths_and_privileges_without_python_environment",
+      "kernel/tests/install_tools.rs::release_requires_every_contract_and_immutable_file_before_install",
+      "kernel/tests/install_tools.rs::configuration_retains_routes_and_host_commands_but_removes_legacy_state",
+      "kernel/tests/install_tools.rs::native_installer_runs_exact_compilers_and_only_reloads_not_starts",
+      "kernel/tests/install_tools.rs::callers_copy_exact_identity_without_database_or_service_activation",
+      "kernel/tests/install_tools.rs::compiled_config_conflict_and_compiler_failure_never_write_units",
+      "kernel/tests/install_tools.rs::cli_help_is_root_and_config_free",
+      "kernel/tests/install_tools.rs::provisioning_preserves_existing_state_and_has_no_lifecycle_operation"
+    ],
+    "execution_boundary": "Private filesystem and substituted administrator commands only. Live provision/install NOT_RUN."
+  },
+  "source_structure": {
+    "target": "kernel/tests/source_structure.rs::native_source_check_rejects_python_reintroduction_and_bad_data",
+    "obligations": [
+      "Reject tracked or nonignored Python, including dangling symlinks",
+      "Reject runtime Python source/dependency list",
+      "Reject invalid runtime schema data",
+      "Require every Python inventory row DEAD and no release profile"
+    ]
+  },
+  "retired_scenarios": "Historical privileged cutover and closed embedded Bridge experiment are retired with explicit reasons in deleted_sources; not equivalent new production validation."
+}

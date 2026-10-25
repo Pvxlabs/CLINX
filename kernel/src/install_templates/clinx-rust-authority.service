@@ -1,0 +1,29 @@
+[Unit]
+Description=CLINX sole Rust business authority (staged)
+After=network.target
+[Service]
+User=clinx-authority
+Group=clinx-authority
+SupplementaryGroups=clinx-ipc clinx-provider-ipc
+ExecStart=@RELEASE@/clinx-runtime --state-dir @ROOT@/authority --socket @RUN@/authority.sock --policy @ROOT@/config/policy.json --caller-uid @API_UID@ --transport-uid @TRANSPORT_UID@
+BindReadOnlyPaths=@DESKTOP_PARENT@:/tmp/codex-daemon-@WORKER_UID@
+ReadWritePaths=@ROOT@/authority @RUN@
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+UMask=0077
+KillMode=control-group
+Restart=on-failure
+RestartSec=3

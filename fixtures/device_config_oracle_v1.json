@@ -1,0 +1,137 @@
+{
+  "schema": "CLINX_ORIGINAL_BRIDGECONFIG_ORACLE_V1",
+  "baseline": "52f6ce9",
+  "toml": "[linear]\nteam_id=\"t\"\ntrigger_label=\"go\"\ntodo_state=\"Todo\"\nrunning_state=\"Run\"\nreview_state=\"Review\"\n[runtime]\nruntime_host=\"Workstation-Air\"\n[app_server]\nlocal_socket=\"provider.sock\"\nnative_socket=\"~//native.sock\"\n[projects.z]\ncwd=\"link/../absent\"\nbranch=\"main\"\n[projects.a]\ncwd=\"a\"\nbranch=\"main\"\n[workspaces.\"ß\"]\nroot=\"link\"\nhost=\"AIR\"\ncodex_host_ids=[\"desktop-air\"]\n[workspaces.SS]\nroot=\"./new\"\nhost=\"imac\"\ncodex_host_ids=[\"desktop-air\"]\n",
+  "native_load": {
+    "team_id": "t",
+    "trigger_label": "go",
+    "todo_state": "Todo",
+    "running_state": "Run",
+    "review_state": "Review",
+    "poll_interval_seconds": 15,
+    "max_batch": 1,
+    "codex_binary": "codex",
+    "sandbox": "workspace-write",
+    "approval": "never",
+    "log_dir": "@HOME@/.local/state/linear-local-codex-bridge",
+    "projects": [
+      {
+        "linear_name": "z",
+        "repo": "@ROOT@/deep/absent",
+        "target_alias": null,
+        "alias": "z",
+        "repository_origin": null,
+        "unexpected_origin_policy": "FAIL",
+        "branch": "main",
+        "read_only": false,
+        "workspace_alias": null
+      },
+      {
+        "linear_name": "a",
+        "repo": "@ROOT@/a",
+        "target_alias": null,
+        "alias": "a",
+        "repository_origin": null,
+        "unexpected_origin_policy": "FAIL",
+        "branch": "main",
+        "read_only": false,
+        "workspace_alias": null
+      }
+    ],
+    "app_server": {
+      "transport": "local",
+      "command": [
+        "codex",
+        "app-server",
+        "proxy"
+      ],
+      "local_socket": "provider.sock",
+      "native_socket": "~//native.sock",
+      "native_home": null,
+      "ssh_binary": "ssh",
+      "ssh_alias": null,
+      "ssh_args": [
+        "-T"
+      ],
+      "remote_command": [
+        "codex",
+        "app-server",
+        "proxy"
+      ],
+      "request_timeout_seconds": 30.0,
+      "client_name": "linear-local-codex-bridge",
+      "client_title": "Linear Local Codex Bridge",
+      "client_version": "1.0.0-m6"
+    },
+    "targets": [],
+    "threads": [],
+    "workspaces": [
+      {
+        "alias": "ß",
+        "root": "@ROOT@/deep/repository",
+        "allow_existing_projects": true,
+        "allow_new_projects": false,
+        "host": "AIR",
+        "ssh_alias": null,
+        "codex_host_ids": [
+          "desktop-air"
+        ]
+      },
+      {
+        "alias": "SS",
+        "root": "@ROOT@/new",
+        "allow_existing_projects": true,
+        "allow_new_projects": false,
+        "host": "imac",
+        "ssh_alias": null,
+        "codex_host_ids": [
+          "desktop-air"
+        ]
+      }
+    ],
+    "task_db_path": null,
+    "runtime_host": "air",
+    "host_executor": {
+      "enabled": false,
+      "host": "air",
+      "default_timeout_seconds": 30.0,
+      "max_timeout_seconds": 120.0,
+      "max_output_bytes": 65536,
+      "services": [],
+      "ssh_targets": [],
+      "network_targets": [],
+      "local_commands": [],
+      "trusted_workspace_roots": [],
+      "workflows": []
+    }
+  },
+  "api_config": {
+    "runtime_host": "air",
+    "provider_endpoint": "@ROOT@/run/provider.sock",
+    "provider_timeout_seconds": 30.0,
+    "host_aliases": {
+      "air": [
+        "air"
+      ],
+      "ss": [
+        "air",
+        "imac"
+      ],
+      "workstation-air": [
+        "air"
+      ],
+      "imac": [
+        "imac"
+      ],
+      "workstation-imac": [
+        "imac"
+      ]
+    },
+    "codex_host_ids": {
+      "desktop-air": [
+        "air",
+        "imac"
+      ]
+    }
+  }
+}

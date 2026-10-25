@@ -1,0 +1,18 @@
+{
+  "activity_observation": "NO_WORK_OBSERVED",
+  "pinned_contract_verified": true,
+  "process_identity_stable": true,
+  "complete_quiet_event_history": true,
+  "safe_idle_gate": "BLOCKED",
+  "safe_to_recycle": false,
+  "blockers": [
+    "PENDING_RPC_NOT_EXPOSED",
+    "UNCERTAIN_ACK_NOT_EXPOSED",
+    "MUTATION_ADMISSION_NOT_FENCED"
+  ],
+  "status_get_excluded": "GET /api/codex/status invokes Warmup / EnsureStarted",
+  "safe_idle_requires": "Atomic passive snapshot of pending operations, unresolved ACKs, all loaded/active turns and a generation-bound mutation admission fence",
+  "production_mutations": 0,
+  "provider_rpc_calls": 0,
+  "second_consumers_started": 0
+}

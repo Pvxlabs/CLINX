@@ -4,35 +4,31 @@
   "modules": [
     {
       "path": "clinx/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Package namespace; no startup side effects"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Package namespace; no startup side effects",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/authority/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Python Rust IPC client and read/request mapping; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Python Rust IPC client and read/request mapping; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/authority/rust_authority.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public Authority client and operation identity codec; local IPC, endpoint/peer checks, request validation and exact one-send ACK run in Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public Authority client and operation identity codec; local IPC, endpoint/peer checks, request validation and exact one-send ACK run in Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/authority/request_pipe.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Bounded private child protocol forwarding existing authenticated Authority calls; no business selection, state, worker or retry"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Bounded private child protocol forwarding existing authenticated Authority calls; no business selection, state, worker or retry",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/authority/rust_integration.py",
@@ -48,11 +44,10 @@
     },
     {
       "path": "clinx/authority/rust_worker_identity.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Python Rust IPC client and read/request mapping; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Python Rust IPC client and read/request mapping; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/compat/__init__.py",
@@ -206,59 +201,52 @@
     },
     {
       "path": "clinx/contracts/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/contracts/dispatch_errors.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/contracts/execution_policy.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public policy dataclass/JSON codec and error API; normalization, scope, permit, route checks and CAS hash delegated to Rust; not a second Authority policy writer"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public policy dataclass/JSON codec and error API; normalization, scope, permit, route checks and CAS hash delegated to Rust; not a second Authority policy writer",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/contracts/execution_semantics.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public identity DTO/codec including active host normalization; normalization/build/parse/routing validation delegated to Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public identity DTO/codec including active host normalization; normalization/build/parse/routing validation delegated to Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/contracts/runtime_config.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public BridgeConfig DTO for remaining compatibility/qualification consumers. Runtime/installation config parsing and validation now use Rust."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public BridgeConfig DTO for remaining compatibility/qualification consumers. Runtime/installation config parsing and validation now use Rust.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/contracts/runtime_contracts.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/contracts/thread_identity.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/contracts/workspace_contract.py",
@@ -268,33 +256,31 @@
     },
     {
       "path": "clinx/discovery/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current mDNS/pairing/device discovery; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current mDNS/pairing/device discovery; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/discovery/cli.py",
-      "role": "COMPAT",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Historical CLI exec facade; invokes Rust device executable with no Python DEV fallback."
+      "reason": "Historical CLI exec facade; invokes Rust device executable with no Python DEV fallback.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/discovery/discovery.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public candidate DTO and explicit injected test index; normal DNS-SD UDP, interface IO, advertisement, TTL cache and discovery run in Rust mdns_runtime"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public candidate DTO and explicit injected test index; normal DNS-SD UDP, interface IO, advertisement, TTL cache and discovery run in Rust mdns_runtime",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/discovery/identity.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Python identity/store DTO and private worker binding; key/certificate creation, validation, locking and durable store IO run in Rust discovery_identity/enrollment"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Python identity/store DTO and private worker binding; key/certificate creation, validation, locking and durable store IO run in Rust discovery_identity/enrollment",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/discovery/monitor_helper.py",
@@ -304,35 +290,31 @@
     },
     {
       "path": "clinx/discovery/observer_bootstrap.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public Observer connection codec delegates exact URL/config validation to Rust discovery_bootstrap; no Python URL or private-config implementation."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public Observer connection codec delegates exact URL/config validation to Rust discovery_bootstrap; no Python URL or private-config implementation.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/discovery/pairing.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Rust OPAQUE/window qualification DTOs; retired SPAKE2 API fails closed before IO. No Python PAKE/HKDF implementation."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Rust OPAQUE/window qualification DTOs; retired SPAKE2 API fails closed before IO. No Python PAKE/HKDF implementation.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/discovery/transport.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Rust enrollment/session DTOs and independent OpenSSL oracle; obsolete DEV_ONLY Python TLS server/client removed."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Rust enrollment/session DTOs and independent OpenSSL oracle; obsolete DEV_ONLY Python TLS server/client removed.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/host/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Host subprocess, operation and delivery implementation; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Host subprocess, operation and delivery implementation; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/host/derived_git_targets.py",
@@ -342,9 +324,10 @@
     },
     {
       "path": "clinx/host/host_contract.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Frozen Python command catalog reference for migration qualification; not loaded by runtime."
+      "reason": "Frozen Python command catalog reference for migration qualification; not loaded by runtime.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/host/host_executor.py",
@@ -354,11 +337,10 @@
     },
     {
       "path": "clinx/host/production_workflows.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public workflow DTO only; schema, validation and rendering call Rust runtime_config and the existing Host workflow contract."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public workflow DTO only; schema, validation and rendering call Rust runtime_config and the existing Host workflow contract.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/host/rust_host.py",
@@ -374,11 +356,10 @@
     },
     {
       "path": "clinx/mcp/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Namespace for shared registry.json schemas compiled into Rust; Python server removed."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Namespace for shared registry.json schemas compiled into Rust; Python server removed.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/mcp/consultation_schema.py",
@@ -454,35 +435,31 @@
     },
     {
       "path": "clinx/nodes/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current node protocol/registration/routing and Helper entry; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current node protocol/registration/routing and Helper entry; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/nodes/node_centre_entrypoint.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Historical CLI alias that execs Rust clinx-node-daemon; Rust assembles Centre, paired Authority route and Collector lifecycle"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Historical CLI alias that execs Rust clinx-node-daemon; Rust assembles Centre, paired Authority route and Collector lifecycle",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/nodes/node_protocol.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Node/Scope DTOs, local sharing configuration and protocol facade; observation fanout, exact route/ACK/cursor/service projection owned by Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Node/Scope DTOs, local sharing configuration and protocol facade; observation fanout, exact route/ACK/cursor/service projection owned by Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/nodes/node_runtime.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Existing paired identity/config objects and opaque IO callbacks; reverse Authority/remote provider scope and exact ACK validation owned by Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Existing paired identity/config objects and opaque IO callbacks; reverse Authority/remote provider scope and exact ACK validation owned by Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/nodes/node_service_entrypoint.py",
@@ -492,35 +469,31 @@
     },
     {
       "path": "clinx/nodes/provider_relay.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Private Rust Node relay/gateway bindings and installed endpoint configuration; no Python socket, buffer state or submission decisions."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Private Rust Node relay/gateway bindings and installed endpoint configuration; no Python socket, buffer state or submission decisions.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/nodes/rust_node_adapter.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Thin Rust Node request client; target, canonical handoff, start/cancel/context checks live in Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Thin Rust Node request client; target, canonical handoff, start/cancel/context checks live in Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/provider/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Codex Provider protocol/native history/evidence reads; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/provider/app_server.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public Provider API/DTO/exception mapping and explicit injected test IO. Rust owns normal Process/SSH/Unix transports, framing, client request contracts, models and RPC lifecycle."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public Provider API/DTO/exception mapping and explicit injected test IO. Rust owns normal Process/SSH/Unix transports, framing, client request contracts, models and RPC lifecycle.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/provider/desktop_socket.py",
@@ -536,27 +509,24 @@
     },
     {
       "path": "clinx/provider/native_history.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Typed private Rust native-history client and historical protocol constants; no Python SQL/parser/state machine. Unused historical SQL budget helper retired."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Typed private Rust native-history client and historical protocol constants; no Python SQL/parser/state machine. Unused historical SQL budget helper retired.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/provider/native_provider.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Endpoint/readonly Provider and OS IO facade plus exact-turn maintenance read; multi-provider evidence selection and native writer proof owned by Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Endpoint/readonly Provider and OS IO facade plus exact-turn maintenance read; multi-provider evidence selection and native writer proof owned by Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/provider/native_writer_probe.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public writer probe binding and explicit injected qualification callback; normal exact OS/process/FD evidence and read-only probe execution run solely in Rust observation_runtime"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public writer probe binding and explicit injected qualification callback; normal exact OS/process/FD evidence and read-only probe execution run solely in Rust observation_runtime",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/provider/rust_workspace_probe.py",
@@ -566,11 +536,10 @@
     },
     {
       "path": "clinx/transport/__init__.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current transport and tunnel supervisor implementation; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current transport and tunnel supervisor implementation; target owner Rust",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/transport/rust_transport.py",
@@ -580,39 +549,45 @@
     },
     {
       "path": "clinx/transport/tunnel_reliability.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Retained public qualification API for injected clock/process IO; normal CLI execs standalone Rust clinx-tunnel. Rust owns supervisor lifecycle, health, drain and durable recovery."
+      "reason": "Retained public qualification API for injected clock/process IO; normal CLI execs standalone Rust clinx-tunnel. Rust owns supervisor lifecycle, health, drain and durable recovery.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/bridge_migration_codex.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_mcp_relay.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_native_transport_binary.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Fresh Rust Authority/Transport process and real WebSocket protocol fault regression; synthetic Provider only"
+      "reason": "Fresh Rust Authority/Transport process and real WebSocket protocol fault regression; synthetic Provider only",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_node_authority_route.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Paired reverse Authority gateway identity, scope revocation, frame limits and unknown ACK regression"
+      "reason": "Paired reverse Authority gateway identity, scope revocation, frame limits and unknown ACK regression",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_provider_relay.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Paired Provider relay chunk integrity, scope, concurrent duplicate and protocol identity fault regression"
+      "reason": "Paired Provider relay chunk integrity, scope, concurrent duplicate and protocol identity fault regression",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_node_contract.py",
@@ -622,9 +597,10 @@
     },
     {
       "path": "fixtures/transport_only_mcp.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "rust_stdio.py",
@@ -635,27 +611,31 @@
     },
     {
       "path": "scripts/build_forwarding_release.py",
-      "role": "COMPAT",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Historical forwarding-package reproduction/rollback tooling; current source build rejected; immutable old source required"
+      "reason": "Historical forwarding-package reproduction/rollback tooling; current source build rejected; immutable old source required",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/build_transport_runtime.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/build_tunnel_release.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/check_embedded_bridge_idle.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/check_execution_core_contract.py",
@@ -665,21 +645,24 @@
     },
     {
       "path": "scripts/check_tunnel_health.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/deploy_forwarding_release.py",
-      "role": "COMPAT",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Historical forwarding-package reproduction/rollback tooling; current source build rejected; immutable old source required"
+      "reason": "Historical forwarding-package reproduction/rollback tooling; current source build rejected; immutable old source required",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/install_rust_services.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/local_discovery_smoke.py",
@@ -689,9 +672,10 @@
     },
     {
       "path": "scripts/qualify_bridge_transport.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/qualify_runtime_migration.py",
@@ -707,15 +691,17 @@
     },
     {
       "path": "scripts/qualify_rust_legacy_cgroup.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/qualify_rust_physical_revocation.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/qualify_rust_runtime.py",
@@ -725,9 +711,10 @@
     },
     {
       "path": "scripts/qualify_rust_service_isolation.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/reconcile_historical_handoff.py",
@@ -743,21 +730,24 @@
     },
     {
       "path": "scripts/rust_authority_isolation.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/stage_rust_callers.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/stage_rust_release.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "scripts/transfer_rust_native_session.py",
@@ -767,33 +757,38 @@
     },
     {
       "path": "scripts/tunnel_release_cas.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/__init__.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/build/__init__.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/build/runtime_sources.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/maintenance/__init__.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/maintenance/observer_history_guard.py",
@@ -809,39 +804,45 @@
     },
     {
       "path": "tools/qualification/__init__.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/qualification/check_structure.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/qualification/embedded_bridge_readiness.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/qualification/provider_qualification.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/qualification/relocate_tests.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Explicit development or qualification only; excluded from runtime packages",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/qualification/run_local_tests.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Run preserved local tests through recorded import relocation and private fixture state"
+      "reason": "Run preserved local tests through recorded import relocation and private fixture state",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/qualification/runtime_lab/__init__.py",
@@ -857,17 +858,17 @@
     },
     {
       "path": "fixtures/test_runtime_packages.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Verify release inheritance whitelist and incremental Monitor source retirement"
+      "reason": "Verify release inheritance whitelist and incremental Monitor source retirement",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/contracts/host_config.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Host configuration values required by remaining Python TOML readers; no process or state implementation."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Host configuration values required by remaining Python TOML readers; no process or state implementation.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/build/host_runtime_config.py",
@@ -883,9 +884,10 @@
     },
     {
       "path": "fixtures/test_rust_provider_runtime.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Rust Provider exchange, fixed read-only metadata and Authority observer regression with disposable IPC and Git fixtures; no real tasks."
+      "reason": "Rust Provider exchange, fixed read-only metadata and Authority observer regression with disposable IPC and Git fixtures; no real tasks.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/build/mcp_runtime_config.py",
@@ -895,29 +897,31 @@
     },
     {
       "path": "fixtures/test_rust_node_runtime.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Isolated Rust Helper request, unknown receipt identity and copied release/App closure regression"
+      "reason": "Isolated Rust Helper request, unknown receipt identity and copied release/App closure regression",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "clinx/nodes/network_worker.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Bounded multiplexed private stdio and callbacks for Rust clients; request-specific timeout preserved without automatic replay"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Bounded multiplexed private stdio and callbacks for Rust clients; request-specific timeout preserved without automatic replay",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_node_network.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Rust paired Node TLS/OpenSSL interoperability, durable registry identity, lost ACK and restart uncertainty regression"
+      "reason": "Rust paired Node TLS/OpenSSL interoperability, durable registry identity, lost ACK and restart uncertainty regression",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_observation.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Real disposable native/history and Rust observation store tests, old cursor/digest compatibility, concurrency/restart/revocation and packaged Helper binary closure"
+      "reason": "Real disposable native/history and Rust observation store tests, old cursor/digest compatibility, concurrency/restart/revocation and packaged Helper binary closure",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_collector.py",
@@ -927,45 +931,52 @@
     },
     {
       "path": "fixtures/test_rust_native_observer.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Rust exact native bridge/checkpoint, managed projection, read-only HTTP/MCP and activity regression with isolated fixtures"
+      "reason": "Rust exact native bridge/checkpoint, managed projection, read-only HTTP/MCP and activity regression with isolated fixtures",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_node_router.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Rust fanout, cursor/identity, scoped authority route and packaged Helper cold start/restart regression"
+      "reason": "Rust fanout, cursor/identity, scoped authority route and packaged Helper cold start/restart regression",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_provider_client.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Rust real Unix Provider transport, single-send permission, exact input receipt and writer evidence regression"
+      "reason": "Rust real Unix Provider transport, single-send permission, exact input receipt and writer evidence regression",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_authority_client.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Rust Authority IPC exact ACK, no replay, trusted endpoint and request identity regression"
+      "reason": "Rust Authority IPC exact ACK, no replay, trusted endpoint and request identity regression",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_discovery_state.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Rust paired trust transactions, read-only identity access and one-shot pairing window regression"
+      "reason": "Rust paired trust transactions, read-only identity access and one-shot pairing window regression",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_execution_contracts.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Rust public compatibility contracts, Unicode normalization, scope, parsing and persisted identity parity"
+      "reason": "Rust public compatibility contracts, Unicode normalization, scope, parsing and persisted identity parity",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_discovery_index.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Isolated Rust runtime/compatibility contract regression; no production tasks or deployment"
+      "reason": "Isolated Rust runtime/compatibility contract regression; no production tasks or deployment",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_observer_http.py",
@@ -975,45 +986,52 @@
     },
     {
       "path": "fixtures/test_rust_provider_api.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Private-process regression for Rust thin-runtime migration; no production access."
+      "reason": "Private-process regression for Rust thin-runtime migration; no production access.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_runtime_config.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Private-process regression for Rust thin-runtime migration; no production access."
+      "reason": "Private-process regression for Rust thin-runtime migration; no production access.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_tunnel_runtime.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Private-process regression for Rust thin-runtime migration; no production access."
+      "reason": "Private-process regression for Rust thin-runtime migration; no production access.",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_device_config.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Private Rust device runtime and original wire/config/packaging equivalence regressions; no production state"
+      "reason": "Private Rust device runtime and original wire/config/packaging equivalence regressions; no production state",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_device_enrollment.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Private Rust device runtime and original wire/config/packaging equivalence regressions; no production state"
+      "reason": "Private Rust device runtime and original wire/config/packaging equivalence regressions; no production state",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_node_daemon.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Private Rust device runtime process and wire/probe equivalence regression; no production tasks or state"
+      "reason": "Private Rust device runtime process and wire/probe equivalence regression; no production tasks or state",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_observation_runtime.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Private Rust device runtime process and wire/probe equivalence regression; no production tasks or state"
+      "reason": "Private Rust device runtime process and wire/probe equivalence regression; no production tasks or state",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "tools/qualification/discovery_dev_cli.py",
@@ -1023,21 +1041,24 @@
     },
     {
       "path": "fixtures/test_rust_device_cli.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Native devices/pair/serve CLI, original URL codec oracle and private loopback pairing regression"
+      "reason": "Native devices/pair/serve CLI, original URL codec oracle and private loopback pairing regression",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_observer_runtime.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Native Observer process/auth/legacy read projection/checkpoint/restart/revocation; isolated sources only"
+      "reason": "Native Observer process/auth/legacy read projection/checkpoint/restart/revocation; isolated sources only",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     },
     {
       "path": "fixtures/test_rust_observation_directory.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Native MCP ObservationDirectory and read-only mTLS route regression; isolated sources only"
+      "reason": "Native MCP ObservationDirectory and read-only mTLS route regression; isolated sources only",
+      "purpose": "Retired in the complete native-source convergence; native replacements and original assertion mappings are recorded in docs/RUST_PYTHON_RETIREMENT.md."
     }
   ],
   "python_byte_percent_target": 5,

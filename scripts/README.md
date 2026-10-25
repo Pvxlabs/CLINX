@@ -1,82 +1,33 @@
-# 脚本与启动器
+# 原生构建与维护入口
 
-现役任务状态由 Rust Authority 提供。Rust release 的 Python 源文件清单位于
-[runtime_sources.py](../tools/build/runtime_sources.py)，不再复制整个仓库。构建器
-`stage_rust_release.py --desktop-base-release <installed-release> --source <checkout> --runtime-binary <tested-authority> --mcp-relay-binary <tested-relay> --native-transport-binary <tested-native-worker> --provider-binary <tested-provider-exchange> --mcp-binary <tested-mcp-server> --node-binary <tested-node-api> --output <receipt>`
-使用现有不可变 release 的 native 依赖，刷新完整的 Rust adapter 源码集合并移除旧 Python
-Owner、Registry、实验包和独立 Provider。必须同时提供已验证的 Authority、Rust relay、native Transport、Provider exchange 和 MCP server binary；
-`--replace-source` 仅保留为清单成员校验兼容参数，不再代表部分源码覆盖。
-该命令只生成候选，不选择或启动服务。独立 Provider 的旧 bootstrap 打包分支已退役。
-候选标记 `host_transport=RUST_HOST_V1`、`provider_exchange=RUST_PROVIDER_V1`、
-`workspace_observer=RUST_PROVIDER_V1`、`mcp_runtime=RUST_MCP_V1`、`node_api=RUST_NODE_API_V1`、`node_network=RUST_NODE_NETWORK_V1`。服务模板直接执行 Rust native/Host worker；
-新增 `observation_runtime=RUST_OBSERVATION_V1`，构建、安装与 Mac 打包实际探测
-`clinx-node --observation-contract`；旧 Node binary 不能运行新历史/观察客户端。
-`clinx-node --compile-config host <toml>`（JSON 输出至 stdout）
-仅在构建/安装时编译 Host 配置。
-`clinx-node --compile-config mcp <toml>` 编译 MCP 配置；
-MCP 服务模板直接执行同 release 的 `clinx-mcp`，不经 Python 业务 server。Python Dispatcher、Host runner 及投递账本实现已删除；
-`deps/` 继承同样排除重复 CLINX 包和已退役的平铺模块。
+当前没有 Python 脚本。下列命令来自同源码构建的 Rust 二进制；所有完整参数可用 `--help`
+读取。运行时、工具和发布边界见 [仓库架构](../docs/REPOSITORY_ARCHITECTURE.md)。
 
-macOS Helper 默认经既有配对 mTLS 调用 Rust Authority 和远端 Provider，不再构造本地
-Registry/Dispatcher/M9。Rust 与 Monitor profile 均禁止 COMPAT 源码。
-Mac 打包另编译并签名 `Contents/Helpers/clinx-provider`，须有本机 Rust 1.98+ toolchain；
-固定 workspace 探针和精确 Provider RPC 不再加载 Python 实现。
-本批隔离验证见 [Provider/workspace 迁移报告](../docs/RUST_PROVIDER_RUNTIME_MIGRATION.md)。
-实机闭环及剩余 Python 运行时见[核心退役验证](../docs/RUST_NATIVE_CORE_RETIREMENT.md)。
-旧 SQLite projection/handoff 修复脚本随该业务库契约退役；历史离线维护使用对应 Git 源码。
-
-pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它；运行器也位于该目录。
-从仓库根目录运行。开发安装见[贡献指南](../CONTRIBUTING.md)，常用验证命令见
-[测试指南](../docs/TESTING.md)。
-
-| 入口 | 用途与副作用 |
+| 命令 | 用途与边界 |
 | --- | --- |
-| `cargo test --locked --manifest-path kernel/Cargo.toml --test mcp_retirement_qualification` | Rust MCP 请求及路由回归；无需现役任务 |
-| `python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only` | 全仓库 pytest 收集，不执行测试 |
-| `python tests/run_tests.py basic` / `owner` | 历史 profile 含已退役实验的测试，当前会收集失败；不能作为当前完整门禁 |
-| `python tests/run_tests.py transport --temp-parent <task-artifact-dir>` | 隔离发布/传输回归；要求 `/data/artifacts` 下临时目录及精确外部制品 |
-| `python tests/run_tests.py recovery` | 历史 profile 含退役 Authority transport 测试；其余 transient systemd 用例还需要隔离 user manager |
-| [check_tunnel_health.py](check_tunnel_health.py) | `--url-file`、可选 `--max-age`；只读核对 PID 和 poll 新鲜度 |
-| [check_embedded_bridge_idle.py](check_embedded_bridge_idle.py) | `--base-url --tunnel-pid --bridge-pid`；只读，不 Warmup、回收或接管 |
-| [build_transport_runtime.py](build_transport_runtime.py) | 指定源码及 Go 归档，构建 transport runtime 到 `--output`，不安装 |
-| [build_tunnel_release.py](build_tunnel_release.py) | 构建候选、manifest 与回退 capsule，不操作服务 |
-| [build_forwarding_release.py](build_forwarding_release.py) | 构建 parser 和配对 Tunnel/health 候选 |
-| [tunnel_release_cas.py](tunnel_release_cas.py) | `check` 只读；`fixture-apply` 只接受带 marker 的隔离根目录 |
-| [deploy_forwarding_release.py](deploy_forwarding_release.py) | `activate` / `rollback` 写配置并操作服务，需要对应部署授权 |
-| [qualify_bridge_transport.py](qualify_bridge_transport.py) | 固定上游 Bridge 源码的隔离 generation-fence 资格 |
-| `cargo run --locked --manifest-path kernel/Cargo.toml --example local_discovery_smoke -- --lan --node-binary <verified-node>` | 显式真实 mDNS / OPAQUE / mTLS 网络资格；`--loopback` 为隔离测试，不代表物理 LAN |
+| `clinx-build stage-rust-release` | 接受明确 Authority/relay/Transport/Provider/MCP/Node/daemon/Observer/device binary，校验 marker/hash，生成 STAGED_NOT_SELECTED 候选；仅继承允许的 host-worker |
+| `clinx-build native-monitor-resources <source> <resources>` | 清理任务构建目录的旧 Python closure，生成零 Python 的 App 资源，不触及已安装 App |
+| `clinx-build build-transport-runtime --source-archive PATH --go-archive PATH --output NEW_DIR` | 固定 SHA 源/Go 归档，拒绝 embedded executor 依赖，两个路径构建可复现；不安装 |
+| `clinx-build build-tunnel-release --output DIR --guard-manifest JSON --evidence-manifest JSON` | 原生 supervisor、确定性产物和 rollback capsule；其他二进制/输入按 `--help` 显式传入 |
+| `clinx-build tunnel-cas check\|fixture-apply --capsule PATH --root PATH --direction forward\|rollback` | 原有精确三文件 CAS；写入仅接受任务隔离 fixture marker，所有目标/模式先校验再写 |
+| `clinx-install provision` | 建立当前专用 Authority/API/Transport 身份与私有目录；不导入旧数据，不撤销历史进程 |
+| `clinx-install services --release PATH --operator-home PATH --bridge-config PATH --desktop-socket PATH --desktop-thread-id ID` | 原生安装器；验证不可变 release，使用原生 desktop socket 维护与配置编译，写服务定义并 daemon-reload；不 start/restart |
+| `clinx-install callers --release PATH --legacy-node-state PATH --output PATH [--operator USER]` | 复制原 identity/peers/sharing，保持 pre-cutover loopback Centre 18774；不导入旧数据库、不切换 Tunnel |
+| `clinx-maintenance transfer-native-session ...` | 显式会话维护，需指定 destination-home；精确 Provider 证据与 Authority adoption，发送前 durable receipt，未知 ACK 不重放 |
+| `clinx-diagnostics tunnel-health --url-file PATH [--max-age 120]` | 精确 systemd PID 与已确认 loopback listener 的新鲜 poll，只读 |
+| `clinx-diagnostics embedded-bridge --base-url URL --tunnel-pid PID --bridge-pid PID` | 固定旧 binary/进程身份的被动观察；绝不 Warmup/RPC/recycle，quiet 仍返回 BLOCKED |
+| `clinx-source-audit [--revision COMMIT]` | 固定全源码统计口径；目标低于 5%，当前 Python 源码为零 |
+| `clinx-source-audit --check-structure` | 验证 DEAD 源码不存在、无新增 Python、无运行依赖及 schema 数据完整 |
+| `cargo run --locked --manifest-path kernel/Cargo.toml --example local_discovery_smoke -- --loopback --node-binary PATH` | 两 Node 私有配对/重启/mTLS；`--lan` 为另行显式物理 LAN 资格 |
 
-源码启动器：[CLI](../bin/clinx)、[MCP](../bin/clinx-context-mcp)、
-[节点中心](../bin/clinx-node-centre)、
-[Observer](../bin/clinx-observer)。设备发现 CLI 已与旧业务核心解耦；旧 Linear `run/once/doctor` 已移除。
-MCP 源码启动器只执行 Rust `clinx-mcp-relay`，连接现有 Rust MCP Unix socket，不创建 Python 后端。
-这些入口可能写状态或启动服务；已安装服务通常
-使用独立的 release，不因编辑源码而升级。
+启动器为 [CLI](../bin/clinx)、[MCP relay](../bin/clinx-context-mcp)、
+[Centre](../bin/clinx-node-centre)、[Observer](../bin/clinx-observer)，均启动原生程序。
+Host/MCP 配置编译使用 `clinx-node --compile-config host|mcp <toml>`；服务执行已编译配置。
 
-一次性实验资格器随对应实验退役。本地旧测试文件保持原字节，因此全量收集会显示
-已退役 Python API 的导入错误；不会通过改断言或跳过测试把它们变成 PASS。历史回执位置见
-[文档索引](../docs/README.md#历史资料恢复)。构建与测试只回收本任务拥有的输出；
-部署包、manifest、数据库、回退和证据按各自运行契约保留。
+旧 forwarding builder/deployer 只接受历史平铺产物，在基准源码中已明确拒绝当前布局，现已删除。
+旧 Python→Rust 一次性撤权/cgroup/独立 Provider-unit 资格与 embedded Bridge control 实验
+也已退出当前源码；历史恢复使用对应 Git 提交和原回执，不将旧路径/身份/数据库假设应用到新服务。
+原本地 ignored 测试保持字节不变，历史失败不靠修改断言或 skip 消除。
 
-Collector 调用端还要求 `collector_runtime=RUST_COLLECTOR_V1`；构建时实际探测 `clinx-node --collector-contract`，拒绝旧 Node binary。
-
-客户端/Observer/Discovery/监督策略调用端要求 `client_runtime=RUST_CLIENT_RUNTIME_V1`。构建必须实测 `clinx-node --client-runtime-contract`；独立 Tunnel builder 使用 `--supervisor-binary`（或 CLINX_TUNNEL_BINARY）打包已验证的 `clinx-tunnel`，不携带 Python supervisor 或 clinx-node。Host/MCP 配置编译均由已校验 release 的 `clinx-node --compile-config` 执行，无 Python 编译器。
-
-最新客户端还要求 `thin_runtime=RUST_THIN_RUNTIME_V1` 和实际 `clinx-node --thin-runtime-contract` 探测。全仓 Python <5% 的固定只读统计使用 Rust `clinx-source-audit`，未达标退出 2，详见架构文档。
-
-设备运行产物要求 `device_runtime=RUST_DEVICE_RUNTIME_V1` 与 `node_daemon=RUST_NODE_DAEMON_V1`。
-`stage_rust_release.py` 必须提供 `--node-daemon-binary`，并实测两个 marker；Centre service
-直接启动 release 内 `clinx-node-daemon`。当前 App 使用 Rust `clinx-build native-monitor-resources <source-root> <resources>`，
-不发布 Python closure/DiscoveryRuntime/wheel。旧 `--monitor-resources` 仅供原 API 布局资格。
-这些是候选构建/安装工具契约，源码迁移不自动部署、切换产物或重启服务。
-
-策略维护入口为 `clinx-mcp --policy-maintenance --config <mcp-runtime.json> --stdio`，
-仅暴露原有四个 policy 工具，不含执行/恢复服务。旧 Python/TOML 维护入口已删除。
-Observer inode guard 为 `bin/clinx-observer --history-mount-guard`；该维护命令可能
-对唯一的 Observer 服务执行 try-restart，测试只使用临时文件和替身命令，本轮没有执行实际 guard。
-
-原 Python 会话转移脚本已删除。新开发工具 `clinx-maintenance transfer-native-session`
-保留精确归档、复制、Provider 回读与 Authority adoption；必须明确 `--destination-home`，
-不猜测旧 codex160 目录。维护会修改指定会话，仅在获得对应维护授权时调用；源码迁移测试
-使用临时文件、Provider 与 Authority，没有执行真实维护命令。详见
-[本轮迁移报告](../docs/RUST_MAINTENANCE_CONVERGENCE.md)。
+管理员工具的存在不表示本次执行过安装、维护或部署。所有新工具资格使用私有路径、进程和
+命令替身。本轮生产服务、数据库、真实任务和运行数据保持不变。

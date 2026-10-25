@@ -11,8 +11,6 @@
   "centre_entrypoint": "clinx-node-daemon --state PATH --node-id ID serve",
   "helper_entrypoint": "clinx-node-daemon helper",
   "discovery_gui_entrypoint": "clinx-node --discovery-gui",
-  "compatibility_source_profile": "monitor",
-  "compatibility_profile_purpose": "Retained Python API/layout qualification only; never copied by the current App builder",
   "observer_entrypoint": "clinx-observer",
   "observation_mcp_entrypoint": "clinx-mcp --observations-only --stdio",
   "device_cli_entrypoint": "clinx-device",
@@ -27,6 +25,13 @@
   "history_mount_guard_entrypoint": "clinx-observer --history-mount-guard",
   "excluded_development_binaries": [
     "clinx-build",
-    "clinx-maintenance"
-  ]
+    "clinx-maintenance",
+    "clinx-install",
+    "clinx-diagnostics",
+    "clinx-source-audit",
+    "clinx-kernel-eval",
+    "clinx-kernel-bench",
+    "clinx-owner-client"
+  ],
+  "python_source_retirement": "COMPLETE_SOURCE_ONLY_NOT_DEPLOYED"
 }

@@ -1,0 +1,35 @@
+[Unit]
+Description=CLINX Rust native and Host execution transport
+After=clinx-rust-authority.service
+Requires=clinx-rust-authority.service
+[Service]
+User=clinx-transport
+Group=clinx-transport
+SupplementaryGroups=clinx-ipc
+Environment=CLINX_AUTHORITY=rust
+Environment=CLINX_RUST_SOCKET=@RUN@/authority.sock
+Environment=CLINX_RUST_UID=@AUTHORITY_UID@
+Environment=CLINX_RUST_NATIVE_TRANSPORT=@RELEASE@/clinx-native-transport
+Environment=CLINX_RUST_WORKER_LAUNCHER=@RELEASE@/host-worker
+ExecStart=@RELEASE@/clinx-native-transport --socket @RUN@/authority.sock --authority-uid @AUTHORITY_UID@ --host-config @ROOT@/config/host-runtime.json
+BindReadOnlyPaths=@DESKTOP_PARENT@:/tmp/codex-daemon-@WORKER_UID@
+ReadWritePaths=@ROOT@/transport
+InaccessiblePaths=@ROOT@/authority @RUN@-api /run/user/1001 -/run/docker.sock -/run/containerd
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID
+
+ProtectSystem=no
+ProtectHome=no
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+UMask=0077
+KillMode=control-group
+Restart=on-failure
+RestartSec=3

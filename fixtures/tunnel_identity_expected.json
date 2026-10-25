@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/bin/true",
+    "Unicode-中😀"
+  ],
+  "policy": {
+    "stale_after": 120,
+    "startup_grace": 45,
+    "interval": 0.01,
+    "probe_timeout": 3,
+    "stop_timeout": 5,
+    "cooldown": 0.01,
+    "failure_grace": 15,
+    "max_restarts": 2,
+    "stable_for": 300
+  },
+  "identity": "c994420a1b8477ec908f7ffd5dee8f91fadcbb47ee49342f922973fa9af07217"
+}

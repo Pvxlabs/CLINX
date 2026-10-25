@@ -1,0 +1,33 @@
+[Unit]
+Description=CLINX MCP API adapter
+After=clinx-rust-authority.service
+Requires=clinx-rust-authority.service
+[Service]
+Environment=HOME=@ROOT@/api
+Environment=CLINX_AUTHORITY=rust
+Environment=CLINX_RUST_SOCKET=@RUN@/authority.sock
+Environment=CLINX_RUST_UID=@AUTHORITY_UID@
+User=clinx-api
+Group=clinx-api
+SupplementaryGroups=clinx-ipc clinx-provider-ipc
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectProc=invisible
+ProcSubset=pid
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+BindReadOnlyPaths=@RUN@-provider/native:/tmp/codex-daemon-@WORKER_UID@
+ReadWritePaths=@ROOT@/api
+InaccessiblePaths=@ROOT@/authority /home/@OPERATOR@/.codex /home/@OPERATOR@/.ssh /run/user/1001 -/run/docker.sock -/run/containerd
+UMask=0077
+KillMode=control-group
+ExecStart=@RELEASE@/clinx-mcp --config @ROOT@/config/mcp-runtime.json --stdio
+StandardInput=socket
+StandardOutput=inherit
+StandardError=journal

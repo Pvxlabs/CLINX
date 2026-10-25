@@ -8,6 +8,9 @@ use std::{
     process::Command,
 };
 
+#[path = "../build_release.rs"]
+mod release_tools;
+
 type Result<T> = std::result::Result<T, String>;
 const RETIRED_DIRECTORIES: &[&str] = &[
     "clinx",
@@ -177,6 +180,13 @@ fn run() -> Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.as_slice() {
         [command] if command == "--contract" => println!("RUST_MONITOR_BUILD_V1"),
+        [command] if command == "--build-contract" => println!("RUST_RELEASE_BUILD_V1"),
+        [command] if command == "--help" => println!("clinx-build native-monitor-resources SOURCE_ROOT RESOURCES | cargo-target-directory CARGO_MANIFEST | stage-rust-release OPTIONS | build-tunnel-release OPTIONS | build-transport-runtime OPTIONS | tunnel-cas check|fixture-apply OPTIONS; release builders stage only, CAS writes only marked /data/artifacts fixtures"),
+        [command, rest @ ..] if ["stage-rust-release", "build-tunnel-release", "build-transport-runtime", "tunnel-cas"].iter().any(|v| command == v) => {
+            let command=command.to_str().ok_or("INVALID_BUILD_ARGUMENT")?;
+            let args=rest.iter().map(|v|v.to_str().map(str::to_owned).ok_or_else(||"INVALID_BUILD_ARGUMENT".to_owned())).collect::<Result<Vec<_>>>()?;
+            println!("{}",release_tools::cli(command,&args)?);
+        }
         [command, source, resources] if command == "native-monitor-resources" => {
             println!("{}", native_monitor_resources(Path::new(source), Path::new(resources))?);
         }

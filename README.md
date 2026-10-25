@@ -1,23 +1,19 @@
 # CLINX
 
-**Target architecture:** Rust owns the complete runtime core (Authority,
-lifecycle, persistence/recovery, MCP/Provider/Host/Transport and Node/Discovery);
-Swift owns the macOS UI. Python is limited to the thinnest necessary compatibility
-layer and tooling; the all-source target is strictly below 5% Python bytes.
-Remaining Python modules are explicitly classified; the migration is incomplete.
-The old Mac business core has been retired from source and new release profiles.
+**Architecture:** Rust owns Authority, lifecycle, persistence/recovery,
+MCP/Provider/Host/Transport, Node/Discovery, and current build/maintenance tools.
+Swift owns the macOS UI. The remaining Python source, compatibility packages and
+qualification runners have been retired; no Python layer is required by current source.
 
-Start with [the repository architecture and layout](docs/REPOSITORY_ARCHITECTURE.md).
-`kernel/` is Rust, `MonitorApp/` is Swift, `clinx/` contains the current Python
-runtime grouped by responsibility. The old `clinx/compat/` Mac business core has been deleted;
-native and Host execution use the Rust Authority and Rust Transport worker;
-the Python Dispatcher and Host runner have been deleted. See the
-[Host migration verification](docs/RUST_HOST_RUNTIME_MIGRATION.md).
-`tools/` contains build/maintenance/qualification code.
-There are no root Python modules or flat import shims.
-The current Mac Helper/Centre, first pairing, certificate setup, DNS-SD and
-Collector probes/scheduling now execute in Rust. The App build contains no
-Python runtime; see [device runtime verification](docs/RUST_DEVICE_RUNTIME_MIGRATION.md).
+Start with [the architecture and layout](docs/REPOSITORY_ARCHITECTURE.md) and
+[Python retirement evidence](docs/RUST_PYTHON_RETIREMENT.md).
+`kernel/` contains Rust runtime, tools and tracked tests; `native/opaque_pairing/`
+is the native OPAQUE core; `MonitorApp/` is Swift. `clinx/mcp/registry.json` is
+shared protocol data, not a Python package. `fixtures/` holds independent frozen
+oracles and original-to-native qualification mappings.
+
+Source migration, candidate artifacts and deployed services are separate states.
+This cleanup does not deploy new binaries or alter installed releases or runtime data.
 
 **AI Task Routing & Execution Infrastructure**
 
@@ -67,8 +63,8 @@ flowchart LR
 Rust Core is the authoritative entrypoint for deployed P620 task state, receipts,
 recovery and resource lifecycle. The source Helper now uses the paired Rust authority
 route with independently read Mac Provider evidence; see [native core retirement](docs/RUST_NATIVE_CORE_RETIREMENT.md).
-Normal MCP, native and Host execution now run in Rust. Python Node/Discovery,
-observation directory, monitoring and remaining caller mappings still remain.
+Normal MCP, native/Host execution, Node/Discovery, observation and monitoring
+all run in Rust in current source. The Python caller facades have been retired.
 Source structure, staged releases and deployed behavior require separate evidence.
 
 CLINX is not another AI agent, a code-review platform, a safety-approval system
@@ -194,45 +190,32 @@ instructions, isolated setup, the two-device flow and the limits of recorded
 acceptance.
 
 The normal Observer service is `clinx-observer`; the standalone read-only MCP
-entry is `clinx-mcp --observations-only --stdio`. Neither starts Python. Current
-source boundaries, verification limits and the remaining Python work are recorded
-in [qualification and maintenance migration](docs/RUST_QUALIFICATION_MIGRATION.md).
-Native Transport, Host, Node routing and Provider qualification are being moved
-to Rust with original case mappings; see [native qualification migration](docs/RUST_NATIVE_QUALIFICATION_MIGRATION.md).
+entry is `clinx-mcp --observations-only --stdio`. Current runtime and development
+boundaries, original assertion mappings and verification limits are recorded in
+[the native source retirement report](docs/RUST_PYTHON_RETIREMENT.md).
 
 ## Development and tests
 
-The pytest suite is kept locally in the ignored `tests/` directory and is not
-distributed through Git. A fresh GitHub clone contains runtime sources and the
-development dependency declarations, but not this local suite. If the retained
-local `tests/` directory is available, use Python 3.12 and the commands below.
-No production service, API key or Codex daemon is needed for these Rust adapter fixtures:
+A fresh clone contains the Rust tests and independent qualification data.
+Python, pytest and the old local test archive are not current prerequisites.
+Use Rust 1.98+, Git, a native C linker and OpenSSL for independent wire tests.
+Set `CARGO_TARGET_DIR` to a task-owned build path; on P620 use `/lab` for builds
+and a private short `/data/artifacts` path for temporary test state.
 
 ```sh
-python3.12 -m venv .venv-test
-.venv-test/bin/python -m pip install -r requirements-dev.txt
-.venv-test/bin/python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/adapter-tests test_rust_native_routing.py test_rust_request_contract.py
-.venv-test/bin/python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only
+cargo build --locked --manifest-path kernel/Cargo.toml --bins --examples
+cargo test --locked --manifest-path kernel/Cargo.toml
+cargo test --locked --manifest-path native/opaque_pairing/Cargo.toml
+cargo build --locked --release --manifest-path kernel/Cargo.toml --bins --examples
+"$CARGO_TARGET_DIR/release/clinx-source-audit" --check-structure
+"$CARGO_TARGET_DIR/release/clinx-source-audit"
 ```
 
-If your distribution omits ensurepip, use `uv venv --python 3.12 --seed .venv-test`
-for the first command. See [CONTRIBUTING](CONTRIBUTING.md) for workflow and layout,
-[Testing](docs/TESTING.md) for isolated Owner/Rust, SQLite, native pairing and
-platform prerequisites, and the local `tests/README.md` index for retained suites.
-On P620 put developer environments and build outputs in your task-owned LAB path.
-The retained local `basic`, `owner` and `recovery` profiles still include tests of
-retired Python experiments. Phase 2 collection reported nine import errors;
-see the [phase 2 cleanup record](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md) for
-the exact impact and preserved baseline failures. The later removal of the old
-Linear Bridge/Dispatcher and CLI also leaves explicit historical-test failures;
-see the [phase 3 comparison](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md).
-Phase 4 removes the Python Owner, automatic Centre enrollment and shadow task
-models/replay. The unchanged local tests now report 24 collection errors;
-the retained 18-module comparison preserves all baseline outcomes. See the
-[phase 4 results and remaining Mac migration blockers](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md).
-The tracked `kernel/tests/node_contract_qualification.rs` preserves Node selectors,
-cancellation receipts and identity conflict cases without the local test archive:
-`cargo test --locked --manifest-path kernel/Cargo.toml --test node_contract_qualification`.
+See [CONTRIBUTING](CONTRIBUTING.md) and [Testing](docs/TESTING.md) for isolated
+HOME/XDG/TMPDIR setup and physical macOS/production limits. The ignored local
+Python `tests/` archive is preserved for historical evidence, with old failures
+reported separately. Restore its matching Git source to reproduce old contracts;
+do not restore Python business implementations into current runtime to satisfy old imports.
 
 ## Runtime entry points
 
@@ -280,6 +263,6 @@ P620 uses one canonical development repository. See
 [project convergence and historical recovery](docs/PROJECT_CONVERGENCE.md)
 for the workspace lifecycle and recovery evidence.
 
-The Rust MCP request/read migration and remaining Python runtime boundaries are recorded in
+The historical Rust MCP request/read migration is recorded in
 [the MCP migration receipt](docs/RUST_MCP_RUNTIME_MIGRATION.md). Helper routing and
 the exact verification limits are recorded in [the Node API migration](docs/RUST_NODE_API_MIGRATION.md).

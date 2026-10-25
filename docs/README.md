@@ -1,7 +1,7 @@
 # CLINX 文档
 
 使用入口是[项目 README](../README.md)，开发环境见[贡献指南](../CONTRIBUTING.md)，
-测试命令与前置条件见[测试指南](TESTING.md)；测试目录索引为本地 `tests/README.md`。
+测试命令与前置条件见[测试指南](TESTING.md)；当前测试位于 `kernel/tests/`，本地 ignored `tests/` 仅为历史归档。
 
 ## 产品定位
 
@@ -23,26 +23,19 @@ Rust Core 唯一状态权威、五条设计原则与效果指标。CLINX 是 AI 
 
 ## 源码布局
 
-当前布局、唯一目标架构、全部模块分类与发布边界见
-[仓库架构](REPOSITORY_ARCHITECTURE.md)；最新的 [兼容实现退役](RUST_COMPAT_RETIREMENT.md)
-区分仍需保留的能力与已删除的 Python 实现；后续 [维护与观察兼容收敛](RUST_MAINTENANCE_CONVERGENCE.md)
-删除最后维护消费者和 Monitor Python 封装。旧清理记录保留各自当时的路径和计数。
+当前布局、源码分类和发布边界见 [仓库架构](REPOSITORY_ARCHITECTURE.md)。
+最新 [Python 源码退役](RUST_PYTHON_RETIREMENT.md) 记录最后兼容层、构建/维护工具和资格的
+Rust 替代与验证；受版本控制的 Python 源码已为零，不依赖历史本地测试运行当前回归。
 
-`clinx/` 集中剩余 Python IPC、Provider/Node/Discovery 公开兼容对象与配置 codec，
-供尚未迁完的维护工具和资格使用；Python MCP factory 与 Monitor 封装已删除。
-旧 `clinx/compat/` Registry/Dispatcher/M9、completion/recovery/outbox 已删除，正常 Helper
-通过配对通道交给 Rust Authority 与 native Transport；实机验证和剩余运行时见
-[核心退役验证](RUST_NATIVE_CORE_RETIREMENT.md)。历史报告保留当时的源码状态与计数。
-Host 命令执行、工具投递/ACK 与 Dispatcher 也已迁 Rust，旧 Python 实现已删除，见
-[Host 迁移验证](RUST_HOST_RUNTIME_MIGRATION.md)。
-Python Authority、`runtime_control/`、
-`provider_adapters/` 实验已退役，见[第二轮清理记录](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md)。
-`kernel/` 包含 Rust Owner client、冻结 core、历史 Runtime 和原生 Rust authority。
-Rust 权威实现、切换记录与证据边界见 [Rust authority](RUST_AUTHORITY.md)；
-当前运行身份须另行读回，不从源码目录或历史记录推导。
-`clinx/discovery/` 与 `native/opaque_pairing/`
-实现发现配对，`MonitorApp/` 是 macOS 产品源码。`fixtures/` 保留现行契约和传输测试输入。
-`bin/`、`systemd/` 是启动器与部署模板，存在于源码中不表示已经安装。
+`kernel/` 为 Rust runtime、开发工具和测试；`native/opaque_pairing/` 为直接链接的 OPAQUE core；
+`MonitorApp/` 为 Swift UI。`clinx/mcp/registry.json` 只保留协议数据，`fixtures/` 保留
+冻结独立 JSON/SQL oracle 与逐断言迁移映射。`bin/`、`systemd/` 为原生启动器/模板。
+
+旧 Bridge/Registry/M9/Owner、completion/recovery/outbox 和 Python Dispatcher/Host runner
+均已删除；当前 Helper 通过配对通道交给 Rust Authority 与 native Transport。
+历史 [核心退役验证](RUST_NATIVE_CORE_RETIREMENT.md)、[Host 迁移](RUST_HOST_RUNTIME_MIGRATION.md)、
+[维护与 Monitor 收敛](RUST_MAINTENANCE_CONVERGENCE.md) 保留当时的源码状态和计数。
+当前运行身份须另行读回，不从源码目录或历史记录推导；本次源码退役没有部署新产物。
 
 架构背景保留 [V2](architecture/ADR-001-v2-architecture.md)、
 [事件账本](architecture/ADR-002-shadow-event-ledger.md)、
@@ -74,8 +67,8 @@ Owner 候选标识为 `owner-shared-07da5fe20c4119dee1b4`；安装/切换证据�
 
 实验性 Decision Kernel、Runtime Lab、维护授权原型及专属测试已退出源码树；
 核心 Owner、authority、SQLite、transport、幂等与恢复回归继续保留。
-开发依赖仍可按贡献指南安装。pytest 套件集中保留在本机被忽略的 `tests/`，
-不随 Git 分发；新 clone 不包含测试源码。
+当前开发与测试使用 Rust 工具链。历史 pytest 套件保留在本机被忽略的 `tests/`，
+不随 Git 分发；新 clone 包含现役 Rust 测试，未包含的是这份历史 Python 归档。
 
 - [Rust Node 网络、Registry 与执行请求迁移](RUST_NODE_NETWORK_MIGRATION.md)：现有配对 TLS、Centre/Owner scope、Provider 分块/IPC、Node 路由账本及 ACK 不确定恢复。
 - [Rust 原生历史与观察目录迁移](RUST_OBSERVATION_MIGRATION.md)：精确 native 历史、增量扫描、持久观察批次、查询授权与旧摘要/游标兼容；Collector 队列仍待迁移。

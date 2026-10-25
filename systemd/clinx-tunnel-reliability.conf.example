@@ -1,12 +1,12 @@
 # P1 source candidate only. NOT INSTALLED. Review an isolated qualification receipt,
 # drain admission and approve a separate runtime rollout before installing this drop-in.
-# Use the immutable release's Python/module paths, not a mutable checkout.
+# Use the immutable release's native executable path.
 # This historical drop-in alone is NOT a deployment plan: it cannot remove
-# legacy Unit dependencies. Use build_tunnel_release.py's paired full units
+# legacy Unit dependencies. Use clinx-build build-tunnel-release's paired full units
 # and final supervision override, with its exact CAS plan, instead.
 [Service]
 ExecStart=
-ExecStart=/RELEASE/.venv-node/bin/python /RELEASE/tunnel_reliability.py run --state-dir %h/.local/state/clinx/tunnel-reliability -- /home/pvxlabs/.local/bin/tunnel-client run --profile-dir %h/.config/tunnel-client --profile clinx-p620
+ExecStart=/RELEASE/clinx-tunnel run --state-dir %h/.local/state/clinx/tunnel-reliability -- /home/pvxlabs/.local/bin/tunnel-client run --profile-dir %h/.config/tunnel-client --profile clinx-p620
 Restart=on-failure
 RestartPreventExitStatus=78
 KillMode=control-group

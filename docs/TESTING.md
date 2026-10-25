@@ -1,351 +1,80 @@
-# Testing CLINX
+# Current native regression and qualification
 
-All pytest modules, the runner, configuration and suite index are concentrated
-in the local `tests/` directory. This directory is ignored and not tracked by Git;
-a new GitHub clone does not contain it. The commands here apply when that local
-suite is present. The retained tests still use historical flat module names.
-Use `tools.qualification.run_local_tests` below: it creates a temporary copy,
-relocates imports, patch targets and source paths using
-`architecture/module-moves.json`, and runs with private HOME/XDG/TMPDIR state.
-It preserves the original files, assertions, failures and pytest exit status;
-each run records source hashes, a log and JUnit XML. There are no runtime import
-shims. Directly running the old suite against the new package layout is not the
-current regression command.
+All current runtime and portable qualification tests are tracked Rust. A fresh clone
+can run them without the ignored local Python `tests/`, pytest, PyO3 or a Python wheel.
+Original migration cases and checks remain mapped in `fixtures/*retirement*.json` and
+[the retirement report](RUST_PYTHON_RETIREMENT.md). Older count snapshots belong to their
+respective dated migration reports.
 
-Install Python 3.12 and the pinned dependencies as described in
-[CONTRIBUTING](../CONTRIBUTING.md). `requirements-dev.txt` includes the existing
-discovery development pins; there is one source of package versions.
-The local `tests/README.md` index maps suites and naming conventions.
+## Isolated Linux run
 
-## Current device runtime qualification
-
-[Rust device runtime migration](RUST_DEVICE_RUNTIME_MIGRATION.md) covers native
-OPAQUE/TLS enrollment, identity/certificates, DNS-SD, Node/Centre/Helper assembly,
-Collector probes and outer scheduling. Set `CLINX_NODE_DAEMON_BINARY` to the same
-qualified release directory as `CLINX_NODE_BINARY` and the other Rust binaries.
-The App builder uses the Python-free native resource profile. The old Python
-`monitor` profile remains solely for existing compatibility-layout fixtures.
-
-Retired Stage3/P4/P5 runtime_lab runners are no longer current gates; their old
-CLI depended on a removed local test and frozen historical source hashes.
-The active Rust Authority State and execution_core golden contract remain tested.
-No retained local test, existing assertion or skip policy was removed to get PASS.
-
-## Latest thin runtime qualification
-
-[Rust thin runtime migration](RUST_THIN_RUNTIME_MIGRATION.md) records native Provider
-process/contract, Observer HTTP, configuration/workflow and Tunnel lifecycle parity.
-Run the tracked suite with `CLINX_TUNNEL_BINARY=<task-target>/release/clinx-tunnel`
-in addition to the existing Node, Provider, MCP and runtime binary variables.
-The Rust source census `clinx-source-audit` exits 2 until Python bytes are strictly
-below 5%; this target gate is separate from build and regression success.
-
-## Latest client runtime qualification
-
-[Rust client runtime migration](RUST_CLIENT_RUNTIME_MIGRATION.md) records 10 Linux Release
-binaries, 90 Rust tests and 296 tracked fixtures. The complete retained local suite has
-identical 432 outcomes before/after: 295 pass, 31 fail, 104 errors, 2 pre-existing skips.
-All 124 local test/support hashes and existing tracked fixture assertions are preserved.
-Run with the same qualified `CLINX_NODE_BINARY` (client runtime V1) and other binaries;
-a stale persistent worker is not a valid test of updated Python/Rust contracts.
-Strict Clippy has the same 10 pre-existing diagnostics and no new ones. Mac native
-build/signing and the new physical cross-device loop are not verified on this Linux host.
-
-## Previous Node network qualification
-
-[Rust Node network migration](RUST_NODE_NETWORK_MIGRATION.md) qualifies the paired
-TLS/Centre/Owner, Provider chunk/IPC and Node Registry/request lifecycle migration.
-The release build passes 82 Rust tests and 98 tracked fixtures. The fixtures use
-real Rust child processes, existing OPAQUE pairing, OpenSSL interoperability,
-Provider protocol peers and private SQLite state. They cover concurrent claims,
-revocation, exact recovery after lost ACK/restart, cancel receipts, Unicode ledger
-compatibility and source/Helper bundle closures. They do not use production tasks.
-
-Set `CLINX_NODE_BINARY=<task-target>/release/clinx-node` as well as the Provider,
-MCP relay and `CLINX_TEST_RUST_BIN_DIR` variables below. Use **short task-owned
-paths for both `--basetemp` and `TMPDIR`**: Host fixtures also create Unix sockets
-via `tempfile`, and Linux limits their path length. A long private TMPDIR caused
-11 setup errors during qualification; the unchanged suite passes with short paths.
-
-The complete retained local suite still reports 295 PASS / 31 FAIL / 104 ERROR /
-2 existing skips on both sides, with all 432 JUnit identities unchanged and all
-124 original local test/support files protected by SHA-256. Strict Clippy with
-`-D warnings` remains blocked by the same 10 existing diagnostics; the new Node
-modules introduce none. macOS native compilation/signing and the new physical
-Mac-to-P620 artifact loop are NOT_RUN on this Linux host.
-
-## Current Rust adapter and compatibility checks
-
-The current Provider/workspace migration is qualified by
-[Rust Provider migration verification](RUST_PROVIDER_RUNTIME_MIGRATION.md): 71 Rust tests
-and 73 tracked fixtures, including isolated paired Provider metadata calls, real
-Host subprocesses and exact Provider ACK/restart evidence. Build into a task-owned LAB directory, then use:
+Use Rust 1.98+, Git, a native C linker and OpenSSL CLI. Do not inherit production state
+or set test endpoints to installed services. P620 builds belong under `/lab`; disposable
+repositories belong under the task-owned `/data/artifacts` location. Use short temporary
+paths for Unix sockets. The following illustrates environment variables for an already
+created, private task directory; replace the placeholders with your task-owned paths.
 
 ```sh
-cargo build --release --locked --manifest-path kernel/Cargo.toml --target-dir <task-target>
-CLINX_TEST_RUST_BIN_DIR=<task-target>/release \
-CLINX_MCP_RELAY=<task-target>/release/clinx-mcp-relay \
-CLINX_PROVIDER_BINARY=<task-target>/release/clinx-provider \
-  <qualification-python> -B -m pytest fixtures -q --tb=short -p no:cacheprovider \
-  --basetemp=/data/artifacts/<task>/pytest
-```
-
-Use a short task path for Unix socket fixtures. These tests never need a
-production Provider, task, database or service restart. The retained local suite
-has 109 collection errors on both sides of this migration; its 96 collectable
-tests remain 69 passed / 25 failed / 2 errors, with identical test identities and
-outcomes. The dated records below describe earlier baselines.
-
-The Python Authority, runtime_control and prototype Provider implementations were
-retired in [cleanup phase 2](cleanup/RUST_MIGRATION_CLEANUP_PHASE2.md). Their local
-test files and the local suite index were preserved byte for byte. Consequently,
-`basic`, `owner` and `recovery` still select retired suites, and full collection
-reported nine import errors (1,714 collected, versus 1,967 before retirement).
-These profiles are historical evidence, not current passing gates. Do not add a
-skip hook, weaken assertions or delete the retained tests to hide this result.
-The phase 2 record lists all affected modules and the exact baseline comparison.
-
-[Cleanup phase 3](cleanup/RUST_MIGRATION_CLEANUP_PHASE3.md) also retires the
-standalone Linear `Bridge`/V1 Dispatcher, its contract parser and `run/once/doctor`
-commands. Their local tests are preserved and now fail on the removed symbols
-or commands. The 20-module comparison changed from 492 passed / 21 failed to
-454 passed / 66 failed; all 39 changed JUnit node outcomes refer to these retired
-interfaces, and other outcomes are unchanged. This is not a passing full suite.
-Fresh Rust builds, copied-package request/routing tests and the isolated Rust
-MCP/Dispatcher/recovery chain are recorded separately in the phase 3 report.
-
-[Cleanup phase 4](cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md) removes the Python
-Owner, Centre automatic enrollment, duplicate domain models, shadow replay and
-the private consultation/Owner entry. Full collection now reports 1,491 tests
-and 24 import errors, including 15 newly affected historical suites. All 124
-local test/support files retain their original SHA-256; none were skipped or
-edited. The 18 retained modules have the same 439 JUnit node outcomes as their
-baseline subset: 386 passed / 66 failed / 2 skipped / 73 subtests passed.
-That subset is not a passing full suite. The report lists the excluded retired
-module tests and separately records 7 no-Owner recovery checks, 10 tracked Rust
-node contract checks, a baseline-created publication outbox upgrade, and the
-fresh Rust artifact chain.
-
-The tracked node contract fixture also runs without the local test archive:
-
-```sh
-python -B -m pytest --import-mode=prepend -o pythonpath=. fixtures/test_rust_node_contract.py
-```
-
-For the existing public request and native routing fixtures:
-
-```sh
-python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/adapters test_rust_native_routing.py test_rust_request_contract.py
-python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only
-python -m ruff check --no-cache --config ruff-discovery.toml <changed-python-files>
+export CARGO_TARGET_DIR=/lab/runtime-worktrees/p620/<task>/target
+export HOME=/data/artifacts/<short-task>/home
+export XDG_CONFIG_HOME=/data/artifacts/<short-task>/config
+export XDG_STATE_HOME=/data/artifacts/<short-task>/state
+export XDG_DATA_HOME=/data/artifacts/<short-task>/data
+export XDG_RUNTIME_DIR=/data/artifacts/<short-task>/run
+export TMPDIR=/data/artifacts/<short-task>/tmp
+# Retain explicit existing RUSTUP_HOME/CARGO_HOME for the installed toolchain/cache.
+cargo build --locked --manifest-path kernel/Cargo.toml --bins --examples
+cargo test --locked --manifest-path kernel/Cargo.toml
+cargo test --locked --manifest-path native/opaque_pairing/Cargo.toml
+cargo build --locked --release --manifest-path kernel/Cargo.toml --bins --examples
+"$CARGO_TARGET_DIR/release/clinx-source-audit" --check-structure
+"$CARGO_TARGET_DIR/release/clinx-source-audit"
 git diff --check
 ```
 
-The two adapter modules passed 36 tests from an independently copied Rust source
-package. They need no production service, account or real Codex daemon. Use
-private HOME/XDG/TMPDIR state and no live opt-ins for offline regression work.
-The current qualification runner supplies disposable state, disables bytecode/cache
-writes and third-party plugin autoload, and preserves pytest's exit status.
-Pytest 9.1 includes unittest subtest support; use the pinned dependency versions.
+The examples `qualification_workspace` and `qualification_tunnel` are real private
+child programs used by integration tests; build them in the same target/profile as the tests.
+They replace embedded Python fixtures and do not enter runtime/App packages.
 
-[Phase 5](cleanup/REPOSITORY_CONVERGENCE_PHASE5.md) records the package relocation
-and unchanged baseline outcomes. Replace `<unique-task>` with a fresh task-owned
-directory. The following historical profile examples explain prerequisites and
-old evidence; they are not current passing gates and do not translate flat imports.
+## Coverage
 
-Useful retained compatibility modules include `test_execution_owner_routing.py`,
-`test_execution_liveness.py`, `test_result_ingestion.py` and
-`test_desktop_publication.py`. They exercise the ordinary local execution route
-that is still enabled on iMac. They do not qualify a Python Authority writer.
-`test_execution_owner.py`, `test_native_input_recovery.py` and
-`test_shadow_ledger.py` still import deleted modules and are historical evidence,
-not current passing gates. No import shims were added to hide their retirement.
-The schema-only migration input belonged to the retired experiment; it is not
-required to run the present Rust authority or device compatibility code.
-
-Rust checks use a task-owned output directory, never an installed release:
-
-```sh
-cargo test --lib --locked --offline --manifest-path kernel/Cargo.toml --target-dir <task-build-dir>
-cargo test --tests --locked --offline --manifest-path kernel/Cargo.toml --target-dir <task-build-dir>
-cargo build --release --locked --offline --manifest-path kernel/Cargo.toml --bin clinx-runtime --bin clinx-mcp-relay --target-dir <task-build-dir>
-CLINX_MCP_RELAY=<task-build-dir>/release/clinx-mcp-relay python -B -m pytest --import-mode=prepend -o pythonpath=. fixtures/test_mcp_relay.py fixtures/test_rust_node_contract.py
-```
-
-Historical Linux compatibility Owner fixtures may have left empty lock files under
-`/run/user/<uid>/clinx-owner-<uid>/`. Do not sweep this shared directory.
-
-## Recovery and environment-dependent suites
-
-```sh
-python tests/run_tests.py recovery
-```
-
-This historical profile includes a retired Authority transport module and cannot
-currently collect in full. Its retained recovery tests include a transient systemd test that
-needs a separately provisioned user manager/session bus. Without that prerequisite
-it fails with `Failed to connect to bus`. Do not attach the runner to a production
-manager to obtain a pass. The remaining recovery cases use temporary state.
-
-| Suite | Additional requirements |
+| Suite | Important obligations |
 | --- | --- |
-| Local `tests/test_m*.py`, remaining `tests/test_pvx*.py` | Exact paths; stable module names with shared fixture imports |
-| Discovery, pairing and node/process suites | Development dependencies; production-protocol cases also need `native/opaque_pairing` built with maturin and its Cargo.lock; see [Local Discovery](LOCAL_DISCOVERY_V1.md) |
-| Tunnel wire, first migration and stage1 wire | Pinned installed client/release artifacts referenced in source, isolated HTTP proxy/Owner; no portable artifact availability promise |
-| Transport build/release tests | Fixture sources and controlled fake builds; actual builds need matching Go toolchain/upstream archive |
-| `fixtures/bridge_transport_control_test.go` | Matching upstream harness through `scripts/qualify_bridge_transport.py`, not standalone pytest |
-| Rust Owner client | `cargo test --locked --manifest-path kernel/Cargo.toml --target-dir <fresh-directory>` checks compilation; the old Owner profile also contains retired experiment suites and is not a passing gate |
-| Native OPAQUE Rust adapter | Matching Python/PyO3/maturin toolchain; independent of pytest collection |
-| `MonitorApp/Tests/CLINXMonitorTests` | macOS/Xcode; from MonitorApp run `swift test --scratch-path <fresh-directory>`; Python source checks are not GUI acceptance |
+| Authority/native/Host | Atomic receipts, exact operation identity, concurrent attempts, send once, ACK uncertainty, cancellation, restart and no blind replay |
+| Node/Device/Discovery | Authenticated principal/scope intersection, reverse Authority, paired Provider route, 6-way concurrent traffic, restart, revocation, independent OpenSSL in both directions, expired certificates, CLI/PTY PIN handling |
+| Provider/workspace | Exact thread/turn/input and cwd/repository proof, identity mismatch, process/SSH/Unix/WebSocket protocol, backlog and duplicate responses |
+| Collector/Observer/MCP | Independent SQL/JSON oracle, read-only bytes, checkpoints and duplicate ACK, cursor scope, auth/audit, concurrent writes, restart and permission errors |
+| Build/install | Explicit release members/hash/marker, no inherited Python/development binaries, deterministic archives, CAS path/preflight, exact service/config templates and no service activation |
+| Tunnel/relay | Persistent identity/budget, original deterministic fault clocks, ownership/TERM/KILL, partial byte streams, half-close, no replay, bounded metrics IO and passive diagnostics |
+| OPAQUE | Mutual confirmation, single consumption, context mismatch and malformed finish; now tested directly in Rust |
 
-The Rust authority retains its frozen execution contract and shared Rust state.
-Historical Python Authority tests remain local for evidence recovery; their
-implementation has been removed from current source. See
-[Rust authority status and acceptance](RUST_AUTHORITY.md) and
-[historical source/evidence recovery](README.md#历史资料恢复).
-A lab or adapter PASS does not establish production business acceptance.
+## Platform and artifact limits
 
-Transport packaging/wire tests have an additional artifact-location contract:
-create a fresh task-owned directory under `/data/artifacts`, then run:
+Native macOS UI/App building and signing require macOS/Xcode; Linux native-resource
+assembly tests are not that acceptance. Physical LAN multicast and real Mac-to-P620
+execution are separately authorized device qualifications. The Discovery smoke example
+requires an explicit `--lan` option for physical multicast; isolated `--loopback` results
+must not be called physical LAN PASS.
 
-```sh
-python tests/run_tests.py transport --temp-parent /data/artifacts/your-task
-```
+Administrator install, provision, maintenance and deployed isolation checks are not
+run against production by this suite. Their filesystem/command boundaries are tested
+using private fixtures. Historical Python-to-Rust cgroup/old-provider-unit migration
+probes are retired scenarios, retained in the matching Git source and prior receipts;
+this does not create new proof of production isolation.
 
-The runner creates and removes its own subdirectory there. Tests use isolated
-services and fake credentials. Some cases read pinned release archives or client
-binaries, so this profile requires those exact artifacts and is not the portable
-basic profile. `tests/test_forwarding_deploy.py` currently uses a pinned historical
-package whose home-path contract conflicts with an isolated HOME; its seven
-fixture errors remain visible. Do not weaken the package's exact-path checks or
-point tests at live configuration to make them pass.
+The full pinned Go transport build requires the exact source and toolchain archives
+accepted by `clinx-build build-transport-runtime`. Unit/dependency/archive tests do not
+replace that two-directory reproducibility proof when the toolchain archive is unavailable.
 
-## Real Provider and end-to-end acceptance
+## Historical suite and failure reporting
 
-These require disposable configured workspaces, real endpoints and any required
-credentials. The profile runner does not forward live opt-ins. Read each file's
-setup before a deliberate live run; setting a flag alone is insufficient.
+The ignored Python `tests/` archive remains byte-for-byte unchanged. It references retired
+APIs and cannot serve as the current passing gate. Re-run comparisons only in private
+state using the preserved original relocation harness and exact baseline checkout;
+keep the original pytest counts, collection errors, skips and masked expected-exception
+outcomes. Do not edit/skip historical tests to manufacture PASS.
 
-| File | Existing opt-in |
-| --- | --- |
-| `tests/test_acceptance_result_live.py` | `CLINX_LIVE_RESULT_CONTRACT=1` |
-| `tests/test_execution_authority_live.py`, `tests/test_host_provider_isolation_live.py` | `CLINX_LIVE_AUTHORITY=1` |
-| `tests/test_host_contract_v2_live.py` | `CLINX_LIVE_HOST_CONTRACT_V2=1` |
-| `tests/test_native_interop_live.py` | `CLINX_LIVE_NATIVE_INTEROP=1` |
-| `tests/test_tool_delivery_live.py` | `CLINX_LIVE_DELIVERY_ACCEPTANCE=1`; additional flags in source |
-| `tests/test_worker_continuation_live.py` | `CLINX_LIVE_CONTINUATION=1` |
-
-See [native forwarding](NATIVE_TASK_FORWARDING.md) and
-[execution authority](EXECUTION_AUTHORITY.md). Existing live skips mean NOT_RUN.
-Collection proves discovery/imports; it does not measure line/branch coverage,
-production capacity, real device behavior or business acceptance.
-
-## Troubleshooting
-
-| Symptom | Action |
-| --- | --- |
-| Missing `zeroconf` / `jsonschema` | Install `requirements-dev.txt` using the interpreter that runs pytest |
-| `setup(tmp_path)` receives a module | Use pinned pytest; older system pytest invokes legacy nose setup. Changing HOME can expose an older system copy |
-| Missing Python Owner / `CLINX_OWNER_CLIENT_BINARY` | Python Owner fixtures are historical and do not collect on current source; use the recorded source ref in an isolated fixture if recovering old evidence, never start an Owner against production |
-| Missing `CLINX_PRODUCTION_SCHEMA` | Supply `owner --schema <schema-only.json>`; absence is retained as an explicit prerequisite failure |
-| `PRODUCTION_PAKE_UNAVAILABLE` | Build the native OPAQUE adapter in the test environment; the incompatible SPAKE2 DEV_ONLY backend is retired |
-| Socket-directory permissions | Confirm private same-user endpoint and temporary DB identity; do not chmod/delete a production socket |
-| `systemd-run` cannot connect to bus | Provide an isolated test user manager; retain the failure if unavailable |
-| Ruff findings in legacy files | Use `ruff-discovery.toml`, compare to the saved baseline and avoid unrelated formatting changes |
-| Collection succeeds but tests fail | Report exact failed node IDs and unmet prerequisites; do not weaken assertions or hide failures |
-
-## Rust MCP business entry qualification (2026-10-25)
-
-Normal business MCP now uses `clinx-mcp`, with an install-time JSON configuration
-compiled by `clinx-node --compile-config mcp`. The Python factory is retired.
-The operator profile is `clinx-mcp --policy-maintenance --config <json> --stdio`;
-its exact approval/review and Authority CAS tests are in `kernel/tests/policy_maintenance.rs`.
-
-`fixtures/mcp_api_v1.json` contains 35 original `81254e2` Python API vectors.
-Rust tests compare Authority payloads, exact Provider reads and public results,
-and cover unknown delivery identities, cursor/identity conflicts, bounded history
-and context projection. The native transport fixture runs both the original
-Authority entry and the new MCP entry over local and paired/routed Providers;
-the original Authority assertions remain active.
-
-The [MCP migration report](RUST_MCP_RUNTIME_MIGRATION.md) records 79 final Rust
-passes and 76 tracked fixtures against both Debug and Release builds. An existing
-parallel `WRITER_ALREADY_ACTIVE` failure was also reproduced with the baseline
-Rust test binary and is retained separately. The unchanged local suite under
-CPython 3.12.3 reports 51 PASS / 20 FAIL / 134 ERROR on both sides, including 109
-collection errors; the native/request subset remains 34 PASS / 2 FAIL. These
-counts do not replace older reports taken with CPython 3.14 or different source
-revisions, and do not qualify a physical Mac/P620 execution.
-
-The fixtures require all three binary settings, plus the compiled binary directory:
-
-```sh
-CLINX_TEST_RUST_BIN_DIR=<build>/release \
-CLINX_MCP_RELAY=<build>/release/clinx-mcp-relay \
-CLINX_PROVIDER_BINARY=<build>/release/clinx-provider \
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-python -B -m pytest -p no:cacheprovider fixtures --tb=short \
-  --basetemp=/data/artifacts/<task>/pytest
-```
-
-Keep test HOME/XDG/TMPDIR private and use the pinned dev requirements, including
-the native OPAQUE wheel. Do not use live opt-ins or real business tasks.
-
-## Rust Node execution API
-
-`clinx-node` is the private Helper request process. Set
-`CLINX_NODE_BINARY=<task-target>/release/clinx-node` alongside the three existing
-binary variables above when running fixtures from source. Normal packages find
-the companion binary in the release root or App `Contents/Helpers/`; source
-execution requires an explicit tested binary or PATH entry and never compiles
-or falls back automatically. The local-test runner preserves PATH; prepend the
-task binary directory before invoking it.
-
-`fixtures/node_api_v1.json` freezes 47 Node decision and callback sequences from
-`dca2d7d`'s Python implementation. The existing 35 MCP/API vectors remain unchanged.
-`fixtures/test_native_transport_binary.py` retains its direct/MCP cases and adds
-Helper cases through paired reverse Authority routing, canonical predecessor
-adoption, completion, lost ACK, restart, cancellation and concurrent tasks.
-These use a protocol Provider fixture and temporary repositories, not physical
-Mac or real business tasks. Package fixtures exercise both copied source profiles
-without the source checkout or PYTHONPATH. Full evidence and historical failures:
-[Rust Node API migration](RUST_NODE_API_MIGRATION.md).
-
-## Rust native history and observation directory
-
-The same isolated binary settings qualify `fixtures/test_rust_observation.py`.
-It exercises real disposable SQLite indexes and JSONL rollouts, exact fork/turn
-identity, display privacy, incremental checkpoints, HMAC cursors, concurrent
-batch claims, duplicate/conflicting sequences, terminal merge, scope revocation,
-restart, native permission errors and packaged Helper reads without a checkout.
-The required companion binary reports `RUST_OBSERVATION_V1` via
-`clinx-node --observation-contract`; release and Monitor builders reject older
-binaries. Native indexes are read-only. The writable observation database is a
-display projection, never Task Authority storage.
-
-The [migration report](RUST_OBSERVATION_MIGRATION.md) records the before/after
-historical suite separately, preserves all 124 local test/support files and
-qualifies 33 original standalone observation cases without changing assertions.
-The permission cases require an unprivileged user; running as root does not
-prove native file access denial. Collector spool/outbox and physical macOS
-build/signing remain separate migration/qualification boundaries.
-
-
-## Rust Collector spool and recovery
-
-`kernel/tests/collector_qualification.rs` runs disposable real-SQLite collector cases:
-`cargo test --locked --manifest-path kernel/Cargo.toml --test collector_qualification`.
-The former `fixtures/test_rust_collector.py` duplicates were retired after mapping
-their assertions to these Rust cases. Use a private HOME/XDG and temporary state.
-`clinx-node --collector-contract` must report `RUST_COLLECTOR_V1`; both source
-profiles and builders require `collector_runtime=RUST_COLLECTOR_V1`.
-
-Coverage includes process death before local commit and after Centre commit,
-lost/invalid/wrong-stream ACK, singleton locks, exact duplicate upload receipts,
-no first-use offline grant, scope-redacted queued events, bounded backpressure,
-coverage recovery, recovery fairness, native/canonical merge, and SQLite COMMIT
-BUSY rollback. No Provider execution input is sent. Existing local assertions
-and test files remain unchanged; full-suite failures are reported against the
-same-environment baseline in the [receipt](cleanup/RUST_COLLECTOR_MIGRATION_RECEIPT.json).
-The subsequent Python wrapper retirement and unchanged-local-test failure comparison
-are recorded in [maintenance and Monitor convergence](RUST_MAINTENANCE_CONVERGENCE.md).
+Normal Clippy may pass with pre-existing warnings. Record `cargo fmt --check` and strict
+warning failures separately, compare their exact diagnostic sites with the baseline,
+and fix new issues introduced by your change. Source retirement does not excuse a
+current Rust test failure.

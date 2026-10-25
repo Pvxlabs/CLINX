@@ -5,13 +5,15 @@ use clinx_decision_kernel::{
 };
 use serde_json::{Value, json};
 use std::{fs, os::unix::fs::PermissionsExt};
+#[path = "support/workspace_oracle.rs"]
+mod oracle;
 
 #[test]
 fn native_observation_drives_all_workspace_gates_without_local_filesystem_fallback() {
     let root =
         std::env::temp_dir().join(format!("clinx-workspace-observer-{}", std::process::id()));
     fs::create_dir(&root).unwrap();
-    let program = root.join("probe.py");
+    let program = oracle::install(&root, "observer-probe");
     let response = root.join("response.json");
     // The simulated native workspace intentionally does not exist on the writer.
     // Only the authenticated adapter supplies its metadata in this fixture.
@@ -20,22 +22,6 @@ fn native_observation_drives_all_workspace_gates_without_local_filesystem_fallba
         "worktree":"/provider-only/repo/.git","branch":"native-branch","head":"a".repeat(40),
         "observer_uid":1001,"observer_source":"CODEX_PROVIDER_COMMAND_EXEC"});
     fs::write(&response, actual.to_string()).unwrap();
-    fs::write(
-        &program,
-        format!(
-            r#"#!/usr/bin/python3
-import json,sys,pathlib
-request=json.loads(sys.argv[3])
-value=json.loads(pathlib.Path({:?}).read_text())
-if request['cwd']=='/provider-only/missing':value={{'error':'WORKSPACE_CWD_UNREADABLE'}}
-if request['cwd']=='/provider-only/different':value['repository_identity']='git-common:9:99'
-print(json.dumps(value))
-"#,
-            response.to_string_lossy()
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
     workspace_observer::configure(program.clone(), "/fixture/provider.sock".into()).unwrap();
     let state = root.join("state");
     fs::create_dir(&state).unwrap();

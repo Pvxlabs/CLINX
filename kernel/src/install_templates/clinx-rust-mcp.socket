@@ -1,0 +1,10 @@
+[Unit]
+Description=CLINX existing MCP transport socket for dedicated API identity
+[Socket]
+ListenStream=@RUN@-api/mcp.sock
+Accept=yes
+SocketUser=@OPERATOR@
+SocketGroup=@OPERATOR_GID@
+SocketMode=0660
+DirectoryMode=0711
+RemoveOnStop=yes

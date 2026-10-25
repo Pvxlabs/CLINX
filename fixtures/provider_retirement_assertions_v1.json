@@ -1,0 +1,1327 @@
+{
+  "schema": "CLINX_PROVIDER_PYTHON_RETIREMENT_ASSERTIONS_V1",
+  "baseline_commit": "52f6ce9244baa1dcfb4a7b514f2ca9c569e67e12",
+  "original_case_count": 51,
+  "baseline_result": "51 passed; zero failed/skipped with explicit native binary environment",
+  "source_files": [
+    {
+      "path": "fixtures/test_rust_provider_api.py",
+      "sha256": "d43b6dd483b1c2d471ad0dc2471a83063497e39fd1df3d2787ef488d9d90cb32",
+      "lines": 89
+    },
+    {
+      "path": "fixtures/test_rust_provider_client.py",
+      "sha256": "a9f1288fc4331568476214caa337c0f33a40eba1cd14f16e655c03852e2f576e",
+      "lines": 200
+    },
+    {
+      "path": "fixtures/test_rust_provider_runtime.py",
+      "sha256": "fdc542b43a5d6a29f6c37c463933c17f79d104fd2bdd324e4e0c547dde3d1d9f",
+      "lines": 182
+    },
+    {
+      "path": "fixtures/test_rust_authority_client.py",
+      "sha256": "be8717d2515646e3fc64d76d15d5b74f0fa2aca913f07089da84ef6bbab73148",
+      "lines": 95
+    },
+    {
+      "path": "fixtures/test_rust_runtime_config.py",
+      "sha256": "77c7213ae43d4b645f40fd6de9a92680a2624b7eb61bf88c8b0566bc53ffcbc2",
+      "lines": 43
+    },
+    {
+      "path": "fixtures/test_rust_execution_contracts.py",
+      "sha256": "2d419ec0b8504e363b142ab406ae347afcfa54c3cd9c454c9f4646dca21ccf20",
+      "lines": 37
+    },
+    {
+      "path": "fixtures/test_provider_relay.py",
+      "sha256": "71ee59c947ae73cac8ac51719c0df2ca242a3a821b3361531c9c85d024439b8f",
+      "lines": 104
+    },
+    {
+      "path": "fixtures/test_native_transport_binary.py",
+      "sha256": "2b744360f99ba8746bd150d5a99e238ea2a8e5bd5a093acec06ab5ead55e7418",
+      "lines": 209
+    }
+  ],
+  "tests": [
+    {
+      "source": "fixtures/test_rust_provider_api.py",
+      "function": "test_python_process_handle_and_postclose_lifecycle_binding",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_api.py::test_python_process_handle_and_postclose_lifecycle_binding"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_api_qualification.rs::rust_owned_process_exec_sets_session_and_jsonl_unicode"
+      ],
+      "checks": [
+        {
+          "line": 13,
+          "original": "assert transport._process is None",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::rust_owned_process_exec_sets_session_and_jsonl_unicode"
+          ]
+        },
+        {
+          "line": 16,
+          "original": "assert transport_lifecycle_state(transport) == 'unavailable'",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::rust_owned_process_exec_sets_session_and_jsonl_unicode"
+          ]
+        }
+      ],
+      "python_object_contract_retired": "Python _process=None attribute and unavailable projection retire with Python process facade; native Rust process ownership and physical session revocation remain tested."
+    },
+    {
+      "source": "fixtures/test_rust_provider_api.py",
+      "function": "test_rust_process_exec_failure_is_synchronous",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_api.py::test_rust_process_exec_failure_is_synchronous"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_api_qualification.rs::rust_process_exec_failure_is_synchronous"
+      ],
+      "checks": [
+        {
+          "line": 21,
+          "original": "pytest.raises(AppServerTransportError, match='failed to start')",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::rust_process_exec_failure_is_synchronous"
+          ]
+        },
+        {
+          "line": 23,
+          "original": "assert transport._session is None",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::rust_process_exec_failure_is_synchronous"
+          ]
+        }
+      ],
+      "python_object_contract_retired": "Python _session=None attribute retires; native missing executable fails synchronously without a successful session."
+    },
+    {
+      "source": "fixtures/test_rust_provider_api.py",
+      "function": "test_unsubscribe_failure_is_recorded_without_replay_or_active_turn_release",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_api.py::test_unsubscribe_failure_is_recorded_without_replay_or_active_turn_release"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_api_qualification.rs::unsubscribe_failure_is_recorded_without_replay_or_active_turn_release"
+      ],
+      "checks": [
+        {
+          "line": 33,
+          "original": "client._request.assert_called_once_with('thread/unsubscribe', {'threadId': 'idle'})",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::unsubscribe_failure_is_recorded_without_replay_or_active_turn_release"
+          ]
+        },
+        {
+          "line": 34,
+          "original": "assert client.writer_release == {'idle': 'UNCONFIRMED:AppServerTransportError'}",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::unsubscribe_failure_is_recorded_without_replay_or_active_turn_release"
+          ]
+        },
+        {
+          "line": 35,
+          "original": "assert client._owned_thread_ids == {'live'}",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::unsubscribe_failure_is_recorded_without_replay_or_active_turn_release"
+          ]
+        },
+        {
+          "line": 36,
+          "original": "assert client._owned_turns == {'live': 'running-turn'}",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::unsubscribe_failure_is_recorded_without_replay_or_active_turn_release"
+          ]
+        },
+        {
+          "line": 37,
+          "original": "transport.close.assert_called_once()",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::unsubscribe_failure_is_recorded_without_replay_or_active_turn_release"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_api.py",
+      "function": "test_writer_conflict_is_exact_and_original_unknown_error_identity_survives",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_api.py::test_writer_conflict_is_exact_and_original_unknown_error_identity_survives[False]",
+        "fixtures/test_rust_provider_api.py::test_writer_conflict_is_exact_and_original_unknown_error_identity_survives[True]"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_api_qualification.rs::writer_conflict_exact",
+        "kernel/tests/provider_api_qualification.rs::writer_conflict_other_preserves_error_identity"
+      ],
+      "checks": [
+        {
+          "line": 46,
+          "original": "pytest.raises(AppServerRemoteError)",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::writer_conflict_exact",
+            "kernel/tests/provider_api_qualification.rs::writer_conflict_other_preserves_error_identity"
+          ]
+        },
+        {
+          "line": 49,
+          "original": "assert caught.value is remote",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::writer_conflict_exact",
+            "kernel/tests/provider_api_qualification.rs::writer_conflict_other_preserves_error_identity"
+          ]
+        },
+        {
+          "line": 51,
+          "original": "assert isinstance(caught.value, AppServerWriterConflict)",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::writer_conflict_exact",
+            "kernel/tests/provider_api_qualification.rs::writer_conflict_other_preserves_error_identity"
+          ]
+        },
+        {
+          "line": 52,
+          "original": "assert caught.value.__cause__ is remote",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::writer_conflict_exact",
+            "kernel/tests/provider_api_qualification.rs::writer_conflict_other_preserves_error_identity"
+          ]
+        },
+        {
+          "line": 53,
+          "original": "client._request.assert_called_once_with('thread/resume', {'threadId': 'exact', 'excludeTurns': True})",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::writer_conflict_exact",
+            "kernel/tests/provider_api_qualification.rs::writer_conflict_other_preserves_error_identity"
+          ]
+        }
+      ],
+      "python_object_contract_retired": "Python object is identity, subclass isinstance and __cause__ cannot exist after facade removal; Rust preserves exact remote payload and changes only exact-thread conflict kind."
+    },
+    {
+      "source": "fixtures/test_rust_provider_api.py",
+      "function": "test_model_alias_ambiguity_and_malformed_alias_are_not_resolved_by_guessing",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_api.py::test_model_alias_ambiguity_and_malformed_alias_are_not_resolved_by_guessing"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_api_qualification.rs::model_alias_ambiguity_and_malformed_alias_are_not_resolved_by_guessing"
+      ],
+      "checks": [
+        {
+          "line": 63,
+          "original": "pytest.raises(ModelCapabilityError, match='malformed capability')",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::model_alias_ambiguity_and_malformed_alias_are_not_resolved_by_guessing"
+          ]
+        },
+        {
+          "line": 65,
+          "original": "assert client.resolve_model('STRASSE', 'medium') == ('gpt-straße', 'medium')",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::model_alias_ambiguity_and_malformed_alias_are_not_resolved_by_guessing"
+          ]
+        },
+        {
+          "line": 66,
+          "original": "assert client.resolve_model('gpt-good', 'high') == ('gpt-good', 'high')",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::model_alias_ambiguity_and_malformed_alias_are_not_resolved_by_guessing"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_api.py",
+      "function": "test_version_soft_guard_keeps_unbounded_decimal_components",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_api.py::test_version_soft_guard_keeps_unbounded_decimal_components"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_api_qualification.rs::version_soft_guard_keeps_unbounded_decimal_components"
+      ],
+      "checks": [
+        {
+          "line": 71,
+          "original": "assert extract_version('codex/٣.٢.١') == (3, 2, 1)",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::version_soft_guard_keeps_unbounded_decimal_components"
+          ]
+        },
+        {
+          "line": 72,
+          "original": "assert not versions_compatible(huge + '.1.0', str(int(huge) + 1) + '.1.0')",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::version_soft_guard_keeps_unbounded_decimal_components"
+          ]
+        },
+        {
+          "line": 73,
+          "original": "assert versions_compatible(None, '3.0.0')",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::version_soft_guard_keeps_unbounded_decimal_components"
+          ]
+        },
+        {
+          "line": 74,
+          "original": "assert versions_compatible('3.0.0', '3.999.1')",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::version_soft_guard_keeps_unbounded_decimal_components"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_api.py",
+      "function": "test_concurrent_public_api_returns_merge_distinct_owned_turns",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_api.py::test_concurrent_public_api_returns_merge_distinct_owned_turns"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_api_qualification.rs::concurrent_api_calls_produce_distinct_owned_turn_patches"
+      ],
+      "checks": [
+        {
+          "line": 88,
+          "original": "assert {turn.turn_id for turn in turns} == {'a-turn', 'b-turn'}",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::concurrent_api_calls_produce_distinct_owned_turn_patches"
+          ]
+        },
+        {
+          "line": 89,
+          "original": "assert client._owned_turns == {'a': 'a-turn', 'b': 'b-turn'}",
+          "rust_targets": [
+            "kernel/tests/provider_api_qualification.rs::concurrent_api_calls_produce_distinct_owned_turn_patches"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py",
+      "function": "test_native_unknown_delivery_consumes_creation_and_never_replays",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_client.py::test_native_unknown_delivery_consumes_creation_and_never_replays"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_client_qualification.rs::native_unknown_delivery_consumes_creation_and_never_replays"
+      ],
+      "checks": [
+        {
+          "line": 92,
+          "original": "pytest.raises(AppServerTransportError)",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_unknown_delivery_consumes_creation_and_never_replays"
+          ]
+        },
+        {
+          "line": 94,
+          "original": "assert client.native_creation_cwd is None",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_unknown_delivery_consumes_creation_and_never_replays"
+          ]
+        },
+        {
+          "line": 95,
+          "original": "assert transport_lifecycle_state(client.transport) == 'unavailable'",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_unknown_delivery_consumes_creation_and_never_replays"
+          ]
+        },
+        {
+          "line": 96,
+          "original": "pytest.raises(AppServerSharedWriterError)",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_unknown_delivery_consumes_creation_and_never_replays"
+          ]
+        },
+        {
+          "line": 98,
+          "original": "assert [r['method'] for r in provider.calls] == ['thread/start']",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_unknown_delivery_consumes_creation_and_never_replays"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py",
+      "function": "test_rust_admission_rejects_before_transport",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport[policy0-thread/resume-params0-AppServerProtocolError]",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport[policy1-thread/list-params1-AppServerProtocolError]",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport[policy2-command/exec-params2-AppServerProtocolError]",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport[policy3-turn/start-params3-AppServerSharedWriterError]",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport[policy4-thread/resume-params4-AppServerSharedWriterError]",
+        "fixtures/test_rust_provider_client.py::test_rust_admission_rejects_before_transport[policy5-thread/start-params5-AppServerSharedWriterError]"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_client_qualification.rs::admission_rejects_before_transport"
+      ],
+      "checks": [
+        {
+          "line": 115,
+          "original": "pytest.raises(error)",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::admission_rejects_before_transport"
+          ]
+        },
+        {
+          "line": 117,
+          "original": "assert transport.sent == []",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::admission_rejects_before_transport"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py",
+      "function": "test_rpc_preserves_remote_error_and_explicit_result_mark_without_retry",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_client.py::test_rpc_preserves_remote_error_and_explicit_result_mark_without_retry"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_client_qualification.rs::rpc_preserves_remote_error_and_explicit_result_mark_without_retry"
+      ],
+      "checks": [
+        {
+          "line": 124,
+          "original": "pytest.raises(AppServerRemoteError)",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::rpc_preserves_remote_error_and_explicit_result_mark_without_retry"
+          ]
+        },
+        {
+          "line": 126,
+          "original": "assert raised.value.method == 'thread/turns/list' and raised.value.error == error",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::rpc_preserves_remote_error_and_explicit_result_mark_without_retry"
+          ]
+        },
+        {
+          "line": 127,
+          "original": "assert transport.marks == [(transport.sent[0]['id'], 'explicit_rejection')]",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::rpc_preserves_remote_error_and_explicit_result_mark_without_retry"
+          ]
+        },
+        {
+          "line": 128,
+          "original": "assert len(transport.sent) == 1",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::rpc_preserves_remote_error_and_explicit_result_mark_without_retry"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py",
+      "function": "test_drain_partial_events_preserves_original_transport_error",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_client.py::test_drain_partial_events_preserves_original_transport_error"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_client_qualification.rs::drain_partial_events_preserves_transport_error"
+      ],
+      "checks": [
+        {
+          "line": 137,
+          "original": "pytest.raises(AppServerTransportError)",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::drain_partial_events_preserves_transport_error"
+          ]
+        },
+        {
+          "line": 139,
+          "original": "assert raised.value is failure",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::drain_partial_events_preserves_transport_error"
+          ]
+        },
+        {
+          "line": 140,
+          "original": "assert raised.value.events == (event,)",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::drain_partial_events_preserves_transport_error"
+          ]
+        },
+        {
+          "line": 141,
+          "original": "assert client.received_events == []",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::drain_partial_events_preserves_transport_error"
+          ]
+        },
+        {
+          "line": 142,
+          "original": "assert transport.sent == []",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::drain_partial_events_preserves_transport_error"
+          ]
+        }
+      ],
+      "python_object_contract_retired": "Python exception object identity and tuple representation retire; original error payload plus partial event ordering and no replay remain in native test."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py",
+      "function": "test_native_input_confirmation_records_exact_item_without_sending",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_client.py::test_native_input_confirmation_records_exact_item_without_sending"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_client_qualification.rs::native_input_confirmation_records_exact_item_without_sending"
+      ],
+      "checks": [
+        {
+          "line": 150,
+          "original": "assert client.native_forwarding_receipt == dict(mode='NATIVE_INPUT_FORWARDING', exclusive_writer=False,\n        thread_id='thread', turn_id='turn', client_message_id='client', native_item_id='native-item', input_confirmed=True)",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_input_confirmation_records_exact_item_without_sending"
+          ]
+        },
+        {
+          "line": 152,
+          "original": "assert transport.sent == []",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_input_confirmation_records_exact_item_without_sending"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py",
+      "function": "test_rust_peer_credentials_failure_never_falls_back_to_legacy_socket",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_client.py::test_rust_peer_credentials_failure_never_falls_back_to_legacy_socket"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::writer_peer_credentials_failure_stays_unknown_without_initialization_or_fallback",
+        "kernel/tests/provider_runtime_qualification.rs::local_observer_and_node_exchange_use_rust_probe_with_exact_provider_uid"
+      ],
+      "checks": [
+        {
+          "line": 170,
+          "original": "assert result['liveness'] == 'UNKNOWN'",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::writer_peer_credentials_failure_stays_unknown_without_initialization_or_fallback",
+            "kernel/tests/provider_runtime_qualification.rs::local_observer_and_node_exchange_use_rust_probe_with_exact_provider_uid"
+          ]
+        },
+        {
+          "line": 171,
+          "original": "transport._byte_transport.sock.getsockopt.assert_not_called()",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::writer_peer_credentials_failure_stays_unknown_without_initialization_or_fallback",
+            "kernel/tests/provider_runtime_qualification.rs::local_observer_and_node_exchange_use_rust_probe_with_exact_provider_uid"
+          ]
+        },
+        {
+          "line": 172,
+          "original": "client._request.assert_not_called()",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::writer_peer_credentials_failure_stays_unknown_without_initialization_or_fallback",
+            "kernel/tests/provider_runtime_qualification.rs::local_observer_and_node_exchange_use_rust_probe_with_exact_provider_uid"
+          ]
+        }
+      ],
+      "python_object_contract_retired": "Monkeypatched Python _byte_transport.sock fallback branch is deleted; native peer failure/UID conflict stays UNKNOWN before initialize or command/exec."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py",
+      "function": "test_provider_initialization_keeps_public_dto",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_client.py::test_provider_initialization_keeps_public_dto"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_client_qualification.rs::native_rust_transport_initializes_once_preserves_identity_and_peer_uid"
+      ],
+      "checks": [
+        {
+          "line": 180,
+          "original": "assert result.user_agent == 'fixture'",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_rust_transport_initializes_once_preserves_identity_and_peer_uid"
+          ]
+        },
+        {
+          "line": 181,
+          "original": "assert [request['method'] for request in transport.sent] == ['initialize', 'initialized']",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_rust_transport_initializes_once_preserves_identity_and_peer_uid"
+          ]
+        }
+      ],
+      "python_object_contract_retired": "Python InitializeResult object type retires; native result user_agent and initialize/initialized wire sequence remain."
+    },
+    {
+      "source": "fixtures/test_rust_provider_client.py",
+      "function": "test_native_input_confirmation_requires_all_exact_evidence",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence[threadId]",
+        "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence[turnId]",
+        "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence[clientId]",
+        "fixtures/test_rust_provider_client.py::test_native_input_confirmation_requires_all_exact_evidence[text]"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_client_qualification.rs::native_input_thread_evidence",
+        "kernel/tests/provider_client_qualification.rs::native_input_turn_evidence",
+        "kernel/tests/provider_client_qualification.rs::native_input_client_evidence",
+        "kernel/tests/provider_client_qualification.rs::native_input_text_evidence"
+      ],
+      "checks": [
+        {
+          "line": 197,
+          "original": "pytest.raises(AppServerTransportError)",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_input_thread_evidence",
+            "kernel/tests/provider_client_qualification.rs::native_input_turn_evidence",
+            "kernel/tests/provider_client_qualification.rs::native_input_client_evidence",
+            "kernel/tests/provider_client_qualification.rs::native_input_text_evidence"
+          ]
+        },
+        {
+          "line": 199,
+          "original": "assert not hasattr(client, 'native_forwarding_receipt')",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_input_thread_evidence",
+            "kernel/tests/provider_client_qualification.rs::native_input_turn_evidence",
+            "kernel/tests/provider_client_qualification.rs::native_input_client_evidence",
+            "kernel/tests/provider_client_qualification.rs::native_input_text_evidence"
+          ]
+        },
+        {
+          "line": 200,
+          "original": "assert transport.sent == []",
+          "rust_targets": [
+            "kernel/tests/provider_client_qualification.rs::native_input_thread_evidence",
+            "kernel/tests/provider_client_qualification.rs::native_input_turn_evidence",
+            "kernel/tests/provider_client_qualification.rs::native_input_client_evidence",
+            "kernel/tests/provider_client_qualification.rs::native_input_text_evidence"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_provider_runtime.py",
+      "function": "test_packaged_node_finds_companion_rust_binary_without_checkout_or_pythonpath",
+      "original_nodeids": [
+        "fixtures/test_rust_provider_runtime.py::test_packaged_node_finds_companion_rust_binary_without_checkout_or_pythonpath[rust]",
+        "fixtures/test_rust_provider_runtime.py::test_packaged_node_finds_companion_rust_binary_without_checkout_or_pythonpath[monitor]"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::rust_bundle_provider_works_without_python_or_checkout",
+        "kernel/tests/provider_retirement_qualification.rs::monitor_bundle_provider_works_without_python_or_checkout"
+      ],
+      "checks": [
+        {
+          "line": 178,
+          "original": "assert value['observer_source'] == 'CODEX_PROVIDER_COMMAND_EXEC' and value['cwd'] == str(repo)",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::rust_bundle_provider_works_without_python_or_checkout",
+            "kernel/tests/provider_retirement_qualification.rs::monitor_bundle_provider_works_without_python_or_checkout"
+          ]
+        },
+        {
+          "line": 179,
+          "original": "assert not list(root.rglob('rust_workspace_probe.py'))",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::rust_bundle_provider_works_without_python_or_checkout",
+            "kernel/tests/provider_retirement_qualification.rs::monitor_bundle_provider_works_without_python_or_checkout"
+          ]
+        },
+        {
+          "line": 180,
+          "original": "assert len(provider.calls) == 1",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::rust_bundle_provider_works_without_python_or_checkout",
+            "kernel/tests/provider_retirement_qualification.rs::monitor_bundle_provider_works_without_python_or_checkout"
+          ]
+        }
+      ],
+      "python_object_contract_retired": "Python import-module loop and NodeProviderRelay object retire with package removal. Both bundle layouts now execute copied native Provider with cleared environment and no Python files."
+    },
+    {
+      "source": "fixtures/test_rust_authority_client.py",
+      "function": "test_rust_authority_ipc_ack_identity_and_no_replay",
+      "original_nodeids": [
+        "fixtures/test_rust_authority_client.py::test_rust_authority_ipc_ack_identity_and_no_replay[valid]",
+        "fixtures/test_rust_authority_client.py::test_rust_authority_ipc_ack_identity_and_no_replay[lost]",
+        "fixtures/test_rust_authority_client.py::test_rust_authority_ipc_ack_identity_and_no_replay[foreign]",
+        "fixtures/test_rust_authority_client.py::test_rust_authority_ipc_ack_identity_and_no_replay[both]",
+        "fixtures/test_rust_authority_client.py::test_rust_authority_ipc_ack_identity_and_no_replay[remote]"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::authority_ack_exact",
+        "kernel/tests/provider_retirement_qualification.rs::authority_ack_lost_never_replays",
+        "kernel/tests/provider_retirement_qualification.rs::authority_ack_foreign_identity",
+        "kernel/tests/provider_retirement_qualification.rs::authority_ack_conflicting_outcome",
+        "kernel/tests/provider_retirement_qualification.rs::authority_ack_remote_error"
+      ],
+      "checks": [
+        {
+          "line": 43,
+          "original": "assert client.call('start', {'value': '资格'}, key='original') == {'received': True}",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_exact",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_lost_never_replays",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_foreign_identity",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_conflicting_outcome",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_remote_error"
+          ]
+        },
+        {
+          "line": 45,
+          "original": "pytest.raises(RustAuthorityError, match='EXACT_CONFLICT' if reply == 'remote' else 'DELIVERY_UNKNOWN')",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_exact",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_lost_never_replays",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_foreign_identity",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_conflicting_outcome",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_remote_error"
+          ]
+        },
+        {
+          "line": 47,
+          "original": "assert raised.value.operation_id == 'original'",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_exact",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_lost_never_replays",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_foreign_identity",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_conflicting_outcome",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_remote_error"
+          ]
+        },
+        {
+          "line": 49,
+          "original": "assert len(calls) == 1",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_exact",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_lost_never_replays",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_foreign_identity",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_conflicting_outcome",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_remote_error"
+          ]
+        },
+        {
+          "line": 50,
+          "original": "assert calls[0]['request_id'] == 'original'",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_exact",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_lost_never_replays",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_foreign_identity",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_conflicting_outcome",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_remote_error"
+          ]
+        },
+        {
+          "line": 51,
+          "original": "assert calls[0]['operation'] == 'business.start'",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_exact",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_lost_never_replays",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_foreign_identity",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_conflicting_outcome",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_remote_error"
+          ]
+        },
+        {
+          "line": 52,
+          "original": "assert calls[0]['payload'] == {'value': '资格'}",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_exact",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_lost_never_replays",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_foreign_identity",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_conflicting_outcome",
+            "kernel/tests/provider_retirement_qualification.rs::authority_ack_remote_error"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_authority_client.py",
+      "function": "test_validation_precedes_endpoint_io",
+      "original_nodeids": [
+        "fixtures/test_rust_authority_client.py::test_validation_precedes_endpoint_io[execute_arbitrary-a-UNSUPPORTED_OPERATION]",
+        "fixtures/test_rust_authority_client.py::test_validation_precedes_endpoint_io[health--INVALID_REQUEST_ID]",
+        "fixtures/test_rust_authority_client.py::test_validation_precedes_endpoint_io[health-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-INVALID_REQUEST_ID]"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::authority_validation_precedes_endpoint_io"
+      ],
+      "checks": [
+        {
+          "line": 64,
+          "original": "pytest.raises(RustAuthorityError, match=code)",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_validation_precedes_endpoint_io"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_authority_client.py",
+      "function": "test_endpoint_identity_remains_local_linux_contract",
+      "original_nodeids": [
+        "fixtures/test_rust_authority_client.py::test_endpoint_identity_remains_local_linux_contract"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::authority_endpoint_symlink_and_foreign_uid_are_rejected"
+      ],
+      "checks": [
+        {
+          "line": 76,
+          "original": "pytest.raises(RustAuthorityError, match='AUTHORITY_ENDPOINT_UNTRUSTED')",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_endpoint_symlink_and_foreign_uid_are_rejected"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_authority_client.py",
+      "function": "test_full_unix_backlog_has_bounded_pre_send_failure",
+      "original_nodeids": [
+        "fixtures/test_rust_authority_client.py::test_full_unix_backlog_has_bounded_pre_send_failure"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::authority_full_backlog_fails_before_send_with_bounded_wait"
+      ],
+      "checks": [
+        {
+          "line": 89,
+          "original": "pytest.raises(RustAuthorityError, match='AUTHORITY_UNAVAILABLE')",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_full_backlog_fails_before_send_with_bounded_wait"
+          ]
+        },
+        {
+          "line": 91,
+          "original": "assert time.monotonic() - started < 1",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_full_backlog_fails_before_send_with_bounded_wait"
+          ]
+        },
+        {
+          "line": 94,
+          "original": "pytest.raises(socket.timeout)",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::authority_full_backlog_fails_before_send_with_bounded_wait"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_runtime_config.py",
+      "function": "test_order_and_path_io_preserve_existing_config",
+      "original_nodeids": [
+        "fixtures/test_rust_runtime_config.py::test_order_and_path_io_preserve_existing_config"
+      ],
+      "rust_targets": [
+        "kernel/tests/contract_qualification.rs::order_and_path_io_preserve_existing_config"
+      ],
+      "checks": [
+        {
+          "line": 38,
+          "original": "assert [p.project_alias for p in cfg.projects] == [\"z\", \"a\"]",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::order_and_path_io_preserve_existing_config"
+          ]
+        },
+        {
+          "line": 39,
+          "original": "assert [w.alias for w in cfg.workspaces] == [\"z\", \"a\"]",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::order_and_path_io_preserve_existing_config"
+          ]
+        },
+        {
+          "line": 40,
+          "original": "assert cfg.projects[0].repo == tmp_path / \"destination\"",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::order_and_path_io_preserve_existing_config"
+          ]
+        },
+        {
+          "line": 41,
+          "original": "assert cfg.host_executor.trusted_workspace_roots == (tmp_path,)",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::order_and_path_io_preserve_existing_config"
+          ]
+        },
+        {
+          "line": 42,
+          "original": "assert cfg.workspaces[0].codex_host_ids == (\"desktop-z\",)",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::order_and_path_io_preserve_existing_config"
+          ]
+        },
+        {
+          "line": 43,
+          "original": "assert cfg.node_router is None",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::order_and_path_io_preserve_existing_config"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_rust_execution_contracts.py",
+      "function": "test_python_route_dataclass_roundtrip_and_public_redaction",
+      "original_nodeids": [
+        "fixtures/test_rust_execution_contracts.py::test_python_route_dataclass_roundtrip_and_public_redaction"
+      ],
+      "rust_targets": [
+        "kernel/tests/contract_qualification.rs::canonical_route_roundtrip_and_one_way_verified_binding"
+      ],
+      "checks": [
+        {
+          "line": 21,
+          "original": "assert parse_routing_identity(original.to_json()) == original",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::canonical_route_roundtrip_and_one_way_verified_binding"
+          ]
+        },
+        {
+          "line": 22,
+          "original": "assert original.executable and not original.network_policy.remote_execution",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::canonical_route_roundtrip_and_one_way_verified_binding"
+          ]
+        },
+        {
+          "line": 23,
+          "original": "assert original.public_dict()[\"conversation\"] == dict(\n        binding=\"REDACTED\", status=\"UNBOUND\"\n    )",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::canonical_route_roundtrip_and_one_way_verified_binding"
+          ]
+        },
+        {
+          "line": 27,
+          "original": "assert with_conversation_binding(bound, \"native-thread\") == bound",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::canonical_route_roundtrip_and_one_way_verified_binding"
+          ]
+        },
+        {
+          "line": 28,
+          "original": "assert parse_routing_identity(bound.to_json()) == bound",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::canonical_route_roundtrip_and_one_way_verified_binding"
+          ]
+        }
+      ],
+      "python_object_contract_retired": "Python dataclass equality and public_dict redaction method retire with their unused public object API. Rust canonical serialization/binding/executable guards remain; no public_dict caller survives."
+    },
+    {
+      "source": "fixtures/test_rust_execution_contracts.py",
+      "function": "test_python_policy_tuple_and_development_default_bindings",
+      "original_nodeids": [
+        "fixtures/test_rust_execution_contracts.py::test_python_policy_tuple_and_development_default_bindings"
+      ],
+      "rust_targets": [
+        "kernel/tests/contract_qualification.rs::exact_policy_scopes_remain_sealed_and_default_native_is_full_access"
+      ],
+      "checks": [
+        {
+          "line": 32,
+          "original": "assert build_development_policy(network_access=False).execution_surface == \"NATIVE_FULL_ACCESS\"",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::exact_policy_scopes_remain_sealed_and_default_native_is_full_access"
+          ]
+        },
+        {
+          "line": 35,
+          "original": "assert parse_execution_policy(policy.to_json()) == policy",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::exact_policy_scopes_remain_sealed_and_default_native_is_full_access"
+          ]
+        },
+        {
+          "line": 36,
+          "original": "assert policy.authority_scopes == (\"production_read_only\", \"workspace_write\")",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::exact_policy_scopes_remain_sealed_and_default_native_is_full_access"
+          ]
+        },
+        {
+          "line": 37,
+          "original": "assert len(normalize_operation_scopes([exact, exact])) == 1",
+          "rust_targets": [
+            "kernel/tests/contract_qualification.rs::exact_policy_scopes_remain_sealed_and_default_native_is_full_access"
+          ]
+        }
+      ],
+      "python_object_contract_retired": "Python tuple representation and build_development_policy keyword wrapper retire; native NATIVE_FULL_ACCESS, scope normalization, sealed policy and JSON roundtrip remain tested."
+    },
+    {
+      "source": "fixtures/test_provider_relay.py",
+      "function": "test_submission_is_sealed_before_io_and_duplicate_final_chunk_never_replays",
+      "original_nodeids": [
+        "fixtures/test_provider_relay.py::test_submission_is_sealed_before_io_and_duplicate_final_chunk_never_replays"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::relay_seals_before_io_and_consumed_response_never_replays"
+      ],
+      "checks": [
+        {
+          "line": 35,
+          "original": "assert reply['accepted'] is True",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_seals_before_io_and_consumed_response_never_replays"
+          ]
+        },
+        {
+          "line": 36,
+          "original": "pytest.raises(NodeProtocolError)",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_seals_before_io_and_consumed_response_never_replays"
+          ]
+        },
+        {
+          "line": 38,
+          "original": "assert error.value.code == 'PROVIDER_REQUEST_IDENTITY_CONFLICT'",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_seals_before_io_and_consumed_response_never_replays"
+          ]
+        },
+        {
+          "line": 39,
+          "original": "assert len(calls) == 1",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_seals_before_io_and_consumed_response_never_replays"
+          ]
+        },
+        {
+          "line": 42,
+          "original": "assert hashlib.sha256(base64.b64decode(result['data'])).hexdigest() == result['digest']",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_seals_before_io_and_consumed_response_never_replays"
+          ]
+        },
+        {
+          "line": 43,
+          "original": "assert json.loads(base64.b64decode(result['data'])) == {'result': {'raw_provider': True}}",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_seals_before_io_and_consumed_response_never_replays"
+          ]
+        },
+        {
+          "line": 44,
+          "original": "pytest.raises(NodeProtocolError)",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_seals_before_io_and_consumed_response_never_replays"
+          ]
+        },
+        {
+          "line": 46,
+          "original": "assert len(calls) == 1",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_seals_before_io_and_consumed_response_never_replays"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_provider_relay.py",
+      "function": "test_concurrent_duplicate_request_runs_provider_at_most_once",
+      "original_nodeids": [
+        "fixtures/test_provider_relay.py::test_concurrent_duplicate_request_runs_provider_at_most_once"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::relay_concurrent_duplicate_requests_run_provider_once"
+      ],
+      "checks": [
+        {
+          "line": 60,
+          "original": "assert sum(isinstance(r, dict) and r.get('accepted') is True for r in results) == 1",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_concurrent_duplicate_requests_run_provider_once"
+          ]
+        },
+        {
+          "line": 61,
+          "original": "assert len(calls) == 1",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_concurrent_duplicate_requests_run_provider_once"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_provider_relay.py",
+      "function": "test_scope_conflicts_are_rejected_before_provider",
+      "original_nodeids": [
+        "fixtures/test_provider_relay.py::test_scope_conflicts_are_rejected_before_provider[host-other]",
+        "fixtures/test_provider_relay.py::test_scope_conflicts_are_rejected_before_provider[user_scope-bob]",
+        "fixtures/test_provider_relay.py::test_scope_conflicts_are_rejected_before_provider[cwd-/another-project]"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::relay_scope_conflicts_fail_without_buffer_or_provider"
+      ],
+      "checks": [
+        {
+          "line": 66,
+          "original": "pytest.fail('scope conflict reached Provider')",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_scope_conflicts_fail_without_buffer_or_provider"
+          ]
+        },
+        {
+          "line": 69,
+          "original": "pytest.raises(NodeProtocolError)",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_scope_conflicts_fail_without_buffer_or_provider"
+          ]
+        },
+        {
+          "line": 71,
+          "original": "assert error.value.code == 'PROVIDER_SCOPE_DENIED'",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_scope_conflicts_fail_without_buffer_or_provider"
+          ]
+        },
+        {
+          "line": 72,
+          "original": "assert not relay.buffers",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_scope_conflicts_fail_without_buffer_or_provider"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_provider_relay.py",
+      "function": "test_chunk_digest_and_concurrent_payload_identity_are_not_truncated",
+      "original_nodeids": [
+        "fixtures/test_provider_relay.py::test_chunk_digest_and_concurrent_payload_identity_are_not_truncated"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::relay_chunk_digest_conflict_preserves_complete_original_input"
+      ],
+      "checks": [
+        {
+          "line": 82,
+          "original": "assert relay.handle(request, SCOPE)['next_index'] == 1",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_chunk_digest_conflict_preserves_complete_original_input"
+          ]
+        },
+        {
+          "line": 84,
+          "original": "pytest.raises(NodeProtocolError)",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_chunk_digest_conflict_preserves_complete_original_input"
+          ]
+        },
+        {
+          "line": 86,
+          "original": "assert error.value.code == 'PROVIDER_REQUEST_IDENTITY_CONFLICT'",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_chunk_digest_conflict_preserves_complete_original_input"
+          ]
+        },
+        {
+          "line": 88,
+          "original": "assert relay.handle(request, SCOPE)['accepted'] is True",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_chunk_digest_conflict_preserves_complete_original_input"
+          ]
+        },
+        {
+          "line": 89,
+          "original": "assert calls == [body]",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::relay_chunk_digest_conflict_preserves_complete_original_input"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_provider_relay.py",
+      "function": "test_protocol_guards_do_not_open_provider_on_identity_conflict",
+      "original_nodeids": [
+        "fixtures/test_provider_relay.py::test_protocol_guards_do_not_open_provider_on_identity_conflict[turn/start-params0-context0-PROVIDER_THREAD_IDENTITY_CONFLICT]",
+        "fixtures/test_provider_relay.py::test_protocol_guards_do_not_open_provider_on_identity_conflict[turn/start-params1-context1-PROVIDER_INPUT_IDENTITY_CONFLICT]",
+        "fixtures/test_provider_relay.py::test_protocol_guards_do_not_open_provider_on_identity_conflict[turn/interrupt-params2-context2-PROVIDER_CANCEL_DENIED]",
+        "fixtures/test_provider_relay.py::test_protocol_guards_do_not_open_provider_on_identity_conflict[command/exec-params3-context3-PROVIDER_METHOD_DENIED]",
+        "fixtures/test_provider_relay.py::test_protocol_guards_do_not_open_provider_on_identity_conflict[thread/resume-params4-context4-PROVIDER_RESUME_DENIED]"
+      ],
+      "rust_targets": [
+        "kernel/tests/provider_retirement_qualification.rs::provider_protocol_guards_fail_before_connecting"
+      ],
+      "checks": [
+        {
+          "line": 101,
+          "original": "pytest.fail('identity conflict opened Provider')",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::provider_protocol_guards_fail_before_connecting"
+          ]
+        },
+        {
+          "line": 102,
+          "original": "pytest.raises(NodeProtocolError)",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::provider_protocol_guards_fail_before_connecting"
+          ]
+        },
+        {
+          "line": 104,
+          "original": "assert error.value.code == code",
+          "rust_targets": [
+            "kernel/tests/provider_retirement_qualification.rs::provider_protocol_guards_fail_before_connecting"
+          ]
+        }
+      ],
+      "python_object_contract_retired": null
+    },
+    {
+      "source": "fixtures/test_native_transport_binary.py",
+      "function": "test_python_node_facade_real_authority_callback_and_pending_error",
+      "original_nodeids": [
+        "fixtures/test_native_transport_binary.py::test_python_node_facade_real_authority_callback_and_pending_error"
+      ],
+      "rust_targets": [
+        "kernel/tests/node_contract_qualification.rs::conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+        "kernel/tests/node_contract_qualification.rs::pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+        "kernel/tests/native_transport_qualification.rs::node_local",
+        "kernel/tests/native_transport_qualification.rs::node_paired",
+        "kernel/tests/native_transport_qualification.rs::node_routed"
+      ],
+      "checks": [
+        {
+          "line": 175,
+          "original": "assert process.poll() is None",
+          "rust_targets": [
+            "kernel/tests/node_contract_qualification.rs::conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+            "kernel/tests/node_contract_qualification.rs::pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+            "kernel/tests/native_transport_qualification.rs::node_local",
+            "kernel/tests/native_transport_qualification.rs::node_paired",
+            "kernel/tests/native_transport_qualification.rs::node_routed"
+          ]
+        },
+        {
+          "line": 189,
+          "original": "assert execution['prepared_execution_ref'] == prepared['prepared_execution_ref']",
+          "rust_targets": [
+            "kernel/tests/node_contract_qualification.rs::conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+            "kernel/tests/node_contract_qualification.rs::pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+            "kernel/tests/native_transport_qualification.rs::node_local",
+            "kernel/tests/native_transport_qualification.rs::node_paired",
+            "kernel/tests/native_transport_qualification.rs::node_routed"
+          ]
+        },
+        {
+          "line": 190,
+          "original": "pytest.raises(NodeProtocolError)",
+          "rust_targets": [
+            "kernel/tests/node_contract_qualification.rs::conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+            "kernel/tests/node_contract_qualification.rs::pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+            "kernel/tests/native_transport_qualification.rs::node_local",
+            "kernel/tests/native_transport_qualification.rs::node_paired",
+            "kernel/tests/native_transport_qualification.rs::node_routed"
+          ]
+        },
+        {
+          "line": 201,
+          "original": "assert helper.adopt(**handoff)['adoption_status'] == 'PENDING'",
+          "rust_targets": [
+            "kernel/tests/node_contract_qualification.rs::conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+            "kernel/tests/node_contract_qualification.rs::pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+            "kernel/tests/native_transport_qualification.rs::node_local",
+            "kernel/tests/native_transport_qualification.rs::node_paired",
+            "kernel/tests/native_transport_qualification.rs::node_routed"
+          ]
+        },
+        {
+          "line": 202,
+          "original": "pytest.raises(NodeProtocolError, match='Transport')",
+          "rust_targets": [
+            "kernel/tests/node_contract_qualification.rs::conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+            "kernel/tests/node_contract_qualification.rs::pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+            "kernel/tests/native_transport_qualification.rs::node_local",
+            "kernel/tests/native_transport_qualification.rs::node_paired",
+            "kernel/tests/native_transport_qualification.rs::node_routed"
+          ]
+        },
+        {
+          "line": 204,
+          "original": "assert error.value.code == 'CANONICAL_ADOPTION_PENDING'",
+          "rust_targets": [
+            "kernel/tests/node_contract_qualification.rs::conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+            "kernel/tests/node_contract_qualification.rs::pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+            "kernel/tests/native_transport_qualification.rs::node_local",
+            "kernel/tests/native_transport_qualification.rs::node_paired",
+            "kernel/tests/native_transport_qualification.rs::node_routed"
+          ]
+        },
+        {
+          "line": 205,
+          "original": "assert all(len(key) == 32 for _, _, key in calls)",
+          "rust_targets": [
+            "kernel/tests/node_contract_qualification.rs::conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+            "kernel/tests/node_contract_qualification.rs::pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+            "kernel/tests/native_transport_qualification.rs::node_local",
+            "kernel/tests/native_transport_qualification.rs::node_paired",
+            "kernel/tests/native_transport_qualification.rs::node_routed"
+          ]
+        },
+        {
+          "line": 206,
+          "original": "assert any(op == 'prepare' and payload['prompt'] == 'Python facade' for op, payload, _ in calls)",
+          "rust_targets": [
+            "kernel/tests/node_contract_qualification.rs::conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+            "kernel/tests/node_contract_qualification.rs::pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+            "kernel/tests/native_transport_qualification.rs::node_local",
+            "kernel/tests/native_transport_qualification.rs::node_paired",
+            "kernel/tests/native_transport_qualification.rs::node_routed"
+          ]
+        }
+      ],
+      "python_object_contract_retired": "Python injected callback type/NodeProtocolError class and UUID-hex length=32 convenience key retire; real Rust Node/Authority uses its own durable exact operation identity verified by native transport fault sequences."
+    }
+  ],
+  "retired_helper_fixtures": [
+    {
+      "path": "fixtures/bridge_migration_codex.py",
+      "sha256": "33470d7f4183d776b62d526f0ec65366605874a694f163f428b53964742544d6",
+      "lines": 45,
+      "reason": "Legacy first Bridge migration fake app-server: records outstanding never-ACK methods, termination receipt and work_completed=false. Only ignored tests/test_bridge_first_migration.py consumes it; retired Bridge scenario is archived, not run or relabeled PASS."
+    },
+    {
+      "path": "fixtures/transport_only_mcp.py",
+      "sha256": "7c1b5993f20658b81def544129e45e419fa6fcb021f485f3a45bd12d3eda3e09",
+      "lines": 23,
+      "reason": "Legacy tunnel/Bridge echo subprocess. Only ignored tests/test_tunnel_transport_runtime.py and tests/test_bridge_first_migration.py consume it; current native tunnel qualification uses Rust fixture."
+    },
+    {
+      "path": "tools/qualification/provider_qualification.py",
+      "sha256": "c33e07f32fa8cddcd9699cd3731bee8664cf8ad0ae64eaa1542b156284d895d1",
+      "lines": 100,
+      "reason": "Opt-in real Codex temporary isolated home/socket/auth symlink launcher used only by seven ignored legacy live suites. No current runtime/build consumer; not executed with real credentials. Historical suites/source retained in archive; live real-provider acceptance remains NOT_RUN."
+    }
+  ],
+  "qualification_limit": "Private Linux fixture IO proves contracts, not real macOS deployment/Provider acceptance."
+}

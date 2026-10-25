@@ -1,0 +1,347 @@
+{
+  "schema": "CLINX_DIAGNOSTICS_RETIREMENT_ASSERTIONS_V1",
+  "baseline_commit": "52f6ce9244baa1dcfb4a7b514f2ca9c569e67e12",
+  "source_files": [
+    {
+      "path": "scripts/check_embedded_bridge_idle.py",
+      "sha256": "b648703a3e5c7dffe9d655ef59505784b9360e0ab82db607dbc53bd7bd423b62",
+      "lines": 21
+    },
+    {
+      "path": "tools/qualification/embedded_bridge_readiness.py",
+      "sha256": "025fa94642372129c7b2bb6ed6ee7b2effb5bbcd93190ed14a84d29765b75730",
+      "lines": 146
+    },
+    {
+      "path": "scripts/check_tunnel_health.py",
+      "sha256": "39a758ba08a596f0d5893443d6e5a57dfff7e70fcf26130d6a6169cbdcd3d43f",
+      "lines": 86
+    }
+  ],
+  "original_tests": [
+    {
+      "path": "tests/test_embedded_bridge_readiness.py",
+      "sha256": "a25dbd577a3fb35082d65c45cd77e85995d7fc6828f75d9ee31f833b5e7a80b3"
+    },
+    {
+      "path": "tests/test_lifecycle_routing_tunnel.py",
+      "sha256": "426c151131aee2271f82b4947afc886d56753175230cac5914007d6de534a99a"
+    }
+  ],
+  "original_bridge_parameter_cases": 27,
+  "health_original_metric_inputs": 5,
+  "baseline_result": "27 original pytest cases PASS; original isolated health test function five metric assertions PASS",
+  "native_result": "35 passed; 0 failed; 0 ignored",
+  "tests": [
+    {
+      "source": "tests/test_embedded_bridge_readiness.py",
+      "function": "test_quiet_complete_history_is_observation_not_recycle_authority",
+      "parameters": [],
+      "assertions": [
+        {
+          "line": 32,
+          "original": "assert result['activity_observation'] == 'NO_WORK_OBSERVED'",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::quiet_complete_history_is_observation_not_recycle_authority"
+          ]
+        },
+        {
+          "line": 33,
+          "original": "assert result['safe_idle_gate'] == 'BLOCKED'",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::quiet_complete_history_is_observation_not_recycle_authority"
+          ]
+        },
+        {
+          "line": 34,
+          "original": "assert not result['safe_to_recycle']",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::quiet_complete_history_is_observation_not_recycle_authority"
+          ]
+        },
+        {
+          "line": 35,
+          "original": "assert 'UNCERTAIN_ACK_NOT_EXPOSED' in result['blockers']",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::quiet_complete_history_is_observation_not_recycle_authority"
+          ]
+        }
+      ],
+      "rust_targets": [
+        "kernel/tests/diagnostics.rs::quiet_complete_history_is_observation_not_recycle_authority"
+      ]
+    },
+    {
+      "source": "tests/test_embedded_bridge_readiness.py",
+      "function": "test_work_or_uncertainty_never_passes",
+      "parameters": [
+        "pytest.mark.parametrize('event', [\n    dict(method='thread/started', source='notification'),\n    dict(method='turn/started', source='notification'),\n    dict(method='turn/completed', source='notification'),\n    dict(method='item/commandExecution/requestApproval', source='notification'),\n    dict(method='decode/error', source='stdout'),\n    dict(method='stderr', source='stderr'),\n    dict(method='process/exited', source='lifecycle'),\n    dict(method='remoteControl/status/changed', source='notification',\n         payload={'params': {'status': 'enabled'}}),\n])"
+      ],
+      "assertions": [
+        {
+          "line": 51,
+          "original": "assert check(samples)['activity_observation'] == 'UNKNOWN_OR_ACTIVITY_OBSERVED'",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::thread_started",
+            "kernel/tests/diagnostics.rs::turn_started",
+            "kernel/tests/diagnostics.rs::turn_completed",
+            "kernel/tests/diagnostics.rs::approval_requested",
+            "kernel/tests/diagnostics.rs::decode_error",
+            "kernel/tests/diagnostics.rs::stderr_unknown",
+            "kernel/tests/diagnostics.rs::process_exited",
+            "kernel/tests/diagnostics.rs::remote_control_enabled"
+          ]
+        },
+        {
+          "line": 52,
+          "original": "assert not check(samples)['safe_to_recycle']",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::thread_started",
+            "kernel/tests/diagnostics.rs::turn_started",
+            "kernel/tests/diagnostics.rs::turn_completed",
+            "kernel/tests/diagnostics.rs::approval_requested",
+            "kernel/tests/diagnostics.rs::decode_error",
+            "kernel/tests/diagnostics.rs::stderr_unknown",
+            "kernel/tests/diagnostics.rs::process_exited",
+            "kernel/tests/diagnostics.rs::remote_control_enabled"
+          ]
+        }
+      ],
+      "rust_targets": [
+        "kernel/tests/diagnostics.rs::thread_started",
+        "kernel/tests/diagnostics.rs::turn_started",
+        "kernel/tests/diagnostics.rs::turn_completed",
+        "kernel/tests/diagnostics.rs::approval_requested",
+        "kernel/tests/diagnostics.rs::decode_error",
+        "kernel/tests/diagnostics.rs::stderr_unknown",
+        "kernel/tests/diagnostics.rs::process_exited",
+        "kernel/tests/diagnostics.rs::remote_control_enabled"
+      ]
+    },
+    {
+      "source": "tests/test_embedded_bridge_readiness.py",
+      "function": "test_partial_history_or_identity_drift_refuses_idle",
+      "parameters": [
+        "pytest.mark.parametrize('change', ['ring', 'empty', 'restart', 'version', 'sequence'])"
+      ],
+      "assertions": [
+        {
+          "line": 67,
+          "original": "assert not check(samples)['complete_quiet_event_history']",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::partial_ring",
+            "kernel/tests/diagnostics.rs::empty_history",
+            "kernel/tests/diagnostics.rs::instance_restart",
+            "kernel/tests/diagnostics.rs::unknown_version",
+            "kernel/tests/diagnostics.rs::broken_sequence"
+          ]
+        }
+      ],
+      "rust_targets": [
+        "kernel/tests/diagnostics.rs::partial_ring",
+        "kernel/tests/diagnostics.rs::empty_history",
+        "kernel/tests/diagnostics.rs::instance_restart",
+        "kernel/tests/diagnostics.rs::unknown_version",
+        "kernel/tests/diagnostics.rs::broken_sequence"
+      ]
+    },
+    {
+      "source": "tests/test_embedded_bridge_readiness.py",
+      "function": "test_process_or_binary_change_is_not_idle",
+      "parameters": [],
+      "assertions": [
+        {
+          "line": 71,
+          "original": "assert not check(samples, stable=False)['complete_quiet_event_history']",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::process_or_binary_change_is_not_idle"
+          ]
+        },
+        {
+          "line": 72,
+          "original": "assert not check(samples, binary='unqualified')['complete_quiet_event_history']",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::process_or_binary_change_is_not_idle"
+          ]
+        }
+      ],
+      "rust_targets": [
+        "kernel/tests/diagnostics.rs::process_or_binary_change_is_not_idle"
+      ]
+    },
+    {
+      "source": "tests/test_embedded_bridge_readiness.py",
+      "function": "test_malformed_history_fails_closed",
+      "parameters": [
+        "pytest.mark.parametrize('events', [None, {}, [], [None], [{'seq': 1}],\n    [dict(seq=1, source='notification', method='remoteControl/status/changed',\n          payload={'params': None})]])"
+      ],
+      "assertions": [
+        {
+          "line": 79,
+          "original": "assert not bridge.history(events)",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::history_null",
+            "kernel/tests/diagnostics.rs::history_object",
+            "kernel/tests/diagnostics.rs::history_empty",
+            "kernel/tests/diagnostics.rs::history_null_event",
+            "kernel/tests/diagnostics.rs::history_missing_fields",
+            "kernel/tests/diagnostics.rs::history_null_params"
+          ]
+        }
+      ],
+      "rust_targets": [
+        "kernel/tests/diagnostics.rs::history_null",
+        "kernel/tests/diagnostics.rs::history_object",
+        "kernel/tests/diagnostics.rs::history_empty",
+        "kernel/tests/diagnostics.rs::history_null_event",
+        "kernel/tests/diagnostics.rs::history_missing_fields",
+        "kernel/tests/diagnostics.rs::history_null_params"
+      ]
+    },
+    {
+      "source": "tests/test_embedded_bridge_readiness.py",
+      "function": "test_impure_and_mutating_routes_are_refused_before_network",
+      "parameters": [
+        "pytest.mark.parametrize('path', ['/api/codex/status', '/api/codex/thread/start',\n                                  '/api/codex/turn/start', '/api/codex/login/device'])"
+      ],
+      "assertions": [
+        {
+          "line": 85,
+          "original": "pytest.raises(bridge.ProbeRefused, match='PASSIVE_LOOPBACK')",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::warmup_status_refused",
+            "kernel/tests/diagnostics.rs::thread_start_refused",
+            "kernel/tests/diagnostics.rs::turn_start_refused",
+            "kernel/tests/diagnostics.rs::login_refused"
+          ]
+        }
+      ],
+      "rust_targets": [
+        "kernel/tests/diagnostics.rs::warmup_status_refused",
+        "kernel/tests/diagnostics.rs::thread_start_refused",
+        "kernel/tests/diagnostics.rs::turn_start_refused",
+        "kernel/tests/diagnostics.rs::login_refused"
+      ]
+    },
+    {
+      "source": "tests/test_embedded_bridge_readiness.py",
+      "function": "test_real_http_quiet_events_with_hidden_pending_cannot_pass",
+      "parameters": [],
+      "assertions": [
+        {
+          "line": 133,
+          "original": "assert state['hidden_mutating_requests'] == 1",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::real_http_quiet_events_with_hidden_pending_cannot_pass"
+          ]
+        },
+        {
+          "line": 134,
+          "original": "assert result['complete_quiet_event_history']",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::real_http_quiet_events_with_hidden_pending_cannot_pass"
+          ]
+        },
+        {
+          "line": 135,
+          "original": "assert not result['safe_to_recycle']",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::real_http_quiet_events_with_hidden_pending_cannot_pass"
+          ]
+        },
+        {
+          "line": 136,
+          "original": "assert state['warmups'] == 0",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::real_http_quiet_events_with_hidden_pending_cannot_pass"
+          ]
+        },
+        {
+          "line": 137,
+          "original": "assert requests == [('GET', path) for _ in range(2) for path in bridge.PASSIVE_PATHS]",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::real_http_quiet_events_with_hidden_pending_cannot_pass"
+          ]
+        }
+      ],
+      "rust_targets": [
+        "kernel/tests/diagnostics.rs::real_http_quiet_events_with_hidden_pending_cannot_pass"
+      ]
+    },
+    {
+      "source": "tests/test_embedded_bridge_readiness.py",
+      "function": "test_redirect_never_reaches_impure_status",
+      "parameters": [],
+      "assertions": [
+        {
+          "line": 145,
+          "original": "assert requests == [('GET', '/api/status')]",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::redirect_never_reaches_impure_status"
+          ]
+        },
+        {
+          "line": 146,
+          "original": "assert state['warmups'] == 0",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::redirect_never_reaches_impure_status"
+          ]
+        },
+        {
+          "line": 143,
+          "original": "pytest.raises(bridge.ProbeRefused, match='REDIRECT_REFUSED')",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::redirect_never_reaches_impure_status"
+          ]
+        }
+      ],
+      "rust_targets": [
+        "kernel/tests/diagnostics.rs::redirect_never_reaches_impure_status"
+      ]
+    },
+    {
+      "source": "tests/test_lifecycle_routing_tunnel.py",
+      "function": "test_tunnel_health_requires_fresh_control_poll",
+      "parameters": [],
+      "assertions": [
+        {
+          "line": 272,
+          "original": "assert m.evaluate(\n        \"commands_poll_last_successful_timestamp_seconds 999\", now=1000, max_age=120\n    )",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::health_original_five_metric_assertions"
+          ]
+        },
+        {
+          "line": 275,
+          "original": "assert m.evaluate(\n        'commands_poll_last_successful_timestamp_seconds{scope=\"control\"} 9.99e2',\n        now=1000,\n        max_age=120,\n    )",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::health_original_five_metric_assertions"
+          ]
+        },
+        {
+          "line": 285,
+          "original": "assert not m.evaluate(text, now=1000, max_age=120)",
+          "rust_targets": [
+            "kernel/tests/diagnostics.rs::health_original_five_metric_assertions"
+          ]
+        }
+      ],
+      "rust_targets": [
+        "kernel/tests/diagnostics.rs::health_original_five_metric_assertions"
+      ]
+    }
+  ],
+  "extra_coverage": [
+    "Exact full quiet report frozen from original Python, never recycle authority",
+    "Private loopback HTTP only, mutating/warmup path rejected before connect, no redirect followup",
+    "Malformed and oversized HTTP, chunked JSON, bad URL and bounded collection preconditions",
+    "Health systemctl/health argv recorded with exact PID; same listener reused without rereading mutable URL file",
+    "Duplicate/nonfinite/zero/future/broken metric samples fail closed",
+    "Invalid CLI arguments and nonfinite age before any real subprocess"
+  ],
+  "not_run": [
+    "No collect against any real pinned tunnel or Bridge process",
+    "No systemctl or tunnel-client health executed: injected subprocess callback only",
+    "No production probe, deployment, restart or data mutation"
+  ]
+}

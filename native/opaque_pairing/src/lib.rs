@@ -10,8 +10,6 @@ use opaque_ke::{
     argon2::{Algorithm, Argon2, Params, Version},
     rand::rngs::OsRng,
 };
-#[cfg(feature = "python")]
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes};
 use zeroize::{Zeroize, Zeroizing};
 
 pub const BACKEND_ID: &str = "OPAQUE-3DH-RISTRETTO255-SHA512-ARGON2I-v1";
@@ -25,10 +23,6 @@ impl CipherSuite for Suite {
 type PairingResult<T> = std::result::Result<T, &'static str>;
 fn failure<E>(_: E) -> &'static str {
     "PAIRING_FAILED"
-}
-#[cfg(feature = "python")]
-fn py_error(code: &'static str) -> PyErr {
-    PyValueError::new_err(code)
 }
 fn ksf() -> Argon2<'static> {
     // Fixed data-independent addressing; no password-dependent Argon2d accesses.
@@ -58,7 +52,6 @@ fn bound(context: &[u8], client: &[u8], server: &[u8]) -> PairingResult<()> {
     Ok(())
 }
 
-#[cfg_attr(feature = "python", pyclass)]
 pub struct Client {
     state: Option<ClientLogin<Suite>>,
     code: Zeroizing<Vec<u8>>,
@@ -113,7 +106,6 @@ impl Client {
     }
 }
 
-#[cfg_attr(feature = "python", pyclass)]
 pub struct Server {
     state: Option<ServerLogin<Suite>>,
     context: Vec<u8>,
@@ -203,122 +195,50 @@ impl Server {
     }
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
-impl Client {
-    #[new]
-    fn py_new(code: &[u8], context: Vec<u8>, client: Vec<u8>, server: Vec<u8>) -> PyResult<Self> {
-        Self::new(code, context, client, server).map_err(py_error)
-    }
-    fn start<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        self.start_message()
-            .map(|v| PyBytes::new(py, &v))
-            .map_err(py_error)
-    }
-    fn finish<'py>(&mut self, py: Python<'py>, inbound: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
-        self.finish_message(inbound)
-            .map(|v| PyBytes::new(py, &v))
-            .map_err(py_error)
-    }
-}
-#[cfg(feature = "python")]
-#[pymethods]
-impl Server {
-    #[new]
-    fn py_new(
-        code: &[u8],
-        context: Vec<u8>,
-        client: Vec<u8>,
-        server: Vec<u8>,
-        inbound: &[u8],
-    ) -> PyResult<Self> {
-        Self::new(code, context, client, server, inbound).map_err(py_error)
-    }
-    fn start<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        self.start_message()
-            .map(|v| PyBytes::new(py, &v))
-            .map_err(py_error)
-    }
-    #[pyo3(name = "finish")]
-    fn py_finish(&mut self, inbound: &[u8]) -> PyResult<()> {
-        self.finish(inbound).map_err(py_error)
-    }
-}
-#[cfg(feature = "python")]
-#[pymodule]
-fn _clinx_opaque(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("BACKEND_ID", BACKEND_ID)?;
-    m.add("OPAQUE_KE_VERSION", "4.0.1")?;
-    m.add_class::<Client>()?;
-    m.add_class::<Server>()?;
-    Ok(())
-}
-
-#[cfg(all(test, feature = "python"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use rand::Rng;
-
     fn code() -> Vec<u8> {
         format!("{:04}", OsRng.gen_range(0..10000)).into_bytes()
     }
-
     #[test]
     fn mutual_confirmation_and_single_use() {
-        Python::initialize();
-        Python::attach(|py| {
-            let code = code();
-            let mut client =
-                Client::new(&code, b"session".to_vec(), b"A".to_vec(), b"B".to_vec()).unwrap();
-            let ke1 = client.start(py).unwrap();
-            let mut server = Server::new(
-                &code,
-                b"session".to_vec(),
-                b"A".to_vec(),
-                b"B".to_vec(),
-                ke1.as_bytes(),
-            )
-            .unwrap();
-            let ke2 = server.start(py).unwrap();
-            let ke3 = client.finish(py, ke2.as_bytes()).unwrap();
-            server.finish(ke3.as_bytes()).unwrap();
-            assert!(client.code.is_empty());
-            assert!(client.finish(py, ke2.as_bytes()).is_err());
-            assert!(server.finish(ke3.as_bytes()).is_err());
-        });
+        let code = code();
+        let mut client =
+            Client::new(&code, b"session".to_vec(), b"A".to_vec(), b"B".to_vec()).unwrap();
+        let ke1 = client.start_message().unwrap();
+        let mut server = Server::new(
+            &code,
+            b"session".to_vec(),
+            b"A".to_vec(),
+            b"B".to_vec(),
+            &ke1,
+        )
+        .unwrap();
+        let ke2 = server.start_message().unwrap();
+        let ke3 = client.finish_message(&ke2).unwrap();
+        server.finish(&ke3).unwrap();
+        assert!(client.code.is_empty());
+        assert!(client.finish_message(&ke2).is_err());
+        assert!(server.finish(&ke3).is_err());
     }
-
     #[test]
     fn context_mismatch_fails_and_consumes_client_secret() {
-        Python::initialize();
-        Python::attach(|py| {
-            let code = code();
-            let mut client =
-                Client::new(&code, b"one".to_vec(), b"A".to_vec(), b"B".to_vec()).unwrap();
-            let ke1 = client.start(py).unwrap();
-            let mut server = Server::new(
-                &code,
-                b"two".to_vec(),
-                b"A".to_vec(),
-                b"B".to_vec(),
-                ke1.as_bytes(),
-            )
-            .unwrap();
-            let ke2 = server.start(py).unwrap();
-            assert!(client.finish(py, ke2.as_bytes()).is_err());
-            assert!(client.code.is_empty());
-        });
+        let code = code();
+        let mut client = Client::new(&code, b"one".to_vec(), b"A".to_vec(), b"B".to_vec()).unwrap();
+        let ke1 = client.start_message().unwrap();
+        let mut server =
+            Server::new(&code, b"two".to_vec(), b"A".to_vec(), b"B".to_vec(), &ke1).unwrap();
+        let ke2 = server.start_message().unwrap();
+        assert!(client.finish_message(&ke2).is_err());
+        assert!(client.code.is_empty());
     }
-
     #[test]
     fn malformed_finish_consumes_state_and_code() {
-        Python::initialize();
-        Python::attach(|py| {
-            let code = code();
-            let mut client =
-                Client::new(&code, b"one".to_vec(), b"A".to_vec(), b"B".to_vec()).unwrap();
-            assert!(client.finish(py, b"malformed").is_err());
-            assert!(client.state.is_none() && client.code.is_empty());
-        });
+        let code = code();
+        let mut client = Client::new(&code, b"one".to_vec(), b"A".to_vec(), b"B".to_vec()).unwrap();
+        assert!(client.finish_message(b"malformed").is_err());
+        assert!(client.state.is_none() && client.code.is_empty());
     }
 }

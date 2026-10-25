@@ -5,26 +5,14 @@ use clinx_decision_kernel::{
 };
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt};
+#[path = "support/workspace_oracle.rs"]
+mod oracle;
 #[test]
 fn workspace_and_provider_evidence_follow_explicit_host_routes() {
     let root = std::env::temp_dir().join(format!("clinx-workspace-routes-{}", std::process::id()));
     fs::create_dir(&root).unwrap();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
-    let program = root.join("probe.py");
-    fs::write(
-        &program,
-        r#"#!/usr/bin/python3
-import json,sys
-r=json.loads(sys.argv[3]);endpoint=sys.argv[2]
-assert endpoint=='/fixture/'+r['host']+'.sock'
-print(json.dumps(dict(observer_source='CODEX_PROVIDER_COMMAND_EXEC',observer_uid=501,
- repository_identity='git-common:9:'+('42' if r['host']=='air' else '99'),cwd=r['cwd'],
- repository_common_dir=r['cwd']+'/.git',repository_root=r['cwd'],worktree=r['cwd']+'/.git',
- branch='main',head='a'*40)))
-"#,
-    )
-    .unwrap();
-    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+    let program = oracle::install(&root, "routes-probe");
     workspace_observer::configure_routes(
         program,
         BTreeMap::from([
