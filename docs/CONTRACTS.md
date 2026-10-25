@@ -6,6 +6,12 @@
 
 ## 契约地图
 
+运维权限契约见[固定免密入口](OPERATIONS.md#p620-固定免密运维入口)，实现是
+[admin_tools](../kernel/src/admin_tools.rs)，回归是[admin_tools tests](../kernel/tests/admin_tools.rs)。
+它不接受业务 SQL，不成为 Task writer；策略变更仍使用既有 Rust CAS 与原 operation receipt。
+Node/配对 TLS worker 通过 [platform](../kernel/src/platform.rs) 将 accepted socket 显式转为
+blocking 后使用原超时；Darwin 的标志继承差异不改变 mTLS/OPAQUE、ACK 或恢复语义。
+
 | 边界 | 权威定义与实现 | 可重复回归 |
 | --- | --- | --- |
 | Task / Execution / Attempt / lease | [冻结状态契约](architecture/EXECUTION_CORE_STATE_CONTRACT_V1.md)、[golden fixture](../fixtures/execution_core_v1.json)、[execution_core](../kernel/src/execution_core.rs)、[business](../kernel/src/business.rs) | [执行核心](../kernel/tests/execution_core_qualification.rs)、[业务事务](../kernel/tests/business.rs) |

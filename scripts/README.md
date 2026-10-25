@@ -11,7 +11,8 @@
 
 | 命令 | 用途与边界 |
 | --- | --- |
-| `clinx-build stage-rust-release` | 接受明确 Authority/relay/Transport/Provider/MCP/Node/daemon/Observer/device binary，校验 marker/hash，生成 STAGED_NOT_SELECTED 候选；仅继承允许的 host-worker |
+| `clinx-admin stage CANDIDATE_DIR SOURCE_HEAD` | P620 root 暂存入口；复用 stage 库校验九个运行 binary、marker/hash，生成 STAGED_NOT_SELECTED；仅继承允许的 host-worker；旧 `clinx-build stage-rust-release --help` 保留说明，直接 root 暂存拒绝 |
+| `scripts/install-clinx-admin.sh BUNDLE ADMIN_SHA256 MAINTENANCE_SHA256 CURRENT_RELEASE MANIFEST_SHA256` | 一次性管理员安装薄胶水；替换 CLINX 专用 sudoers、校验工具摘要和 root 控制路径，失败恢复规则；不重启服务或修改数据库，完整边界见[运维指南](../docs/OPERATIONS.md#p620-固定免密运维入口) |
 | `clinx-build native-monitor-resources <source> <resources>` | 清理任务构建目录的旧 Python closure，生成零 Python 的 App 资源，不触及已安装 App |
 | `clinx-build build-transport-runtime --source-archive PATH --go-archive PATH --output NEW_DIR` | 固定 SHA 源/Go 归档，拒绝 embedded executor 依赖，两个路径构建可复现；不安装 |
 | `clinx-build build-tunnel-release --output DIR --guard-manifest JSON --evidence-manifest JSON` | 原生 supervisor、确定性产物和 rollback capsule；其他二进制/输入按 `--help` 显式传入 |

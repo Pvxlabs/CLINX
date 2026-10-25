@@ -633,6 +633,10 @@ impl Server {
         result
     }
     fn serve(&self, stream: TcpStream) {
+        let Ok(stream) = crate::platform::blocking_tcp(stream) else {
+            self.active.fetch_sub(1, Ordering::AcqRel);
+            return;
+        };
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
         let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
         let result = (|| -> Result<()> {

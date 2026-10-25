@@ -36,5 +36,6 @@ See [the convergence record](docs/PROJECT_CONVERGENCE.md) for recovery evidence.
 - 新增模块必须更新[源码分类](architecture/source-policy.json)，检查依赖方向；后端不得依赖 UI 或开发工具，传输和投影不得自行成为 Task writer。静态检查不能替代对副作用和事务边界的审查。
 - 变更必须完成相关构建、回归、依赖及发布包检查；状态明确区分 PASS、FAIL、BLOCKED、未验证（NOT_RUN / NOT_PROVEN）。源码、候选包、已部署版本、设备验收和业务结果分别记录。
 - 不得擅自部署、重启生产服务、修改生产数据库或删除运行数据。构建、文档、提交和推送不授予这些权限；回退不得覆盖已经提交的新权威事实。
+- P620 经管理员安装后，授权运维统一使用 `sudo -n /usr/local/sbin/clinx-admin`，规则和边界见[运维指南](docs/OPERATIONS.md#p620-固定免密运维入口)。不得恢复退役 Python staging、增加任意 Shell/SQL 入口或用免密 sudoedit 绕过 Rust 校验。免密能力不代替用户对本次部署或服务操作的授权。
 - 技术事实按[文档标准](docs/DOCUMENTATION.md)维护；重要架构变更同步更新架构、接口契约、测试说明和 CHANGELOG。历史报告只追加范围说明，不改写原日期、结果或失败记录。
 - 提交前执行 `clinx-source-audit --check-project` 及相关回归；CI 失败不得绕过。不得修改审计清单掩盖不符合上述规则的实现。

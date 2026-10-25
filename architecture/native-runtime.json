@@ -24,6 +24,7 @@
   "policy_maintenance_entrypoint": "clinx-mcp --policy-maintenance --config PATH --stdio",
   "history_mount_guard_entrypoint": "clinx-observer --history-mount-guard",
   "excluded_development_binaries": [
+    "clinx-admin",
     "clinx-build",
     "clinx-maintenance",
     "clinx-install",

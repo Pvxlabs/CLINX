@@ -222,11 +222,38 @@ fn capture(
 }
 pub fn marker(binary: &Path, option: &str, expected: &str, error: &str) -> Result<()> {
     let before = digest(binary)?;
-    let (out, _) = run(Command::new(binary).arg(option), 5).map_err(|_| error)?;
+    // Candidate executables are never privileged installation code. Root
+    // staging drops groups/identity before asking them for contract markers.
+    let mut command = marker_command(binary, option, rustix::process::geteuid().is_root());
+    let (out, _) = run(&mut command, 5).map_err(|_| error)?;
     if String::from_utf8_lossy(&out).trim() != expected || digest(binary)? != before {
         return Err(error.into());
     }
     Ok(())
+}
+pub fn marker_command(binary: &Path, option: &str, privileged: bool) -> Command {
+    if privileged {
+        let mut command = Command::new("/usr/sbin/runuser");
+        command
+            .env_clear()
+            .args([
+                "-u",
+                "nobody",
+                "--",
+                "/usr/bin/setpriv",
+                "--no-new-privs",
+                "/usr/bin/env",
+                "-i",
+                "PATH=/usr/bin:/bin",
+            ])
+            .arg(binary)
+            .arg(option);
+        command
+    } else {
+        let mut command = Command::new(binary);
+        command.arg(option);
+        command
+    }
 }
 #[derive(Default)]
 pub struct Options(pub BTreeMap<String, Vec<String>>);
@@ -339,6 +366,31 @@ pub fn native_data(source: &Path) -> Result<BTreeMap<String, PathBuf>> {
     Ok(result)
 }
 pub fn stage(o: &Options, release_root: &Path, owner: u32, group: u32) -> Result<Value> {
+    if rustix::process::geteuid().is_root() {
+        return Err("ROOT_STAGING_REQUIRES_CLINX_ADMIN".into());
+    }
+    let (head, _) = run(
+        Command::new("git")
+            .arg("-C")
+            .arg(o.required("--source")?)
+            .args(["rev-parse", "HEAD"]),
+        5,
+    )?;
+    stage_at_revision(o, release_root, owner, group, &head)
+}
+/// Root callers supply a revision read as the operator and an immutable
+/// metadata snapshot. Never read an operator's Git configuration as root.
+pub fn stage_at_revision(
+    o: &Options,
+    release_root: &Path,
+    owner: u32,
+    group: u32,
+    head: &[u8],
+) -> Result<Value> {
+    let revision = String::from_utf8_lossy(head);
+    if revision.trim().len() != 40 || !revision.trim().bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("INVALID_SOURCE_REVISION".into());
+    }
     let source = fs::canonicalize(o.required("--source")?).map_err(|e| e.to_string())?;
     let base =
         fs::canonicalize(o.required("--desktop-base-release")?).map_err(|e| e.to_string())?;
@@ -457,10 +509,17 @@ pub fn stage(o: &Options, release_root: &Path, owner: u32, group: u32) -> Result
     let release = release_root.join(&version);
     fs::set_permissions(release_root, fs::Permissions::from_mode(0o755))
         .map_err(|e| e.to_string())?;
-    fs::create_dir(&release).map_err(|e| e.to_string())?;
+    if release.exists() {
+        return Err("RELEASE_ALREADY_EXISTS".into());
+    }
+    let pending = tempfile::Builder::new()
+        .prefix(".stage-")
+        .permissions(fs::Permissions::from_mode(0o755))
+        .tempdir_in(release_root)
+        .map_err(|e| e.to_string())?;
     for (name, path) in &paths {
         let bytes = read(path)?;
-        let target = release.join(name);
+        let target = pending.path().join(name);
         write(
             &target,
             &bytes,
@@ -478,29 +537,27 @@ pub fn stage(o: &Options, release_root: &Path, owner: u32, group: u32) -> Result
         let g = nix::unistd::Group::from_name("clinx-transport")
             .map_err(|e| e.to_string())?
             .ok_or("TRANSPORT_GROUP_REQUIRED")?;
-        std::os::unix::fs::chown(release.join("host-worker"), Some(0), Some(g.gid.as_raw()))
-            .map_err(|e| e.to_string())?;
+        std::os::unix::fs::chown(
+            pending.path().join("host-worker"),
+            Some(0),
+            Some(g.gid.as_raw()),
+        )
+        .map_err(|e| e.to_string())?;
         fs::set_permissions(
-            release.join("host-worker"),
+            pending.path().join("host-worker"),
             fs::Permissions::from_mode(0o4750),
         )
         .map_err(|e| e.to_string())?;
     }
-    let (head, _) = run(
-        Command::new("git")
-            .arg("-C")
-            .arg(&source)
-            .args(["rev-parse", "HEAD"]),
-        5,
-    )?;
     let replacements: BTreeMap<_, _> = data.keys().map(|n| (n.clone(), files[n].clone())).collect();
     let retired: Vec<_> = previous
         .keys()
         .filter(|n| !files.contains_key(*n))
         .cloned()
         .collect();
-    let result = json!({"version":version,"source_cwd":source,"head":String::from_utf8_lossy(&head).trim(),"base_release":base,"execution_daemon":"EXISTING_DESKTOP_ONLY","native_transport":"RUST_NATIVE_V1","host_transport":"RUST_HOST_V1","mcp_runtime":"RUST_MCP_V1","node_api":"RUST_NODE_API_V1","node_network":"RUST_NODE_NETWORK_V1","observation_runtime":"RUST_OBSERVATION_V1","collector_runtime":"RUST_COLLECTOR_V1","client_runtime":"RUST_CLIENT_RUNTIME_V1","thin_runtime":"RUST_THIN_RUNTIME_V1","device_runtime":"RUST_DEVICE_RUNTIME_V1","node_daemon":"RUST_NODE_DAEMON_V1","provider_exchange":"RUST_PROVIDER_V1","workspace_observer":"RUST_PROVIDER_V1","observation_directory":"RUST_OBSERVATION_DIRECTORY_V1","observer_runtime":"RUST_OBSERVER_V1","device_cli":"RUST_DEVICE_CLI_V1","desktop_socket_maintenance":"RUST_DESKTOP_SOCKET_V1","config_compiler":"RUST_CONFIG_COMPILER_V1","python_sources":[],"python_dependencies":[],"source_replacements":replacements,"runtime_source_profile":"rust","source_layout":"qualified-clinx-v1","retired_files":retired,"files":files,"status":"STAGED_NOT_SELECTED"});
-    save(&release.join("manifest.json"), &result)?;
+    let result = json!({"version":version,"source_cwd":source,"head":String::from_utf8_lossy(head).trim(),"base_release":base,"execution_daemon":"EXISTING_DESKTOP_ONLY","native_transport":"RUST_NATIVE_V1","host_transport":"RUST_HOST_V1","mcp_runtime":"RUST_MCP_V1","node_api":"RUST_NODE_API_V1","node_network":"RUST_NODE_NETWORK_V1","observation_runtime":"RUST_OBSERVATION_V1","collector_runtime":"RUST_COLLECTOR_V1","client_runtime":"RUST_CLIENT_RUNTIME_V1","thin_runtime":"RUST_THIN_RUNTIME_V1","device_runtime":"RUST_DEVICE_RUNTIME_V1","node_daemon":"RUST_NODE_DAEMON_V1","provider_exchange":"RUST_PROVIDER_V1","workspace_observer":"RUST_PROVIDER_V1","observation_directory":"RUST_OBSERVATION_DIRECTORY_V1","observer_runtime":"RUST_OBSERVER_V1","device_cli":"RUST_DEVICE_CLI_V1","desktop_socket_maintenance":"RUST_DESKTOP_SOCKET_V1","config_compiler":"RUST_CONFIG_COMPILER_V1","python_sources":[],"python_dependencies":[],"source_replacements":replacements,"runtime_source_profile":"rust","source_layout":"qualified-clinx-v1","retired_files":retired,"files":files,"status":"STAGED_NOT_SELECTED"});
+    save(&pending.path().join("manifest.json"), &result)?;
+    fs::rename(pending.path(), &release).map_err(|e| e.to_string())?;
     let mut receipt = result;
     receipt["release"] = json!(release);
     save(&o.path("--output")?, &receipt)?;

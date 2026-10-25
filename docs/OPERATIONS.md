@@ -86,6 +86,9 @@ Rust release 的明确成员来自 [BINARIES](../kernel/src/build_release.rs) �
 不是 Tunnel archive 或 macOS `.app` 的通用解析器。后两者仍走现有各自 packaging tests。
 候选构建不更新 current symlink。生产 stage/installer 要求专用身份与现有 base，不应在普通开发
 任务中调用。`clinx-install services` 会写 unit 和 daemon-reload，虽不 start/restart，仍需授权。
+P620 的 root 暂存统一改用下面的 `clinx-admin stage`；`clinx-build stage-rust-release`
+保留参数说明，直接 root 执行返回 `ROOT_STAGING_REQUIRES_CLINX_ADMIN`，非 root 返回
+`ADMINISTRATOR_REQUIRED`。内部 stage 库继续支持私有资格测试。
 
 macOS 按 [App build](../MonitorApp/README.md) 本机编译 Swift 和三个 Rust Helpers、逐个签名再签 App。
 本地自签身份不是 Developer ID 分发签名或公证；当前无已验证的自动公证发布流程。
@@ -121,3 +124,43 @@ clinx-maintenance extend-business-policy --state /absolute/canonical/authority \
 接下来选择回执 `after_hash` 对应的新 root 控制策略文件，使用同一 release 启动并读回。
 原数据库、配置备份仅供取证/恢复依赖，不得覆盖已经提交的业务事实。
 完整约束见 [ADR-008](architecture/ADR-008-additive-device-routes.md)。
+
+## P620 固定免密运维入口
+
+决策：用 root 所有的 [clinx-admin](../kernel/src/admin_tools.rs) 统一 CLINX 运维权限。
+它只接受下表中的固定操作，清除子进程环境，不解释 Shell、任意 SQL、输出路径或外部服务。
+部署授权仍来自用户当前任务；存在免密能力不代表允许自行部署、删数据或重放任务。
+
+一次性安装器 [install-clinx-admin.sh](../scripts/install-clinx-admin.sh) 需要管理员认证。
+输入是经过构建/回归的工具包路径、两个精确 SHA-256、当前 release ID 和 manifest SHA-256。
+它先以普通用户读候选，再验证 root 快照，备份并替换 **仅**
+`/etc/sudoers.d/90-p620-clinx-admin`；其他项目 sudoers 不变。
+专用规则仅放行摘要绑定的 `/usr/local/sbin/clinx-admin`，撤销旧 Python staging、
+免密 unit 编辑及直接 systemctl 通道，不授予 `NOPASSWD: ALL`。
+安装器检查 `visudo`、固定入口的 `sudo -n … status`，失败恢复原工具与规则。
+已有发布树的可写 ACL 单独封存：核对 manifest、root 所有权，去除当前 release 的扩展 ACL
+与 releases 目录的默认 ACL；保留原 ACL 证据，失败也不重新开放目录写权。
+安装不重启服务、不修改业务库；状态为“入口已安装”而不是“生产验收通过”。
+
+| `sudo -n /usr/local/sbin/clinx-admin` 后的参数 | 边界 |
+| --- | --- |
+| `status` / `nodes` | 当前 release/hash、策略位置、服务 PID/状态；Node 注册投影和共享范围 |
+| `journal SERVICE [LINES]` | 仅 CLINX Authority/Centre/Dispatcher/MCP，最多 2000 行 |
+| `service start\|stop\|restart SERVICE` | 固定上述服务；stop/restart 前要求没有活动 execution/lease |
+| `pair-listen` | 固定 Centre 身份/state，`0.0.0.0:18774`，120 秒；PIN 按凭据处理 |
+| `share PEER USER_SCOPE read\|execute\|revoke` | 仅已有 peer 与同一 user_scope；执行授权保留原项目范围；旧记录缺省 projects 按 Rust 契约为 `[*]`；revoke 走原撤销语义 |
+| `probe HOST PROJECT` | 仅当前 policy 已配置项目，通过同 release Provider 的只读 repository probe |
+| `stage CANDIDATE_DIR SOURCE_HEAD` | 候选仅从 `/data/artifacts` 或 `/lab/runtime-worktrees/p620` 读，Git 操作以 pvxlabs 执行；clean canonical HEAD 与参数一致，root metadata/ELF 快照；marker 以 nobody + no-new-privs 执行 |
+| `select RELEASE_ID --approved` | 校验所有文件/祖先权限与 hash；停止准入和服务后再查活动状态，备份，替换 unit release 路径；等待 Authority socket 后启动调用端 |
+| `policy EXPECTED_HASH OPERATION_ID --approved` 加 stdin JSON | 最多 1 MiB；复用 root 安装的 Rust additive-policy CAS 工具；无任意 SQL、路由删除或数据库回退 |
+
+所有调用通过同一 root 控制锁串行。`ADMIN_ARGUMENT_DENIED` 表示越界参数，
+`ADMIN_ROOT_CONTROL_REQUIRED` 表示文件或祖先可写/非 root/符号链接，
+`ADMIN_ACTIVE_EXECUTIONS_OR_LEASES` 表示不能切换，`ADMIN_OPERATION_IN_PROGRESS` 表示操作冲突。
+stage 只复制现有三份受控 metadata；新增运行数据成员须同步扩展受限快照，否则拒绝发布。
+相同内容 release 已存在时 stage 拒绝覆盖，使用已验证的原 receipt；select 同 release 返回
+`ALREADY_SELECTED`。`SELECTED_ACCEPTANCE_PENDING` 明确要求另外完成设备与业务验收。
+
+停服后的失败保留备份与现场，不自动恢复旧数据库。策略事务未知结果只读原 operation receipt，
+不得重复发送猜测性变更。普通 release 不包含 admin/maintenance，不会改写此特权入口；
+将来更新特权程序及其 sudo 摘要仍须管理员安装，而日常诊断、配对和授权发布无需逐条认证。

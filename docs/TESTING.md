@@ -89,6 +89,16 @@ Developer ID 公证、客户端安装、配对或真实任务验收。缺少原�
 
 ## 未验证与既有失败
 
+`platform::tests::accepted_worker_waits_for_delayed_peer_instead_of_would_block` 强制 accepted
+socket 为 nonblocking，并延迟发送，在 Linux 和 Darwin 均可验证 worker 正常等待。
+这是 Node TLS 修复的回归，不能代替两台 Mac 安装后的真实 gateway probe 与任务结果。
+
+运维入口回归：`cargo test --locked --manifest-path kernel/Cargo.toml --test admin_tools`，
+检查非法服务/路径/未批准切换、root 路径控制、候选 marker 降权、CLI 拒绝路径，以及
+系统 `bash -n` / `visudo -c -f` 对安装器和实际 sudo 模板的解析。P620/Linux CI 需要 sudo
+自带的 `visudo`；此套特权工具验证不用于 Mac App 构建。生产安装另读回 sudo 规则、
+摘要、所有权、有效 ACL 和 `sudo -n … status`，不要把私有测试当作已安装。
+
 Linux wire/loopback 不代替物理 LAN multicast、Mac→P620 或真实 Codex/ChatGPT connector。
 smoke 的 `--lan` 需要单独显式设备资格；普通测试不得接触生产。管理员 install/provision 与
 writer FD 撤权只在私有 fixture 验证，不构成生产权限隔离证明。

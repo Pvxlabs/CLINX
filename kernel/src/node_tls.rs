@@ -492,6 +492,7 @@ pub fn connection(
     stream: TcpStream,
     root: &Path,
 ) -> Result<(StreamOwned<ServerConnection, TcpStream>, Value, Vec<u8>)> {
+    let stream = crate::platform::blocking_tcp(stream).map_err(|_| "TLS_UNAVAILABLE")?;
     let mut stream = StreamOwned::new(
         ServerConnection::new(server(root)?).map_err(|_| "TLS_UNAVAILABLE")?,
         stream,

@@ -17,6 +17,9 @@
     "clinx-tunnel"
   ],
   "sources": {
+    "scripts/install-clinx-admin.sh": {
+      "role": "glue"
+    },
     "MonitorApp/Package.swift": {
       "role": "ui"
     },
@@ -262,6 +265,15 @@
       "role": "qualification",
       "dependencies": []
     },
+    "kernel/src/admin_tools.rs": {
+      "role": "tool",
+      "dependencies": [
+        "kernel/src/business.rs",
+        "kernel/src/execution_core.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
     "kernel/src/authority_client.rs": {
       "role": "runtime",
       "dependencies": [
@@ -282,6 +294,14 @@
         "kernel/src/authority_state.rs",
         "kernel/src/business.rs",
         "kernel/src/execution_core.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-admin.rs": {
+      "role": "tool",
+      "dependencies": [
+        "kernel/src/admin_tools.rs",
+        "kernel/src/build_release.rs",
+        "kernel/src/install_tools.rs"
       ]
     },
     "kernel/src/bin/clinx-build.rs": {
@@ -513,7 +533,8 @@
         "kernel/src/discovery_identity.rs",
         "kernel/src/discovery_index.rs",
         "kernel/src/discovery_state.rs",
-        "kernel/src/node_tls.rs"
+        "kernel/src/node_tls.rs",
+        "kernel/src/platform.rs"
       ]
     },
     "kernel/src/discovery_gui.rs": {
@@ -849,7 +870,9 @@
     },
     "kernel/src/node_tls.rs": {
       "role": "runtime",
-      "dependencies": []
+      "dependencies": [
+        "kernel/src/platform.rs"
+      ]
     },
     "kernel/src/observation.rs": {
       "role": "runtime",
@@ -1066,6 +1089,14 @@
         "kernel/src/native_transport.rs",
         "kernel/src/provider.rs",
         "kernel/src/remote_provider.rs"
+      ]
+    },
+    "kernel/tests/admin_tools.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/admin_tools.rs",
+        "kernel/src/build_release.rs",
+        "kernel/src/install_tools.rs"
       ]
     },
     "kernel/tests/authority_store.rs": {

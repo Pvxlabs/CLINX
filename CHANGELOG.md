@@ -3,6 +3,15 @@
 用途：追踪源码与兼容边界变化。适用范围：Git 主线；不是已部署版本清单。
 状态：CURRENT。验证：Git diff/log、[测试指南](docs/TESTING.md)与候选 manifest。
 
+## 0.3.2 (291) — 发布候选 2026-10-26
+
+- 修复 Darwin 非阻塞 listener 的 accepted socket 继承行为：Node 和配对 TLS worker
+  显式转回 blocking IO，再应用既有超时；保留认证、ACK 和任务状态语义。
+- 增加 root 所有的 Rust `clinx-admin` 固定运维入口、摘要绑定的专用 sudoers 安装器；
+  替换退役 Python staging 和免密 unit 编辑规则，校验发布目录及祖先权限。
+  入口覆盖只读诊断、配对、已有共享范围授权、发布暂存/切换和原有策略 CAS 工具，
+  不授予任意 Shell、SQL、服务或输出路径。规则安装、部署与真实设备验收分别记录。
+
 ## 0.3.2 (290) — 发布候选 2026-10-26
 
 macOS 版本号从现装 `0.3.1 (289)` 前进到 `0.3.2 (290)`；P620 release 仍按内容哈希编号。
