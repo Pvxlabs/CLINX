@@ -80,3 +80,6 @@ Owner 候选标识为 `owner-shared-07da5fe20c4119dee1b4`；安装/切换证据�
 - [Rust Collector 队列与恢复迁移](RUST_COLLECTOR_MIGRATION.md)：节点 spool、checkpoint/ACK 原子事务、采样合并、丢 ACK 与进程重启资格。
 
 - [Rust 客户端运行时收敛](RUST_CLIENT_RUNTIME_MIGRATION.md)：Provider/Node/Observer/Discovery 与监督策略实际迁移、完整回归、残留和规模；[全部 Python 运行边界](PYTHON_RUNTIME_BOUNDARIES.md)。
+
+- [Rust 薄兼容层迁移](RUST_THIN_RUNTIME_MIGRATION.md)：Provider 客户端/进程、Observer HTTP、配置与独立 Tunnel 生命周期；全仓 Python <5% 的验收口径和当前差距。
+- [Rust Tunnel supervisor](RUST_TUNNEL_SUPERVISOR.md)：独立服务生命周期、精确恢复与打包资格。

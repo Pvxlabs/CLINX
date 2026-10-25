@@ -96,6 +96,7 @@ def copy_monitor_sources(source: Path, resources: Path) -> None:
          'observation_runtime': 'RUST_OBSERVATION_V1',
          'collector_runtime': 'RUST_COLLECTOR_V1',
          'client_runtime': 'RUST_CLIENT_RUNTIME_V1',
+         'thin_runtime': 'RUST_THIN_RUNTIME_V1',
          'required_helpers': ['clinx-node', 'clinx-provider'], 'files': hashes}, indent=2) + '\n')
 
 

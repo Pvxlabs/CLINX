@@ -1,6 +1,8 @@
 //! Existing-daemon compatibility sessions. Rust owns transport, request identity,
 //! single-send delivery and bounded observation. This is not task authority.
+mod api;
 mod observation;
+mod wire;
 use crate::provider;
 use serde_json::{Value, json};
 use std::{
@@ -17,6 +19,7 @@ type Result<T> = std::result::Result<T, String>;
 type Connection = Arc<Mutex<Option<provider::Client>>>;
 #[derive(Default)]
 pub struct Runtime {
+    wire: wire::Runtime,
     next: AtomicU64,
     connections: Mutex<BTreeMap<u64, Connection>>,
 }
@@ -463,6 +466,12 @@ impl Runtime {
         args: &Value,
         mut callback: F,
     ) -> Result<Value> {
+        if operation.starts_with("provider.client.wire.") {
+            return self.wire.invoke(operation, args, callback);
+        }
+        if operation.starts_with("provider.client.api.") {
+            return api::invoke(operation, args, callback);
+        }
         if operation.starts_with("provider.client.observation.") {
             return observation::invoke(operation, args, callback);
         }
@@ -595,4 +604,32 @@ impl Runtime {
             _ => Err("PROVIDER_CLIENT_OPERATION_UNKNOWN".into()),
         }
     }
+}
+
+/// Called only in a newly spawned process, before any worker threads exist.
+/// This preserves setsid and exact child identity without unsafe pre_exec.
+pub fn exec_process_child() -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::process::CommandExt;
+    let descriptor = rustix::io::dup(std::io::stderr())?;
+    rustix::io::fcntl_setfd(&descriptor, rustix::io::FdFlags::CLOEXEC)?;
+    let mut report = std::fs::File::from(descriptor);
+    let result = (|| {
+        rustix::process::setsid()?;
+        let mut args = std::env::args_os().skip(2);
+        let program = args.next().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "app-server command is required",
+            )
+        })?;
+        Err(std::process::Command::new(program)
+            .args(args)
+            .stderr(std::process::Stdio::null())
+            .exec())
+    })();
+    if let Err(error) = &result {
+        let _ = write!(report, "{error}");
+    }
+    result
 }

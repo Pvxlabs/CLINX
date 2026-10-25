@@ -42,6 +42,8 @@ def main():
         raise RuntimeError('QUALIFIED_RUST_OBSERVATION_REQUIRED')
     if manifest.get('client_runtime') != 'RUST_CLIENT_RUNTIME_V1':
         raise RuntimeError('QUALIFIED_RUST_CLIENT_RUNTIME_REQUIRED')
+    if manifest.get('thin_runtime') != 'RUST_THIN_RUNTIME_V1':
+        raise RuntimeError('QUALIFIED_RUST_THIN_RUNTIME_REQUIRED')
     if manifest.get('collector_runtime') != 'RUST_COLLECTOR_V1':
         raise RuntimeError('QUALIFIED_RUST_COLLECTOR_REQUIRED')
     if manifest.get('node_network') != 'RUST_NODE_NETWORK_V1':

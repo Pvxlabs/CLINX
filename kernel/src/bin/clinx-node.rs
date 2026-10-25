@@ -1,5 +1,13 @@
 //! Helper request API and paired Node network process. Never a task-state writer.
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--thin-runtime-contract") {
+        println!("RUST_THIN_RUNTIME_V1");
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("--provider-process-child") {
+        let _ = clinx_decision_kernel::provider_client::exec_process_child();
+        std::process::exit(127);
+    }
     if std::env::args().nth(1).as_deref() == Some("--client-runtime-contract") {
         println!("RUST_CLIENT_RUNTIME_V1");
         return;

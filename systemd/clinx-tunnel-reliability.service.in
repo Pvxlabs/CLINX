@@ -10,7 +10,7 @@ Type=simple
 WorkingDirectory=@HOME@/dev/clinx
 EnvironmentFile=@HOME@/.config/tunnel-client/runtime.env
 Environment=PATH=@CODEX_PATH@
-ExecStart=@PYTHON@ @RELEASE@/tunnel_reliability.py run --state-dir @HOME@/.local/state/clinx/tunnel-reliability @POLICY_ARGS@ -- @TUNNEL@ run --profile-dir @HOME@/.config/tunnel-client --profile clinx-p620
+ExecStart=@RELEASE@/clinx-tunnel run --state-dir @HOME@/.local/state/clinx/tunnel-reliability @POLICY_ARGS@ -- @TUNNEL@ run --profile-dir @HOME@/.config/tunnel-client --profile clinx-p620
 Restart=on-failure
 RestartSec=10s
 RestartPreventExitStatus=78

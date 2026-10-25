@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "target": "Rust core; frontend technology suited to existing clients; minimal Python compatibility plus development/build/qualification/maintenance tools",
+  "target": "Rust core and client-appropriate frontend; thin Python compatibility only; all-source Python bytes strictly below 5% under CLINX_SOURCE_SIZE_V1",
   "modules": [
     {
       "path": "clinx/__init__.py",
@@ -258,7 +258,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+      "reason": "Public configuration DTO and TOML/platform Path codec. Defaults, binding, host selection and executor/workflow validation execute in Rust runtime_config."
     },
     {
       "path": "clinx/contracts/runtime_contracts.py",
@@ -390,7 +390,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+      "reason": "Public workflow DTO only; schema, validation and rendering call Rust runtime_config and the existing Host workflow contract."
     },
     {
       "path": "clinx/host/rust_host.py",
@@ -495,7 +495,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Observer HTTP authentication/routes, error codec and public readonly snapshot IO; ActivityReader and legacy schema query/projection delegated to Rust"
+      "reason": "Store/native/collector callback and public object facade. Rust owns HTTP listener lifecycle, limits, auth, route dispatch, redaction and status mapping."
     },
     {
       "path": "clinx/monitor/rust_monitor.py",
@@ -591,7 +591,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Public Codex API/parameter/error compatibility plus Process/SSH qualification transports; normal Unix WebSocket/RPC/events/guard/exact-input confirmation owned by Rust"
+      "reason": "Public Provider API/DTO/exception mapping and explicit injected test IO. Rust owns normal Process/SSH/Unix transports, framing, client request contracts, models and RPC lifecycle."
     },
     {
       "path": "clinx/provider/desktop_socket.py",
@@ -660,9 +660,9 @@
     },
     {
       "path": "clinx/transport/tunnel_reliability.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "QUALIFICATION",
       "profiles": [],
-      "reason": "Standalone owned-process/HTTP/signal IO compatibility; budget, intent/restart checks, recovery/current health and durable receipt engine owned by Rust; process drain loop remains Python"
+      "reason": "Retained public qualification API for injected clock/process IO; normal CLI execs standalone Rust clinx-tunnel. Rust owns supervisor lifecycle, health, drain and durable recovery."
     },
     {
       "path": "fixtures/bridge_migration_codex.py",
@@ -1048,6 +1048,31 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Isolated Rust runtime/compatibility contract regression; no production tasks or deployment"
+    },
+    {
+      "path": "fixtures/test_rust_observer_http.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Private-process regression for Rust thin-runtime migration; no production access."
+    },
+    {
+      "path": "fixtures/test_rust_provider_api.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Private-process regression for Rust thin-runtime migration; no production access."
+    },
+    {
+      "path": "fixtures/test_rust_runtime_config.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Private-process regression for Rust thin-runtime migration; no production access."
+    },
+    {
+      "path": "fixtures/test_rust_tunnel_runtime.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Private-process regression for Rust thin-runtime migration; no production access."
     }
-  ]
+  ],
+  "python_byte_percent_target": 5
 }

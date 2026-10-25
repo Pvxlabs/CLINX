@@ -1,0 +1,187 @@
+{
+  "baseline": "541c8e6f84c49e5b77f3223d587548731c307623",
+  "artifact_directory": "/data/artifacts/clinx-thin-runtime-20261025",
+  "scale": {
+    "baseline": "541c8e6f84c49e5b77f3223d587548731c307623",
+    "metric": "CLINX_SOURCE_SIZE_V1",
+    "before": {
+      "languages": {
+        "C": {
+          "bytes": 2345,
+          "files": 1,
+          "lines": 50
+        },
+        "Go": {
+          "bytes": 26718,
+          "files": 3,
+          "lines": 849
+        },
+        "Python": {
+          "bytes": 976532,
+          "files": 113,
+          "lines": 22487
+        },
+        "Rust": {
+          "bytes": 1188254,
+          "files": 65,
+          "lines": 29872
+        },
+        "Shell": {
+          "bytes": 11884,
+          "files": 9,
+          "lines": 251
+        },
+        "Swift": {
+          "bytes": 525634,
+          "files": 62,
+          "lines": 11355
+        }
+      },
+      "maximum_python_byte_percent": 5.0,
+      "python_byte_percent": 35.75250048785095,
+      "python_line_percent": 34.6679205722743,
+      "python_roles": {
+        "ACTIVE_RUNTIME": {
+          "bytes": 424101,
+          "files": 54,
+          "lines": 10185
+        },
+        "COMPAT": {
+          "bytes": 24940,
+          "files": 2,
+          "lines": 510
+        },
+        "DEVOPS": {
+          "bytes": 95170,
+          "files": 18,
+          "lines": 2134
+        },
+        "QUALIFICATION": {
+          "bytes": 432321,
+          "files": 39,
+          "lines": 9658
+        }
+      },
+      "revision": "541c8e6f84c49e5b77f3223d587548731c307623",
+      "root_python": [],
+      "schema": "CLINX_SOURCE_SIZE_V1",
+      "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+      "target_pass": false
+    },
+    "after": {
+      "languages": {
+        "C": {
+          "bytes": 2345,
+          "files": 1,
+          "lines": 50
+        },
+        "Go": {
+          "bytes": 26718,
+          "files": 3,
+          "lines": 849
+        },
+        "Python": {
+          "bytes": 952898,
+          "files": 117,
+          "lines": 22031
+        },
+        "Rust": {
+          "bytes": 1357903,
+          "files": 74,
+          "lines": 34312
+        },
+        "Shell": {
+          "bytes": 11985,
+          "files": 9,
+          "lines": 252
+        },
+        "Swift": {
+          "bytes": 525634,
+          "files": 62,
+          "lines": 11355
+        }
+      },
+      "maximum_python_byte_percent": 5.0,
+      "python_byte_percent": 33.11567783371787,
+      "python_line_percent": 31.999012331333788,
+      "python_roles": {
+        "ACTIVE_RUNTIME": {
+          "bytes": 361667,
+          "files": 53,
+          "lines": 8792
+        },
+        "COMPAT": {
+          "bytes": 24940,
+          "files": 2,
+          "lines": 510
+        },
+        "DEVOPS": {
+          "bytes": 96750,
+          "files": 18,
+          "lines": 2158
+        },
+        "QUALIFICATION": {
+          "bytes": 469541,
+          "files": 44,
+          "lines": 10571
+        }
+      },
+      "revision": null,
+      "root_python": [],
+      "schema": "CLINX_SOURCE_SIZE_V1",
+      "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+      "target_pass": false
+    },
+    "deleted_files": [],
+    "deleted_file_lines": 0,
+    "python_net_lines_removed": 456,
+    "python_net_bytes_removed": 23634,
+    "runtime_python_net_lines_removed": 1393,
+    "runtime_python_net_bytes_removed": 62434,
+    "target_exit_code": 2
+  },
+  "verification": {
+    "linux_release_binaries": 12,
+    "rust_tests_passed": 99,
+    "tracked_fixtures_passed": 370,
+    "provider_differential": 639,
+    "observer_differential": 356,
+    "config_differential": 242,
+    "full_suite": {
+      "identities": 432,
+      "same_identities": true,
+      "before": {
+        "error": 104,
+        "pass": 295,
+        "failure": 31,
+        "skipped": 2
+      },
+      "after": {
+        "error": 104,
+        "pass": 295,
+        "failure": 31,
+        "skipped": 2
+      },
+      "changed": []
+    },
+    "preservation": {
+      "local_test_files": 124,
+      "all_local_hashes_unchanged": true,
+      "existing_fixture_assertions_unchanged": true,
+      "fixture_count": 21
+    },
+    "clippy": {
+      "status": "BLOCKED_EXISTING",
+      "existing_diagnostics": 10,
+      "new_diagnostics": 0
+    },
+    "python_lint": "PASS",
+    "structure": "PASS",
+    "macos_build_signing": "NOT_VERIFIED",
+    "physical_cross_device_loop": "NOT_VERIFIED",
+    "deployment": "NOT_DEPLOYED",
+    "production_services_unchanged": true,
+    "writer_lock_regression": "FAIL_BEFORE_PASS_AFTER"
+  },
+  "target_python_under_5_percent": false
+}

@@ -17,6 +17,15 @@ Install Python 3.12 and the pinned dependencies as described in
 discovery development pins; there is one source of package versions.
 The local `tests/README.md` index maps suites and naming conventions.
 
+## Latest thin runtime qualification
+
+[Rust thin runtime migration](RUST_THIN_RUNTIME_MIGRATION.md) records native Provider
+process/contract, Observer HTTP, configuration/workflow and Tunnel lifecycle parity.
+Run the tracked suite with `CLINX_TUNNEL_BINARY=<task-target>/release/clinx-tunnel`
+in addition to the existing Node, Provider, MCP and runtime binary variables.
+The Rust source census `clinx-source-audit` exits 2 until Python bytes are strictly
+below 5%; this target gate is separate from build and regression success.
+
 ## Latest client runtime qualification
 
 [Rust client runtime migration](RUST_CLIENT_RUNTIME_MIGRATION.md) records 10 Linux Release

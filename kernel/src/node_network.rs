@@ -27,6 +27,7 @@ struct Worker {
     provider_client: crate::provider_client::Runtime,
     discovery: crate::discovery_state::Runtime,
     native_observer: crate::native_observer_bridge::Runtime,
+    observer_http: crate::observer_http::Runtime,
     gateways: Mutex<Vec<crate::node_gateway::Gateway>>,
     replies: Mutex<BTreeMap<u64, mpsc::SyncSender<Value>>>,
 }
@@ -389,6 +390,10 @@ pub fn serve() -> Result<()> {
                     worker
                         .discovery
                         .invoke(op, &v["arguments"], |op, args| worker.callback(op, args))
+                }
+                op if op.starts_with("observer_http.") => {
+                    let w = worker.clone();
+                    worker.observer_http.invoke(op, &v["arguments"], move |op, args| w.callback(op, args))
                 }
                 op if op.starts_with("provider.client.") => {
                     worker

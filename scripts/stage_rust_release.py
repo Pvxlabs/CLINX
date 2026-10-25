@@ -105,6 +105,13 @@ def stage_desktop(args, source):
                 raise SystemExit('QUALIFIED_RUST_CLIENT_RUNTIME_REQUIRED') from None
             if client.returncode or client.stdout.strip() != 'RUST_CLIENT_RUNTIME_V1':
                 raise SystemExit('QUALIFIED_RUST_CLIENT_RUNTIME_REQUIRED')
+            try:
+                thin = subprocess.run([str(binary), '--thin-runtime-contract'], input='', text=True,
+                    capture_output=True, timeout=5, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                raise SystemExit('QUALIFIED_RUST_THIN_RUNTIME_REQUIRED') from None
+            if thin.returncode or thin.stdout.strip() != 'RUST_THIN_RUNTIME_V1':
+                raise SystemExit('QUALIFIED_RUST_THIN_RUNTIME_REQUIRED')
 
         binaries[name] = binary
         files[name] = hashlib.sha256(binary.read_bytes()).hexdigest()
@@ -125,7 +132,7 @@ def stage_desktop(args, source):
     (release / 'host-worker').chmod(0o4750)
     result = dict(version=version, source_cwd=str(source),
                   head=subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip(),
-                  base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1', host_transport='RUST_HOST_V1', mcp_runtime='RUST_MCP_V1', node_api='RUST_NODE_API_V1', node_network='RUST_NODE_NETWORK_V1', observation_runtime='RUST_OBSERVATION_V1', collector_runtime='RUST_COLLECTOR_V1', client_runtime='RUST_CLIENT_RUNTIME_V1', provider_exchange='RUST_PROVIDER_V1', workspace_observer='RUST_PROVIDER_V1',
+                  base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1', host_transport='RUST_HOST_V1', mcp_runtime='RUST_MCP_V1', node_api='RUST_NODE_API_V1', node_network='RUST_NODE_NETWORK_V1', observation_runtime='RUST_OBSERVATION_V1', collector_runtime='RUST_COLLECTOR_V1', client_runtime='RUST_CLIENT_RUNTIME_V1', thin_runtime='RUST_THIN_RUNTIME_V1', provider_exchange='RUST_PROVIDER_V1', workspace_observer='RUST_PROVIDER_V1',
                   source_replacements=replacements, runtime_source_profile='rust', source_layout='qualified-clinx-v1',
                   retired_files=sorted(set(manifest['files']) - set(files)),
                   files=files, status='STAGED_NOT_SELECTED')

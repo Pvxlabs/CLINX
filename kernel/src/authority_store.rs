@@ -68,14 +68,27 @@ CREATE TRIGGER immutable_renewal_update BEFORE UPDATE ON renewals BEGIN SELECT R
 CREATE TRIGGER immutable_renewal_delete BEFORE DELETE ON renewals BEGIN SELECT RAISE(ABORT,'immutable renewal'); END;
 ";
 
+struct WriterLock(File);
+
+impl Drop for WriterLock {
+    fn drop(&mut self) {
+        // Closing just this fd does not release an OFD lock held across another
+        // thread's fork. Explicit release follows the SQLite connection's drop.
+        let _ = self.0.unlock();
+    }
+}
+
 pub struct Store {
+    // Rust drops fields in declaration order. Close SQLite before releasing
+    // writer ownership, including when unrelated children inherited the fd.
     pub(crate) conn: Connection,
     path: PathBuf,
     inode: (u64, u64),
-    _lock: File,
+    _lock: WriterLock,
     pub(crate) boot: String,
     pub identity: String,
 }
+
 
 impl Store {
     /// Explicit fresh-state initialization only. No import or fallback to a legacy DB.
@@ -106,6 +119,7 @@ impl Store {
             .open(lock_path)
             .map_err(|e| e.to_string())?;
         lock.try_lock().map_err(|_| "WRITER_ALREADY_ACTIVE")?;
+        let lock = WriterLock(lock);
         let path = directory.join("authority.sqlite3");
         if initialize {
             // create_new prevents accidental history reuse or database overwrite.
@@ -158,13 +172,16 @@ impl Store {
         {
             return Err("CORRUPT_AUTHORITY".into());
         }
+        // Complete fallible initialization before moving either resource into
+        // the struct: partially initialized struct temporaries drop in reverse.
+        let boot =
+            fs::read_to_string("/proc/sys/kernel/random/boot_id").map_err(|e| e.to_string())?;
         let store = Self {
             conn,
             path,
             inode: (m.dev(), m.ino()),
             _lock: lock,
-            boot: fs::read_to_string("/proc/sys/kernel/random/boot_id")
-                .map_err(|e| e.to_string())?,
+            boot,
             identity,
         };
         // Validate every stream and every stored result before serving any projection.
@@ -720,4 +737,35 @@ pub(crate) fn commit_core(
         .map_err(db)?;
     }
     Ok(receipt)
+}
+
+#[cfg(test)]
+mod writer_lock_regression {
+    use super::*;
+    use std::process::{Command, Stdio};
+
+    #[test]
+    fn closed_store_releases_writer_lock_while_unrelated_child_keeps_inherited_fd() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(directory.path(), true).unwrap();
+        assert_eq!(
+            Store::open(directory.path(), false).err().unwrap(),
+            "WRITER_ALREADY_ACTIVE"
+        );
+        // Deterministically hold the same open-file description across a child,
+        // as a concurrent fork before exec can do even with CLOEXEC on the fd.
+        let mut child = Command::new("/bin/sh")
+            .args(["-c", "read value"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::from(store._lock.0.try_clone().unwrap()))
+            .spawn()
+            .unwrap();
+        drop(store);
+        let reopened = Store::open(directory.path(), false);
+        let child_was_alive = child.try_wait().unwrap().is_none();
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(child_was_alive);
+        assert!(reopened.is_ok(), "{:?}", reopened.err());
+    }
 }

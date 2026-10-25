@@ -122,11 +122,11 @@ impl Workflow {
     pub fn operation(&self) -> String {
         format!("workflow:{}:{}", self.identity, self.action)
     }
-    fn schema(&self) -> Value {
+    pub(crate) fn schema(&self) -> Value {
         let properties:BTreeMap<_,_>=self.parameters.iter().map(|(n,k,c)| (n.clone(),if k=="enum" {json!({"type":"string","enum":c})} else {json!({"type":"string","pattern":format!("^{}$",format_pattern(k).unwrap_or("(?!)"))})})).collect();
         json!({"type":"object","additionalProperties":false,"required":self.parameters.iter().map(|p|&p.0).collect::<Vec<_>>(),"properties":properties})
     }
-    fn render(&self, values: &Value) -> Result<Vec<String>> {
+    pub(crate) fn render(&self, values: &Value) -> Result<Vec<String>> {
         let obj = values.as_object().ok_or("INVALID_ARGUMENTS")?;
         if obj.len() != self.parameters.len() {
             return Err("INVALID_ARGUMENTS".into());

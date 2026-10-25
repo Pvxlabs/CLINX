@@ -24,7 +24,9 @@ else:
     from tunnel_release_cas import sha, state
 
 SOURCES = (
-    "clinx/transport/tunnel_reliability.py",
+    "kernel/src/tunnel_supervisor.rs",
+    "kernel/src/tunnel_runtime.rs",
+    "kernel/src/bin/clinx-tunnel.rs",
     "scripts/build_tunnel_release.py",
     "scripts/tunnel_release_cas.py",
     "systemd/clinx-tunnel-reliability.service.in",
@@ -57,7 +59,7 @@ def archive(directory, destination):
 
 
 def build(source, output, home, python, tunnel, guard_paths, evidence, *, runtime_manifest=None,
-          control_overlay_base=None, node_binary=None):
+          control_overlay_base=None, node_binary=None, supervisor_binary=None):
     output = Path(output).absolute()
     if not output.is_relative_to("/data/artifacts") or output.exists():
         raise ValueError("NEW_TASK_ARTIFACT_OUTPUT_REQUIRED")
@@ -82,15 +84,25 @@ def build(source, output, home, python, tunnel, guard_paths, evidence, *, runtim
         "home": home,
         "reused_evidence_sha256": evidence,
     }
-    node_value = node_binary or os.environ.get('CLINX_NODE_BINARY')
-    if not node_value:
-        raise ValueError('QUALIFIED_RUST_CLIENT_RUNTIME_REQUIRED')
-    node = Path(node_value).resolve(strict=True)
-    checked = subprocess.run([str(node), '--client-runtime-contract'], input='',
+    # Never inherit executable code from a previous release. node_binary is a
+    # compatibility locator only; the release contains the independent supervisor.
+    binary_value = supervisor_binary or os.environ.get('CLINX_TUNNEL_BINARY')
+    if not binary_value and node_binary:
+        binary_value = Path(node_binary).with_name('clinx-tunnel')
+    if not binary_value and os.environ.get('CLINX_NODE_BINARY'):
+        binary_value = Path(os.environ['CLINX_NODE_BINARY']).with_name('clinx-tunnel')
+    if not binary_value:
+        raise ValueError('QUALIFIED_RUST_TUNNEL_SUPERVISOR_REQUIRED')
+    supervisor = Path(binary_value).resolve(strict=True)
+    supervisor_bytes = supervisor.read_bytes()
+    checked = subprocess.run([str(supervisor), '--supervisor-contract'], input='',
                              text=True, capture_output=True, timeout=5, check=False)
-    if checked.returncode or checked.stdout.strip() != 'RUST_CLIENT_RUNTIME_V1':
-        raise ValueError('QUALIFIED_RUST_CLIENT_RUNTIME_REQUIRED')
-    inputs['client_runtime'] = {'contract': 'RUST_CLIENT_RUNTIME_V1', 'sha256': sha(node.read_bytes())}
+    if checked.returncode or checked.stdout.strip() != 'RUST_TUNNEL_SUPERVISOR_V1':
+        raise ValueError('QUALIFIED_RUST_TUNNEL_SUPERVISOR_REQUIRED')
+    if supervisor.read_bytes() != supervisor_bytes:
+        raise ValueError('RUST_TUNNEL_SUPERVISOR_DRIFT')
+    inputs['supervisor_runtime'] = {'contract': 'RUST_TUNNEL_SUPERVISOR_V1',
+                                    'sha256': sha(supervisor_bytes)}
     runtime = None
     if runtime_manifest is not None:
         runtime_manifest = Path(runtime_manifest)
@@ -138,7 +150,6 @@ def build(source, output, home, python, tunnel, guard_paths, evidence, *, runtim
     substitutions = {
         "@HOME@": home,
         "@RELEASE@": install,
-        "@PYTHON@": str(python),
         "@TUNNEL@": install + "/tunnel-client-runtime" if runtime else str(tunnel),
         "@CODEX_PATH@": home + "/.nvm/versions/node/v24.19.0/bin:/usr/local/bin:/usr/bin:/bin",
         "@POLICY_ARGS@": " ".join(
@@ -146,15 +157,14 @@ def build(source, output, home, python, tunnel, guard_paths, evidence, *, runtim
         ),
     }
     contents = {
-        "tunnel_reliability.py": (source / "clinx/transport/tunnel_reliability.py").read_bytes(),
         "tunnel_release_cas.py": (source / "scripts/tunnel_release_cas.py").read_bytes(),
         "policy.json": encoded(policy),
         "units/99-p1-reliability.conf": (
             source / "systemd/clinx-tunnel-reliability-final.conf"
         ).read_bytes(),
     }
-    contents["clinx-node"] = node.read_bytes()
-    modes = {"clinx-node": 0o755}
+    contents["clinx-tunnel"] = supervisor_bytes
+    modes = {"clinx-tunnel": 0o755}
     if overlay:
         contents["control-overlay/manifest.json"] = encoded(overlay)
         for name in CONTROL_OVERLAY_FILES:
@@ -295,7 +305,8 @@ def main():
     parser.add_argument("--guard-manifest", type=Path, required=True)
     parser.add_argument("--evidence-manifest", type=Path, required=True)
     parser.add_argument("--transport-runtime-manifest", type=Path)
-    parser.add_argument("--node-binary", type=Path, help="Qualified Rust supervisor policy binary; never inherited from a prior release")
+    parser.add_argument("--node-binary", type=Path, help="Compatibility locator for the sibling clinx-tunnel binary")
+    parser.add_argument("--supervisor-binary", type=Path, help="Qualified standalone Rust supervisor")
     parser.add_argument("--control-overlay-base", type=Path,
                         help="Stage parser/operator sources and exact recovery data; does not wire or authorize activation")
     args = parser.parse_args()
@@ -311,7 +322,8 @@ def main():
         json.dumps(
             build(args.source, args.output, args.home, args.python, args.tunnel, guards, evidence,
                   runtime_manifest=args.transport_runtime_manifest,
-                  control_overlay_base=args.control_overlay_base, node_binary=args.node_binary),
+                  control_overlay_base=args.control_overlay_base, node_binary=args.node_binary,
+                  supervisor_binary=args.supervisor_binary),
             indent=2,
         )
     )

@@ -2,7 +2,8 @@
 
 唯一目标：**Rust 承担 Task Authority、执行生命周期、持久化、幂等、恢复、MCP、Provider、
 Host、Transport、Node 与 Discovery 的长期核心；前端采用适合现有客户端的技术（macOS UI 保留 Swift）；
-Python 仅保留尽可能薄的必要兼容层，以及开发、构建、资格验证和维护工具。**
+Python 仅保留尽可能薄的必要兼容层。全仓 Python 源码字节占比必须低于 5%，
+开发、构建、资格验证和维护工具同样纳入统计与迁移范围。**
 
 当前实现尚未达到这一目标。Rust 已接管 P620 任务权威、原生执行及 Host 动态工具执行；
 Mac 的旧 Bridge/Registry/M9 核心和 Python Dispatcher/Host runner 已删除。
@@ -13,8 +14,10 @@ Node 的 TCP/mTLS、现有配对身份校验、Centre/Owner 授权交集、反�
 Provider 分块/IPC、Node Registry 持久化及请求去重/恢复也已由 Rust 接管。
 原生历史、观察目录与 Collector 队列/checkpoint/ACK 恢复已迁 Rust；Provider Unix RPC/事件/证据判定、
 Node 观察路由、Helper 心跳调度、Observer 查询投影、信任记录事务与配对窗口也由 Rust 承担。
-Python 仍承载平台与配置装配、HTTP/mDNS/初次 enrollment IO、公开对象兼容和部分进程监督 IO。
-当前边界和验证见 [客户端运行时迁移](RUST_CLIENT_RUNTIME_MIGRATION.md)；
+Provider 客户端请求契约、默认 Process/SSH/WebSocket、Observer HTTP listener/auth/router、
+配置校验与 Workflow 规则、独立 Tunnel 完整生命周期也已迁 Rust。
+Python 仍承载平台装配、mDNS/初次 enrollment、公开对象兼容及部分采样与 Centre 外层调度。
+当前边界和验证见 [薄兼容层迁移](RUST_THIN_RUNTIME_MIGRATION.md)；
 每组 Python 的实际用途见 [Python 运行边界](PYTHON_RUNTIME_BOUNDARIES.md)。
 
 ## 布局
@@ -27,12 +30,12 @@ Python 仍承载平台与配置装配、HTTP/mDNS/初次 enrollment IO、公开�
 | `clinx/contracts/` | TOML 配置、Python DTO/错误类型；身份/策略规范化与兼容校验委托 Rust | ACTIVE_RUNTIME；配置与公开对象兼容 |
 | `clinx/authority/` | 当前 Python IPC/配对请求转发、兼容 API 与只读 Provider 协议客户端 | ACTIVE_RUNTIME；业务请求选择与投影已迁 Rust |
 | `clinx/mcp/` | 观察/显式维护用兼容 codec、Rust CLI launcher、共享公开 schema 数据 | 观察 codec 仍 ACTIVE_RUNTIME；正常业务入口已迁 Rust |
-| `clinx/provider/` | Codex 公开协议 API 与平台 IO；Unix RPC、事件、live-writer/精确证据判断由 Rust 实现 | ACTIVE_RUNTIME；仍含资格/维护用旧传输公开 API |
-| `clinx/host/` | 安装配置的 workflow schema；冻结的操作目录参考仅用于资格验证 | 配置解析仍 ACTIVE_RUNTIME；执行、投递、恢复已迁 Rust |
-| `clinx/transport/` | Tunnel 进程/HTTP IO；恢复判定和持久回执由 Rust 实现 | ACTIVE_RUNTIME；owned-process drain/信号 IO 仍为 Python |
+| `clinx/provider/` | Codex 公开协议 API 与平台 IO；客户端请求契约、默认 Process/SSH/Unix RPC、事件、live-writer/精确证据判断由 Rust 实现 | ACTIVE_RUNTIME；仍含资格/维护用旧传输公开 API |
+| `clinx/host/` | Workflow 公开 DTO；schema/validation/render 已迁 Rust；冻结操作目录仅用于资格验证 | 配置 codec 仍 ACTIVE_RUNTIME；执行、投递、恢复已迁 Rust |
+| `clinx/transport/` | Tunnel 历史公开资格 API；正常 CLI exec Rust | QUALIFICATION；运行服务直接启动 `clinx-tunnel`，不发布此 Python 实现 |
 | `clinx/nodes/` | Rust Node/Registry/Provider 客户端、配置与 IO 装配 | ACTIVE_RUNTIME；路由/cursor/read 投影/Helper 注册心跳调度由 Rust 实现 |
 | `clinx/discovery/` | 本机密钥与证书建立、OPAQUE enrollment/mDNS IO 与 Helper 设置 | ACTIVE_RUNTIME；信任事务/窗口/候选索引规则由 Rust 实现 |
-| `clinx/monitor/` | Observer HTTP/codec 与身份/协议装配；历史/查询/精确证据/checkpoint/投影委托 Rust | ACTIVE_RUNTIME；HTTP 路由和采样探针/cache 装配仍为 Python |
+| `clinx/monitor/` | Observer HTTP/codec 与身份/协议装配；历史/查询/精确证据/checkpoint/投影委托 Rust | ACTIVE_RUNTIME；HTTP listener/auth/router 已迁 Rust；采样探针/cache 装配仍为 Python |
 | `clinx/compat/`（已删除） | 旧 Mac Bridge/Registry/M9 及 completion/recovery/outbox | DEAD；由 Rust Authority 事务与 native Transport 替代 |
 | `tools/build/` | 共用运行源码清单处理与增量 App 拷贝 | DEVOPS |
 | `tools/maintenance/` | 显式维护工具 | DEVOPS；不进入运行包 |
@@ -69,7 +72,9 @@ Monitor profile 同样禁止 COMPAT；新增文件不会通过目录 glob 自动
 `node_network=RUST_NODE_NETWORK_V1`，并包含 `clinx-node`。打包时实际执行
 `clinx-node --network-contract` 和 `--observation-contract` 校验二进制；新清单必须有
 `observation_runtime=RUST_OBSERVATION_V1`，不能将新客户端与旧 Node binary 混用。
-客户端进一步要求 `client_runtime=RUST_CLIENT_RUNTIME_V1` 和实测
+最新客户端同时要求 `thin_runtime=RUST_THIN_RUNTIME_V1` 和实测
+`clinx-node --thin-runtime-contract`；旧 binary 不支持新配置/Observer/Provider 契约，构建必须拒绝。
+客户端还要求 `client_runtime=RUST_CLIENT_RUNTIME_V1` 和实测
 `clinx-node --client-runtime-contract`；同一 marker 覆盖 Provider、Observer、Discovery、
 Node router、身份兼容契约及 Tunnel policy。Monitor 源码 manifest 同样声明这些契约和所需的两个 Rust Helper。`architecture/runtime-data.json`
 显式声明共享 schema 数据，Rust 在编译时嵌入，Python 观察/维护 codec 从包内读取。
@@ -185,3 +190,20 @@ Transport 与 observer 使用 `CLINX_RUST_PROVIDER_GATEWAYS`（JSON host→绝�
 及 `CLINX_RUST_PROVIDER_GATEWAY_UID`；worker 转换为重复的 `--provider-route HOST PATH`。
 单节点旧配置 `CLINX_RUST_REMOTE_HOSTS` 与 `CLINX_RUST_PROVIDER_GATEWAY` 继续有效。
 这些是待部署的配置接口，本轮未安装/选择 release 或重启生产服务。
+
+## 全仓 Python 低于 5% 的验收
+
+`clinx-source-audit` 是只读 Rust 工具，固定使用 Python/Rust/Swift/Go/C/Shell 六语言
+物理源码字节口径，包含 tracked 和非 ignored 新源码中的测试、构建及维护工具。
+不更改 Linguist、不排除 Python 资格代码、不把生成代码加入分母。
+同时输出物理行数、分类规模和根目录 Python 列表。
+
+```sh
+<task-target>/release/clinx-source-audit --revision HEAD
+<task-target>/release/clinx-source-audit
+```
+
+默认严格小于 5% 才退出 0；未达标退出 2，工具错误退出 1。当前目标仍未达成。
+运行包不含旧核心、局部迁移 PASS 和全仓占比达标是三个独立验收项。
+资格工具占有显著 Python 规模，必须保留测试身份、断言和覆盖地迁移到 Rust；
+不能通过删除测试或调整统计口径达标。

@@ -1,22 +1,17 @@
 """Codex JSON-RPC client for remaining observation and Node relay paths.
 
-Codex's ``app-server proxy`` forwards raw bytes to the existing control
-socket.  The control socket is a Unix-domain WebSocket endpoint, so the bridge
-owns the small WebSocket handshake/framing layer and keeps JSON-RPC handling
-above it.  No Desktop IPC, credential inspection, or thread discovery is done
-here. Dispatch callers must provide an exact durable thread id.
+Rust owns process/Unix transports, WebSocket/JSONL, request validation,
+writer admission, native-input evidence and subscription lifecycle. Python
+keeps the existing DTOs, exception identity, signatures and explicit injected
+IO seams used by qualification. No Desktop IPC or thread discovery is done
+here; callers supply the exact durable thread identity.
 """
 
 from __future__ import annotations
 
-import base64
 import dataclasses
-import hashlib
-import json
 import os
-import re
 import select
-import struct
 import subprocess
 import time
 import threading
@@ -59,11 +54,6 @@ class AppServerWriterConflict(AppServerRemoteError):
     """An explicit resume rejection, before any turn/start request."""
     code = "NATIVE_ACTIVE_WRITER"
     side_effect = "NONE"
-
-
-def _is_transport_timeout(exc: AppServerTransportError) -> bool:
-    """Distinguish an empty non-blocking poll from a closed transport."""
-    return "timed out" in str(exc).casefold() or "timeout" in str(exc).casefold()
 
 
 def _process_group_id(process: Any) -> int | None:
@@ -113,223 +103,100 @@ class JSONRPCTransport(Protocol):
 
 
 def transport_lifecycle_state(transport: Any) -> str:
-    """Return local lifecycle evidence as ``available``, ``unavailable`` or ``unknown``.
-
-    This probe only reports state already exposed by the transport; it never
-    sends traffic or treats missing attributes as proof of availability.
-    """
-    explicit = getattr(transport, "transport_lifecycle_state", None)
-    if callable(explicit):
-        try:
-            state = explicit()
-        except Exception:
-            return "unknown"
-        if state in {"available", "unavailable", "unknown"}:
-            return state
+    """Encode local observations; Rust decides lifecycle availability."""
     missing = object()
-    closed = getattr(transport, "closed", missing)
-    connected = getattr(transport, "connected", missing)
-    if closed is True or connected is False:
-        return "unavailable"
-    if closed is not missing and closed is not False:
-        return "unknown"
-    if connected is not missing and connected is not True:
-        return "unknown"
-    process = getattr(transport, "_process", missing)
-    if process is not missing:
-        if process is None:
-            return "unavailable"
-        poll = getattr(process, "poll", None)
-        if callable(poll):
-            try:
-                return "unavailable" if poll() is not None else "available"
-            except Exception:
-                return "unknown"
-        return "unknown"
-    if connected is True or closed is False:
-        return "available"
-    connected_flag = getattr(transport, "_connected", missing)
-    if connected_flag is True:
-        return "available"
-    if connected_flag is False:
-        return "unavailable"
-    return "unknown"
-
-
-class ProcessStdioTransport:
-    """Exchange line-delimited JSON with a child process over stdio."""
-
-    def __init__(
-        self,
-        command: tuple[str, ...],
-        *,
-        timeout_seconds: float = 30.0,
-        popen: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
-    ):
-        if not command:
-            raise AppServerTransportError("app-server command is required")
-        self.command = command
-        self.timeout_seconds = timeout_seconds
-        self._popen = popen
-        self._process: subprocess.Popen[str] | None = None
-
-    def connect(self) -> None:
-        if self._process is not None:
-            return
+    def callback(event):
+        args = event['arguments']['arguments']
+        target = getattr(transport, '_process', None) if args.get('process') else transport
+        value = getattr(target, args['name'], missing)
+        is_callable = callable(value)
         try:
-            self._process = self._popen(
-                list(self.command),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                shell=False,
-                text=True,
-                encoding="utf-8",
-                bufsize=1,
-                start_new_session=True,
-            )
-        except OSError as exc:
-            raise AppServerTransportError(
-                f"failed to start app-server transport: {exc}"
-            ) from exc
-
-    def send(self, message: dict[str, Any]) -> None:
-        if self._process is None or self._process.stdin is None:
-            raise AppServerTransportError("app-server transport is not connected")
-        try:
-            self._process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
-            self._process.stdin.flush()
-        except (BrokenPipeError, OSError) as exc:
-            raise AppServerTransportError(f"failed to write app-server request: {exc}") from exc
-
-    def receive(self, timeout_seconds: float) -> dict[str, Any]:
-        if self._process is None or self._process.stdout is None:
-            raise AppServerTransportError("app-server transport is not connected")
-        ready, _, _ = select.select([self._process.stdout], [], [], timeout_seconds)
-        if not ready:
-            raise AppServerTransportError(
-                f"timed out waiting for app-server response after {timeout_seconds:.1f}s"
-            )
-        line = self._process.stdout.readline()
-        if not line:
-            code = self._process.poll()
-            raise AppServerTransportError(
-                "app-server transport closed" + (f" (exit {code})" if code is not None else "")
-            )
-        try:
-            message = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise AppServerProtocolError("app-server returned malformed JSON") from exc
-        if not isinstance(message, dict):
-            raise AppServerProtocolError("app-server message must be a JSON object")
-        return message
-
-    def close(self) -> None:
-        process, self._process = self._process, None
-        if process is None:
-            return
-        try:
-            if process.stdin is not None:
-                process.stdin.close()
-        except OSError:
-            pass
-        pgid = _terminate_process_group(process)
-        try:
-            process.wait(timeout=2)
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-        # The node wrapper can exit while its native proxy child remains in
-        # the original group, so finish the group explicitly after waiting.
-        _kill_process_group(process, pgid)
+            if args.get('call') and is_callable:
+                value = value()
+        except Exception:
+            return {'result': {'failed': True}}
+        return {'result': dict(present=value is not missing, callable=is_callable, none=value is None,
+                value=value if type(value) in (str, bool, int, float) else None)}
+    return _provider_value(_provider_with_callback('api.lifecycle', callback))
 
 
 class ProcessByteTransport:
-    """Exchange raw bytes with a child process over stdio."""
+    """Rust-owned process; custom popen is an explicit injected IO seam."""
+    _text = False
 
-    def __init__(
-        self,
-        command: tuple[str, ...],
-        *,
-        timeout_seconds: float = 30.0,
-        popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
-    ):
+    def __init__(self, command, *, timeout_seconds=30.0, popen=subprocess.Popen):
         if not command:
-            raise AppServerTransportError("app-server command is required")
-        self.command = command
-        self.timeout_seconds = timeout_seconds
-        self._popen = popen
-        self._process: subprocess.Popen[bytes] | None = None
+            raise AppServerTransportError('app-server command is required')
+        self.command, self.timeout_seconds = command, timeout_seconds
+        self._popen, self._process, self._session = popen, None, None
 
-    def connect(self) -> None:
-        if self._process is not None:
+    def connect(self):
+        if self._session is not None or self._process is not None:
             return
+        if self._popen is subprocess.Popen:
+            self._session = _provider_value(_provider_call('wire.process_connect', command=self.command))
+            return
+        kwargs = dict(stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                      shell=False, text=self._text, bufsize=1 if self._text else 0, start_new_session=True)
+        if self._text:
+            kwargs['encoding'] = 'utf-8'
         try:
-            self._process = self._popen(
-                list(self.command),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                shell=False,
-                text=False,
-                bufsize=0,
-                start_new_session=True,
-            )
+            self._process = self._popen(list(self.command), **kwargs)
         except OSError as exc:
-            raise AppServerTransportError(
-                f"failed to start app-server transport: {exc}"
-            ) from exc
+            raise AppServerTransportError(f'failed to start app-server transport: {exc}') from exc
 
-    def _stdout(self):
-        if self._process is None or self._process.stdout is None:
-            raise AppServerTransportError("app-server transport is not connected")
-        return self._process.stdout
-
-    def send_bytes(self, payload: bytes) -> None:
+    def send_bytes(self, payload):
+        if self._session is not None:
+            return _provider_value(_provider_call('wire.send_bytes', process_session=self._session, payload=payload.hex()))
         if self._process is None or self._process.stdin is None:
-            raise AppServerTransportError("app-server transport is not connected")
+            raise AppServerTransportError('app-server transport is not connected')
         try:
-            self._process.stdin.write(payload)
+            self._process.stdin.write(payload.decode('utf-8') if self._text else payload)
             self._process.stdin.flush()
         except (BrokenPipeError, OSError) as exc:
-            raise AppServerTransportError(f"failed to write app-server bytes: {exc}") from exc
+            raise AppServerTransportError(f'failed to write app-server bytes: {exc}') from exc
 
-    def receive_bytes(self, length: int, timeout_seconds: float) -> bytes:
+    def receive_bytes(self, length, timeout_seconds):
+        if self._session is not None:
+            return bytes.fromhex(_provider_value(_provider_call('wire.receive_bytes', process_session=self._session, length=length, timeout=timeout_seconds)))
         if length < 0:
-            raise AppServerTransportError("byte read length must not be negative")
-        if length == 0:
-            return b""
-        stream = self._stdout()
-        deadline = time.monotonic() + timeout_seconds
-        result = bytearray()
+            raise AppServerTransportError('byte read length must not be negative')
+        if not length:
+            return b''
+        if self._process is None or self._process.stdout is None:
+            raise AppServerTransportError('app-server transport is not connected')
+        stream, result, deadline = self._process.stdout, bytearray(), time.monotonic() + timeout_seconds
         while len(result) < length:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise AppServerTransportError(
-                    f"timed out waiting for {length} app-server bytes"
-                )
+                raise AppServerTransportError(f'timed out waiting for {length} app-server bytes')
             try:
                 fd = stream.fileno()
             except (AttributeError, OSError):
                 fd = None
             if fd is not None:
-                ready, _, _ = select.select([fd], [], [], remaining)
-                if not ready:
-                    raise AppServerTransportError(
-                        f"timed out waiting for {length} app-server bytes"
-                    )
+                if not select.select([fd], [], [], remaining)[0]:
+                    raise AppServerTransportError(f'timed out waiting for {length} app-server bytes')
                 chunk = os.read(fd, length - len(result))
             else:
                 chunk = stream.read(length - len(result))
             if not chunk:
-                code = self._process.poll() if self._process is not None else None
-                raise AppServerTransportError(
-                    "app-server byte transport closed"
-                    + (f" (exit {code})" if code is not None else "")
-                )
-            result.extend(chunk)
+                code = self._process.poll()
+                raise AppServerTransportError('app-server byte transport closed' + (f' (exit {code})' if code is not None else ''))
+            result.extend(chunk.encode('utf-8') if isinstance(chunk, str) else chunk)
         return bytes(result)
 
-    def close(self) -> None:
+    def transport_lifecycle_state(self):
+        if self._session is not None:
+            return _provider_value(_provider_call('wire.process_lifecycle', process_session=self._session))
+        if self._process is None:
+            return 'unavailable'
+        return 'available' if self._process.poll() is None else 'unavailable'
+
+    def close(self):
+        session, self._session = self._session, None
+        if session is not None:
+            _provider_value(_provider_call('wire.process_close', process_session=session))
         process, self._process = self._process, None
         if process is None:
             return
@@ -346,154 +213,76 @@ class ProcessByteTransport:
         _kill_process_group(process, pgid)
 
 
-class WebSocketStdioTransport:
-    """Speak WebSocket frames over a raw stdio byte tunnel."""
+def _wire_operation(transport, operation, **arguments):
+    session = getattr(transport, '_session', None)
+    if session is not None:
+        return _provider_value(_provider_call('wire.' + operation, process_session=session, **arguments))
+    errors = []
+    def callback(event):
+        call = event['arguments']
+        payload = call['arguments']
+        try:
+            if call['operation'] == 'send_bytes':
+                value = transport.send_bytes(bytes.fromhex(payload['payload']))
+            else:
+                value = transport.receive_bytes(payload['length'], payload['timeout']).hex()
+            return {'result': value}
+        except Exception as exc:
+            errors.append(exc)
+            return {'error': {'kind': 'protocol' if isinstance(exc, AppServerProtocolError) else 'transport', 'message': str(exc)}}
+    result = _provider_with_callback('wire.' + operation, callback, **arguments)
+    if result.get('error') is not None and errors:
+        raise errors[-1]
+    return _provider_value(result)
 
+
+class ProcessStdioTransport(ProcessByteTransport):
+    """Rust JSONL codec; the public API preserves explicitly injected streams."""
+    _text = True
+
+    def send(self, message):
+        return _wire_operation(self, 'send_line', message=message)
+
+    def receive(self, timeout_seconds):
+        return _wire_operation(self, 'receive_line', timeout=timeout_seconds)
+
+
+class WebSocketStdioTransport:
+    """Rust WebSocket codec over a Rust process or explicitly injected bytes."""
     _MAX_FRAME_BYTES = 16 * 1024 * 1024
 
-    def __init__(
-        self,
-        command: tuple[str, ...],
-        *,
-        timeout_seconds: float = 30.0,
-        popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
-        websocket_path: str = "/",
-    ):
-        if not websocket_path.startswith("/"):
+    def __init__(self, command, *, timeout_seconds=30.0, popen=subprocess.Popen, websocket_path='/'):
+        if not websocket_path.startswith('/'):
             raise AppServerTransportError("websocket path must start with '/'")
-        self.command = command
-        self.timeout_seconds = timeout_seconds
-        self.websocket_path = websocket_path
-        self._byte_transport = ProcessByteTransport(
-            command,
-            timeout_seconds=timeout_seconds,
-            popen=popen,
-        )
+        self.command, self.timeout_seconds, self.websocket_path = command, timeout_seconds, websocket_path
+        self._byte_transport = ProcessByteTransport(command, timeout_seconds=timeout_seconds, popen=popen)
         self._connected = False
 
-    def connect(self) -> None:
-        if self._connected:
-            return
-        self._byte_transport.connect()
-        key = base64.b64encode(os.urandom(16)).decode("ascii")
-        request = (
-            f"GET {self.websocket_path} HTTP/1.1\r\n"
-            "Host: localhost\r\n"
-            "Upgrade: websocket\r\n"
-            "Connection: Upgrade\r\n"
-            f"Sec-WebSocket-Key: {key}\r\n"
-            "Sec-WebSocket-Version: 13\r\n"
-            "\r\n"
-        ).encode("ascii")
-        self._byte_transport.send_bytes(request)
-        header = self._read_http_header()
-        lines = header.decode("latin1").split("\r\n")
-        if not lines or not lines[0].startswith("HTTP/1.1 101"):
-            status = lines[0] if lines else "empty response"
-            raise AppServerProtocolError(f"app-server websocket handshake failed: {status}")
-        headers: dict[str, str] = {}
-        for line in lines[1:]:
-            if ":" in line:
-                name, value = line.split(":", 1)
-                headers[name.lower()] = value.strip()
-        expected_accept = base64.b64encode(
-            hashlib.sha1(
-                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
-            ).digest()
-        ).decode("ascii")
-        if headers.get("sec-websocket-accept") != expected_accept:
-            raise AppServerProtocolError("app-server websocket accept mismatch")
-        self._connected = True
-
-    def _read_http_header(self) -> bytes:
-        result = bytearray()
-        deadline = time.monotonic() + self.timeout_seconds
-        while b"\r\n\r\n" not in result:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise AppServerTransportError("timed out during app-server websocket handshake")
-            result.extend(self._byte_transport.receive_bytes(1, remaining))
-            if len(result) > 64 * 1024:
-                raise AppServerProtocolError("app-server websocket handshake is too large")
-        return bytes(result).split(b"\r\n\r\n", 1)[0]
-
-    def send(self, message: dict[str, Any]) -> None:
+    def connect(self):
         if not self._connected:
-            raise AppServerTransportError("app-server websocket is not connected")
-        payload = json.dumps(message, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        self._send_frame(payload, opcode=0x1)
+            self._byte_transport.connect()
+            _wire_operation(self._byte_transport, 'handshake', path=self.websocket_path, timeout=self.timeout_seconds)
+            self._connected = True
 
-    def _send_frame(self, payload: bytes, *, opcode: int) -> None:
-        mask = os.urandom(4)
-        length = len(payload)
-        if length < 126:
-            header = bytes([0x80 | opcode, 0x80 | length])
-        elif length <= 0xFFFF:
-            header = bytes([0x80 | opcode, 0x80 | 126]) + struct.pack("!H", length)
-        else:
-            header = bytes([0x80 | opcode, 0x80 | 127]) + struct.pack("!Q", length)
-        masked = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
-        self._byte_transport.send_bytes(header + mask + masked)
+    def _read_http_header(self):
+        return bytes.fromhex(_wire_operation(self._byte_transport, 'header', timeout=self.timeout_seconds))
 
-    def _receive_frame(self, timeout_seconds: float) -> tuple[int, bytes, bool]:
-        first, second = self._byte_transport.receive_bytes(2, timeout_seconds)
-        fin = bool(first & 0x80)
-        opcode = first & 0x0F
-        masked = bool(second & 0x80)
-        length = second & 0x7F
-        if length == 126:
-            length = struct.unpack("!H", self._byte_transport.receive_bytes(2, timeout_seconds))[0]
-        elif length == 127:
-            length = struct.unpack("!Q", self._byte_transport.receive_bytes(8, timeout_seconds))[0]
-        if length > self._MAX_FRAME_BYTES:
-            raise AppServerProtocolError("app-server websocket frame is too large")
-        mask = self._byte_transport.receive_bytes(4, timeout_seconds) if masked else b""
-        payload = bytearray(self._byte_transport.receive_bytes(length, timeout_seconds))
-        if masked:
-            for index in range(length):
-                payload[index] ^= mask[index % 4]
-        return opcode, bytes(payload), fin
+    def send(self, message):
+        if not self._connected:
+            raise AppServerTransportError('app-server websocket is not connected')
+        return _wire_operation(self._byte_transport, 'send', message=message)
 
-    def receive(self, timeout_seconds: float) -> dict[str, Any]:
-        fragments = bytearray()
-        fragmented_opcode: int | None = None
-        deadline = time.monotonic() + timeout_seconds
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise AppServerTransportError("timed out waiting for app-server websocket message")
-            opcode, payload, fin = self._receive_frame(remaining)
-            if opcode == 0x9:  # ping
-                self._send_frame(payload, opcode=0xA)
-                continue
-            if opcode == 0xA:  # pong
-                continue
-            if opcode == 0x8:
-                raise AppServerTransportError("app-server websocket closed")
-            if opcode in {0x1, 0x2}:
-                if fragmented_opcode is not None:
-                    raise AppServerProtocolError("nested app-server websocket fragment")
-                fragmented_opcode = opcode
-                fragments.extend(payload)
-            elif opcode == 0x0:
-                if fragmented_opcode is None:
-                    raise AppServerProtocolError("unexpected app-server websocket continuation")
-                fragments.extend(payload)
-            else:
-                raise AppServerProtocolError(f"unsupported app-server websocket opcode: {opcode}")
-            if not fin:
-                continue
-            if fragmented_opcode != 0x1:
-                raise AppServerProtocolError("app-server websocket message is not text")
-            try:
-                message = json.loads(bytes(fragments).decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise AppServerProtocolError("app-server returned malformed websocket JSON") from exc
-            if not isinstance(message, dict):
-                raise AppServerProtocolError("app-server message must be a JSON object")
-            return message
+    def _send_frame(self, payload, *, opcode):
+        return _wire_operation(self._byte_transport, 'send_frame', payload=payload.hex(), opcode=opcode)
 
-    def close(self) -> None:
+    def _receive_frame(self, timeout_seconds):
+        op, payload, fin = _wire_operation(self._byte_transport, 'frame', timeout=timeout_seconds)
+        return op, bytes.fromhex(payload), fin
+
+    def receive(self, timeout_seconds):
+        return _wire_operation(self._byte_transport, 'receive', timeout=timeout_seconds)
+
+    def close(self):
         self._connected = False
         self._byte_transport.close()
 
@@ -556,12 +345,15 @@ def _provider_callback(event):
     try:
         operation, payload = args['operation'], args['arguments']
         if operation == 'send':
-            value = client.transport.send(payload['message'])
+            client.transport.send(payload['message'])
+            value = None
         elif operation == 'receive':
             value = client._receive(payload['timeout'])
         elif operation == 'mark':
             mark = getattr(client.transport, 'mark_request_result', None)
-            value = mark(payload['id'], payload['outcome']) if callable(mark) else None
+            if callable(mark):
+                mark(payload['id'], payload['outcome'])
+            value = None
         else:
             raise AppServerProtocolError('PROVIDER_CALLBACK_INVALID')
         return {'result': value}
@@ -721,20 +513,64 @@ class ModelCapabilityError(AppServerProtocolError):
 
 
 def _parse_reasoning_efforts(value: Any, *, model_id: str) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        raise ModelCapabilityError(f"model/list has malformed capability for {model_id}")
-    efforts: list[str] = []
-    for item in value:
-        if isinstance(item, str) and item.strip():
-            efforts.append(item.strip())
-            continue
-        if isinstance(item, dict):
-            effort = item.get("reasoningEffort")
-            if isinstance(effort, str) and effort.strip():
-                efforts.append(effort.strip())
-                continue
-        raise ModelCapabilityError(f"model/list has malformed capability for {model_id}")
-    return tuple(efforts)
+    return tuple(_provider_api(None, 'efforts', value=value, model_id=model_id))
+
+
+def _provider_api(client, operation, **arguments):
+    """Preserve Python API/exception objects around the Rust request contract."""
+    exceptions = []
+    def callback(event):
+        call = event['arguments']
+        op, payload = call['operation'], call['arguments']
+        try:
+            if op == 'request':
+                value = client._request(payload['method'], payload['params'])
+            elif op == 'model_list':
+                value = client.model_list()
+            elif op == 'send':
+                client.transport.send(payload['message'])
+                value = None
+            elif op == 'confirm':
+                client._confirm_native_input(**payload)
+                value = None
+            elif op == 'close':
+                client.transport.close()
+                value = None
+            else:
+                raise AppServerProtocolError('PROVIDER_API_CALLBACK_INVALID')
+            return {'result': value}
+        except Exception as exc:
+            exceptions.append(exc)
+            error = dict(kind='callback', index=len(exceptions)-1, message=str(exc), **{'class': type(exc).__name__})
+            if isinstance(exc, AppServerRemoteError):
+                error.update(remote=exc.error, method=exc.method)
+            return {'error': error}
+    attrs = vars(client) if client is not None else {}
+    state = dict(owned_thread_ids=list(attrs.get('_owned_thread_ids', ())),
+                 owned_turns=attrs.get('_owned_turns', {}), writer_release=attrs.get('writer_release', {}))
+    policy = {name: attrs.get(name) for name in ('native_forwarding_thread_id', 'native_creation_cwd',
+              'shared_native_writer', 'read_only_observer', 'rust_authority_request_id', 'native_forwarding_request_id')}
+    result = _provider_with_callback('api.' + operation, callback, arguments=arguments, state=state, policy=policy)
+    if client is not None:
+        state = result['state']
+        patch = result['patch']
+        owned = attrs.setdefault('_owned_thread_ids', set())
+        owned.update(patch['add_threads'])
+        owned.difference_update(patch['remove_threads'])
+        attrs.setdefault('_owned_turns', {}).update(patch['owned_turns'])
+        attrs.setdefault('writer_release', {}).update(patch['writer_release'])
+        if 'native_forwarding_thread_id' in state:
+            client.native_forwarding_thread_id = state['native_forwarding_thread_id']
+    error = result.get('error')
+    if error is not None:
+        if error['kind'] == 'callback':
+            raise exceptions[error['index']]
+        if error['kind'] == 'writer_conflict':
+            raise AppServerWriterConflict(error['method'], error['remote']) from exceptions[error['index']]
+        cls = {'protocol': AppServerProtocolError, 'model': ModelCapabilityError,
+               'sandbox': AppServerSandboxPolicyError, 'shared_writer': AppServerSharedWriterError}.get(error['kind'], AppServerTransportError)
+        raise cls(error['message']) from (exceptions[-1] if exceptions else None)
+    return result['value']
 
 
 class CodexAppServerClient:
@@ -748,10 +584,7 @@ class CodexAppServerClient:
         max_received_events: int = 256,
         max_method_history: int = 256,
     ):
-        if not isinstance(max_received_events, int) or isinstance(max_received_events, bool) or max_received_events < 1:
-            raise AppServerProtocolError("max_received_events must be a positive integer")
-        if not isinstance(max_method_history, int) or isinstance(max_method_history, bool) or max_method_history < 1:
-            raise AppServerProtocolError("max_method_history must be a positive integer")
+        _provider_api(None, 'validate_capacity', max_received_events=max_received_events, max_method_history=max_method_history)
         self.transport = transport
         self.timeout_seconds = timeout_seconds
         self.events: list[str] = []
@@ -787,24 +620,10 @@ class CodexAppServerClient:
         self.close()
 
     def close(self) -> None:
-        for thread_id in tuple(self._owned_thread_ids - self._owned_turns.keys()):
-            self._release_owned_subscription(thread_id)
-        self.transport.close()
+        _provider_api(self, 'close')
 
     def _release_owned_subscription(self, thread_id: str) -> None:
-        if thread_id not in self._owned_thread_ids:
-            return
-        try:
-            result = self._request('thread/unsubscribe', {'threadId': thread_id})
-            status = result.get('status') if isinstance(result, dict) else None
-            if status not in ('unsubscribed', 'notSubscribed', 'notLoaded'):
-                raise AppServerProtocolError('Invalid thread/unsubscribe response')
-            self.writer_release[thread_id] = status
-        except Exception as exc:
-            self.writer_release[thread_id] = 'UNCONFIRMED:' + type(exc).__name__
-        finally:
-            # No blind RPC retry on close; transport teardown is connection-local.
-            self._owned_thread_ids.discard(thread_id)
+        _provider_api(self, 'release', thread_id=thread_id)
 
 
     def _send_server_response(self, request: dict[str, Any]) -> None:
@@ -861,51 +680,22 @@ class CodexAppServerClient:
         client_title: str,
         client_version: str,
     ) -> InitializeInfo:
-        result = self._request(
-            "initialize",
-            {
-                "clientInfo": {
-                    "name": client_name,
-                    "title": client_title,
-                    "version": client_version,
-                },
-                "capabilities": {"experimentalApi": True},
-            },
-        )
-        if not isinstance(result, dict):
-            raise AppServerProtocolError("initialize result must be an object")
-        server_info = result.get("serverInfo") or {}
-        if not isinstance(server_info, dict):
-            server_info = {}
-        self.transport.send({"method": "initialized"})
-        self.initialize_info = InitializeInfo(
-            server_name=_optional_string(server_info.get("name")),
-            server_version=_optional_string(server_info.get("version")),
-            user_agent=_optional_string(result.get("userAgent")),
-        )
+        self.initialize_info = InitializeInfo(**_provider_api(self, 'initialize', client_name=client_name, client_title=client_title, client_version=client_version))
         return self.initialize_info
 
     def thread_read(self, thread_id: str) -> dict[str, Any]:
         # The default read may include the complete turn history.  Adoption
         # only needs thread identity metadata, so explicitly suppress turns
         # to keep large durable conversations out of the bridge process.
-        result = self._request(
-            "thread/read",
-            {"threadId": thread_id, "includeTurns": False},
-        )
-        return _thread_result(result, "thread/read")
+        return _provider_api(self, 'thread_read', thread_id=thread_id)
 
     @staticmethod
     def _bounded_limit(limit: int) -> int:
-        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
-            raise AppServerProtocolError("bounded history limit must be an integer from 1 to 100")
-        return limit
+        return _provider_api(None, 'bounded_limit', limit=limit)
 
     @staticmethod
     def _paged_result(result: Any, method: str) -> dict[str, Any]:
-        if not isinstance(result, dict) or not isinstance(result.get("data"), list):
-            raise AppServerProtocolError(f"{method} result is missing data")
-        return result
+        return _provider_api(None, 'paged_result', result=result, method=method)
 
     def thread_turns_list(
         self,
@@ -916,20 +706,7 @@ class CodexAppServerClient:
         sort_direction: str = "desc",
         items_view: str = "summary",
     ) -> dict[str, Any]:
-        """Read a bounded page of turns without requesting the full thread."""
-        if sort_direction not in {"asc", "desc"}:
-            raise AppServerProtocolError("thread/turns/list sort_direction must be asc or desc")
-        if items_view not in {"summary", "full", "notLoaded"}:
-            raise AppServerProtocolError("thread/turns/list items_view is invalid")
-        params: dict[str, Any] = {
-            "threadId": thread_id,
-            "limit": self._bounded_limit(limit),
-            "sortDirection": sort_direction,
-            "itemsView": items_view,
-        }
-        if cursor is not None:
-            params["cursor"] = cursor
-        return self._paged_result(self._request("thread/turns/list", params), "thread/turns/list")
+        return _provider_api(self, 'thread_turns_list', thread_id=thread_id, limit=limit, cursor=cursor, sort_direction=sort_direction, items_view=items_view)
 
     def thread_items_list(
         self,
@@ -940,38 +717,13 @@ class CodexAppServerClient:
         cursor: str | None = None,
         sort_direction: str = "desc",
     ) -> dict[str, Any]:
-        """Read a bounded page of items, optionally for one exact turn."""
-        if sort_direction not in {"asc", "desc"}:
-            raise AppServerProtocolError("thread/items/list sort_direction must be asc or desc")
-        params: dict[str, Any] = {
-            "threadId": thread_id,
-            "limit": self._bounded_limit(limit),
-            "sortDirection": sort_direction,
-        }
-        if turn_id is not None:
-            params["turnId"] = turn_id
-        if cursor is not None:
-            params["cursor"] = cursor
-        return self._paged_result(self._request("thread/items/list", params), "thread/items/list")
+        return _provider_api(self, 'thread_items_list', thread_id=thread_id, turn_id=turn_id, limit=limit, cursor=cursor, sort_direction=sort_direction)
 
     def thread_list(self, *, cursor: str | None = None, limit: int = 100) -> dict[str, Any]:
-        params: dict[str, Any] = {"limit": limit}
-        if getattr(self, 'read_only_observer', False):
-            # The ordinary listing can repair rollout metadata. Observers may
-            # only read the existing native index, never trigger that repair.
-            params['useStateDbOnly'] = True
-        if cursor is not None:
-            params["cursor"] = cursor
-        result = self._request("thread/list", params)
-        if not isinstance(result, dict) or not isinstance(result.get("data"), list):
-            raise AppServerProtocolError("thread/list result is missing data")
-        return result
+        return _provider_api(self, 'thread_list', cursor=cursor, limit=limit)
 
     def thread_loaded_list(self) -> dict[str, Any]:
-        result = self._request("thread/loaded/list", {})
-        if not isinstance(result, dict) or not isinstance(result.get("data"), list):
-            raise AppServerProtocolError("thread/loaded/list result is missing data")
-        return result
+        return _provider_api(self, 'thread_loaded_list')
 
     def thread_start(
         self,
@@ -985,144 +737,25 @@ class CodexAppServerClient:
         dynamic_tools: list[dict[str, Any]] | None = None,
         developer_instructions: str | None = None,
     ) -> dict[str, Any]:
-        """Create a native thread with visible user content and separate policy."""
-        native_creation = (getattr(self, 'shared_native_writer', False)
-                           and getattr(self, 'native_creation_cwd', None) == cwd)
-        params: dict[str, Any] = {"cwd": cwd, "ephemeral": ephemeral}
-        if model is not None:
-            params["model"] = model
-        if project_id is not None:
-            params["projectId"] = project_id
-        if sandbox is not None:
-            params["sandbox"] = sandbox
-        if thread_source is not None:
-            params["threadSource"] = thread_source
-        if dynamic_tools is not None:
-            if not isinstance(dynamic_tools, list) or not dynamic_tools:
-                raise AppServerProtocolError("dynamic_tools must be a non-empty array")
-            params["dynamicTools"] = dynamic_tools
-        if developer_instructions is not None:
-            params["developerInstructions"] = developer_instructions
-        result = self._request("thread/start", params)
-        thread = _thread_result(result, "thread/start")
-        self._owned_thread_ids.add(thread['id'])
-        if native_creation:
-            self.native_forwarding_thread_id = thread['id']
-        return thread
+        return _provider_api(self, 'thread_start', cwd=cwd, model=model, project_id=project_id, sandbox=sandbox, ephemeral=ephemeral, thread_source=thread_source, dynamic_tools=dynamic_tools, developer_instructions=developer_instructions)
 
     def thread_resume(
         self, thread_id: str, *, dynamic_tools: list[dict[str, Any]] | None = None,
         developer_instructions: str | None = None
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"threadId": thread_id, "excludeTurns": True}
-        if dynamic_tools is not None:
-            if not isinstance(dynamic_tools, list) or not dynamic_tools:
-                raise AppServerProtocolError("dynamic_tools must be a non-empty array")
-            # 0.156.1 stores the thread's tools at thread/start. Its resume
-            # schema has no dynamicTools field; never pretend to replace it.
-        if developer_instructions is not None:
-            params["developerInstructions"] = developer_instructions
-        try:
-            result = self._request("thread/resume", params)
-        except AppServerRemoteError as exc:
-            if (exc.error.get("code") == -32600
-                    and exc.error.get("message") == f"thread {thread_id} already has an active writer"):
-                raise AppServerWriterConflict(exc.method, exc.error) from exc
-            raise
-        thread = _thread_result(result, "thread/resume")
-        if thread.get('id') != thread_id:
-            raise AppServerProtocolError('thread/resume returned a different thread')
-        self._owned_thread_ids.add(thread_id)
-        return thread
+        return _provider_api(self, 'thread_resume', thread_id=thread_id, dynamic_tools=dynamic_tools, developer_instructions=developer_instructions)
 
     def thread_name_set(self, thread_id: str, name: str) -> None:
-        self._request("thread/name/set", {"threadId": thread_id, "name": name})
+        return _provider_api(self, 'thread_name_set', thread_id=thread_id, name=name)
 
     def thread_inject_items(self, thread_id: str, items: list[dict[str, Any]]) -> None:
-        """Append native history items without replacing any configuration."""
-        params = {"threadId": thread_id, "items": items}
-        try:
-            self._request('thread/inject_items', params)
-        except AppServerRemoteError as exc:
-            # Desktop and CLI expose different spellings. Only an explicit
-            # unsupported-method response proves no append occurred.
-            if (exc.error.get('code') != -32600 or not str(exc.error.get('message', '')).startswith(
-                    'Invalid request: unknown variant `thread/inject_items`')):
-                raise
-            self._request('thread/injectItems', params)
+        return _provider_api(self, 'thread_inject_items', thread_id=thread_id, items=items)
 
     def model_list(self) -> dict[str, Any]:
-        result = self._request("model/list", {})
-        if not isinstance(result, dict):
-            raise AppServerProtocolError("model/list result must be an object")
-        return result
+        return _provider_api(self, 'model_list')
 
     def resolve_model(self, requested: str | None, reasoning_effort: str | None) -> tuple[str, str | None]:
-        """Resolve a logical or provider model against the live capability list."""
-        payload = self.model_list()
-        data = payload.get("data")
-        if not isinstance(data, list):
-            raise ModelCapabilityError("model/list capability data is unavailable")
-        entries: list[ModelCapability] = []
-        malformed_ids: set[str] = set()
-        raw_aliases: dict[str, set[str]] = {}
-        for item in data:
-            if not isinstance(item, dict) or item.get("hidden") is True:
-                continue
-            model_id = item.get("id")
-            if not isinstance(model_id, str) or not model_id.strip():
-                raise ModelCapabilityError("model/list contains malformed model id")
-            aliases = {model_id.casefold()}
-            for key in ("model", "displayName"):
-                value = item.get(key)
-                if isinstance(value, str):
-                    aliases.add(value.casefold())
-            raw_aliases[model_id] = aliases
-            try:
-                efforts = _parse_reasoning_efforts(
-                    item.get("supportedReasoningEfforts", ()),
-                    model_id=model_id,
-                )
-            except ModelCapabilityError:
-                malformed_ids.add(model_id)
-                continue
-            default = item.get("defaultReasoningEffort")
-            if default is not None and (
-                not isinstance(default, str) or not default.strip() or default.strip() not in efforts
-            ):
-                malformed_ids.add(model_id)
-                continue
-            entries.append(ModelCapability(model_id, tuple(efforts), default.strip() if isinstance(default, str) else None))
-        if not entries:
-            raise ModelCapabilityError("model/list returned no usable models")
-        wanted = (requested or "").strip()
-        if not wanted:
-            raise ModelCapabilityError("executable model is required")
-        if wanted in malformed_ids:
-            raise ModelCapabilityError(f"model/list has malformed capability for {wanted}")
-        exact = [entry for entry in entries if entry.model_id == wanted]
-        if exact:
-            selected = exact[0]
-        else:
-            needle = wanted.casefold()
-            if any(needle in aliases for model_id, aliases in raw_aliases.items() if model_id in malformed_ids):
-                raise ModelCapabilityError(f"model/list has malformed capability for {wanted}")
-            matches = []
-            for entry in entries:
-                aliases = raw_aliases.get(entry.model_id, {entry.model_id.casefold()})
-                if needle in aliases or needle == entry.model_id.rsplit("-", 1)[-1].casefold():
-                    matches.append(entry)
-            if len(matches) != 1:
-                raise ModelCapabilityError(
-                    f"model {wanted!r} is unsupported or ambiguous"
-                )
-            selected = matches[0]
-        effort = reasoning_effort.strip() if isinstance(reasoning_effort, str) else reasoning_effort
-        if effort is not None and effort not in selected.reasoning_efforts:
-            raise ModelCapabilityError(
-                f"reasoning effort {effort!r} is unsupported for {selected.model_id}"
-            )
-        return selected.model_id, effort or selected.default_reasoning_effort
+        return tuple(_provider_api(self, 'resolve_model', requested=requested, reasoning_effort=reasoning_effort))
 
     def turn_start(
         self,
@@ -1137,119 +770,26 @@ class CodexAppServerClient:
         writable_roots: list[str] | None = None,
         full_access: bool = False,
     ) -> TurnStartInfo:
-        forwarding = getattr(self, 'native_forwarding_thread_id', None) == thread_id
-        if getattr(self, "shared_native_writer", False) and not forwarding:
-            raise AppServerSharedWriterError("Managed start on the shared Desktop daemon lacks atomic writer admission")
-        if network_access is not None and not isinstance(network_access, bool):
-            raise AppServerSandboxPolicyError("network_access must be a boolean")
-        params: dict[str, Any] = {
-            "threadId": thread_id,
-            "input": [{"type": "text", "text": prompt}],
-            "cwd": cwd,
-        }
-        if forwarding or getattr(self, 'rust_authority_request_id', None):
-            # The request's input, rather than an exclusive daemon, is owned
-            # by CLINX. Retain the native client id across a sealed attempt.
-            request_key = (getattr(self, 'rust_authority_request_id', None)
-                           or getattr(self, 'native_forwarding_request_id', None) or str(uuid.uuid4()))
-            client_id = str(uuid.uuid5(uuid.NAMESPACE_URL, 'clinx-native-input:' + thread_id + ':' + request_key))
-            params['clientUserMessageId'] = client_id
-        if model is not None:
-            params["model"] = model
-        if reasoning_effort is not None:
-            params["effort"] = reasoning_effort
-        if approval_policy is not None:
-            params["approvalPolicy"] = approval_policy
-        if full_access:
-            # Explicitly replace a previous workspaceWrite override on this
-            # same native thread. Omitting it would preserve the old sandbox.
-            params["sandboxPolicy"] = {"type": "dangerFullAccess"}
-            params["approvalPolicy"] = "never"
-        elif network_access is not None:
-            roots = writable_roots if writable_roots is not None else [cwd]
-            if not isinstance(cwd, str) or not os.path.isabs(cwd):
-                raise AppServerSandboxPolicyError(
-                    "NETWORK_ACCESS=ENABLED requires an absolute turn cwd"
-                )
-            if (
-                not isinstance(roots, list)
-                or not roots
-                or any(not isinstance(root, str) or not os.path.isabs(root) for root in roots)
-            ):
-                raise AppServerSandboxPolicyError(
-                    "NETWORK_ACCESS=ENABLED requires non-empty absolute writableRoots"
-                )
-            params["sandboxPolicy"] = {
-                "type": "workspaceWrite",
-                "writableRoots": roots,
-                "networkAccess": network_access,
-            }
-        try:
-            result = self._request("turn/start", params)
-        except AppServerRemoteError as exc:
-            if network_access or full_access:
-                raise AppServerSandboxPolicyError(
-                    ("TURN_START=BLOCKED: app-server rejected the requested native permissions: "
-                     if full_access else
-                     "NETWORK_ACCESS=ENABLED TURN_START=BLOCKED: "
-                     "app-server rejected or could not apply workspaceWrite network policy: ")
-                    + str(exc)
-                ) from exc
-            raise
-        if not isinstance(result, dict):
-            raise AppServerProtocolError("turn/start result must be an object")
-        turn = result.get("turn")
-        if not isinstance(turn, dict) or not isinstance(turn.get("id"), str):
-            raise AppServerProtocolError("turn/start result is missing turn.id")
-        if forwarding:
-            self._confirm_native_input(thread_id, turn, client_id, prompt)
-        self._owned_turns[thread_id] = turn['id']
-        return TurnStartInfo(
-            turn_id=turn["id"],
-            model=_optional_string(result.get("model")) or model,
-            reasoning_effort=(
-                _optional_string(result.get("reasoningEffort")) or reasoning_effort
-            ),
-        )
+        return TurnStartInfo(**_provider_api(self, 'turn_start', thread_id=thread_id, prompt=prompt, cwd=cwd, model=model, reasoning_effort=reasoning_effort, approval_policy=approval_policy, network_access=network_access, writable_roots=writable_roots, full_access=full_access, request_key=str(uuid.uuid4())))
 
     def _confirm_native_input(self, thread_id, turn, client_id, prompt):
         self.native_forwarding_receipt = self._protocol('confirm', thread_id=thread_id,
             turn=turn, client_id=client_id, prompt=prompt, timeout=self.timeout_seconds)
 
     def turn_interrupt(self, thread_id: str, turn_id: str) -> bool:
-        """Interrupt only the exact turn owned by a CLINX-managed binding."""
-        result = self._request(
-            "turn/interrupt", {"threadId": thread_id, "turnId": turn_id}
-        )
-        return result is None or isinstance(result, dict)
+        return _provider_api(self, 'turn_interrupt', thread_id=thread_id, turn_id=turn_id)
 
 
 def _thread_result(result: Any, method: str) -> dict[str, Any]:
-    if not isinstance(result, dict) or not isinstance(result.get("thread"), dict):
-        raise AppServerProtocolError(f"{method} result is missing thread")
-    return result["thread"]
-
-
-def _optional_string(value: Any) -> str | None:
-    return value if isinstance(value, str) else None
+    return _provider_api(None, 'thread_result', result=result, method=method)
 
 
 def extract_version(value: str | None) -> tuple[int, int, int] | None:
-    """Extract a Codex semver from serverInfo or userAgent for a soft guard."""
-    if not value:
-        return None
-    match = re.search(r"(?<!\d)(\d+)\.(\d+)\.(\d+)(?!\d)", value)
-    if not match:
-        return None
-    return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
+    value = _provider_api(None, 'version', value=value)
+    return tuple(int(part) for part in value) if value is not None else None
 
 
 def versions_compatible(expected: str | None, actual: str | None) -> bool:
-    """Reject only a known major-version conflict; patch skew is allowed."""
-    if not expected or not actual:
-        return True
-    expected_version = extract_version(expected)
-    actual_version = extract_version(actual)
-    if expected_version is None or actual_version is None:
-        return True
-    return expected_version[0] == actual_version[0]
+    versions = [extract_version(value) for value in (expected, actual)]
+    encoded = [list(map(str, value)) if value is not None else None for value in versions]
+    return _provider_api(None, 'versions_compatible', expected=encoded[0], actual=encoded[1])

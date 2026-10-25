@@ -37,6 +37,7 @@ for helper in clinx-provider clinx-node; do
         test "$("$app_dir/Contents/Helpers/$helper" --observation-contract)" = RUST_OBSERVATION_V1
         test "$("$app_dir/Contents/Helpers/$helper" --collector-contract)" = RUST_COLLECTOR_V1
         test "$("$app_dir/Contents/Helpers/$helper" --client-runtime-contract)" = RUST_CLIENT_RUNTIME_V1
+        test "$("$app_dir/Contents/Helpers/$helper" --thin-runtime-contract)" = RUST_THIN_RUNTIME_V1
     fi
     codesign --force --sign "$signing_identity" --timestamp=none "$app_dir/Contents/Helpers/$helper"
     codesign --verify --strict "$app_dir/Contents/Helpers/$helper"
