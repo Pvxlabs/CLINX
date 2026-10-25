@@ -1667,14 +1667,18 @@ pub mod execution_contracts;
 
 pub mod discovery_state;
 
-pub mod discovery_index;
-pub mod runtime_config;
-pub mod discovery_identity;
+pub mod discovery_bootstrap;
+pub mod discovery_cli;
 pub mod discovery_enrollment;
-pub mod observation_runtime;
+pub mod discovery_gui;
+pub mod discovery_identity;
+pub mod discovery_index;
 pub mod mdns_runtime;
 pub mod node_daemon;
-pub mod discovery_gui;
-pub mod tunnel_runtime;
+pub mod observation_directory;
+pub mod observation_runtime;
 pub mod observer_http;
+pub mod observer_runtime;
 pub mod python_numeric;
+pub mod runtime_config;
+pub mod tunnel_runtime;

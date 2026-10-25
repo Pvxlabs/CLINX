@@ -12,15 +12,30 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     path::PathBuf,
 };
+struct SelectedAuthority(Option<UnixAuthority>);
+impl Authority for SelectedAuthority {
+    fn call(&mut self, operation: &str, payload: Value, id: &str) -> Result<Value> {
+        self.0
+            .as_mut()
+            .ok_or("OBSERVATION_READ_ONLY")?
+            .call(operation, payload, id)
+    }
+}
 fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let mut config = None;
     let mut call = None;
     let mut stdio = false;
+    let mut observations_only = false;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--config" => config = args.next().map(PathBuf::from),
             "--stdio" => stdio = true,
+            "--observations-only" => observations_only = true,
+            "--observation-runtime-contract" => {
+                println!("RUST_OBSERVATION_DIRECTORY_V1");
+                return Ok(());
+            }
             "--call" => call = args.next(),
             "--no-recover-existing" => {}
             _ => return Err("MCP_ARGUMENT_INVALID".into()),
@@ -29,31 +44,57 @@ fn run() -> Result<()> {
     if !stdio && call.is_none() {
         return Err("MCP_STDIO_REQUIRED".into());
     }
-    let path = config.ok_or("MCP_CONFIG_REQUIRED")?;
-    let cfg = mcp::load_config(&path)?;
-    let mut authority = UnixAuthority {
-        endpoint: std::env::var_os("CLINX_RUST_SOCKET")
-            .map(PathBuf::from)
-            .ok_or("RUST_AUTHORITY_CONFIG_REQUIRED")?,
-        uid: std::env::var("CLINX_RUST_UID")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .ok_or("RUST_AUTHORITY_CONFIG_REQUIRED")?,
-    };
-    if authority.call("health", json!({}), "health")?["business_commands"] != true {
-        return Err("RUST_BUSINESS_AUTHORITY_REQUIRED".into());
+    if observations_only && call.is_some() {
+        return Err("OBSERVATION_READ_ONLY".into());
     }
-    let api = Api {
-        authority,
-        reads: NativeReads(cfg.clone()),
-        config: cfg,
-    };
-    let obs: Box<dyn Observations> =
-        if call.is_none() && std::env::var("CLINX_RUST_OBSERVATION_READS").as_deref() == Ok("1") {
-            Box::new(Directory::new(&path).ready()?)
+    let (api, obs): (_, Box<dyn Observations>) = if observations_only {
+        // No Authority/socket/config is opened by the standalone read-only API.
+        let cfg = clinx_decision_kernel::mcp_api::Config {
+            runtime_host: String::new(),
+            provider_endpoint: PathBuf::from("/unconfigured-provider"),
+            provider_timeout_seconds: 3.,
+            host_aliases: Default::default(),
+            codex_host_ids: Default::default(),
+        };
+        (
+            Api {
+                authority: SelectedAuthority(None),
+                reads: NativeReads(cfg.clone()),
+                config: cfg,
+            },
+            Box::new(Directory::standalone()?),
+        )
+    } else {
+        let path = config.ok_or("MCP_CONFIG_REQUIRED")?;
+        let cfg = mcp::load_config(&path)?;
+        let mut authority = UnixAuthority {
+            endpoint: std::env::var_os("CLINX_RUST_SOCKET")
+                .map(PathBuf::from)
+                .ok_or("RUST_AUTHORITY_CONFIG_REQUIRED")?,
+            uid: std::env::var("CLINX_RUST_UID")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .ok_or("RUST_AUTHORITY_CONFIG_REQUIRED")?,
+        };
+        if authority.call("health", json!({}), "health")?["business_commands"] != true {
+            return Err("RUST_BUSINESS_AUTHORITY_REQUIRED".into());
+        }
+        let obs: Box<dyn Observations> = if call.is_none()
+            && std::env::var("CLINX_RUST_OBSERVATION_READS").as_deref() == Ok("1")
+        {
+            Box::new(Directory::new(&path)?)
         } else {
             Box::new(NoObservations)
         };
+        (
+            Api {
+                authority: SelectedAuthority(Some(authority)),
+                reads: NativeReads(cfg.clone()),
+                config: cfg,
+            },
+            obs,
+        )
+    };
     let mut server = Server {
         api,
         observations: obs,

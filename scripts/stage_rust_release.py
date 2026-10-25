@@ -2,6 +2,7 @@
 """Stage an immutable runtime release. Does not select or stop production."""
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import os
@@ -22,12 +23,17 @@ def inherited_native_files(files, source):
     # A nested dead __init__/model file must never prune a third-party package.
     retired = {old for old, target in moves.items()
                if '.' not in old and target.replace('.', '/') + '.py' in dead_paths}
+    retired_dependencies = json.loads((source / 'architecture/native-runtime.json').read_text())[
+        'retired_release_dependency_patterns']
     result = {}
     for name, digest in files.items():
         path = Path(name)
         if name == 'host-worker':
             result[name] = digest
         elif (name.startswith('deps/') and 'clinx' not in path.parts
+              and not any(fnmatch.fnmatchcase('/'.join(path.parts[1:]), pattern)
+                          or fnmatch.fnmatchcase(path.parts[1], pattern)
+                          for pattern in retired_dependencies)
               and not (path.suffix in {'.py', '.pyc'}
                        and path.name.split('.')[0] in retired)):
             result[name] = digest
@@ -50,7 +56,7 @@ def stage_desktop(args, source):
         path = base / name
         if path.stat().st_uid != 0 or path.stat().st_mode & 0o022 or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise SystemExit('BASE_RELEASE_CONTENT_MISMATCH:' + name)
-    # The new release contains no separate Codex Provider binary or home.
+    # No private Codex daemon/home is introduced; Provider uses the existing Desktop.
     allowed = {'control/' + str(path.relative_to(source)): path
                for path in source_paths(source, 'rust') + data_paths(source, 'rust')}
     # Preserve only native dependencies from the old artifact. Python sources
@@ -68,7 +74,7 @@ def stage_desktop(args, source):
         replacements['control/' + name] = hashlib.sha256(path.read_bytes()).hexdigest()
     files.update(replacements)
     binaries = {}
-    for name, attribute in [('clinx-runtime', 'runtime_binary'), ('clinx-mcp-relay', 'mcp_relay_binary'), ('clinx-native-transport', 'native_transport_binary'), ('clinx-provider', 'provider_binary'), ('clinx-mcp', 'mcp_binary'), ('clinx-node', 'node_binary'), ('clinx-node-daemon', 'node_daemon_binary')]:
+    for name, attribute in [('clinx-runtime', 'runtime_binary'), ('clinx-mcp-relay', 'mcp_relay_binary'), ('clinx-native-transport', 'native_transport_binary'), ('clinx-provider', 'provider_binary'), ('clinx-mcp', 'mcp_binary'), ('clinx-node', 'node_binary'), ('clinx-node-daemon', 'node_daemon_binary'), ('clinx-observer', 'observer_binary'), ('clinx-device', 'device_binary')]:
         binary = getattr(args, attribute, None)
         if binary is None:
             raise SystemExit('TESTED_LAYOUT_BINARY_REQUIRED:' + name)
@@ -121,6 +127,20 @@ def stage_desktop(args, source):
                 raise SystemExit('QUALIFIED_RUST_DEVICE_RUNTIME_REQUIRED') from None
             if result.returncode or result.stdout.strip() != marker:
                 raise SystemExit('QUALIFIED_RUST_DEVICE_RUNTIME_REQUIRED')
+        native_contracts = {
+            'clinx-mcp': ('--observation-runtime-contract', 'RUST_OBSERVATION_DIRECTORY_V1'),
+            'clinx-observer': ('--observer-contract', 'RUST_OBSERVER_V1'),
+            'clinx-device': ('--device-cli-contract', 'RUST_DEVICE_CLI_V1'),
+        }
+        if name in native_contracts:
+            option, marker = native_contracts[name]
+            try:
+                result = subprocess.run([str(binary), option], input='', text=True,
+                    capture_output=True, timeout=5, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                raise SystemExit('QUALIFIED_NATIVE_ENTRYPOINT_REQUIRED:' + name) from None
+            if result.returncode or result.stdout.strip() != marker:
+                raise SystemExit('QUALIFIED_NATIVE_ENTRYPOINT_REQUIRED:' + name)
         binaries[name] = binary
         files[name] = hashlib.sha256(binary.read_bytes()).hexdigest()
     version = 'rust-' + hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()[:20]
@@ -141,6 +161,8 @@ def stage_desktop(args, source):
     result = dict(version=version, source_cwd=str(source),
                   head=subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip(),
                   base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1', host_transport='RUST_HOST_V1', mcp_runtime='RUST_MCP_V1', node_api='RUST_NODE_API_V1', node_network='RUST_NODE_NETWORK_V1', observation_runtime='RUST_OBSERVATION_V1', collector_runtime='RUST_COLLECTOR_V1', client_runtime='RUST_CLIENT_RUNTIME_V1', thin_runtime='RUST_THIN_RUNTIME_V1', device_runtime='RUST_DEVICE_RUNTIME_V1', node_daemon='RUST_NODE_DAEMON_V1', provider_exchange='RUST_PROVIDER_V1', workspace_observer='RUST_PROVIDER_V1',
+                  observation_directory='RUST_OBSERVATION_DIRECTORY_V1', observer_runtime='RUST_OBSERVER_V1', device_cli='RUST_DEVICE_CLI_V1',
+                  python_source_purpose='INSTALL_TIME_DESKTOP_SOCKET_MAINTENANCE',
                   source_replacements=replacements, runtime_source_profile='rust', source_layout='qualified-clinx-v1',
                   retired_files=sorted(set(manifest['files']) - set(files)),
                   files=files, status='STAGED_NOT_SELECTED')
@@ -157,6 +179,8 @@ def main():
     p.add_argument('--runtime-binary', type=Path, required=True, help='Tested authority binary matching the package layout')
     p.add_argument('--native-transport-binary', type=Path, required=True, help='Tested Rust native execution/Provider worker')
     p.add_argument('--provider-binary', type=Path, required=True, help='Tested Rust Node Provider exchange and workspace observer')
+    p.add_argument('--observer-binary', type=Path, required=True, help='Tested native Observer HTTP service')
+    p.add_argument('--device-binary', type=Path, required=True, help='Tested native devices/pair/serve CLI')
     p.add_argument('--node-daemon-binary', type=Path, required=True, help='Tested Rust Helper/Centre assembly binary')
     p.add_argument('--node-binary', type=Path, required=True, help='Tested Rust Node selectors, handoff and execution API')
     p.add_argument('--mcp-binary', type=Path, required=True, help='Tested Rust business MCP server')

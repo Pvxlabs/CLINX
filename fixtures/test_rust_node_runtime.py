@@ -67,6 +67,20 @@ from clinx.authority.request_pipe import binary
 api=RustIntegration(SimpleNamespace(runtime_host='air'),SimpleNamespace())
 print(json.dumps(dict(binary=str(binary()),result=api.get_capabilities())))
 '''
+    if profile == 'rust':
+        # Production packages execute the native API directly. The monitor
+        # compatibility profile above continues to cover the original facade.
+        script = """
+import sys,json,subprocess
+from pathlib import Path
+binary=Path(sys.argv[1]).parent/'clinx-node'
+request=dict(protocol='CLINX_REQUEST_PIPE_V1',mode='api',operation='clinx_get_capabilities',
+ arguments={},config=dict(runtime_host='air',provider_endpoint='/unconfigured-provider',
+ provider_timeout_seconds=3,host_aliases={'air':['air']},codex_host_ids={}))
+p=subprocess.run([str(binary)],input=json.dumps(request)+'\\n',text=True,capture_output=True,check=True)
+result=json.loads(p.stdout)
+print(json.dumps(dict(binary=str(binary),result=result['result'])))
+"""
     env = {k:v for k,v in os.environ.items() if k in ('LANG','HOME','PATH')}
     result = subprocess.run([os.sys.executable, '-I', '-B', '-c', script, str(package)],
         cwd=root, env=env, text=True, capture_output=True, timeout=10, check=True)

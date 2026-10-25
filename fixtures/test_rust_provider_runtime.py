@@ -335,6 +335,22 @@ cfg=SimpleNamespace(app_server=SimpleNamespace(local_socket=sys.argv[2],native_s
 cwd=sys.argv[4]
 print(json.dumps(NodeProviderRelay(cfg,'air').exchange(dict(mode='workspace',host='air',cwd=cwd),dict(method='workspace/inspect',params=dict(mode='workspace',host='air',cwd=cwd)))))
 '''
+    if profile == 'rust':
+        # Same Provider exchange contract and assertions via the native entry;
+        # no retired Python relay is required in the production source closure.
+        code = """
+import sys,json,importlib,subprocess
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+for name in json.loads(sys.argv[3]): importlib.import_module(name)
+program=Path(sys.argv[1]).parent/'clinx-provider'
+cwd=sys.argv[4]
+request=dict(context=dict(mode='workspace',host='air',cwd=cwd),
+ body=dict(method='workspace/inspect',params=dict(mode='workspace',host='air',cwd=cwd)))
+p=subprocess.run([str(program),'--exchange',sys.argv[2],'2'],input=json.dumps(request),
+ text=True,capture_output=True,check=True)
+print(json.dumps(json.loads(p.stdout)['result']))
+"""
     names = [str(p.relative_to(SOURCE_ROOT)).removesuffix('.py').replace('/', '.').removesuffix('.__init__')
              for p in source_paths(SOURCE_ROOT, profile)]
     try:

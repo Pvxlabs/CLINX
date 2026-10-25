@@ -42,7 +42,6 @@
       "path": "clinx/authority/rust_integration.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Compatibility API client delegating business mapping, selection and projection to Rust; read-only Provider protocol callback retained for existing clients; normal Helper bypasses this class"
@@ -51,7 +50,6 @@
       "path": "clinx/authority/rust_reads.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Read-only HTTP/Provider IO callbacks and Python object compatibility; desktop evidence, exact identity and projection owned by Rust"
@@ -60,7 +58,6 @@
       "path": "clinx/authority/rust_worker_identity.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
@@ -228,7 +225,6 @@
       "path": "clinx/contracts/dispatch_errors.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
@@ -237,7 +233,6 @@
       "path": "clinx/contracts/execution_policy.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Public policy dataclass/JSON codec and error API; normalization, scope, permit, route checks and CAS hash delegated to Rust; not a second Authority policy writer"
@@ -255,7 +250,6 @@
       "path": "clinx/contracts/runtime_config.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Public configuration DTO and TOML/platform Path codec. Defaults, binding, host selection and executor/workflow validation execute in Rust runtime_config."
@@ -264,7 +258,6 @@
       "path": "clinx/contracts/runtime_contracts.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
@@ -273,7 +266,6 @@
       "path": "clinx/contracts/thread_identity.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
@@ -282,7 +274,6 @@
       "path": "clinx/contracts/workspace_contract.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
@@ -291,22 +282,20 @@
       "path": "clinx/discovery/__init__.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Current mDNS/pairing/device discovery; target owner Rust"
     },
     {
       "path": "clinx/discovery/cli.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [],
-      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+      "reason": "Compatibility argv/exec facade only; devices/pair/serve lifecycle is native Rust. Explicit DEV_ONLY SPAKE2 qualification delegates to tools, never packaged."
     },
     {
       "path": "clinx/discovery/discovery.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Public candidate DTO and explicit injected test index; normal DNS-SD UDP, interface IO, advertisement, TTL cache and discovery run in Rust mdns_runtime"
@@ -315,7 +304,6 @@
       "path": "clinx/discovery/identity.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Python identity/store DTO and private worker binding; key/certificate creation, validation, locking and durable store IO run in Rust discovery_identity/enrollment"
@@ -324,25 +312,22 @@
       "path": "clinx/discovery/monitor_helper.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Historical executable alias that execs clinx-node --discovery-gui; current Swift invokes the bundled Rust binary directly"
     },
     {
       "path": "clinx/discovery/observer_bootstrap.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Owner-only installed-file reading and URL codec; private Observer connection validation delegated to Rust"
+      "reason": "Public Observer connection codec delegates exact URL/config validation to Rust discovery_bootstrap; no Python URL or private-config implementation."
     },
     {
       "path": "clinx/discovery/pairing.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Public pairing API and explicit DEV_ONLY SPAKE2 qualification; normal OPAQUE transcript and protocol state run in the shared Rust core without Python wheel"
@@ -351,7 +336,6 @@
       "path": "clinx/discovery/transport.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Python public transport DTO and explicit DEV_ONLY TLS/SPAKE2 qualification; production first pairing/mTLS enrollment and reconnect run in Rust discovery_enrollment"
@@ -360,7 +344,6 @@
       "path": "clinx/host/__init__.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
@@ -387,7 +370,6 @@
       "path": "clinx/host/production_workflows.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Public workflow DTO only; schema, validation and rendering call Rust runtime_config and the existing Host workflow contract."
@@ -408,7 +390,6 @@
       "path": "clinx/mcp/__init__.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Observation/explicit maintenance codec namespace; normal business MCP server is Rust"
@@ -423,7 +404,6 @@
       "path": "clinx/mcp/mcp_server.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Observation/explicit maintenance injectable codec and retired CLI launcher; normal business MCP is clinx-mcp Rust executable"
@@ -438,7 +418,6 @@
       "path": "clinx/monitor/__init__.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Current monitoring projection and native observation implementation; target owner Rust"
@@ -447,7 +426,6 @@
       "path": "clinx/monitor/native_associations.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Typed private client for Rust read-only exact native association lookup; no Python SQL."
@@ -456,7 +434,6 @@
       "path": "clinx/monitor/native_observation_bridge.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "HTTP and existing source/scope callbacks; checkpoint/HMAC/expiry, exact identity, remote cooldown and rejection policy owned by Rust"
@@ -465,43 +442,38 @@
       "path": "clinx/monitor/network_observation.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Private Rust observation store/directory clients, existing identity object facts and opaque remote call binding; SQL, validation, stream receipts, cursors and projection run in Rust. Environment/identity wiring remains Python runtime."
+      "reason": "Public DTO/private Rust directory calls for compatibility qualification; native observation_directory owns production environment, identity, scope, remote mTLS and managed reads."
     },
     {
       "path": "clinx/monitor/observation_mcp.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+      "reason": "Public injectable schema/read API for qualification. Normal stdio/MCP directory is Rust; retired Python subprocess backend removed."
     },
     {
       "path": "clinx/monitor/observation_source.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Public Collector facade and explicitly injected qualification callbacks; normal native/Provider/remote probes, live cache and decisions run in Rust observation_runtime"
     },
     {
       "path": "clinx/monitor/observer_server.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Store/native/collector callback and public object facade. Rust owns HTTP listener lifecycle, limits, auth, route dispatch, redaction and status mapping."
+      "reason": "Historical injectable read-only snapshot/HTTP facade for qualification; main execs clinx-observer. Native Rust service owns normal assembly and IO."
     },
     {
       "path": "clinx/monitor/rust_monitor.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Python public Monitor/observation facade and IO callbacks; managed result/context/recheck and MCP read policy delegated to Rust"
@@ -509,9 +481,7 @@
     {
       "path": "clinx/monitor/rust_observation.py",
       "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "rust"
-      ],
+      "profiles": [],
       "reason": "Rust managed inventory/turn projection and canonical sample facade; Authority and base-source IO callbacks only"
     },
     {
@@ -527,7 +497,6 @@
       "path": "clinx/nodes/node_centre_entrypoint.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Historical CLI alias that execs Rust clinx-node-daemon; Rust assembles Centre, paired Authority route and Collector lifecycle"
@@ -536,7 +505,6 @@
       "path": "clinx/nodes/node_protocol.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Node/Scope DTOs, local sharing configuration and protocol facade; observation fanout, exact route/ACK/cursor/service projection owned by Rust"
@@ -545,7 +513,6 @@
       "path": "clinx/nodes/node_runtime.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Existing paired identity/config objects and opaque IO callbacks; reverse Authority/remote provider scope and exact ACK validation owned by Rust"
@@ -562,7 +529,6 @@
       "path": "clinx/nodes/provider_relay.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Private Rust Node relay/gateway bindings and installed endpoint configuration; no Python socket, buffer state or submission decisions."
@@ -571,7 +537,6 @@
       "path": "clinx/nodes/rust_node_adapter.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Thin Rust Node request client; target, canonical handoff, start/cancel/context checks live in Rust"
@@ -606,7 +571,6 @@
       "path": "clinx/provider/liveness.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Public dataclass/result codec for Rust evidence liveness classification"
@@ -615,7 +579,6 @@
       "path": "clinx/provider/native_history.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Typed private Rust native-history client and historical protocol constants; no Python SQL/parser/state machine. Unused historical SQL budget helper retired."
@@ -633,7 +596,6 @@
       "path": "clinx/provider/native_writer_probe.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Public writer probe binding and explicit injected qualification callback; normal exact OS/process/FD evidence and read-only probe execution run solely in Rust observation_runtime"
@@ -648,7 +610,6 @@
       "path": "clinx/transport/__init__.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Current transport and tunnel supervisor implementation; target owner Rust"
@@ -946,7 +907,6 @@
       "path": "clinx/contracts/host_config.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust",
         "monitor"
       ],
       "reason": "Host configuration values required by remaining Python TOML readers; no process or state implementation."
@@ -1097,11 +1057,35 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Private Rust device runtime process and wire/probe equivalence regression; no production tasks or state"
+    },
+    {
+      "path": "tools/qualification/discovery_dev_cli.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Explicit DEV_ONLY SPAKE2 CLI qualification; never imported or packaged by normal Rust device path"
+    },
+    {
+      "path": "fixtures/test_rust_device_cli.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Native devices/pair/serve CLI, original URL codec oracle and private loopback pairing regression"
+    },
+    {
+      "path": "fixtures/test_rust_observer_runtime.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Native Observer process/auth/legacy read projection/checkpoint/restart/revocation; isolated sources only"
+    },
+    {
+      "path": "fixtures/test_rust_observation_directory.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Native MCP ObservationDirectory and read-only mTLS route regression; isolated sources only"
     }
   ],
   "python_byte_percent_target": 5,
   "profile_notes": {
-    "rust": "Current Python compatibility/maintenance closure alongside native binaries; no retired business core",
+    "rust": "Install-time Desktop socket verification maintenance closure only; normal Authority/Transport/Provider/MCP/Observer/Node/device CLI execute Rust directly",
     "monitor": "Historical Python API/layout qualification closure only. Current App uses architecture/native-runtime.json with zero Python sources/dependencies."
   }
 }

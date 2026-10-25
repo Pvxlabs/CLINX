@@ -181,16 +181,22 @@ proportion of Rust files do not establish product quality.
 
 ## Nearby devices (Local Discovery v1)
 
-The optional `bin/clinx` launcher opens `devices` by default. It browses private
+The optional `bin/clinx` launcher opens `devices` by default through the native
+`clinx-device` binary. It browses private
 LAN nodes, shows persistent device trust, and authenticates known peers with
 mutual TLS. Existing local/SSH provider and manual host paths remain available.
 
-Production pairing requires the native RFC 9807 OPAQUE adapter; it fails closed
-when that adapter is unavailable. The separate SPAKE2 backend is explicitly
+Production pairing uses the RFC 9807 OPAQUE core linked into Rust; it requires no
+Python interpreter or wheel. The separate source qualification SPAKE2 backend is explicitly
 `DEV_ONLY` and requires `--allow-dev-pairing`; device trust grants no execution
 authority. See [Local Discovery v1](docs/LOCAL_DISCOVERY_V1.md) for native build
 instructions, isolated setup, the two-device flow and the limits of recorded
 acceptance.
+
+The normal Observer service is `clinx-observer`; the standalone read-only MCP
+entry is `clinx-mcp --observations-only --stdio`. Neither starts Python. Current
+source boundaries, verification limits and the remaining Python work are recorded
+in [Observer runtime migration](docs/RUST_OBSERVER_RUNTIME_MIGRATION.md).
 
 ## Development and tests
 

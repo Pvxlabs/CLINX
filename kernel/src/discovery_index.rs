@@ -374,6 +374,10 @@ pub fn invoke(op: &str, a: &Value) -> Result<Value> {
             Ok(json!(found.into_iter().take(16).collect::<Vec<_>>()))
         }
         "discovery_index.validate_connection" => connection(a),
+        "discovery_index.connection_parse" => crate::discovery_bootstrap::validate(a),
+        "discovery_index.bootstrap_read" => crate::discovery_bootstrap::connection(
+            std::path::Path::new(a["path"].as_str().ok_or("INVALID_OBSERVER_CONFIGURATION")?),
+        ),
         "discovery_index.refresh" => {
             let pointer = a["pointers"]
                 .as_array()

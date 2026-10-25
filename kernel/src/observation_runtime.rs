@@ -511,6 +511,36 @@ fn encode(s: &str) -> String {
         .collect()
 }
 fn remote_http(config: &Value, a: &Value) -> Result<Value> {
+    let path = text(&a["path"]);
+    if path != "inventory"
+        && !path
+            .strip_prefix("sample/")
+            .is_some_and(|s| s.len() == 36 && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-'))
+    {
+        return Err("NATIVE_OBSERVER_UNAVAILABLE".into());
+    }
+    loopback_http(
+        config,
+        &format!("/v2/native-collector/{path}"),
+        &a["params"],
+        Duration::from_secs(8),
+    )
+}
+/// Fixed loopback native read transport shared by Collector and Desktop reads.
+/// Callers provide allowlisted route segments; credentials never leave this IO.
+pub(crate) fn loopback_http(
+    config: &Value,
+    path: &str,
+    params: &Value,
+    timeout: Duration,
+) -> Result<Value> {
+    if !path.starts_with("/v2/")
+        || !path
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"/_-".contains(&b))
+    {
+        return Err("NATIVE_OBSERVER_UNAVAILABLE".into());
+    }
     let mut token = String::new();
     File::open(text(&config["credential_file"]))
         .map_err(|_| "NATIVE_OBSERVER_UNAVAILABLE")?
@@ -525,15 +555,7 @@ fn remote_http(config: &Value, a: &Value) -> Result<Value> {
     {
         return Err("NATIVE_OBSERVER_UNAVAILABLE".into());
     }
-    let path = text(&a["path"]);
-    if path != "inventory"
-        && !path
-            .strip_prefix("sample/")
-            .is_some_and(|s| s.len() == 36 && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-'))
-    {
-        return Err("NATIVE_OBSERVER_UNAVAILABLE".into());
-    }
-    let query = a["params"]
+    let query = params
         .as_object()
         .ok_or("NATIVE_OBSERVER_UNAVAILABLE")?
         .iter()
@@ -552,14 +574,13 @@ fn remote_http(config: &Value, a: &Value) -> Result<Value> {
         .join("&");
     let port = config["port"].as_u64().unwrap_or(8766);
     let port = u16::try_from(port).map_err(|_| "NATIVE_OBSERVER_UNAVAILABLE")?;
-    let timeout = Duration::from_secs(8);
     let deadline = Instant::now() + timeout;
     let mut socket = TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], port)), timeout)
         .map_err(|_| "NATIVE_OBSERVER_UNAVAILABLE")?;
     socket
         .set_write_timeout(Some(timeout))
         .map_err(|_| "NATIVE_OBSERVER_UNAVAILABLE")?;
-    write!(socket,"GET /v2/native-collector/{path}?{query} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n").map_err(|_|"NATIVE_OBSERVER_UNAVAILABLE")?;
+    write!(socket,"GET {path}?{query} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n").map_err(|_|"NATIVE_OBSERVER_UNAVAILABLE")?;
     let mut data = Vec::new();
     let mut header_end = None;
     let mut status = 0;

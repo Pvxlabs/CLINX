@@ -76,6 +76,11 @@ def main():
         raise RuntimeError('QUALIFIED_RUST_PROVIDER_REQUIRED')
     if manifest.get('observation_runtime') != 'RUST_OBSERVATION_V1':
         raise RuntimeError('QUALIFIED_RUST_OBSERVATION_REQUIRED')
+    if (manifest.get('observation_directory') != 'RUST_OBSERVATION_DIRECTORY_V1'
+            or manifest.get('observer_runtime') != 'RUST_OBSERVER_V1'
+            or manifest.get('device_cli') != 'RUST_DEVICE_CLI_V1'
+            or not {'clinx-observer', 'clinx-device'} <= manifest['files'].keys()):
+        raise RuntimeError('QUALIFIED_NATIVE_ENTRYPOINT_REQUIRED')
     if manifest.get('client_runtime') != 'RUST_CLIENT_RUNTIME_V1':
         raise RuntimeError('QUALIFIED_RUST_CLIENT_RUNTIME_REQUIRED')
     if (manifest.get('device_runtime') != 'RUST_DEVICE_RUNTIME_V1'

@@ -1,0 +1,307 @@
+{
+  "baseline": "4efdf20159ab4fb5a10412b0b3d50bc28a0ecee2",
+  "status": "PASS_IMPLEMENTED_SCOPE_NOT_DEPLOYED",
+  "python_under_five_percent": "NOT_MET",
+  "scope": [
+    "native ObservationDirectory/MCP without Python backend",
+    "native Observer assembly/process",
+    "native devices/pair/serve and Observer bootstrap codec",
+    "release source and dependency closure"
+  ],
+  "language_before": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 873194,
+        "files": 116,
+        "lines": 20502
+      },
+      "Rust": {
+        "bytes": 1546403,
+        "files": 80,
+        "lines": 39150
+      },
+      "Shell": {
+        "bytes": 9552,
+        "files": 9,
+        "lines": 205
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 29.267437573319928,
+    "python_line_percent": 28.431957175941978,
+    "python_roles": {
+      "ACTIVE_RUNTIME": {
+        "bytes": 335653,
+        "files": 53,
+        "lines": 8378
+      },
+      "COMPAT": {
+        "bytes": 24940,
+        "files": 2,
+        "lines": 510
+      },
+      "DEVOPS": {
+        "bytes": 99924,
+        "files": 18,
+        "lines": 2208
+      },
+      "QUALIFICATION": {
+        "bytes": 412677,
+        "files": 43,
+        "lines": 9406
+      }
+    },
+    "revision": "4efdf20159ab4fb5a10412b0b3d50bc28a0ecee2",
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "language_after": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 911158,
+        "files": 120,
+        "lines": 21216
+      },
+      "Rust": {
+        "bytes": 1613226,
+        "files": 86,
+        "lines": 40939
+      },
+      "Shell": {
+        "bytes": 10399,
+        "files": 9,
+        "lines": 230
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 29.495580314741932,
+    "python_line_percent": 28.42557980626231,
+    "python_roles": {
+      "ACTIVE_RUNTIME": {
+        "bytes": 302912,
+        "files": 49,
+        "lines": 7523
+      },
+      "COMPAT": {
+        "bytes": 45809,
+        "files": 6,
+        "lines": 1093
+      },
+      "DEVOPS": {
+        "bytes": 102293,
+        "files": 18,
+        "lines": 2240
+      },
+      "QUALIFICATION": {
+        "bytes": 460144,
+        "files": 47,
+        "lines": 10360
+      }
+    },
+    "revision": null,
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "profiles": {
+    "rust": {
+      "files": 12,
+      "lines": 1671,
+      "bytes": 67535
+    },
+    "monitor": {
+      "files": 50,
+      "lines": 7782,
+      "bytes": 310775
+    },
+    "before_rust": {
+      "files": 51,
+      "lines": 8123,
+      "bytes": 324590
+    },
+    "maintenance_imports": [
+      "__future__",
+      "argparse",
+      "atexit",
+      "base64",
+      "clinx",
+      "concurrent",
+      "dataclasses",
+      "inspect",
+      "json",
+      "os",
+      "pathlib",
+      "pwd",
+      "select",
+      "shlex",
+      "shutil",
+      "socket",
+      "stat",
+      "struct",
+      "subprocess",
+      "sys",
+      "threading",
+      "time",
+      "typing",
+      "uuid"
+    ]
+  },
+  "dependency_retirement": {
+    "base_manifest": "/var/lib/clinx-rust/releases/rust-c09215686ef963f9067f/manifest.json",
+    "old_dependency_files": 416,
+    "remaining_dependency_files": 0,
+    "inherited_files": [
+      "host-worker"
+    ],
+    "production_mutations": false
+  },
+  "validation": {
+    "linux_release_binaries": 14,
+    "rust_tests_pass": 120,
+    "tracked_fixtures": 431,
+    "local_suite_before": {
+      "pass": 294,
+      "failure": 32,
+      "error": 104,
+      "skipped": 2
+    },
+    "local_suite_after": {
+      "pass": 294,
+      "failure": 32,
+      "error": 104,
+      "skipped": 2
+    },
+    "local_suite_changed": [],
+    "strict_clippy": "BLOCKED_EXISTING_10_IDENTICAL_DIAGNOSTICS",
+    "source_import_profile": "PASS",
+    "python_lint": "PASS",
+    "shell_syntax": "PASS",
+    "rustfmt": "PASS",
+    "assertion_protection": {
+      "fixtures/test_runtime_packages.py": {
+        "before": 19,
+        "after": 25,
+        "preserved": true
+      },
+      "fixtures/test_rust_node_runtime.py": {
+        "before": 10,
+        "after": 10,
+        "preserved": true
+      },
+      "fixtures/test_rust_provider_runtime.py": {
+        "before": 40,
+        "after": 40,
+        "preserved": true
+      }
+    },
+    "original_test_file_hashes_unchanged": 129,
+    "url_codec_oracle_cases": 807,
+    "identity_replacement_fail_before_pass_after": 2
+  },
+  "not_verified": [
+    "native macOS build/signing",
+    "physical Mac-P620-Mac execution with new artifacts",
+    "real LAN multicast/Bonjour"
+  ],
+  "binaries": {
+    "clinx-device": "e67c55657b692ecf93b32073bc621491593ce0e79e42ddfb7be0823c4881a7da",
+    "clinx-kernel-bench": "020677936eb64cacf1dd43157b612a01d5dbbbc191b6d199deb5ae46bf793070",
+    "clinx-kernel-eval": "23ee079868a45c1d30e6c33d4b1af1f57ffcc1f9852d6bfbb82554cf5132ab2d",
+    "clinx-mcp-relay": "c47d75cf8b93a07686fa60fc0bad369f488b0f942a132035f174143aa01d3de6",
+    "clinx-mcp": "f6e472c225ea81401204c0f07d28d07b0c8163f65d89d2fe0dcc459c8efe62bd",
+    "clinx-native-transport": "d012cb6e424127ecf9a913c5c7363b3802886fa51de2e767dc228f15a59ee1a8",
+    "clinx-node-daemon": "b2f304acb6560cd87002ffcae8b3c93032f433ddc73d967804a2e81b74d38da1",
+    "clinx-node": "4fd56d823ce8fd4f8679d525f47cdedc1f5f13a9616d74214df059ec56499242",
+    "clinx-observer": "9681d3f8a8c65bdc5801ff86af4e9bce1344b5a1b8f3647eaa7a83207c857e1f",
+    "clinx-owner-client": "bdf6a2c20b3795633b582d8c06d8216da90a02698e1568b5736eab192fb634ea",
+    "clinx-provider": "f7da94f169bb30d6bf7c924855716419d4c37e497dd38792587c767b3b6281e8",
+    "clinx-runtime": "4e7c8614b3f2d99fe97775e760a24e914befe2c9d7279029574f4175d150b5ba",
+    "clinx-source-audit": "6f23dd445815215f1267b5afd0b92a20266b01179e67770f100b672c8ad8ef28",
+    "clinx-tunnel": "6ad47c5aab7ecf8fc49a21da3baad7ae8bfae56086fc9f11cba1c117e6363b74"
+  },
+  "source_sha256": {
+    "README.md": "ea05c34121605d866189f4052ad32f7b72ade2dc4b3e78cfc6685ab55730b0b1",
+    "architecture/native-runtime.json": "f8c2b6693a138523d14cfa50f5f21931eda06ba75d7e1322308b5f403a6ff970",
+    "architecture/python-sources.json": "f4007b33afb04b3d2c133a97ea478fe2912bc60aa821fbe56bb26512784ee54d",
+    "bin/clinx": "a672bd4ed0c98dbcd8dcb31471693e07b0bf52e66a8e3d0f8aadadce34b59096",
+    "bin/clinx-observer": "9a5ee4df0b4a5f2e6516d9cada789ef88dbae12a5940baadf96a90f122716f6c",
+    "clinx/discovery/cli.py": "f54bd655671f31ed31ba903934368d4a6eb4fe63fb8beaf137130bc944438a93",
+    "clinx/discovery/observer_bootstrap.py": "9ab188a2557163e3a3ae410b4227e7cc76edc2c0f2069b75b0ade07a1e6080d2",
+    "clinx/mcp/mcp_server.py": "57a8ce463407985d83ccb51ae4c70723aac9dabbc8092c949ccf2d54b1e72a14",
+    "clinx/monitor/observation_mcp.py": "0f17258a9e80dc467522a4973ec52390ec26a3b51f09a8d019409fea0c3202c4",
+    "clinx/monitor/observer_server.py": "5d1dfcb939e74e81edb3c3552b22e22f37ce9a415ced8bb703a598b610ec2b9e",
+    "docs/PYTHON_RUNTIME_BOUNDARIES.md": "81d78a5fa3fcab95e4f66f480fdd39d15834890ee346eb4268baf30df0c9915f",
+    "docs/REPOSITORY_ARCHITECTURE.md": "f7e0ab59831b4f9fd42d4b8ddf5bec3df97c8f3f612245728481fef4ab6130e0",
+    "docs/RUST_OBSERVER_RUNTIME_MIGRATION.md": "bebae79345d2e0b9e2d115b490e130ac0d1d0bb2a0bfa790596816e4108ff5ef",
+    "fixtures/test_runtime_packages.py": "1fa5cc19ed56ac10bccd5b34fffd35da3b9f64ecf142a07df07a07b96953d733",
+    "fixtures/test_rust_device_cli.py": "eb339b1b95bc54bf364d01de201f7b6e45d30f602ad26daa10ef7b3392f13b3a",
+    "fixtures/test_rust_node_runtime.py": "4579aa25271a79746b7cea8409c1e044c06156fbb2fbd2c620ed28d41a12d59d",
+    "fixtures/test_rust_observation_directory.py": "2bd75814d193c58f322d6c66ee34848cb95ced846c797a3d1c31d90e116f8303",
+    "fixtures/test_rust_observer_runtime.py": "a373dc33e0189a6c2bd24ec75971038f061015a37f100d2e67021ed2ca6b3279",
+    "fixtures/test_rust_provider_runtime.py": "32d3d7ecacc5e773ef2d94e88e7e50159966f23dd6bf373b88d0960f3c043f83",
+    "kernel/Cargo.lock": "f64461d1cd38a7ac8910c367333d759bedc060dd1c514abb3074f9e3e9aa138a",
+    "kernel/Cargo.toml": "87c4b3d102a1617bbd91bb16ca1f782d58286d562084a70dd7df66128109afc1",
+    "kernel/src/bin/clinx-device.rs": "c24a38f9363b5f478ee15f9cd1bd97ecaa2a600194df0cc4f130f035097c9821",
+    "kernel/src/bin/clinx-mcp.rs": "3e763359cea2dcf98ac89222330d913e5370d2ebbfc453be5fb91bec92ddeb8c",
+    "kernel/src/bin/clinx-observer.rs": "d43cbb9932643a392555953c499e5dab78a8e205d7ef318f99df91c6c38edb76",
+    "kernel/src/discovery_bootstrap.rs": "1f466f662910f84aff54c10a6017d79e4d2c6a5655e3dbdbb7085a4e200660db",
+    "kernel/src/discovery_cli.rs": "ee9a15775b4e88c842b8c0e43a12ffd896c16a4f4443da42e94498a95e4238ba",
+    "kernel/src/discovery_gui.rs": "b5d0f248dd6c6711df52bf12c2274bf69a48b8a1c0b2c757d532859b65f2c798",
+    "kernel/src/discovery_index.rs": "5a3b48c53624b67a1dca805955fec3a49ebb2a2591809cb74e4202b2c454bdb7",
+    "kernel/src/lib.rs": "aed5067f84af920d92fc10f806a50457642f83e2084ad7c577ad4b10d0f34a4d",
+    "kernel/src/mcp.rs": "5256d81db9244a7088965a9f3c0791887073a8033eec96ce6485c75431b3ac1a",
+    "kernel/src/node_daemon.rs": "8ab91316569317a0aa2059b8a5564df963fa75917555b75e48cbb0bcd9ebda25",
+    "kernel/src/node_tls.rs": "9e27c125cfc85b4e9b7d4fa9d82e9b68a402f587d28afd54df6a44d27fb1bfbc",
+    "kernel/src/observation_directory.rs": "8e7d8c617daa9cc39fc655c30a4479e21b89f487716133a960d4209f7a2d0333",
+    "kernel/src/observation_runtime.rs": "3194e23e859fbf837c7460601a7156c6a6f4e571f36000b06d003bcd9efc23e3",
+    "kernel/src/observer_runtime.rs": "0205f944e0aa5ec45b9ca46eb40f0425d2848dbcd27a092a22fe150feef3d8c0",
+    "scripts/install_rust_services.py": "5f32252a1b4bc8820e5ec5436430e712cca783cc89e28984002a77e549abb3ce",
+    "scripts/stage_rust_release.py": "62dbc9cc9ad98d3859d196fcbf5067485b991c81776869cdd306cb31d857c98a",
+    "systemd/clinx-observer-rust-monitor.conf.in": "043e534613749ffa24cb2de81eceefd492fa97c0c0f1a0f82cfbfe0db3435282",
+    "tools/build/runtime_sources.py": "a060ea75524f53a225adc1b5a2bef17e8410f11b9663ca75fefa202b991aeed4",
+    "tools/qualification/discovery_dev_cli.py": "87148e988b04ec42bf8fee07d7f3f8cfc3e3e71387347a9d69dea9681c84edbe"
+  },
+  "deleted_whole_files": [],
+  "production_services_unchanged": true,
+  "deployment": false,
+  "remaining_python": [
+    "install-time desktop socket maintenance and stdlib-only shared facade closure",
+    "public API/DTO and explicit injected qualification interfaces",
+    "explicit DEV_ONLY SPAKE2 backend",
+    "active qualification/build/maintenance tools"
+  ],
+  "artifact_directory": "/data/artifacts/clinx-observer-runtime-20261025"
+}

@@ -367,12 +367,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         if args.observations_only:
-            from clinx.monitor.network_observation import directory_from_env
-            from clinx.monitor.observation_mcp import standalone_server
-            directory = directory_from_env()
-            if directory is None:
-                raise ValueError("OBSERVATION_NOT_CONFIGURED")
-            serve_stdio(standalone_server(directory), recover_existing=False)
+            binary = os.environ.get('CLINX_MCP_BINARY') or str(
+                Path(__file__).resolve().parents[3] / 'clinx-mcp')
+            os.execv(binary, [binary, '--observations-only', '--stdio'])
         else:
             # Existing direct-file launchers may consume the install-time JSON
             # next to their TOML. No runtime TOML compiler or Python fallback.

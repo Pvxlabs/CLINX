@@ -1090,7 +1090,7 @@ fn centre_main(options: Options) -> Result<()> {
         &gateways,
     )
 }
-fn pairing_code() -> Result<String> {
+pub(crate) fn pairing_code(prompt: &str) -> Result<String> {
     use std::io::IsTerminal;
     let input = std::io::stdin();
     let saved = if input.is_terminal() {
@@ -1121,7 +1121,7 @@ fn pairing_code() -> Result<String> {
             rustix::termios::tcsetattr(&input, rustix::termios::OptionalActions::Flush, &hidden)
                 .map_err(|_| "PAIRING_CODE_REQUIRED")?;
         }
-        eprint!("Pairing code: ");
+        eprint!("{prompt}");
         if saved.is_some() {
             loop {
                 if stopped.load(Ordering::Relaxed) {
@@ -1206,7 +1206,7 @@ fn pairing(options: &Options, root: &Path, identity: &Value) -> Result<()> {
         let endpoint = node_tls::endpoint(options.required("endpoint")?)?;
         // Existing interactive pairing secret, never argv or stdout. Redirected
         // stdin remains available to isolated CLI qualification fixtures.
-        let code = pairing_code()?;
+        let code = pairing_code("Pairing code: ")?;
         let result=transport.invoke("discovery.enrollment.client.pair",&json!({"root":root,"candidate":{"node_id":options.required("peer")?,"display_name":options.required("peer")?,"fingerprint":options.required("fingerprint")?,"endpoints":[[endpoint.0,endpoint.1]],"mismatch":false},"code":code.trim_end(),"allow_direct":true}),state,|_,_|Err("DISCOVERY_CALLBACK_INVALID".into()))?;
         println!(
             "{}",

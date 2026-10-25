@@ -28,7 +28,7 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     (base/'manifest.json').write_text(json.dumps(dict(files={
         p: hashlib.sha256(data).hexdigest() for p, data in previous.items()})))
     binaries = {}
-    for key in ('runtime', 'mcp_relay', 'native_transport', 'provider', 'mcp', 'node', 'node_daemon'):
+    for key in ('runtime', 'mcp_relay', 'native_transport', 'provider', 'mcp', 'node', 'node_daemon', 'observer', 'device'):
         path = tmp_path/key
         path.write_bytes(key.encode())
         path.chmod(0o755)
@@ -51,6 +51,13 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
             return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_DEVICE_RUNTIME_V1\n', stderr='')
         if command == [str(binaries['node_daemon_binary']), '--daemon-contract']:
             return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_NODE_DAEMON_V1\n', stderr='')
+        for key, option, marker in (
+            ('mcp', '--observation-runtime-contract', 'RUST_OBSERVATION_DIRECTORY_V1'),
+            ('observer', '--observer-contract', 'RUST_OBSERVER_V1'),
+            ('device', '--device-cli-contract', 'RUST_DEVICE_CLI_V1'),
+        ):
+            if command == [str(binaries[key + '_binary']), option]:
+                return stage.subprocess.CompletedProcess(command, 0, stdout=marker + '\n', stderr='')
         return real_run(command, *args, **kwargs)
     monkeypatch.setattr(stage.subprocess, 'run', fixture_run)
     real_stat = Path.stat
@@ -66,6 +73,12 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     stage.stage_desktop(args, SOURCE_ROOT)
     receipt = json.loads(args.output.read_text())
     release = Path(receipt['release'])
+    assert receipt['python_source_purpose'] == 'INSTALL_TIME_DESKTOP_SOCKET_MAINTENANCE'
+    assert (release/'control/clinx/provider/desktop_socket.py').is_file()
+    assert not (release/'control/clinx/monitor').exists()
+    assert not (release/'control/clinx/discovery').exists()
+    assert (release/'clinx-observer').read_bytes() == b'observer'
+    assert (release/'clinx-device').read_bytes() == b'device'
     assert receipt['node_api'] == 'RUST_NODE_API_V1'
     assert (release/'clinx-node').read_bytes() == b'node'
     assert receipt['mcp_runtime'] == 'RUST_MCP_V1'
@@ -105,6 +118,9 @@ def test_dependency_overlay_cannot_smuggle_retired_host_or_second_clinx_package(
     stage = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(stage)
     files = {name: 'digest' for name in (
+        'deps/cryptography/x.py', 'deps/cryptography-50.0.2.dist-info/METADATA',
+        'deps/_clinx_opaque/__init__.py', 'deps/_cffi_backend.cpython-312-x86_64-linux-gnu.so',
+        'deps/zeroconf/abc.py', 'deps/bin/jsonschema', 'deps/bin/cffi-gen-src', 'deps/.lock',
         'host-worker', 'deps/keep.dat', 'deps/httpx/client.py', 'deps/httpx/__init__.py',
         'deps/httpx/_model.py',
         'deps/clinx/host/host_executor.py', 'deps/site-packages/clinx/transport/rust_transport.py',

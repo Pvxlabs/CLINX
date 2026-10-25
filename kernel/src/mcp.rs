@@ -5,11 +5,7 @@ use crate::{
     provider::Result,
 };
 use serde_json::{Value, json};
-use std::{
-    io::{BufRead, BufReader, Read, Write},
-    path::{Path, PathBuf},
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-};
+use std::path::Path;
 
 pub fn registry() -> Value {
     serde_json::from_str(include_str!("../../clinx/mcp/registry.json"))
@@ -103,8 +99,11 @@ pub fn tool_error(e: Error, name: &str, a: &Value) -> Value {
     json!({"error_code":code,"operation_id":e.operation_id,"authority":"RUST","retry_required":false,"reconciliation_required":e.code=="DELIVERY_UNKNOWN"})
 }
 /// Only the existing four read-only directory operations cross this boundary.
-/// This is a child of the same API identity, with no network listener/service.
+/// The native directory runs in the same API identity, without another listener.
 pub trait Observations {
+    fn only(&self) -> bool {
+        false
+    }
     fn enabled(&self) -> bool;
     fn call(&mut self, name: &str, args: &Value) -> Result<Value>;
 }
@@ -118,114 +117,45 @@ impl Observations for NoObservations {
     }
 }
 pub struct Directory {
-    config: PathBuf,
-    child: Option<(Child, ChildStdin, BufReader<ChildStdout>)>,
+    inner: crate::observation_directory::Directory,
+    only: bool,
 }
 impl Directory {
-    pub fn new(config: &Path) -> Self {
-        Self {
-            config: config.to_owned(),
-            child: None,
-        }
+    pub fn new(config: &Path) -> Result<Self> {
+        let inner = crate::observation_directory::Directory::from_env()?
+            .ok_or("RUST_OBSERVATION_CONFIG_REQUIRED")?
+            .with_managed(load_config(config)?);
+        Ok(Self { inner, only: false })
     }
-    pub fn ready(mut self) -> Result<Self> {
-        self.start()?;
-        Ok(self)
-    }
-    fn start(&mut self) -> Result<()> {
-        let executable = std::env::current_exe().map_err(|_| "OBSERVATION_NOT_CONFIGURED")?;
-        let python =
-            std::env::var("CLINX_OBSERVATION_PYTHON").unwrap_or_else(|_| "/usr/bin/python3".into());
-        let mut child = Command::new(python)
-            .args(["-B", "-m", "clinx.monitor.observation_mcp", "--backend"])
-            .arg(&self.config)
-            .env("CLINX_MCP_BINARY", executable)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|_| "OBSERVATION_NOT_CONFIGURED")?;
-        let input = child.stdin.take().ok_or("OBSERVATION_NOT_CONFIGURED")?;
-        let output = child.stdout.take().ok_or("OBSERVATION_NOT_CONFIGURED")?;
-        self.child = Some((child, input, BufReader::new(output)));
-        let ready = self.receive()?;
-        if ready["ready"] != true {
-            return Err("OBSERVATION_NOT_CONFIGURED".into());
-        }
-        Ok(())
-    }
-    fn receive(&mut self) -> Result<Value> {
-        let (_, _, output) = self.child.as_mut().ok_or("OBSERVATION_NOT_CONFIGURED")?;
-        let mut fds = [rustix::event::PollFd::new(
-            output.get_ref(),
-            rustix::event::PollFlags::IN,
-        )];
-        if rustix::event::poll(
-            &mut fds,
-            Some(&rustix::event::Timespec {
-                tv_sec: 30,
-                tv_nsec: 0,
-            }),
-        )
-        .map_err(|_| "OBSERVATION_UNAVAILABLE")?
-            == 0
-        {
-            return Err("OBSERVATION_UNAVAILABLE".into());
-        }
-        let mut line = vec![];
-        output
-            .take(2 * 1024 * 1024 + 1)
-            .read_until(b'\n', &mut line)
-            .map_err(|_| "OBSERVATION_UNAVAILABLE")?;
-        if line.len() > 2 * 1024 * 1024 || !line.ends_with(b"\n") {
-            return Err("OBSERVATION_UNAVAILABLE".into());
-        }
-        serde_json::from_slice(&line).map_err(|_| "OBSERVATION_UNAVAILABLE".into())
-    }
-    fn stop(&mut self) {
-        if let Some((mut child, _, _)) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+    pub fn standalone() -> Result<Self> {
+        Ok(Self {
+            inner: crate::observation_directory::Directory::from_env()?
+                .ok_or("OBSERVATION_NOT_CONFIGURED")?,
+            only: true,
+        })
     }
 }
 impl Observations for Directory {
     fn enabled(&self) -> bool {
         true
     }
-    fn call(&mut self, name: &str, args: &Value) -> Result<Value> {
-        let r = (|| {
-            if self.child.is_none() {
-                self.start()?
-            }
-            let (_, input, _) = self.child.as_mut().unwrap();
-            serde_json::to_writer(&mut *input, &json!({"method":name,"arguments":args}))
-                .map_err(|_| "OBSERVATION_UNAVAILABLE")?;
-            input
-                .write_all(b"\n")
-                .and_then(|_| input.flush())
-                .map_err(|_| "OBSERVATION_UNAVAILABLE")?;
-            let r = self.receive()?;
-            if let Some(code) = r["error"].as_str() {
-                return Err(public_code(code));
-            }
-            r.get("result")
-                .filter(|v| v["read_only"] == true)
-                .cloned()
-                .ok_or_else(|| "OBSERVATION_UNAVAILABLE".into())
-        })();
-        if r.is_err() {
-            self.stop()
-        }
-        r
+    fn only(&self) -> bool {
+        self.only
     }
-}
-impl Drop for Directory {
-    fn drop(&mut self) {
-        self.stop()
+    fn call(&mut self, name: &str, args: &Value) -> Result<Value> {
+        self.inner.invoke(name, args).and_then(|v| {
+            if v["read_only"] == true {
+                Ok(v)
+            } else {
+                Err("OBSERVATION_UNAVAILABLE".into())
+            }
+        })
     }
 }
 impl<T: Observations + ?Sized> Observations for Box<T> {
+    fn only(&self) -> bool {
+        (**self).only()
+    }
     fn enabled(&self) -> bool {
         (**self).enabled()
     }
@@ -280,7 +210,11 @@ impl<A: Authority, R: Reads, O: Observations> Server<A, R, O> {
                 json!({"resultType":"complete","supportedVersions":[registry["discover_protocol"]],"capabilities":{"tools":{}},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":registry["server_name"],"version":registry["server_version"]}},"instructions":registry["instructions"],"ttlMs":3600000,"cacheScope":"public"}),
             ),
             "tools/list" => {
-                let mut tools = registry["tools"].as_array().unwrap().clone();
+                let mut tools = if self.observations.only() {
+                    vec![]
+                } else {
+                    registry["tools"].as_array().unwrap().clone()
+                };
                 if self.observations.enabled() {
                     tools.extend(registry["observations"].as_array().unwrap().iter().cloned())
                 }
@@ -303,7 +237,10 @@ impl<A: Authority, R: Reads, O: Observations> Server<A, R, O> {
                     .iter()
                     .chain(registry["observations"].as_array().unwrap())
                     .find(|t| t["name"] == name);
-                if tool.is_none() || (obs && !self.observations.enabled()) {
+                if tool.is_none()
+                    || (obs && !self.observations.enabled())
+                    || (!obs && self.observations.only())
+                {
                     return Err(err(
                         -32602,
                         &format!(

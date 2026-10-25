@@ -10,7 +10,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -452,53 +451,11 @@ class ObserverHTTPServer:
 
 
 def main():
-    # -I excludes cwd and script directory: add only the installed package.
+    """Historical module invocation forwards to the standalone Rust service."""
     import sys
-
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    token = os.environ.get("CLINX_OBSERVER_TOKEN", "")
-    if not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", token):
-        raise SystemExit(
-            "CLINX_OBSERVER_TOKEN must be a 32..256 character URL-safe credential"
-        )
-    path = os.environ.get("CLINX_OBSERVER_DB")
-    from clinx.monitor.network_observation import directory_from_env
-
-    observations = directory_from_env()
-    desktop_routes = json.loads(os.environ.get("CLINX_OBSERVER_CODEX_HOST_IDS", "{}"))
-    if not isinstance(desktop_routes, dict) or any(
-        not isinstance(k, str)
-        or not isinstance(v, str)
-        or not re.fullmatch(r"[A-Za-z0-9_.:-]+", v)
-        for k, v in desktop_routes.items()
-    ):
-        raise SystemExit(
-            "CLINX_OBSERVER_CODEX_HOST_IDS must map canonical hosts to configured Desktop host IDs"
-        )
-    from clinx.monitor.rust_monitor import from_env as rust_monitor_from_env
-
-    rust_monitor = rust_monitor_from_env()
-    if not rust_monitor and not path:
-        raise SystemExit(
-            "CLINX_OBSERVER_DB must identify the existing canonical registry"
-        )
-    store = (
-        rust_monitor[0]
-        if rust_monitor
-        else ObserverStore(path, codex_host_ids=desktop_routes)
-    )
-    store.health()  # Fail closed; never initialize a missing registry.
-    server = ObserverHTTPServer(
-        int(os.environ.get("CLINX_OBSERVER_PORT", "8766")),
-        ObserverAPI(
-            store,
-            lambda: os.environ.get("CLINX_OBSERVER_TOKEN"),
-            observations,
-            network_observations=rust_monitor[1] if rust_monitor else None,
-        ),
-        audit_methods=os.environ.get("CLINX_OBSERVER_AUDIT_METHODS") == "1",
-    )
-    server.serve_forever(poll_interval=0.5)
+    root = Path(__file__).resolve().parents[2]
+    binary = os.environ.get("CLINX_OBSERVER_BINARY", str(root / "clinx-observer"))
+    os.execv(binary, [binary, *sys.argv[1:]])
 
 
 if __name__ == "__main__":

@@ -146,8 +146,17 @@ pub(crate) fn validate_identity(p: &Value) -> Result<()> {
     }
     Ok(())
 }
-fn peers(root: &Path) -> Result<Value> {
-    let v = read_state(root, "peers.json")?.unwrap_or(json!({"schema_version":1,"peers":{}}));
+fn state_read(root: &Path, name: &str, readonly: bool) -> Result<Option<Value>> {
+    if readonly {
+        check(root, true)?;
+        read_unlocked(root, name)
+    } else {
+        read_state(root, name)
+    }
+}
+fn peers_mode(root: &Path, readonly: bool) -> Result<Value> {
+    let v =
+        state_read(root, "peers.json", readonly)?.unwrap_or(json!({"schema_version":1,"peers":{}}));
     let rows = v["peers"].as_object().ok_or("INVALID_PEER_STORE")?;
     for (id, p) in rows {
         validate_identity(p)?;
@@ -174,7 +183,13 @@ fn peers(root: &Path) -> Result<Value> {
     Ok(v)
 }
 pub fn peer(root: &Path, id: &str) -> Result<Value> {
-    let all = peers(root)?;
+    peer_mode(root, id, false)
+}
+pub fn peer_readonly(root: &Path, id: &str) -> Result<Value> {
+    peer_mode(root, id, true)
+}
+fn peer_mode(root: &Path, id: &str, readonly: bool) -> Result<Value> {
+    let all = peers_mode(root, readonly)?;
     let p = &all["peers"][id];
     if p["trust_state"] != "TRUSTED" || p["security_status"] != "OPAQUE_V1" {
         return Err("PAIRING_REQUIRED".into());
@@ -182,8 +197,17 @@ pub fn peer(root: &Path, id: &str) -> Result<Value> {
     Ok(p.clone())
 }
 pub fn authenticate(root: &Path, der: &[u8], expected: Option<&str>, touch: bool) -> Result<Value> {
+    authenticate_mode(root, der, expected, touch, false)
+}
+fn authenticate_mode(
+    root: &Path,
+    der: &[u8],
+    expected: Option<&str>,
+    touch: bool,
+    readonly: bool,
+) -> Result<Value> {
     let (key, _) = public(der)?;
-    let all = peers(root)?;
+    let all = peers_mode(root, readonly)?;
     let found: Vec<_> = all["peers"]
         .as_object()
         .unwrap()
@@ -229,11 +253,12 @@ pub fn authenticate(root: &Path, der: &[u8], expected: Option<&str>, touch: bool
 }
 fn credentials(
     root: &Path,
+    readonly: bool,
 ) -> Result<(
     Vec<CertificateDer<'static>>,
     rustls::pki_types::PrivateKeyDer<'static>,
 )> {
-    let v = read_state(root, "identity.json")?.ok_or("IDENTITY_BOOTSTRAP_REQUIRED")?;
+    let v = state_read(root, "identity.json", readonly)?.ok_or("IDENTITY_BOOTSTRAP_REQUIRED")?;
     validate_identity(&v)?;
     let c = cert(v["certificate"].as_str().ok_or("INVALID_CERTIFICATE")?)?;
     let (key, fp) = public(&c)?;
@@ -249,6 +274,7 @@ fn credentials(
 #[derive(Debug)]
 struct Paired {
     root: PathBuf,
+    readonly: bool,
     expected: Option<String>,
     subjects: Vec<rustls::DistinguishedName>,
 }
@@ -264,7 +290,14 @@ impl ServerCertVerifier for Paired {
         _: &[u8],
         _: UnixTime,
     ) -> std::result::Result<ServerCertVerified, rustls::Error> {
-        authenticate(&self.root, end, self.expected.as_deref(), false).map_err(tls_error)?;
+        authenticate_mode(
+            &self.root,
+            end,
+            self.expected.as_deref(),
+            false,
+            self.readonly,
+        )
+        .map_err(tls_error)?;
         Ok(ServerCertVerified::assertion())
     }
     fn verify_tls12_signature(
@@ -304,7 +337,7 @@ impl ClientCertVerifier for Paired {
         _: &[CertificateDer<'_>],
         _: UnixTime,
     ) -> std::result::Result<ClientCertVerified, rustls::Error> {
-        authenticate(&self.root, end, None, false).map_err(tls_error)?;
+        authenticate_mode(&self.root, end, None, false, self.readonly).map_err(tls_error)?;
         Ok(ClientCertVerified::assertion())
     }
     fn verify_tls12_signature(
@@ -337,11 +370,12 @@ pub fn decode_certificate(h: &str) -> Result<Vec<u8>> {
         .collect()
 }
 pub fn server(root: &Path) -> Result<Arc<ServerConfig>> {
-    let (cert, key) = credentials(root)?;
+    let (cert, key) = credentials(root, false)?;
     let config = ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
         .with_client_cert_verifier(Arc::new(Paired {
             root: root.to_owned(),
             expected: None,
+            readonly: false,
             subjects: vec![],
         }))
         .with_single_cert(cert, key)
@@ -373,13 +407,35 @@ pub fn endpoint(value: &str) -> Result<(String, u16)> {
     Ok((h.to_owned(), p))
 }
 pub fn call(root: &Path, id: &str, address: &str, timeout: f64, request: &Value) -> Result<Value> {
-    peer(root, id)?;
-    let (cert, key) = credentials(root)?;
+    call_mode(root, id, address, timeout, request, false)
+}
+/// Existing paired client using only complete read snapshots. No identity,
+/// lock file, trust timestamp or protocol receipt is written by an observer.
+pub fn call_readonly(
+    root: &Path,
+    id: &str,
+    address: &str,
+    timeout: f64,
+    request: &Value,
+) -> Result<Value> {
+    call_mode(root, id, address, timeout, request, true)
+}
+fn call_mode(
+    root: &Path,
+    id: &str,
+    address: &str,
+    timeout: f64,
+    request: &Value,
+    readonly: bool,
+) -> Result<Value> {
+    peer_mode(root, id, readonly)?;
+    let (cert, key) = credentials(root, readonly)?;
     let config = ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(Paired {
             root: root.to_owned(),
             expected: Some(id.to_owned()),
+            readonly,
             subjects: vec![],
         }))
         .with_client_auth_cert(cert, key)

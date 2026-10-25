@@ -93,13 +93,14 @@ fn operation(
     } else {
         call("discovery.enrollment.client.reconnect")?;
     }
-    let mut connection = call("discovery.enrollment.client.observer").map_err(|e| {
+    let connection = call("discovery.enrollment.client.observer").map_err(|e| {
         if e == "REMOTE_REQUEST_REJECTED" {
             "OBSERVER_SHARING_UNAVAILABLE".into()
         } else {
             e
         }
     })?;
+    let mut connection = crate::discovery_bootstrap::validate(&connection)?;
     connection["node_id"] = candidate["node_id"].clone();
     connection["display_name"] = candidate["display_name"].clone();
     Ok(connection)

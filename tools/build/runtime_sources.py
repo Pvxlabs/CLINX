@@ -33,7 +33,10 @@ def inventory(source: Path) -> list[dict]:
         if row['profiles'] and (not row['path'].startswith('clinx/')
                 or row['role'] not in {'ACTIVE_RUNTIME', 'COMPAT'}):
             raise ValueError('NON_RUNTIME_SOURCE_IN_PACKAGE:' + row['path'])
-        if row['profiles'] and row['role'] == 'COMPAT':
+        # monitor is an old API/layout qualification profile, never the current
+        # App payload. Retired business cores remain forbidden in every profile.
+        if (row['profiles'] and row['path'].startswith('clinx/compat/')) or (
+                'rust' in row['profiles'] and row['role'] == 'COMPAT'):
             raise ValueError('LEGACY_CORE_IN_RUNTIME_PACKAGE:' + row['path'])
     return rows
 
