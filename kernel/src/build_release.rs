@@ -557,6 +557,19 @@ pub fn stage_at_revision(
         .collect();
     let result = json!({"version":version,"source_cwd":source,"head":String::from_utf8_lossy(head).trim(),"base_release":base,"execution_daemon":"EXISTING_DESKTOP_ONLY","native_transport":"RUST_NATIVE_V1","host_transport":"RUST_HOST_V1","mcp_runtime":"RUST_MCP_V1","node_api":"RUST_NODE_API_V1","node_network":"RUST_NODE_NETWORK_V1","observation_runtime":"RUST_OBSERVATION_V1","collector_runtime":"RUST_COLLECTOR_V1","client_runtime":"RUST_CLIENT_RUNTIME_V1","thin_runtime":"RUST_THIN_RUNTIME_V1","device_runtime":"RUST_DEVICE_RUNTIME_V1","node_daemon":"RUST_NODE_DAEMON_V1","provider_exchange":"RUST_PROVIDER_V1","workspace_observer":"RUST_PROVIDER_V1","observation_directory":"RUST_OBSERVATION_DIRECTORY_V1","observer_runtime":"RUST_OBSERVER_V1","device_cli":"RUST_DEVICE_CLI_V1","desktop_socket_maintenance":"RUST_DESKTOP_SOCKET_V1","config_compiler":"RUST_CONFIG_COMPILER_V1","python_sources":[],"python_dependencies":[],"source_replacements":replacements,"runtime_source_profile":"rust","source_layout":"qualified-clinx-v1","retired_files":retired,"files":files,"status":"STAGED_NOT_SELECTED"});
     save(&pending.path().join("manifest.json"), &result)?;
+    // sudo may preserve a restrictive caller umask. Runtime data directories
+    // must remain traversable by the dedicated service identities.
+    fn readable_dirs(path: &Path) -> Result<()> {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        for entry in fs::read_dir(path).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+                readable_dirs(&entry.path())?;
+            }
+        }
+        Ok(())
+    }
+    readable_dirs(pending.path())?;
     fs::rename(pending.path(), &release).map_err(|e| e.to_string())?;
     let mut receipt = result;
     receipt["release"] = json!(release);

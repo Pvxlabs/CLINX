@@ -100,6 +100,8 @@ socket 为 nonblocking，并延迟发送，在 Linux 和 Darwin 均可验证 wor
 存在 `visudo.ws` 时测试使用它，不移除摘要约束。root 文件正向用例取 coreutils 的 canonical
 路径，仍独立断言符号链接必须拒绝。此套特权工具验证不用于 Mac App 构建。生产安装另读回 sudo 规则、
 摘要、所有权、有效 ACL 和 `sudo -n … status`，不要把私有测试当作已安装。
+`build_release_qualification::stage_runtime_directories_remain_readable_under_private_operator_umask`
+在独立子进程的 `umask 077` 下验证运行数据目录仍为 `0755`，不改测试主进程或用户的 umask。
 
 Linux wire/loopback 不代替物理 LAN multicast、Mac→P620 或真实 Codex/ChatGPT connector。
 smoke 的 `--lan` 需要单独显式设备资格；普通测试不得接触生产。管理员 install/provision 与

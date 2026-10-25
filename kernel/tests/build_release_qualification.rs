@@ -127,6 +127,40 @@ impl Stage {
     }
 }
 #[test]
+fn stage_runtime_directories_remain_readable_under_private_operator_umask() {
+    const CHILD: &str = "CLINX_TEST_PRIVATE_STAGE_UMASK";
+    if std::env::var_os(CHILD).is_none() {
+        let result = Command::new("/bin/sh")
+            .args(["-c", "umask 077; exec \"$1\" --exact stage_runtime_directories_remain_readable_under_private_operator_umask --nocapture", "fixture"])
+            .arg(std::env::current_exe().unwrap())
+            .env(CHILD, "1")
+            .output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        return;
+    }
+    let s = Stage::new();
+    let result = s.stage().unwrap();
+    let release = Path::new(result["release"].as_str().unwrap());
+    for path in [
+        release.to_path_buf(),
+        release.join("control"),
+        release.join("control/clinx"),
+        release.join("control/clinx/mcp"),
+    ] {
+        assert_eq!(
+            fs::metadata(&path).unwrap().mode() & 0o777,
+            0o755,
+            "{}",
+            path.display()
+        );
+    }
+}
+#[test]
 fn stage_exact_native_closure_drops_all_old_python_and_dev_tools() {
     let s = Stage::new();
     let r = s.stage().unwrap();
