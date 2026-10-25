@@ -10,13 +10,8 @@ import json
 import os
 import pwd
 import subprocess
-import sys
 import tomllib
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.build.host_runtime_config import compile_config
-from tools.build.mcp_runtime_config import compile_config as compile_mcp_config
 
 ROOT = Path("/var/lib/clinx-rust")
 
@@ -66,6 +61,8 @@ def main():
             raise RuntimeError('SERVICE_ALREADY_EXISTS:' + name)
     release = args.release.resolve(strict=True)
     manifest = json.loads((release / "manifest.json").read_text())
+    if manifest.get('config_compiler') != 'RUST_CONFIG_COMPILER_V1':
+        raise RuntimeError('QUALIFIED_RUST_CONFIG_COMPILER_REQUIRED')
     if manifest.get('source_layout') != 'qualified-clinx-v1':
         raise RuntimeError('QUALIFIED_PACKAGE_LAYOUT_REQUIRED')
     if manifest.get('host_transport') != 'RUST_HOST_V1':
@@ -114,8 +111,6 @@ def main():
             or hashlib.sha256(path.read_bytes()).hexdigest() != digest
         ):
             raise RuntimeError("RELEASE_CONTENT_MISMATCH:" + file)
-    # Config identity codecs now use the exact verified Rust release.
-    os.environ["CLINX_NODE_BINARY"] = str(release / "clinx-node")
     cfgdir = ROOT / "config"
     cfgdir.mkdir(mode=0o755, exist_ok=True)
     worker = pwd.getpwuid(args.operator_home.stat().st_uid)
@@ -142,8 +137,12 @@ def main():
     config["runtime"].pop("task_db_path", None)
     # Preserve configured routes and Host command definitions; no legacy DB path.
     (cfgdir / "bridge.toml").write_text("\n".join(toml(config)) + "\n")
-    (cfgdir / "host-runtime.json").write_text(json.dumps(compile_config(cfgdir / "bridge.toml"), indent=2) + "\n")
-    (cfgdir / "mcp-runtime.json").write_text(json.dumps(compile_mcp_config(cfgdir / "bridge.toml"), indent=2) + "\n")
+    # Compile with the exact release executable verified above. No Python
+    # runtime configuration, Provider or business module enters the installer.
+    for kind in ('host', 'mcp'):
+        compiled = subprocess.run([str(release / 'clinx-node'), '--compile-config', kind,
+                                   str(cfgdir / 'bridge.toml')], check=True, capture_output=True, text=True)
+        (cfgdir / (kind + '-runtime.json')).write_text(json.dumps(json.loads(compiled.stdout), indent=2) + '\n')
     policy = dict(
         projects=[
             dict(alias=k, host="p620", cwd=v["cwd"])

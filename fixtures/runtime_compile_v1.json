@@ -1,0 +1,300 @@
+{
+  "schema": 1,
+  "source_head": "29f72a6fec2022792bcc2e635b5e34ab60171d7e",
+  "oracle": "Unmodified Python compile_config functions from the baseline, using baseline config DTO contracts. No hand-written expected runtime result.",
+  "source_sha256": {
+    "tools/build/host_runtime_config.py": "9e50d324ec21633077399b3888902bca1d2ac7cb39dda2738e29294ecc445f65",
+    "tools/build/mcp_runtime_config.py": "77d9f5f457f01d4241d6629f2329330336d9d19ea0c8d482657e0ba1fe26c371"
+  },
+  "cases": [
+    {
+      "name": "default_without_implicit_self_route",
+      "toml": "[linear]\nteam_id=\"team\"\ntrigger_label=\"label\"\ntodo_state=\"Todo\"\nrunning_state=\"Running\"\nreview_state=\"Review\"\n[projects.fixture]\ncwd=\"@ROOT@/project\"\nbranch=\"main\"\n[runtime]\nruntime_host=\"workstation-P620\"\n[app_server]\nlocal_socket=\"/fixture/provider.sock\"\n",
+      "expected": {
+        "host": {
+          "enabled": false,
+          "host": "p620",
+          "default_timeout_seconds": 30.0,
+          "max_timeout_seconds": 120.0,
+          "max_output_bytes": 65536,
+          "services": [],
+          "ssh_targets": [],
+          "network_targets": [],
+          "local_commands": [],
+          "trusted_workspace_roots": [],
+          "workflows": []
+        },
+        "mcp": {
+          "runtime_host": "p620",
+          "provider_endpoint": "/fixture/provider.sock",
+          "provider_timeout_seconds": 30.0,
+          "host_aliases": {},
+          "codex_host_ids": {}
+        }
+      }
+    },
+    {
+      "name": "unicode_workspace_and_desktop_routes",
+      "toml": "[linear]\nteam_id=\"team\"\ntrigger_label=\"label\"\ntodo_state=\"Todo\"\nrunning_state=\"Running\"\nreview_state=\"Review\"\n[projects.fixture]\ncwd=\"@ROOT@/project\"\nbranch=\"main\"\n[runtime]\nruntime_host=\"workstation-P620\"\n[app_server]\nlocal_socket=\"/fixture/provider.sock\"\n[workspaces.\"ß\"]\nroot=\"@ROOT@/z\"\nhost=\"AIR\"\ncodex_host_ids=[\"desktop-共用\",\"desktop-air\"]\n[workspaces.SS]\nroot=\"@ROOT@/a\"\nhost=\"iMac\"\ncodex_host_ids=[\"desktop-共用\"]\n[workspaces.air]\nroot=\"@ROOT@/b\"\nhost=\"workstation-AIR\"\ncodex_host_ids=[\"desktop-air\"]\n",
+      "expected": {
+        "host": {
+          "enabled": false,
+          "host": "p620",
+          "default_timeout_seconds": 30.0,
+          "max_timeout_seconds": 120.0,
+          "max_output_bytes": 65536,
+          "services": [],
+          "ssh_targets": [],
+          "network_targets": [],
+          "local_commands": [],
+          "trusted_workspace_roots": [],
+          "workflows": []
+        },
+        "mcp": {
+          "runtime_host": "p620",
+          "provider_endpoint": "/fixture/provider.sock",
+          "provider_timeout_seconds": 30.0,
+          "host_aliases": {
+            "ss": [
+              "air",
+              "imac"
+            ],
+            "air": [
+              "air"
+            ],
+            "workstation-air": [
+              "air"
+            ],
+            "imac": [
+              "imac"
+            ],
+            "workstation-imac": [
+              "imac"
+            ]
+          },
+          "codex_host_ids": {
+            "desktop-共用": [
+              "air",
+              "imac"
+            ],
+            "desktop-air": [
+              "air"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "configured_host_commands_and_workflow",
+      "toml": "[linear]\nteam_id=\"team\"\ntrigger_label=\"label\"\ntodo_state=\"Todo\"\nrunning_state=\"Running\"\nreview_state=\"Review\"\n[projects.fixture]\ncwd=\"@ROOT@/project\"\nbranch=\"main\"\n[runtime]\nruntime_host=\"workstation-P620\"\n[app_server]\nlocal_socket=\"/fixture/provider.sock\"\n[host_executor]\nenabled=true\nhost=\"  WORKSTATION-P620  \"\ndefault_timeout_seconds=2.5\nmax_timeout_seconds=90\nmax_output_bytes=2048\ntrusted_workspace_roots=[\"@ROOT@/work/../workspace\",\"@ROOT@/workspace\"]\nservices=[\"api\",\"worker\"]\n[host_executor.local_commands.check]\noperation_classes=[\"read_only_host\"]\nargv=[\"/usr/bin/printf\",\"Exact %s\",\"input\"]\n[host_executor.ssh_target_commands.remote]\noperation_classes=[\"production_read_only\"]\ncommands={status=[\"/usr/bin/true\"],logs=[\"/usr/bin/printf\",\"logs\"]}\n[host_executor.network_targets.monitor]\ndns_name=\"example.invalid\"\nurl=\"https://example.invalid/status\"\n[host_executor.workflows.status]\nidentity=\"status-v1\"\ntarget=\"production-status\"\naction=\"read\"\noperation_class=\"PRODUCTION_READ_ONLY\"\nargv=[\"/usr/bin/printf\",\"{component}\"]\nparameters={component={enum=[\"api\",\"worker\"]}}\nresource=\"production-status\"\n",
+      "expected": {
+        "host": {
+          "enabled": true,
+          "host": "p620",
+          "default_timeout_seconds": 2.5,
+          "max_timeout_seconds": 90.0,
+          "max_output_bytes": 2048,
+          "services": [
+            {
+              "alias": "api",
+              "operation_classes": [
+                "READ_ONLY_HOST",
+                "DEVELOPMENT_MUTATION"
+              ],
+              "dns_name": null,
+              "url": null,
+              "commands": []
+            },
+            {
+              "alias": "worker",
+              "operation_classes": [
+                "READ_ONLY_HOST",
+                "DEVELOPMENT_MUTATION"
+              ],
+              "dns_name": null,
+              "url": null,
+              "commands": []
+            }
+          ],
+          "ssh_targets": [
+            {
+              "alias": "remote",
+              "operation_classes": [
+                "PRODUCTION_READ_ONLY"
+              ],
+              "dns_name": null,
+              "url": null,
+              "commands": [
+                [
+                  "status",
+                  [
+                    "/usr/bin/true"
+                  ]
+                ],
+                [
+                  "logs",
+                  [
+                    "/usr/bin/printf",
+                    "logs"
+                  ]
+                ]
+              ]
+            }
+          ],
+          "network_targets": [
+            {
+              "alias": "monitor",
+              "operation_classes": [
+                "READ_ONLY_HOST"
+              ],
+              "dns_name": "example.invalid",
+              "url": "https://example.invalid/status",
+              "commands": []
+            }
+          ],
+          "local_commands": [
+            {
+              "alias": "check",
+              "operation_classes": [
+                "READ_ONLY_HOST"
+              ],
+              "dns_name": null,
+              "url": null,
+              "commands": [
+                [
+                  "check",
+                  [
+                    "/usr/bin/printf",
+                    "Exact %s",
+                    "input"
+                  ]
+                ]
+              ]
+            }
+          ],
+          "trusted_workspace_roots": [
+            "@ROOT@/workspace"
+          ],
+          "workflows": [
+            {
+              "identity": "status-v1",
+              "target": "production-status",
+              "action": "read",
+              "operation_class": "PRODUCTION_READ_ONLY",
+              "argv": [
+                "/usr/bin/printf",
+                "{component}"
+              ],
+              "parameters": [
+                [
+                  "component",
+                  "enum",
+                  [
+                    "api",
+                    "worker"
+                  ]
+                ]
+              ],
+              "resource": "production-status"
+            }
+          ]
+        },
+        "mcp": {
+          "runtime_host": "p620",
+          "provider_endpoint": "/fixture/provider.sock",
+          "provider_timeout_seconds": 30.0,
+          "host_aliases": {},
+          "codex_host_ids": {}
+        }
+      }
+    },
+    {
+      "name": "host_canonical_is_lowercase_not_casefold",
+      "toml": "[linear]\nteam_id=\"team\"\ntrigger_label=\"label\"\ntodo_state=\"Todo\"\nrunning_state=\"Running\"\nreview_state=\"Review\"\n[projects.fixture]\ncwd=\"@ROOT@/project\"\nbranch=\"main\"\n[runtime]\nruntime_host=\"workstation-P620\"\n[app_server]\nlocal_socket=\"/fixture/provider.sock\"\n[host_executor]\nenabled=false\nhost=\" Workstation-STRAßE \"\nssh_targets=[\"read-node\"]\n",
+      "expected": {
+        "host": {
+          "enabled": false,
+          "host": "straße",
+          "default_timeout_seconds": 30.0,
+          "max_timeout_seconds": 120.0,
+          "max_output_bytes": 65536,
+          "services": [],
+          "ssh_targets": [
+            {
+              "alias": "read-node",
+              "operation_classes": [
+                "PRODUCTION_READ_ONLY"
+              ],
+              "dns_name": null,
+              "url": null,
+              "commands": []
+            }
+          ],
+          "network_targets": [],
+          "local_commands": [],
+          "trusted_workspace_roots": [],
+          "workflows": []
+        },
+        "mcp": {
+          "runtime_host": "p620",
+          "provider_endpoint": "/fixture/provider.sock",
+          "provider_timeout_seconds": 30.0,
+          "host_aliases": {},
+          "codex_host_ids": {}
+        }
+      }
+    },
+    {
+      "name": "relative_provider_prefers_local",
+      "toml": "[linear]\nteam_id=\"team\"\ntrigger_label=\"label\"\ntodo_state=\"Todo\"\nrunning_state=\"Running\"\nreview_state=\"Review\"\n[projects.fixture]\ncwd=\"@ROOT@/project\"\nbranch=\"main\"\n[runtime]\nruntime_host=\"AIR\"\n[app_server]\nlocal_socket=\"provider.sock\"\nnative_socket=\"/other/native.sock\"\nrequest_timeout_seconds=1.75\n",
+      "expected": {
+        "host": {
+          "enabled": false,
+          "host": "air",
+          "default_timeout_seconds": 30.0,
+          "max_timeout_seconds": 120.0,
+          "max_output_bytes": 65536,
+          "services": [],
+          "ssh_targets": [],
+          "network_targets": [],
+          "local_commands": [],
+          "trusted_workspace_roots": [],
+          "workflows": []
+        },
+        "mcp": {
+          "runtime_host": "air",
+          "provider_endpoint": "@ROOT@/run/provider.sock",
+          "provider_timeout_seconds": 1.75,
+          "host_aliases": {},
+          "codex_host_ids": {}
+        }
+      }
+    },
+    {
+      "name": "tilde_native_provider_fallback",
+      "toml": "[linear]\nteam_id=\"team\"\ntrigger_label=\"label\"\ntodo_state=\"Todo\"\nrunning_state=\"Running\"\nreview_state=\"Review\"\n[projects.fixture]\ncwd=\"@ROOT@/project\"\nbranch=\"main\"\n[runtime]\nruntime_host=\"air\"\n[app_server]\nnative_socket=\"~//native.sock\"\nrequest_timeout_seconds=7\n",
+      "expected": {
+        "host": {
+          "enabled": false,
+          "host": "air",
+          "default_timeout_seconds": 30.0,
+          "max_timeout_seconds": 120.0,
+          "max_output_bytes": 65536,
+          "services": [],
+          "ssh_targets": [],
+          "network_targets": [],
+          "local_commands": [],
+          "trusted_workspace_roots": [],
+          "workflows": []
+        },
+        "mcp": {
+          "runtime_host": "air",
+          "provider_endpoint": "@ROOT@/home/native.sock",
+          "provider_timeout_seconds": 7.0,
+          "host_aliases": {},
+          "codex_host_ids": {}
+        }
+      }
+    }
+  ]
+}

@@ -146,10 +146,12 @@ def test_packaged_helper_registers_reads_and_restarts_without_business_execution
 ):
     from clinx.nodes.node_protocol import NodeAuthorizationStore
     from clinx.nodes.node_runtime import AuthorizedRemoteClient
-    from tools.build.runtime_sources import copy_native_monitor_resources
 
     resources = tmp_path / "App/Contents/Resources"
-    copy_native_monitor_resources(Path(__file__).resolve().parents[1], resources)
+    build = Path(os.environ.get("CLINX_BUILD_BINARY") or
+                 str(Path(os.environ["CLINX_TEST_RUST_BIN_DIR"]) / "clinx-build"))
+    subprocess.run([str(build), "native-monitor-resources",
+                    str(Path(__file__).resolve().parents[1]), str(resources)], check=True, timeout=10)
     assert not list(resources.rglob("*.py"))
     assert not (resources / "DiscoveryRuntime").exists()
     binary = resources.parent / "Helpers/clinx-node"

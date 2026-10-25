@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 use clinx_decision_kernel::{
     MAX_FRAME_BYTES,
-    mcp::{self, Directory, NoObservations, Observations, Server},
+    mcp::{self, Directory, NoObservations, Observations, Profile, Server},
     mcp_api::{Api, NativeReads},
     native_transport::{Authority, UnixAuthority},
     provider::Result,
@@ -27,11 +27,13 @@ fn run() -> Result<()> {
     let mut call = None;
     let mut stdio = false;
     let mut observations_only = false;
+    let mut profile = Profile::Standard;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--config" => config = args.next().map(PathBuf::from),
             "--stdio" => stdio = true,
             "--observations-only" => observations_only = true,
+            "--policy-maintenance" => profile = Profile::PolicyMaintenance,
             "--observation-runtime-contract" => {
                 println!("RUST_OBSERVATION_DIRECTORY_V1");
                 return Ok(());
@@ -46,6 +48,9 @@ fn run() -> Result<()> {
     }
     if observations_only && call.is_some() {
         return Err("OBSERVATION_READ_ONLY".into());
+    }
+    if profile == Profile::PolicyMaintenance && (observations_only || call.is_some()) {
+        return Err("MCP_ARGUMENT_INVALID".into());
     }
     let (api, obs): (_, Box<dyn Observations>) = if observations_only {
         // No Authority/socket/config is opened by the standalone read-only API.
@@ -79,7 +84,8 @@ fn run() -> Result<()> {
         if authority.call("health", json!({}), "health")?["business_commands"] != true {
             return Err("RUST_BUSINESS_AUTHORITY_REQUIRED".into());
         }
-        let obs: Box<dyn Observations> = if call.is_none()
+        let obs: Box<dyn Observations> = if profile == Profile::Standard
+            && call.is_none()
             && std::env::var("CLINX_RUST_OBSERVATION_READS").as_deref() == Ok("1")
         {
             Box::new(Directory::new(&path)?)
@@ -145,7 +151,7 @@ fn run() -> Result<()> {
             continue;
         }
         let r = match serde_json::from_slice(&bytes) {
-            Ok(v) => server.handle(v),
+            Ok(v) => server.handle_profile(v, profile),
             Err(_) => Some(
                 json!({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"invalid JSON"}}),
             ),

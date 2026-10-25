@@ -248,7 +248,7 @@ production capacity, real device behavior or business acceptance.
 | `setup(tmp_path)` receives a module | Use pinned pytest; older system pytest invokes legacy nose setup. Changing HOME can expose an older system copy |
 | Missing Python Owner / `CLINX_OWNER_CLIENT_BINARY` | Python Owner fixtures are historical and do not collect on current source; use the recorded source ref in an isolated fixture if recovering old evidence, never start an Owner against production |
 | Missing `CLINX_PRODUCTION_SCHEMA` | Supply `owner --schema <schema-only.json>`; absence is retained as an explicit prerequisite failure |
-| `PRODUCTION_PAKE_UNAVAILABLE` | Build the native OPAQUE adapter in the test environment; SPAKE2 DEV_ONLY is a different backend |
+| `PRODUCTION_PAKE_UNAVAILABLE` | Build the native OPAQUE adapter in the test environment; the incompatible SPAKE2 DEV_ONLY backend is retired |
 | Socket-directory permissions | Confirm private same-user endpoint and temporary DB identity; do not chmod/delete a production socket |
 | `systemd-run` cannot connect to bus | Provide an isolated test user manager; retain the failure if unavailable |
 | Ruff findings in legacy files | Use `ruff-discovery.toml`, compare to the saved baseline and avoid unrelated formatting changes |
@@ -257,8 +257,9 @@ production capacity, real device behavior or business acceptance.
 ## Rust MCP business entry qualification (2026-10-25)
 
 Normal business MCP now uses `clinx-mcp`, with an install-time JSON configuration
-compiled by `tools.build.mcp_runtime_config`. The retained Python factory is an
-observation/maintenance/test seam. It does not qualify the normal Rust service.
+compiled by `clinx-node --compile-config mcp`. The Python factory is retired.
+The operator profile is `clinx-mcp --policy-maintenance --config <json> --stdio`;
+its exact approval/review and Authority CAS tests are in `kernel/tests/policy_maintenance.rs`.
 
 `fixtures/mcp_api_v1.json` contains 35 original `81254e2` Python API vectors.
 Rust tests compare Authority payloads, exact Provider reads and public results,

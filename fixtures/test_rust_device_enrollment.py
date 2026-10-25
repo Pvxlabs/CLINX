@@ -15,6 +15,29 @@ from clinx.discovery.identity import DeviceError,NodeIdentity,PrivateStore,Trust
 from clinx.discovery.transport import DeviceServer,LanTransport,send,receive
 
 
+def test_retired_dev_protocol_fails_before_identity_window_tls_or_key_exchange(monkeypatch):
+    from clinx.discovery import pairing, transport
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('retired protocol reached enrollment or TLS')
+
+    monkeypatch.setattr(transport, '_enrollment', forbidden)
+    monkeypatch.setattr(transport, 'PairingWindow', forbidden)
+    monkeypatch.setattr(ssl, 'SSLContext', forbidden)
+    for action in (
+        lambda: pairing.Spake2Protocol('1234', role='A', client={}, server={},
+                                      window_id='retired', allow_dev=True),
+        lambda: pairing.confirmation(b'fixture-key', 'A'),
+        lambda: pairing.verify_confirmation(b'fixture-key', 'A', b'fixture-confirmation'),
+        lambda: pairing.backend_status(allow_dev=True),
+        lambda: LanTransport(object(), object(), allow_dev=True),
+        lambda: DeviceServer(object(), object(), allow_dev=True),
+        lambda: transport.reconnect_discovered(object(), object(), {}, allow_dev=True),
+    ):
+        with pytest.raises(DeviceError, match='^SECURITY_BLOCKER_DEV_ONLY$'):
+            action()
+
+
 def backend_probe(tmp_path, binary, expected):
     # Each fresh child selects its own binary. Never reuse the parent's worker
     # or inherit runtime credentials while testing dependency failure.

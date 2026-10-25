@@ -1,6 +1,5 @@
 #!/bin/sh
 set -eu
-export PYTHONDONTWRITEBYTECODE=1
 cd "$(dirname "$0")/.."
 signing_identity="${CLINX_SIGNING_IDENTITY:-CLINX Monitor Local Development}"
 if ! security find-certificate -c "$signing_identity" >/dev/null 2>&1; then
@@ -15,8 +14,6 @@ cp "$binary_dir/CLINXMonitor" "$app_dir/Contents/MacOS/CLINXMonitor"
 cp Info.plist "$app_dir/Contents/Info.plist"
 cp ThirdPartyNotices.txt "$app_dir/Contents/Resources/ThirdPartyNotices.txt"
 
-# Remove build-owned retired runtime files. The current App has no Python runtime.
-python3 -B ../tools/build/runtime_sources.py --native-monitor-resources "$app_dir/Contents/Resources"
 # Provider protocol, paired Node TLS/IPC, routing scope and request ledger run in Rust on this Mac.
 # Build for the same native architecture as the Swift application; never copy
 # a Linux release executable or inherit a stale helper from a previous bundle.
@@ -25,8 +22,13 @@ case "$provider_target" in
     aarch64-apple-darwin|x86_64-apple-darwin) ;;
     *) echo 'A native macOS Rust toolchain is required to build the Provider helper.' >&2; exit 1 ;;
 esac
-cargo build --release --locked --target "$provider_target" --manifest-path ../kernel/Cargo.toml --bin clinx-provider --bin clinx-node --bin clinx-node-daemon
-provider_binary_dir=$(cargo metadata --no-deps --format-version 1 --manifest-path ../kernel/Cargo.toml | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+cargo build --release --locked --target "$provider_target" --manifest-path ../kernel/Cargo.toml --bin clinx-provider --bin clinx-node --bin clinx-node-daemon --bin clinx-build
+# Resolve Cargo configuration with the native build tool. This preserves custom
+# target directories without requiring Python, jq, or a fixed checkout layout.
+provider_binary_dir=$(cargo run --quiet --release --locked --target "$provider_target" --manifest-path ../kernel/Cargo.toml --bin clinx-build -- cargo-target-directory ../kernel/Cargo.toml)
+# Remove only build-owned retired runtime files. clinx-build is development
+# tooling: it is not copied into the App or included in production releases.
+"$provider_binary_dir/$provider_target/release/clinx-build" native-monitor-resources .. "$app_dir/Contents/Resources"
 for helper in clinx-provider clinx-node clinx-node-daemon; do
     rm -f "$app_dir/Contents/Resources/$helper"
     cp "$provider_binary_dir/$provider_target/release/$helper" "$app_dir/Contents/Helpers/$helper"

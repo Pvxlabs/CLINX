@@ -165,11 +165,20 @@ pub fn provider_endpoints(config: &Value) -> Result<Vec<PathBuf>> {
 }
 
 pub fn api_config(config: &Value) -> Result<mcp_api::Config> {
+    mcp_routes(config, true)
+}
+
+// Installed MCP routes historically contain configured workspaces only. The
+// Helper API also recognizes its own runtime host; keep that distinction while
+// sharing normalization, endpoint selection and desktop routing.
+fn mcp_routes(config: &Value, include_runtime_host: bool) -> Result<mcp_api::Config> {
     let host = config["runtime_host"]
         .as_str()
         .ok_or("API_CONFIG_INVALID")?;
-    let mut aliases: BTreeMap<String, BTreeSet<String>> =
-        BTreeMap::from([(host.case_fold().collect(), BTreeSet::from([host.into()]))]);
+    let mut aliases: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    if include_runtime_host {
+        aliases.insert(host.case_fold().collect(), BTreeSet::from([host.into()]));
+    }
     let mut desktops: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for w in config["workspaces"]
         .as_array()
@@ -227,6 +236,38 @@ pub fn api_config(config: &Value) -> Result<mcp_api::Config> {
             .map(|(k, v)| (k, v.into_iter().collect()))
             .collect(),
     })
+}
+
+/// Offline build/install projection. Reads the supplied TOML only; no state,
+/// Provider, task, service or output-file mutation is performed here.
+pub fn compile_config(kind: &str, path: &Path) -> Result<Value> {
+    if !matches!(kind, "host" | "mcp") {
+        return Err("CONFIG_COMPILE_KIND_INVALID".into());
+    }
+    let config = native_load(path)?;
+    // Legacy Python json.dumps emitted NaN/Infinity for these values. Neither
+    // Rust consumer can parse that JSON; never emit the private numeric wire
+    // object as if it were a valid worker timeout.
+    let timeouts = if kind == "mcp" {
+        vec![&config["app_server"]["request_timeout_seconds"]]
+    } else {
+        vec![
+            &config["host_executor"]["default_timeout_seconds"],
+            &config["host_executor"]["max_timeout_seconds"],
+        ]
+    };
+    if timeouts.iter().any(|v| v.get("__config_float").is_some()) {
+        return Err("NONFINITE_RUNTIME_CONFIG".into());
+    }
+    if kind == "mcp" {
+        return serde_json::to_value(mcp_routes(&config, false)?)
+            .map_err(|_| "API_CONFIG_INVALID".into());
+    }
+    let mut host = config["host_executor"].clone();
+    host["host"] = json!(super::canonical(
+        host["host"].as_str().ok_or("host identity is required")?
+    )?);
+    Ok(host)
 }
 
 #[cfg(test)]

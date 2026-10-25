@@ -187,8 +187,8 @@ LAN nodes, shows persistent device trust, and authenticates known peers with
 mutual TLS. Existing local/SSH provider and manual host paths remain available.
 
 Production pairing uses the RFC 9807 OPAQUE core linked into Rust; it requires no
-Python interpreter or wheel. The separate source qualification SPAKE2 backend is explicitly
-`DEV_ONLY` and requires `--allow-dev-pairing`; device trust grants no execution
+Python interpreter or wheel. The incompatible SPAKE2 development backend and
+`--allow-dev-pairing` fallback are retired; device trust grants no execution
 authority. See [Local Discovery v1](docs/LOCAL_DISCOVERY_V1.md) for native build
 instructions, isolated setup, the two-device flow and the limits of recorded
 acceptance.
@@ -230,9 +230,9 @@ Phase 4 removes the Python Owner, automatic Centre enrollment and shadow task
 models/replay. The unchanged local tests now report 24 collection errors;
 the retained 18-module comparison preserves all baseline outcomes. See the
 [phase 4 results and remaining Mac migration blockers](docs/cleanup/RUST_MIGRATION_CLEANUP_PHASE4.md).
-The tracked `fixtures/test_rust_node_contract.py` checks Rust node selectors,
-cancellation receipts and the MCP factory without the local test archive:
-`python -m pytest --import-mode=prepend -o pythonpath=. fixtures/test_rust_node_contract.py`.
+The tracked `kernel/tests/node_contract_qualification.rs` preserves Node selectors,
+cancellation receipts and identity conflict cases without the local test archive:
+`cargo test --locked --manifest-path kernel/Cargo.toml --test node_contract_qualification`.
 
 ## Runtime entry points
 
@@ -248,7 +248,7 @@ commands and the separate V1/M3 Dispatcher have been retired.
 
 For a configured Rust MCP development or qualification environment, compile
 the existing TOML at build/install time using
-`python -m tools.build.mcp_runtime_config --config <toml> --output <new-mcp-runtime.json>`.
+`clinx-node --compile-config mcp <toml>` and save stdout to a new JSON file.
 `clinx-mcp --config <compiled-mcp-runtime.json> --stdio` with the existing
 `CLINX_RUST_SOCKET` and `CLINX_RUST_UID` settings. These must identify the intended
 existing authority; the adapter does not create or migrate its database. A fresh
@@ -256,7 +256,7 @@ clone does not configure an authority or reproduce an installed service.
 
 macOS Helper delegates Node selectors, canonical handoff and business request mapping
 to Rust `clinx-node`, using the paired Centre-to-Rust Authority route. Authenticated
-mTLS transport, discovery and observation still execute Python and await migration.
+mTLS transport, discovery, enrollment, observation and process assembly run in Rust.
 The normal Helper no longer constructs the Python integration/Registry/Dispatcher.
 The Rust MCP IPC client is local to the Centre and does not supply cross-Mac authentication.
 

@@ -1,5 +1,32 @@
 //! Helper request API and paired Node network process. Never a task-state writer.
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--config-compile-contract") {
+        println!("RUST_CONFIG_COMPILER_V1");
+        return;
+    }
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--compile-config")) {
+        let args: Vec<_> = std::env::args_os().skip(2).collect();
+        let result = match args.as_slice() {
+            [kind, path] => kind
+                .to_str()
+                .ok_or_else(|| "CONFIG_COMPILE_KIND_INVALID".into())
+                .and_then(|kind| {
+                    clinx_decision_kernel::runtime_config::compile_config(
+                        kind,
+                        std::path::Path::new(path),
+                    )
+                }),
+            _ => Err("Usage: clinx-node --compile-config host|mcp CONFIG_TOML".into()),
+        };
+        match result {
+            Ok(value) => println!("{value}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("--discovery-gui") {
         std::process::exit(clinx_decision_kernel::discovery_gui::main_cli());
     }

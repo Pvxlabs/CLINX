@@ -24,7 +24,8 @@ Rust Core 唯一状态权威、五条设计原则与效果指标。CLINX 是 AI 
 ## 源码布局
 
 当前布局、唯一目标架构、全部模块分类与发布边界见
-[仓库架构](REPOSITORY_ARCHITECTURE.md)；旧清理记录保留各自当时的路径和计数。
+[仓库架构](REPOSITORY_ARCHITECTURE.md)；最新的 [兼容实现退役](RUST_COMPAT_RETIREMENT.md)
+区分仍需保留的能力与已删除的 Python 实现，旧清理记录保留各自当时的路径和计数。
 
 `clinx/` 按职责集中剩余 Python MCP/IPC、Provider 网络桥、配置、观察和节点实现；
 旧 `clinx/compat/` Registry/Dispatcher/M9、completion/recovery/outbox 已删除，正常 Helper

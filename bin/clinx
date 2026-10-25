@@ -5,14 +5,6 @@ repo_root=$(CDPATH= cd -- "$launcher_dir/.." && pwd)
 if [ "$#" -eq 0 ]; then
     set -- devices
 fi
-# Explicit development qualification retains the incompatible SPAKE2 backend.
-for argument in "$@"; do
-    if [ "$argument" = --allow-dev-pairing ]; then
-        exec "${CLINX_PYTHON:-python3}" -c \
-          'import sys; sys.path.insert(0, sys.argv.pop(1)); from tools.qualification.discovery_dev_cli import main; raise SystemExit(main())' \
-          "$repo_root" --config "$repo_root/bridge.toml" "$@"
-    fi
-done
 runtime=${CLINX_DEVICE_BINARY:-}
 if [ -z "$runtime" ] && [ -n "${CLINX_NODE_BINARY:-}" ]; then
     runtime="$(dirname -- "$CLINX_NODE_BINARY")/clinx-device"

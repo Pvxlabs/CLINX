@@ -164,13 +164,87 @@ impl<T: Observations + ?Sized> Observations for Box<T> {
     }
 }
 
+/// The operator profile uses the same Authority CAS, with mandatory reviewed
+/// request/task binding. It cannot expose execution or observation operations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Profile {
+    #[default]
+    Standard,
+    PolicyMaintenance,
+}
+pub const POLICY_TOOLS: [&str; 4] = [
+    "clinx_get_effective_authority",
+    "clinx_get_prepared_request",
+    "clinx_prepare_policy_reauthorization",
+    "clinx_apply_policy_reauthorization",
+];
+pub const POLICY_INSTRUCTIONS: &str = "Operator-only policy maintenance. Uses existing same-Task CAS and immutable history; only future execution policy can change. No deployment, execution, native permission grant, Owner takeover or replay. approved=true is an operator assertion, not independent human authentication. This profile must not be exposed to managed workers. Native provider permissions remain native.";
+fn policy_registry(mut registry: Value) -> Value {
+    registry["server_name"] = json!("clinx-policy-maintenance");
+    registry["server_version"] = json!("1");
+    registry["instructions"] = json!(POLICY_INSTRUCTIONS);
+    registry["observations"] = json!([]);
+    registry["tools"] = Value::Array(
+        registry["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|tool| POLICY_TOOLS.contains(&tool["name"].as_str().unwrap_or("")))
+            .cloned()
+            .map(|mut tool| {
+                tool["annotations"]["openWorldHint"] = json!(false);
+                if tool["name"] == POLICY_TOOLS[3] {
+                    let required = tool["inputSchema"]["required"].as_array_mut().unwrap();
+                    required.extend([json!("expected_request_hash"), json!("expected_task_ref")]);
+                }
+                tool
+            })
+            .collect(),
+    );
+    registry
+}
+fn policy_arguments(name: &str, args: &Value, schema: &Value) -> Result<()> {
+    if !args.is_object()
+        || args
+            .as_object()
+            .unwrap()
+            .keys()
+            .any(|k| schema["properties"].get(k).is_none())
+        || schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|k| args.get(k.as_str().unwrap()).is_none())
+    {
+        return Err("POLICY_MAINTENANCE_EXACT_ARGUMENTS_REQUIRED".into());
+    }
+    if POLICY_TOOLS[2..].contains(&name) && args["approved"] != true {
+        return Err("POLICY_MAINTENANCE_EXPLICIT_OPERATOR_APPROVAL_REQUIRED".into());
+    }
+    if name == POLICY_TOOLS[3]
+        && (!args["expected_request_hash"].as_str().is_some_and(|v| {
+            v.len() == 64
+                && v.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        }) || !args["expected_task_ref"]
+            .as_str()
+            .is_some_and(|v| !v.is_empty()))
+    {
+        return Err("POLICY_MAINTENANCE_REVIEW_BINDING_REQUIRED".into());
+    }
+    Ok(())
+}
+
 pub struct Server<A: Authority, R: Reads, O: Observations> {
     pub api: Api<A, R>,
     pub observations: O,
 }
 impl<A: Authority, R: Reads, O: Observations> Server<A, R, O> {
     pub fn handle(&mut self, request: Value) -> Option<Value> {
-        let r = self.dispatch(&request);
+        self.handle_profile(request, Profile::Standard)
+    }
+    pub fn handle_profile(&mut self, request: Value, profile: Profile) -> Option<Value> {
+        let r = self.dispatch(&request, profile);
         match r {
             Ok(r) => {
                 if request["id"].is_null() || request["method"] == "notifications/initialized" {
@@ -184,7 +258,11 @@ impl<A: Authority, R: Reads, O: Observations> Server<A, R, O> {
             }
         }
     }
-    fn dispatch(&mut self, r: &Value) -> std::result::Result<Value, (i32, String)> {
+    fn dispatch(
+        &mut self,
+        r: &Value,
+        profile: Profile,
+    ) -> std::result::Result<Value, (i32, String)> {
         let err = |code, msg: &str| (code, msg.to_owned());
         if !r.is_object() {
             return Err(err(-32600, "request must be an object"));
@@ -200,27 +278,36 @@ impl<A: Authority, R: Reads, O: Observations> Server<A, R, O> {
         if !params.is_object() {
             return Err(err(-32602, "params must be an object"));
         }
-        let registry = registry();
+        let maintenance = profile == Profile::PolicyMaintenance;
+        let registry = if maintenance {
+            policy_registry(registry())
+        } else {
+            registry()
+        };
+        let ttl = if maintenance { 60000 } else { 3600000 };
+        let cache = if maintenance { "private" } else { "public" };
         match method {
             "notifications/initialized" | "ping" => Ok(json!({})),
             "initialize" => Ok(
                 json!({"protocolVersion":registry["protocol"],"capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":registry["server_name"],"version":registry["server_version"]},"instructions":registry["instructions"]}),
             ),
-            "server/discover" => Ok(
-                json!({"resultType":"complete","supportedVersions":[registry["discover_protocol"]],"capabilities":{"tools":{}},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":registry["server_name"],"version":registry["server_version"]}},"instructions":registry["instructions"],"ttlMs":3600000,"cacheScope":"public"}),
-            ),
+            "server/discover" => {
+                let mut result = json!({"resultType":"complete","supportedVersions":[registry["discover_protocol"]],"capabilities":{"tools":{}},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":registry["server_name"],"version":registry["server_version"]}},"instructions":registry["instructions"],"ttlMs":ttl,"cacheScope":cache});
+                if maintenance {
+                    result.as_object_mut().unwrap().remove("_meta");
+                }
+                Ok(result)
+            }
             "tools/list" => {
-                let mut tools = if self.observations.only() {
+                let mut tools = if !maintenance && self.observations.only() {
                     vec![]
                 } else {
                     registry["tools"].as_array().unwrap().clone()
                 };
-                if self.observations.enabled() {
+                if !maintenance && self.observations.enabled() {
                     tools.extend(registry["observations"].as_array().unwrap().iter().cloned())
                 }
-                Ok(
-                    json!({"resultType":"complete","tools":tools,"ttlMs":3600000,"cacheScope":"public"}),
-                )
+                Ok(json!({"resultType":"complete","tools":tools,"ttlMs":ttl,"cacheScope":cache}))
             }
             "tools/call" => {
                 let name = params["name"]
@@ -239,7 +326,7 @@ impl<A: Authority, R: Reads, O: Observations> Server<A, R, O> {
                     .find(|t| t["name"] == name);
                 if tool.is_none()
                     || (obs && !self.observations.enabled())
-                    || (!obs && self.observations.only())
+                    || (!maintenance && !obs && self.observations.only())
                 {
                     return Err(err(
                         -32602,
@@ -254,6 +341,11 @@ impl<A: Authority, R: Reads, O: Observations> Server<A, R, O> {
                     ));
                 }
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
+                if maintenance
+                    && let Err(code) = policy_arguments(name, &args, &tool.unwrap()["inputSchema"])
+                {
+                    return Ok(tool_result(tool_error(code.into(), name, &args), true));
+                }
                 if !args.is_object() {
                     return Err(err(-32602, "tool arguments must be an object"));
                 }

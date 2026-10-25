@@ -1,0 +1,429 @@
+{
+  "baseline": "29f72a6fec2022792bcc2e635b5e34ab60171d7e",
+  "production": "NOT_DEPLOYED",
+  "services_unchanged": true,
+  "local_preserved_files": 294,
+  "local_preserved_hash_changes": [],
+  "rust_tests": {
+    "passed": 429,
+    "failed": 0
+  },
+  "tracked_fixtures": {
+    "before_passed": 179,
+    "after_passed": 160,
+    "post_dead_file_removal_affected_passed": 17
+  },
+  "full_local_before": {
+    "passed": 294,
+    "failed": 32,
+    "errors": 104,
+    "skipped": 2
+  },
+  "full_local_after": {
+    "passed": 222,
+    "failed": 35,
+    "errors": 118,
+    "skipped": 2
+  },
+  "full_local_delta": "Intentional retired API/protocol effects; original local source unchanged; current contract coverage and retired 9 prompt assertions mapped separately in architecture/compat-retirement.json",
+  "deleted_python": [
+    {
+      "path": "clinx/contracts/workspace_contract.py",
+      "lines": 143,
+      "bytes": 5671,
+      "sha256": "cbf3e5a22a758b5cda7379b1da562f870886346bd30f1e57234d10126811b0f2"
+    },
+    {
+      "path": "clinx/discovery/monitor_helper.py",
+      "lines": 17,
+      "bytes": 436,
+      "sha256": "517a8b64e3217013ee0e4823a074c6530e432e943bcc09a89cb9f522ff984c49"
+    },
+    {
+      "path": "clinx/mcp/mcp_server.py",
+      "lines": 389,
+      "bytes": 19464,
+      "sha256": "57a8ce463407985d83ccb51ae4c70723aac9dabbc8092c949ccf2d54b1e72a14"
+    },
+    {
+      "path": "clinx/monitor/native_associations.py",
+      "lines": 26,
+      "bytes": 539,
+      "sha256": "1dbc2011f6d7ae64cfea5df373b09c0f96035b0b702b7f9d7f1f7ce0b321d107"
+    },
+    {
+      "path": "clinx/monitor/observation_mcp.py",
+      "lines": 30,
+      "bytes": 1262,
+      "sha256": "0f17258a9e80dc467522a4973ec52390ec26a3b51f09a8d019409fea0c3202c4"
+    },
+    {
+      "path": "clinx/monitor/rust_monitor.py",
+      "lines": 170,
+      "bytes": 5407,
+      "sha256": "bf38b9abb91ba6d3078ff39747852d9c4de92e51b25226721ad516b375b0c7a9"
+    },
+    {
+      "path": "clinx/provider/liveness.py",
+      "lines": 16,
+      "bytes": 753,
+      "sha256": "b3a6e73e0c6e9e6eee9ffc6cf8551bd116f42f24a5addadf713b4bd0f5b87e95"
+    },
+    {
+      "path": "fixtures/test_rust_node_contract.py",
+      "lines": 201,
+      "bytes": 10072,
+      "sha256": "27d295f95a976f48197a81d0845a05fea867e29650dfc9ddbb0ebbb702f499fa"
+    },
+    {
+      "path": "tools/build/host_runtime_config.py",
+      "lines": 33,
+      "bytes": 1041,
+      "sha256": "9e50d324ec21633077399b3888902bca1d2ac7cb39dda2738e29294ecc445f65"
+    },
+    {
+      "path": "tools/build/mcp_runtime_config.py",
+      "lines": 46,
+      "bytes": 1961,
+      "sha256": "77d9f5f457f01d4241d6629f2329330336d9d19ea0c8d482657e0ba1fe26c371"
+    },
+    {
+      "path": "tools/maintenance/observer_history_guard.py",
+      "lines": 57,
+      "bytes": 2082,
+      "sha256": "e3a64e385ddff54315a6727c5fb159cc1a5028f6d0dfd535702f3f6a5f370baf"
+    },
+    {
+      "path": "tools/maintenance/policy_maintenance.py",
+      "lines": 112,
+      "bytes": 5249,
+      "sha256": "37d85dab4bec7d793348dd6c5aed26c12f6412101f456a935af7b55deab3e288"
+    },
+    {
+      "path": "tools/qualification/discovery_dev_cli.py",
+      "lines": 212,
+      "bytes": 9550,
+      "sha256": "87148e988b04ec42bf8fee07d7f3f8cfc3e3e71387347a9d69dea9681c84edbe"
+    }
+  ],
+  "size_before": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 725340,
+        "files": 117,
+        "lines": 16892
+      },
+      "Rust": {
+        "bytes": 1973020,
+        "files": 109,
+        "lines": 50821
+      },
+      "Shell": {
+        "bytes": 10399,
+        "files": 9,
+        "lines": 230
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 22.228487547155932,
+    "python_line_percent": 21.06365733524534,
+    "python_roles": {
+      "COMPAT": {
+        "bytes": 344469,
+        "files": 54,
+        "lines": 8525
+      },
+      "DEVOPS": {
+        "bytes": 101711,
+        "files": 18,
+        "lines": 2230
+      },
+      "QUALIFICATION": {
+        "bytes": 279160,
+        "files": 45,
+        "lines": 6137
+      }
+    },
+    "revision": "29f72a6fec2022792bcc2e635b5e34ab60171d7e",
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "size_after": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 651861,
+        "files": 104,
+        "lines": 15172
+      },
+      "Rust": {
+        "bytes": 2072382,
+        "files": 117,
+        "lines": 53448
+      },
+      "Shell": {
+        "bytes": 10218,
+        "files": 9,
+        "lines": 224
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 19.82056134555578,
+    "python_line_percent": 18.70869093420144,
+    "python_roles": {
+      "COMPAT": {
+        "bytes": 296678,
+        "files": 47,
+        "lines": 7391
+      },
+      "DEVOPS": {
+        "bytes": 90516,
+        "files": 14,
+        "lines": 1958
+      },
+      "QUALIFICATION": {
+        "bytes": 264667,
+        "files": 43,
+        "lines": 5823
+      }
+    },
+    "revision": null,
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "release_binaries": [
+    {
+      "name": "clinx-build",
+      "sha256": "a3191a0c13cf9b47487dc260fbda2517b099220a8482479881eaf74402b19f98",
+      "libpython": false
+    },
+    {
+      "name": "clinx-device",
+      "sha256": "1d3a1486f9405cee80f5bc761bce8582fafa381cd8d1ae23f86245feb973c44d",
+      "libpython": false
+    },
+    {
+      "name": "clinx-kernel-bench",
+      "sha256": "91b370b6a35215c104bb5e099ac4e1773d369cb0f298c10c27656e52bfc22310",
+      "libpython": false
+    },
+    {
+      "name": "clinx-kernel-eval",
+      "sha256": "263fcda97b02daef664774f59ae0b3a6fe1e97d49047903a1361d4ecea940c0d",
+      "libpython": false
+    },
+    {
+      "name": "clinx-mcp",
+      "sha256": "176b62c2aa392ff1abcc97bc98b77b274e49060df360a8e07933d128c1d1c6bb",
+      "libpython": false
+    },
+    {
+      "name": "clinx-mcp-relay",
+      "sha256": "4009d3d0118ced5caaa117b0fa35bfe46eb2de8388b36bcabadcd40e1ba0fc5a",
+      "libpython": false
+    },
+    {
+      "name": "clinx-native-transport",
+      "sha256": "976598e0e6b7ee36c4d022d3a54b36a15d4046065eaf3e0fb191007a45f28c17",
+      "libpython": false
+    },
+    {
+      "name": "clinx-node",
+      "sha256": "03e7b163a1ba95807d68184c30d909039cf6b96cda20b9fe637d161e336a6ecf",
+      "libpython": false
+    },
+    {
+      "name": "clinx-node-daemon",
+      "sha256": "51372e9ec3836cfac7d169f8d6d9bf42bd00d2000afd26a8df9115ced960a673",
+      "libpython": false
+    },
+    {
+      "name": "clinx-observer",
+      "sha256": "7ddd32601d4533acfcde178ec82d76732278abdff18788bf8825efd1e2f60b21",
+      "libpython": false
+    },
+    {
+      "name": "clinx-owner-client",
+      "sha256": "bdf6a2c20b3795633b582d8c06d8216da90a02698e1568b5736eab192fb634ea",
+      "libpython": false
+    },
+    {
+      "name": "clinx-provider",
+      "sha256": "831e6a405a38d6a1b9593cf0c2b9d4b7ebb40a2e2651b83f4ac3e5647474e7a3",
+      "libpython": false
+    },
+    {
+      "name": "clinx-runtime",
+      "sha256": "0f8dca63d5f7a6e370d64d0be572d461fb434535ac8430cc7496e888e74911fd",
+      "libpython": false
+    },
+    {
+      "name": "clinx-source-audit",
+      "sha256": "6f23dd445815215f1267b5afd0b92a20266b01179e67770f100b672c8ad8ef28",
+      "libpython": false
+    },
+    {
+      "name": "clinx-tunnel",
+      "sha256": "d612b1cd27a637216ad3777e0c3a645f53e3338210f68dd07c70270ffc22409c",
+      "libpython": false
+    }
+  ],
+  "format": "Same 7 existing differences after path and line normalization",
+  "clippy": "Same 10 Core + 1 workspace_routes existing diagnostics; no added diagnostics",
+  "not_verified": [
+    "Native macOS App/Swift build and signing",
+    "Physical Mac to P620 new-artifact acceptance"
+  ],
+  "evidence_directory": "/data/artifacts/clinx-compat-retirement-20261025",
+  "evidence_sha256": {
+    "local-test-preservation.json": "d014ffd16d82470e882bd687e8a9338bcce1fd638355dc19899b137fa0b53a64",
+    "build-final.log": "9778f051d35e721dde5abe470baa3f05810c618f53aec196e6eeece14ad39794",
+    "build-after.log": "cb6b1a35087f45cf9cfb409ff35f29ff185c81d6a4c8c11c15b47391f3928e25",
+    "discovery-rust.log": "6d12ef3a2b89b3e303ab402b99d3aae87e5662762ad3ba14016b99c218c6c544",
+    "remaining-python-consumers-review.json": "0f1351cd627e6f0b99b6f806a018d8a64205d95cd8c46ce698a36a2fa4049b26",
+    "mcp-retirement-qualification.log": "9ec39209155c6bef313c452ff45da6ba543b69757d072b25e277c392ed1f749d",
+    "size-before.json": "47184b6dcfe57b17ff9abbb21c937ed25b2a54a4e2acb7d07d5232a40e05535e",
+    "config-monitor-clippy-final.log": "e1281fda66000b35d05ed937e098842dabefc591b2681b22ffc193c38526dccd",
+    "fixtures.xml": "c96a01efc43e2f7790be0c77ff45bfcdd73cee75f5c9423ee8134730c6e8ba2a",
+    "fixtures-run.json": "f534499c2612346504d97f7d7d95d83e0b90b402f2495ea0c2e7aad1cb2244dc",
+    "history-guard.log": "72af9bfb83cc62d591bb9adaf2fc9cc2a6d477a6f90f4fd9da3e6dba167d641f",
+    "policy-launcher-smoke.json": "14f04c1d7e40bec443f65d069a7a022efb864b71ec31f97d4176db548251ee16",
+    "config-compile-python.log": "4ef4fc46e63b4fec1cf82ce1d8420e0601f17a9fc9275f2110d2ae99c3aa1060",
+    "clippy-final.log": "12191f00377213f65daa4e2139770e9c964771e4e48fcec759af294464785877",
+    "config-compile-rust.log": "6b16f62421f19329d3d7eaaebaaa003e477438dcce19973ba474c7fac14656bf",
+    "rust-run.json": "c4665b662182a90b75ceb9496ce7bbbee205c1aef91c6f3bc81587aa1561b9ed",
+    "clippy-before.log": "2a83fe08ad3479ed5688b084882dec9f29257678dba841f54e0a816b06268b2d",
+    "discovery-fixtures.xml": "2492bb3507850e2da9f9a30b795aac3fbea0536b53a8e67a0e9be40569d66a01",
+    "release-binaries.json": "d3160ec69de339333b9d06f8dfb271e692e05895cf8feeef2f3020058f7c982c",
+    "retired-policy-source.json": "dcf71206af26a0a6ca75e0d970f4565bb0a4398438b9d41ec7277fc834da0c53",
+    "rust-final.log": "9de2d831d105d28b2e3fc02adc8242284d71e2b6801433ef8d9d94c9b9097abd",
+    "services-before.txt": "ca3437d048a06eb8899a39a6e79f6ce9a37c3ed5ea2575235349b9cde9d0f51d",
+    "monitor-build-receipt.json": "0182e5c59b062bd0ddfcd4d1f4c80b1e65ebf87f056959833a5a3eb79f65b1b4",
+    "monitor-clippy.log": "dbeb3889236540f11c4d10a287b769f5069842f4b2054cc670d5f475bca38b4e",
+    "prior-policy-profile-exposure.json": "f00e48e603eca37068bb64e7b69995ec62fd5563406a67c65a9edfdc6553a5aa",
+    "remaining-python-consumer-graph.json": "3c53c96ca6a3335f52e9c0086f7d30b55f0b371e5d4f9bc51c304ccead1fce82",
+    "discovery-historical-after-run.json": "6474232d89416b698cee5d954c76f525097263600ed3fd15ba1d365ff784c9ee",
+    "fmt-final.log": "f704cfd4c55c97ba7a32db25b2a1d2b6173a2374e43fadaca325fdc601c5185b",
+    "policy-node-clippy.log": "def1e0805d4454305fc14840907c10316d36a80f97b0fb4a2be4a2ed78bbe57a",
+    "discovery-historical-after.log": "84859168d2da4c9510267675f01365ba1a271380ad457d8d7d47d6588daee93d",
+    "discovery-fixtures.log": "2bc6e80d51fb6ce12eb13c105457ee806a43311165aa173020530939d74534b4",
+    "native-policy-node-qualification.log": "b208a96ee4dc63c6ebc6da457f0959d9221121e96348f10023c7147bd502dde2",
+    "discovery-historical-before-run.json": "eddf0ceaadb81b4606590ce994a706c81308974dbff96af5537c7471b57b6ac6",
+    "monitor-rust.log": "bf6eae55ef5842bb728e6d0a89b9b963e0969332125522d2014dd1c35fc512d2",
+    "fixtures-before.log": "ab1fe1c5d28be67d35be47e506b7705f1f6ddafa21dc2dfbcbdadbc3be021e7d",
+    "clippy-comparison.json": "2d4a006c42a346a4f31eceaa8d086e264c6cb7d2ed1585dd381547cb02c46132",
+    "services-after.txt": "ca3437d048a06eb8899a39a6e79f6ce9a37c3ed5ea2575235349b9cde9d0f51d",
+    "affected.xml": "bb8c2b99d51bf95e4687e6e37d438793985a288d899f2f7b052dcadf9ea66b69",
+    "config-compile-python-final.log": "76acb444e81a1df41ecddc489fabd3380000998c3ea5a66afb730addc237462f",
+    "discovery-historical-after.xml": "96585e6c0d3a343d17b190eb160ef9320cfce3e3824fc68377936f87391213e0",
+    "fixtures-before-run.json": "a3d91e8c57b058978d87cf053c937836448bcf141dbfd2d87b1d5199f5658781",
+    "ruff-after.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "format-comparison.json": "5b573d663271ab4d4859226dc3a1608c376e6af14c894e8e4312f2970cc0a3a3",
+    "fixtures.log": "7567f44e4363ca968ab3ae9fdbbd1bf71731874cdd1aa474b0c379c912748036",
+    "policy-node-clippy-warnings.log": "5c2310f8f0d856661e7f9a2c21013cc97015d661444c4001b29d601ee37a98bf",
+    "mcp-library-test.log": "871881ecdc154920bae0b73ab1c0c175d2de484603a059edaaf1920cef7f2d5d",
+    "discovery-retirement-map.json": "7b20289e9dab856eff84e08a939d0f34f8d79c8bce8459311029173af22b798d",
+    "discovery-historical-before.xml": "666c72baa9b6c291d2fb090d6cab1e44223d588bf21a38cfc0215f5e142b11f4",
+    "fixtures-before.xml": "1cc4a463febfdbfb47e70a32763436504fa0a68467aa4e4ae293a3f46b2d625f",
+    "discovery-historical-before.log": "2f6cb60eeb346455701c561e3bb9d1bf7188bc004791557cfc325266f06bcd66",
+    "fmt-before.log": "f9455f9e7a58d7c91a1e7cf0c3c9fe0b811f50c4434af659d0ec3074d588ecb8",
+    "clippy-after.log": "8dc2349cf0a10273aaf7aeb1228d54162e8a98ba9cc6e81664c7a3410b177678",
+    "dependencies-before.log": "2c48632a88c384a34f6c17b9faa8b1009057b9a44c08619026fae6452c6c5820",
+    "mcp-retirement-impact-map.json": "fc789eb8d2b91500f23cb2063b4615f347e2ff1a19502f92fbec8952198b7578",
+    "rust-full.log": "88e6984b999806556e9a2471dd39c191c858418af18477a5f17301f2448e20a6",
+    "discovery-fixtures-run.json": "0c1f37ffcee8d36ffdc379330ce259d92eebe9edcc3f79a172f8e2e49e88ec1c",
+    "deleted-python.json": "a0fc139db96ac5ff81a29f180f163c106909f9c39886969b69202b4fdb0f0b10",
+    "structure.json": "7d122d53b940ae682e62b25d8208f4d0e80840371bd07d89b8231c8deff8c66a",
+    "mcp-retirement-clippy.log": "6d6c0151d84cfcc8b1a18052005bf188552a4784b6307a0773075eb801a4917a",
+    "config-compile-clippy.log": "828a8a3fc31e049de997e1c611207366be73099f547951d589468fad04124ecb",
+    "full-suite-delta.json": "f18fa44be4cb61994fca17b9205d33291607dc622ac88d2221cb8f3aa6cdc46e",
+    "policy-node-retirement-receipt.json": "e371564adb2caede6d6e80577a10019862324d50a0fc8a74549f7b1fdfb39547",
+    "policy-maintenance-test.log": "c60a073c00b0d635acdbbd787fba5bc450387584b47dafd1665b97c858b28ec4",
+    "size-after.json": "a3b0041329092bdc1fa1dc4e812b6f1cc4944f20a952d56e595a06af2509229f",
+    "fmt-after.log": "519132bc34d62e6b0340bf581d3b6eca551881732b7ce0da704533dab9536f3a",
+    "examples-after.log": "90782c593f271e5e582d03c9e576e31bf086b8ffe177bf235878765f4f6ba769",
+    "monitor-helper-package.log": "224a108321a9b74b42b0bc56e4aa6bece37e35072bd184603dd5879f050c8d58",
+    "config-compile-receipt.json": "cf8129e24e2434fc1de052ff9e0ebf229f2efd3dda14f9f6c2d3a8740fa2726d",
+    "affected.log": "3e9606c04a11d82f65dfc87d1473813e15119916aa6f11ec7041874e030a1c3e",
+    "monitor-python.log": "6a88340df7ab23c5857910f29d31410e9b129dd341122a57f37e55fc89ea03c9",
+    "build-before.log": "2cb17407210ab630228306fa704f83f1b14cfc9a91243c4a29d1273e6384e0b8",
+    "original-node-contract-before-retirement.log": "265ff173c71419515ed3424547e047a2fde2b134f076461d0fb1909d45a1f67d",
+    "affected-run.json": "ed55f835ba50fd2f6862f6e3193e97ce3f3b409324aa049787c500f108de2725",
+    "clippy-strict-final.log": "ad2fd018c1ccd7de37c128e016c1be4a00010a83a6f5942f188e0858cc407b6e"
+  },
+  "validated_final_source_sha256": {
+    "MonitorApp/Scripts/build-app.sh": "2380abfa9093396c1f08c4c8c7f3d6078380901f309d28be972f05a0541c3190",
+    "architecture/native-runtime.json": "7fb209b5766e4cca112c401e753497ff1d89c3fb3a2b1eeb2ca519f96c8c3cf6",
+    "architecture/python-sources.json": "29eef4ec85942c864e46ca4bbd533b68a080e215b4d70199673d6fbba0f4c7ed",
+    "bin/clinx": "3f440d26e2769aadbf06065df1c538a8b89ba088988e5fcf9de914481f290341",
+    "clinx/discovery/cli.py": "03b28276e0711a4bb23d8841922b61d10132cc2f15f0eb807f1081b584c8a381",
+    "clinx/discovery/pairing.py": "629521624132c70d27214abeed20508544f52c77b9ea2e888cf52fd1f981ef6f",
+    "clinx/discovery/transport.py": "1327d46bdb0f035cd95d32406e98ff7be703b7b56b836688adb81e6e0cbfd75e",
+    "fixtures/runtime_compile_v1.json": "655ea45d14d40ba5dd1fc20089f394201598fd07efc57d823545aec0fc8c9fef",
+    "fixtures/test_runtime_packages.py": "5f4af84eed5c0266f102d15b8da53db1387f788cb2ddba79d7e1c7c935d24c74",
+    "fixtures/test_rust_device_cli.py": "10f2f8a3deb825043d8b190112017a251ecdc2848f5c2a8e99444fb98c021890",
+    "fixtures/test_rust_device_config.py": "b6f019409410faf06127184948146f81258587fb0a30e28f82a1adb39ad72dba",
+    "fixtures/test_rust_device_enrollment.py": "1539f8d124ecdc66cb6d6c5c0afc3c3e45d5bd80a9b3242ec8d9f6ee07719b1b",
+    "fixtures/test_rust_node_router.py": "5e81616df2e0e596c16a61d0bdeb6f43551c26dd88402295a17d6aa936b82f86",
+    "kernel/src/bin/clinx-build.rs": "c2cc1cea7fe7fe1ac843c37f35249cb58adcaedcaeeb280698cf226678e84e75",
+    "kernel/src/bin/clinx-mcp.rs": "be8ef5302a05d543696d274459903235a46a394a68f60f124e61ae4fabb4b5d2",
+    "kernel/src/bin/clinx-node.rs": "5ce4394266816427f507e37dd8d92500747b6855e4e4c831b2f6275b55d07e0c",
+    "kernel/src/bin/clinx-observer.rs": "0e060c88319095cc7dc6b87d5ab30dae25c12e2cfaaf3cc8e5765d4c849c87d1",
+    "kernel/src/mcp.rs": "30ec23396923c0300288ffd6a5811dd294209a23a3be567038fc815f52a3a460",
+    "kernel/src/observer_runtime.rs": "9dbf4df030e885c12d8e9ff39517cb78df810e45a9862bbbb2d21e2e8a45ee29",
+    "kernel/src/observer_runtime/history_guard.rs": "c78abb64e78fc3cb73c537798def3c6b3d31782fc01ff1b76a62e5da6412164a",
+    "kernel/src/runtime_config.rs": "ae8841d05e61e018a889c6800103dd65cf22bf2a1ed387cfef42c346481af8b2",
+    "kernel/src/runtime_config/native.rs": "956f5e5a59b6f1ad4f8dc2c0593059317ade6474fb276be29bdc69e96d26ec29",
+    "kernel/tests/config_compile.rs": "7c76124a800f7fd4bd7975d2aae39e81ead2db02fc366f24cf0d37b91629919a",
+    "kernel/tests/discovery_retirement_qualification.rs": "8b5d980c9da86f13aa7ea5961df27d7aeec12bc6cdbfca4290458ed17efc3eeb",
+    "kernel/tests/mcp_retirement_qualification.rs": "3a54ae21615aba317bbe64798c75f9973dc0da0de933222638e3d81b5b45c09a",
+    "kernel/tests/monitor_build.rs": "3a2ef7bcdb7d3c23931eb452b4da7ac47242c120cf3e0c494dbe2ed62e0d12bf",
+    "kernel/tests/node_contract_qualification.rs": "50bcfe979e7eb96288fce7e8657a1d92049f380290f512541bfde61fda668e1d",
+    "kernel/tests/policy_maintenance.rs": "608907afc8fbae1b314f5a663cf00c8bdb3eed1d9de6f68115beb87b9e02a16d",
+    "requirements-discovery-dev.txt": "a3e775b5b9dd7215e53140fe0cd2ab5003f9ef1ca0aac28a84e5aea734dce558",
+    "scripts/install_rust_services.py": "1b1b75446cbe7c4ed47a7e743d9a72c470c547f5079887b0db4f5dd89194940a",
+    "scripts/stage_rust_callers.py": "c1a1bf25fefd2e381df172367700d44b80bf5dcc8a017545d710a5e389fd1a2f",
+    "scripts/stage_rust_release.py": "55c6665ed3a84eead8c15045a629a4ffdbd7fac087c0546e674da97972fc356d",
+    "systemd/clinx-observer-history-guard.service": "61e6e9990957c6e3a01510f5b452e9fbf2af02e7537b4894cdea12b134a9271c",
+    "tools/build/runtime_sources.py": "0d5c623c44725bc27f0563af25753333c85498ceb79cb78a04b389fe643031b2"
+  },
+  "subtask_source_snapshot_notes": {
+    "kernel/src/runtime_config.rs": "Final integration formats the export list; full 429-case Rust suite passes.",
+    "architecture/native-runtime.json": "Final integration adds descriptive policy/history guard entrypoints; Helper binary list and zero-Python payload unchanged."
+  },
+  "strict_clippy_exit": 101,
+  "strict_clippy_result": "10 existing Core diagnostics prevent compilation under -D warnings; ordinary all-targets also reports one existing workspace_routes warning."
+}

@@ -1,0 +1,846 @@
+{
+  "baseline": "29f72a6fec2022792bcc2e635b5e34ab60171d7e",
+  "node_contract_cases": [
+    {
+      "original": "test_cancel_rejects_conflicting_selector_before_mutation",
+      "cases": 4,
+      "replacement": "conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+      "assertions": "All host/project/thread/native_turn conflicts reject before cancel callback"
+    },
+    {
+      "original": "test_historical_execution_keeps_its_exact_thread_after_successor",
+      "cases": 1,
+      "replacement": "conflicting_cancel_selectors_never_mutate_and_historical_status_keeps_exact_thread",
+      "assertions": "Historical thread and exact turn survive current-task successor"
+    },
+    {
+      "original": "test_cancel_reports_only_the_authoritative_terminal_receipt",
+      "cases": 3,
+      "replacement": "cancel_reports_only_authoritative_terminal_receipt",
+      "assertions": "CANCELLED/RELEASED versus CANCELLED/HELD and RUNNING/HELD with exactly one cancel callback"
+    },
+    {
+      "original": "test_helper_close_has_no_authority_or_provider_lifecycle_side_effect",
+      "cases": 1,
+      "replacement": "helper_close_has_no_provider_or_authority_lifecycle_effect",
+      "assertions": "Real helper child closes with no Authority/Provider callback"
+    },
+    {
+      "original": "test_mcp_factory_never_falls_back_to_a_python_registry",
+      "cases": 1,
+      "replacement": "native_mcp_never_falls_back_to_python_owner",
+      "assertions": "Retired Python factory replaced by native binary; unavailable Rust fails closed and own-executions rejected; policy test proves successful Rust IPC without worker"
+    },
+    {
+      "original": "test_canonical_adoption_forwards_identity_but_cannot_commit_provider_evidence",
+      "cases": 1,
+      "replacement": "canonical_adoption_forwards_identity_without_committing_provider_evidence",
+      "assertions": "Exact canonical payload, PENDING and exactly one adoption callback; no Registry/prepare"
+    },
+    {
+      "original": "test_canonical_adoption_rejects_scope_or_identity_before_rust_request",
+      "cases": 9,
+      "replacement": "canonical_scope_identity_and_predecessor_conflicts_fail_before_request",
+      "assertions": "All nine owner/user/fingerprint/host/thread/task/project/predecessor selector cases retain zero callbacks"
+    },
+    {
+      "original": "test_pending_canonical_adoption_cannot_prepare_an_execution",
+      "cases": 1,
+      "replacement": "pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+      "assertions": "PENDING blocks preparation and returns CANONICAL_ADOPTION_PENDING"
+    },
+    {
+      "original": "test_committed_canonical_adoption_prepares_the_same_rust_task",
+      "cases": 1,
+      "replacement": "pending_adoption_cannot_prepare_but_committed_adoption_prepares_same_task",
+      "assertions": "ADOPTED forwards only same task, host and prompt to prepare"
+    },
+    {
+      "original": "test_canonical_adoption_readback_needs_no_api_side_provider_access",
+      "cases": 1,
+      "replacement": "canonical_adoption_readback_needs_no_api_side_provider_access",
+      "assertions": "Native API exact Authority adoption payload including cwd and identity; inaccessible Provider never contacted"
+    },
+    {
+      "original": "test_rust_start_uses_authority_without_a_second_node_writer_fence",
+      "cases": 1,
+      "replacement": "rust_start_uses_authority_without_second_node_writer_fence",
+      "assertions": "Real service.handle -> node child start, one admission/receipt, no second fence"
+    }
+  ],
+  "node_contract_original_cases": 24,
+  "policy_profile": {
+    "entrypoint": "clinx-mcp --policy-maintenance --config <compiled mcp-runtime.json> --stdio",
+    "read_config": "Install/build generated JSON only; retired Python entrypoint had accepted TOML",
+    "scope": "Same existing Authority policy CAS; four tools; exact keys and mandatory approval/review hash/task; no observation/execution/recovery worker",
+    "bug_fix": "Baseline declared four tools but exposed only prepare/apply; both read review tools now actually available",
+    "evidence": "prior-policy-profile-exposure.json",
+    "tests": "kernel/tests/policy_maintenance.rs: 4 groups; real disposable Authority IPC + native stdio, mock boundary; active execution retention, review mismatch, CAS conflict, prepared readback, immutable sealed history, restart duplicate"
+  },
+  "history_guard": {
+    "original": "tests/test_observer_history_guard.py",
+    "original_sha256": "e3bd2800c7b96e2b2c1205eb04bb1e81b70d2f4d4112c1b0037920c8dee17d21",
+    "destination": "kernel/src/observer_runtime/history_guard.rs",
+    "mapping": [
+      {
+        "original": "test_content_writes_do_not_restart_and_rotation_refreshes_only_observer",
+        "replacement": "content_writes_do_not_restart_and_rotation_refreshes_only_observer"
+      },
+      {
+        "original": "test_optional_companion_disappears_or_appears",
+        "replacement": "optional_companion_disappears_or_appears"
+      },
+      {
+        "original": "test_inactive_or_replaced_process_is_left_alone",
+        "replacement": "inactive_or_replaced_process_is_left_alone"
+      },
+      {
+        "original": "test_missing_database_or_changing_source_waits",
+        "replacement": "missing_database_or_changing_source_waits"
+      },
+      {
+        "original": "test_unknown_stat_error_never_restarts",
+        "replacement": "unknown_stat_error_never_restarts"
+      }
+    ],
+    "commands": "Unit tests invoke only a private fake systemctl; no live service action."
+  },
+  "discovery_retirement": {
+    "implementation": "Incompatible SPAKE2 DEV_ONLY protocol retired; minimal imports fail closed before IO; no Python TLS client/server fallback.",
+    "new_native_cases": "kernel/tests/discovery_retirement_qualification.rs",
+    "preserved_independent_oracle": "Python OpenSSL send/receive/peer_certificate AST unchanged; production OPAQUE regression retained.",
+    "historical_delta": "14 old PASS now fail at retired DEV API; one existing failure becomes DEV setup error. Same installed SPAKE2 dependency on both runs; existing skips unchanged."
+  },
+  "evidence": {
+    "policy-node-retirement-receipt.json": "e371564adb2caede6d6e80577a10019862324d50a0fc8a74549f7b1fdfb39547",
+    "discovery-retirement-map.json": "7b20289e9dab856eff84e08a939d0f34f8d79c8bce8459311029173af22b798d",
+    "monitor-build-receipt.json": "0182e5c59b062bd0ddfcd4d1f4c80b1e65ebf87f056959833a5a3eb79f65b1b4",
+    "config-compile-receipt.json": "cf8129e24e2434fc1de052ff9e0ebf229f2efd3dda14f9f6c2d3a8740fa2726d",
+    "mcp-retirement-impact-map.json": "fc789eb8d2b91500f23cb2063b4615f347e2ff1a19502f92fbec8952198b7578"
+  },
+  "evidence_directory": "/data/artifacts/clinx-compat-retirement-20261025",
+  "mcp_historical_retirement_impact": {
+    "baseline": "29f72a6",
+    "source_file": "kernel/tests/mcp_retirement_qualification.rs",
+    "new_rust_groups": 12,
+    "validation": "mcp-retirement-qualification.log: 12 passed; real disposable Authority + Unix WebSocket Provider for native cwd/prompt send; remaining public mappings use actual Rust MCP Server/Api with fixture IO",
+    "original_python_files_preserved": true,
+    "core_runtime_changes": false,
+    "counts": {
+      "RUST_EQUIVALENT_PASS": 35,
+      "RUST_REPLACEMENT_PASS_ORIGINAL_FAILED_BEFORE": 2,
+      "NO_ROUTING_INVARIANT_PASS": 9,
+      "RETIRED_CONTRACT": 9
+    },
+    "counts_by_original_file": {
+      "test_rust_native_routing": 11,
+      "test_rust_request_contract": 25,
+      "test_tunnel_child.TunnelChildCompatibilityTests": 1,
+      "test_workspace_prompt_paths": 18
+    },
+    "mapping": [
+      {
+        "original_id": "test_rust_native_routing::test_adoption_reads_exact_native_cwd_for_original_uri",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::continuation_start_selector_and_adoption_use_exact_live_cwd",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_native_routing::test_continuation_uses_live_thread_cwd_instead_of_historical_contract[continue]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::continuation_start_selector_and_adoption_use_exact_live_cwd",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_native_routing::test_continuation_uses_live_thread_cwd_instead_of_historical_contract[reopen]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::continuation_start_selector_and_adoption_use_exact_live_cwd",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_native_routing::test_exact_native_selector_routes_existing_task_without_registration_cwd",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::continuation_start_selector_and_adoption_use_exact_live_cwd",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_native_routing::test_managed_historical_read_uses_exact_turn_despite_changed_native_cwd",
+        "before": {
+          "status": "failure",
+          "message": "ModuleNotFoundError: No module named 'clinx.transport.rust_transport'"
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_REPLACEMENT_PASS_ORIGINAL_FAILED_BEFORE",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::exact_historical_receipt_keeps_native_cwd_and_original_task_projection",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_native_routing::test_native_cwd_errors_do_not_prepare_or_start",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::unreadable_cwd_never_prepares_or_starts",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_native_routing::test_rust_catalog_accepts_cwd_without_branch_head",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::cwd_only_catalog_and_public_receipts_preserve_explicit_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_native_routing::test_rust_mcp_routes_cwd_and_preserves_public_receipt[route0]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::cwd_only_catalog_and_public_receipts_preserve_explicit_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_native_routing::test_rust_mcp_routes_cwd_and_preserves_public_receipt[route1]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::cwd_only_catalog_and_public_receipts_preserve_explicit_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_native_routing::test_start_refreshes_cwd_and_repeat_start_needs_no_live_workspace",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::continuation_start_selector_and_adoption_use_exact_live_cwd",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_native_routing::test_transport_sends_to_observed_native_cwd_and_preserves_prompt",
+        "before": {
+          "status": "failure",
+          "message": "ImportError: cannot import name 'rust_transport' from 'clinx.transport' (/data/artifacts/cr25l/tests/../clinx/transport/__init__.py)"
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_REPLACEMENT_PASS_ORIGINAL_FAILED_BEFORE",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::native_transport_sends_observed_linked_cwd_and_unchanged_prompt",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_deprecated_network_flag_does_not_reject_native_prepare[False]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::host_scope_validation_deprecated_network_and_lifecycle_filters",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_deprecated_network_flag_does_not_reject_native_prepare[True]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::host_scope_validation_deprecated_network_and_lifecycle_filters",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_exact_status_preserves_authority_state_and_exposes_host_failure",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::host_failure_projection_preserves_authority_state_and_scrubs_private_fields",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[False-context0]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[False-context1]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[False-context2]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[False-context3]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[False-context4]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[False-context5]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[False-context6]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[True-context0]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[True-context1]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[True-context2]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[True-context3]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[True-context4]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[True-context5]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_explicit_native_context_never_selects_host_policy[True-context6]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::explicit_native_context_never_grants_host_policy_all_fourteen_cases",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_find_task_honors_host_and_lifecycle_filters",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::host_scope_validation_deprecated_network_and_lifecycle_filters",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_host_context_retains_exact_scope_validation[HOST_EXECUTOR]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::host_scope_validation_deprecated_network_and_lifecycle_filters",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_host_context_retains_exact_scope_validation[None]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::host_scope_validation_deprecated_network_and_lifecycle_filters",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_registry_consumes_summary_pages_without_exporting_history",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::summary_pagination_advances_and_rejects_all_invalid_cursors",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_registry_rejects_nonadvancing_or_invalid_summary_cursor[1]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::summary_pagination_advances_and_rejects_all_invalid_cursors",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_registry_rejects_nonadvancing_or_invalid_summary_cursor[]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::summary_pagination_advances_and_rejects_all_invalid_cursors",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_registry_rejects_nonadvancing_or_invalid_summary_cursor[task-a]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::summary_pagination_advances_and_rejects_all_invalid_cursors",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_rust_request_contract::test_unbound_native_uri_keeps_exact_thread_and_host_without_start",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::unbound_uri_keeps_exact_host_thread_without_start",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_tunnel_child.TunnelChildCompatibilityTests::test_missing_config_fails_on_stderr_without_stdout_protocol",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": {
+          "status": "failure",
+          "message": "AssertionError: 'MCP_SERVER=BLOCKED' not found in \"/usr/bin/python3.12: can't open file '/data/artifacts/cr25a_local/clinx/mcp/mcp_server.py': [Errno 2] No such file or directory\\n\""
+        },
+        "classification": "RUST_EQUIVALENT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::missing_config_is_stderr_only_failclosed_for_native_entrypoint",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_categories_are_context[\\u4fdd\\u7559\\u5de5\\u4f5c\\u6811/Owner/Provider/\\u4e1a\\u52a1\\u4efb\\u52a1]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "NO_ROUTING_INVARIANT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_categories_are_context[\\u5de5\\u4f5c\\u76ee\\u5f55/\\u914d\\u7f6e/\\u6570\\u636e\\u5e93]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "NO_ROUTING_INVARIANT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_categories_are_context[\\u6267\\u884c\\u76ee\\u5f55/\\u8d44\\u6e90\\u5206\\u7c7b]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "NO_ROUTING_INVARIANT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_categories_are_context[cwd/category]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "NO_ROUTING_INVARIANT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_categories_are_context[my_worktree /does-not-exist]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "NO_ROUTING_INVARIANT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_categories_are_context[somecwd=/does-not-exist]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "NO_ROUTING_INVARIANT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_categories_are_context[working-directory/category]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "NO_ROUTING_INVARIANT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_categories_are_context[workingXdirectory=/does-not-exist]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "NO_ROUTING_INVARIANT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_categories_are_context[worktree/owner/provider]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "NO_ROUTING_INVARIANT_PASS",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Effective product assertion preserved in native Rust; this does not claim the ignored Python test now passes."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_conflicting_explicit_paths_fail_closed",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RETIRED_CONTRACT",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Old standalone regex-to-Git-seal / path-error utility assertions are deliberately retired, not passed. Current Rust keeps all prompt bytes as context; explicit workspace_contract remains unchanged."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_explicit_paths_keep_identity_checks[\\u5de5\\u4f5c\\u6811 {}]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RETIRED_CONTRACT",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Old standalone regex-to-Git-seal / path-error utility assertions are deliberately retired, not passed. Current Rust keeps all prompt bytes as context; explicit workspace_contract remains unchanged."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_explicit_paths_keep_identity_checks[\\u5de5\\u4f5c\\u76ee\\u5f55\\uff1a{}]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RETIRED_CONTRACT",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Old standalone regex-to-Git-seal / path-error utility assertions are deliberately retired, not passed. Current Rust keeps all prompt bytes as context; explicit workspace_contract remains unchanged."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_explicit_paths_keep_identity_checks[\\u6267\\u884c\\u76ee\\u5f55`{}`]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RETIRED_CONTRACT",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Old standalone regex-to-Git-seal / path-error utility assertions are deliberately retired, not passed. Current Rust keeps all prompt bytes as context; explicit workspace_contract remains unchanged."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_explicit_paths_keep_identity_checks[cwd={}]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RETIRED_CONTRACT",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Old standalone regex-to-Git-seal / path-error utility assertions are deliberately retired, not passed. Current Rust keeps all prompt bytes as context; explicit workspace_contract remains unchanged."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_explicit_paths_keep_identity_checks[working directory {}]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RETIRED_CONTRACT",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Old standalone regex-to-Git-seal / path-error utility assertions are deliberately retired, not passed. Current Rust keeps all prompt bytes as context; explicit workspace_contract remains unchanged."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_explicit_paths_keep_identity_checks[working.directory: \"{}\"]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RETIRED_CONTRACT",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Old standalone regex-to-Git-seal / path-error utility assertions are deliberately retired, not passed. Current Rust keeps all prompt bytes as context; explicit workspace_contract remains unchanged."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_explicit_paths_keep_identity_checks[worktree `{}`]",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RETIRED_CONTRACT",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Old standalone regex-to-Git-seal / path-error utility assertions are deliberately retired, not passed. Current Rust keeps all prompt bytes as context; explicit workspace_contract remains unchanged."
+      },
+      {
+        "original_id": "test_workspace_prompt_paths::test_invalid_explicit_path_is_not_silently_ignored",
+        "before": {
+          "status": "pass",
+          "message": ""
+        },
+        "after_original_python": "UNCHANGED_SOURCE_IMPORT_UNAVAILABLE",
+        "classification": "RETIRED_CONTRACT",
+        "rust_test": "kernel/tests/mcp_retirement_qualification.rs::prompt_prose_cannot_override_explicit_workspace_current_rust_contract",
+        "meaning": "Old standalone regex-to-Git-seal / path-error utility assertions are deliberately retired, not passed. Current Rust keeps all prompt bytes as context; explicit workspace_contract remains unchanged."
+      }
+    ],
+    "retirement_evidence": {
+      "prompt_functions_before_callers": "29f72a6:clinx/contracts/workspace_contract.py:75:def reject_unstructured_workspace(prompt):\n29f72a6:clinx/contracts/workspace_contract.py:83:def workspace_from_prompt(prompt):",
+      "mcp_api_before_after_identical_sha256": "a05c713e79e0d91975163b9169fd7e8c6bd469df72f591c5a73d783342f1c2f0",
+      "registry_before_after_identical_sha256": "d4d8d9d3bd7d8af74dcc1fe26787e66dbfa8faa1f4adcf8d4fc48ab7e4065e8c",
+      "registry_semantics": "Do not put routing requirements only in prompt. Native exact thread uses live native cwd; explicit workspace_contract can otherwise supply absolute cwd.",
+      "before_facade": "mcp_server.py:154-157 only conditional non-Rust validate_workspace_contract; no workspace_from_prompt or reject_unstructured_workspace call",
+      "explicit_warning": "The 9 retired natural-language path resolution/rejection assertions are not equivalent PASS. They no longer have any tracked production caller even before this round. Restoring them would reintroduce a retired routing policy."
+    },
+    "existing_rust_evidence": [
+      "mcp_api::tests::original_python_public_request_and_read_vectors: 35 frozen vectors including prepare/start/adopt/context-historical",
+      "mcp_api::tests::host_receipt_reconciliation_does_not_undo_rust_terminal_state",
+      "native_routing::native_binding_follows_changed_cwd_and_historical_reads_need_no_live_workspace",
+      "native_routing::native_repository_resolution_retains_lease_and_send_identity"
+    ]
+  },
+  "deleted_python": [
+    {
+      "path": "clinx/contracts/workspace_contract.py",
+      "lines": 143,
+      "bytes": 5671,
+      "sha256": "cbf3e5a22a758b5cda7379b1da562f870886346bd30f1e57234d10126811b0f2"
+    },
+    {
+      "path": "clinx/discovery/monitor_helper.py",
+      "lines": 17,
+      "bytes": 436,
+      "sha256": "517a8b64e3217013ee0e4823a074c6530e432e943bcc09a89cb9f522ff984c49"
+    },
+    {
+      "path": "clinx/mcp/mcp_server.py",
+      "lines": 389,
+      "bytes": 19464,
+      "sha256": "57a8ce463407985d83ccb51ae4c70723aac9dabbc8092c949ccf2d54b1e72a14"
+    },
+    {
+      "path": "clinx/monitor/native_associations.py",
+      "lines": 26,
+      "bytes": 539,
+      "sha256": "1dbc2011f6d7ae64cfea5df373b09c0f96035b0b702b7f9d7f1f7ce0b321d107"
+    },
+    {
+      "path": "clinx/monitor/observation_mcp.py",
+      "lines": 30,
+      "bytes": 1262,
+      "sha256": "0f17258a9e80dc467522a4973ec52390ec26a3b51f09a8d019409fea0c3202c4"
+    },
+    {
+      "path": "clinx/monitor/rust_monitor.py",
+      "lines": 170,
+      "bytes": 5407,
+      "sha256": "bf38b9abb91ba6d3078ff39747852d9c4de92e51b25226721ad516b375b0c7a9"
+    },
+    {
+      "path": "clinx/provider/liveness.py",
+      "lines": 16,
+      "bytes": 753,
+      "sha256": "b3a6e73e0c6e9e6eee9ffc6cf8551bd116f42f24a5addadf713b4bd0f5b87e95"
+    },
+    {
+      "path": "fixtures/test_rust_node_contract.py",
+      "lines": 201,
+      "bytes": 10072,
+      "sha256": "27d295f95a976f48197a81d0845a05fea867e29650dfc9ddbb0ebbb702f499fa"
+    },
+    {
+      "path": "tools/build/host_runtime_config.py",
+      "lines": 33,
+      "bytes": 1041,
+      "sha256": "9e50d324ec21633077399b3888902bca1d2ac7cb39dda2738e29294ecc445f65"
+    },
+    {
+      "path": "tools/build/mcp_runtime_config.py",
+      "lines": 46,
+      "bytes": 1961,
+      "sha256": "77d9f5f457f01d4241d6629f2329330336d9d19ea0c8d482657e0ba1fe26c371"
+    },
+    {
+      "path": "tools/maintenance/observer_history_guard.py",
+      "lines": 57,
+      "bytes": 2082,
+      "sha256": "e3a64e385ddff54315a6727c5fb159cc1a5028f6d0dfd535702f3f6a5f370baf"
+    },
+    {
+      "path": "tools/maintenance/policy_maintenance.py",
+      "lines": 112,
+      "bytes": 5249,
+      "sha256": "37d85dab4bec7d793348dd6c5aed26c12f6412101f456a935af7b55deab3e288"
+    },
+    {
+      "path": "tools/qualification/discovery_dev_cli.py",
+      "lines": 212,
+      "bytes": 9550,
+      "sha256": "87148e988b04ec42bf8fee07d7f3f8cfc3e3e71387347a9d69dea9681c84edbe"
+    }
+  ]
+}

@@ -1,97 +1,32 @@
-"""PAKE adapter and pairing window; no home-grown password exchange.
+"""Rust OPAQUE and pairing-window qualification bindings.
 
-Production uses opaque-ke RFC 9807 with built-in mutual key confirmation.
-python-spake2 remains an explicitly selected, incompatible DEV_ONLY backend.
+The incompatible development SPAKE2 implementation is retired. Historical
+imports fail closed; production uses opaque-ke RFC 9807 mutual confirmation.
 """
 
 from __future__ import annotations
 
-import hmac
-import json
 import queue
 import threading
 import time
-from typing import Any, Callable, Protocol
+from typing import Any, Callable
 
 from .identity import DeviceError
 
 
-class PairingProtocol(Protocol):
-    """One-shot backend boundary. OPAQUE returns wire messages, DEV returns a key."""
-
-    security_status: str
-
-    def start(self) -> bytes: ...
-    def finish(self, inbound: bytes) -> bytes: ...
-
-
 class Spake2Protocol:
-    security_status = "DEV_ONLY"
-    security_blocker = (
-        "python-spake2 is not constant-time; protocol composition needs security review"
-    )
+    """Retired import boundary for historical qualifications; never exchanges keys."""
 
-    def __init__(
-        self,
-        code: str,
-        *,
-        role: str,
-        client: dict[str, Any],
-        server: dict[str, Any],
-        window_id: str,
-        allow_dev: bool = False,
-    ):
-        if not allow_dev:
-            raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
-        if len(code) != 4 or not code.isascii() or not code.isdigit():
-            raise DeviceError("INVALID_CODE_FORMAT")
-        from spake2 import SPAKE2_A, SPAKE2_B
-
-        if role not in {"A", "B"}:
-            raise DeviceError("INVALID_PAKE_ROLE")
-
-        # Identity strings bind both long-term keys, roles, service/version and
-        # window nonce. The server public key MUST come from the current TLS
-        # certificate at the client, not from an unsigned application message.
-        def identity(peer: dict[str, Any], side: str) -> bytes:
-            return json.dumps(
-                dict(service="CLINX_PAIRING_V1", role=side, peer=peer, window_id=window_id),
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode()
-
-        klass = SPAKE2_A if role == "A" else SPAKE2_B
-        self._exchange = klass(
-            code.encode("ascii"), idA=identity(client, "A"), idB=identity(server, "B")
-        )
-
-    def start(self) -> bytes:
-        return self._exchange.start()
-
-    def finish(self, inbound: bytes) -> bytes:
-        if len(inbound) != 33:
-            raise DeviceError("INVALID_PAKE_MESSAGE")
-        try:
-            return self._exchange.finish(inbound)
-        except Exception as exc:
-            raise DeviceError("PAIRING_FAILED") from exc
+    def __init__(self, *args, **kwargs):
+        raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
 
 
-def confirmation(key: bytes, role: str) -> bytes:
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-    # Upstream SPAKE2 documented explicit key confirmation, RFC 5869 HKDF.
-    return HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=None,
-        info=("CLINX_PAIRING_V1/confirm_" + role).encode(),
-    ).derive(key)
+def confirmation(*args, **kwargs):
+    raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
 
 
-def verify_confirmation(key: bytes, role: str, received: bytes) -> None:
-    if not hmac.compare_digest(confirmation(key, role), received):
-        raise DeviceError("PAIRING_FAILED")
+def verify_confirmation(*args, **kwargs):
+    raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
 
 
 _window_disposals = queue.SimpleQueue()
@@ -123,7 +58,7 @@ def _start_window_cleanup():
 
 
 class PairingWindow:
-    """Private Rust-owned window; PAKE stays in the existing backend."""
+    """Private Rust-owned window for the current OPAQUE contract."""
     lifetime = 60.0
     max_failures = 3
 
@@ -177,6 +112,7 @@ class PairingWindow:
 
 # Exact protocol selection, never negotiation or implicit fallback.
 PRODUCTION_PROTOCOL = "OPAQUE-3DH-RISTRETTO255-SHA512-ARGON2I-v1"
+# Rejection oracle for historical protocol downgrade; no backend implements it.
 DEV_PROTOCOL = "DEV-SPAKE2-PYTHON-v1"
 PRODUCTION_TRUST = "OPAQUE_V1"
 
@@ -221,7 +157,7 @@ def production_backend() -> Any:
 
 def backend_status(*, allow_dev: bool = False) -> str:
     if allow_dev:
-        return "DEV_ONLY"
+        raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
     try:
         production_backend()
     except DeviceError:

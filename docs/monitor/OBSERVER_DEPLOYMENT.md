@@ -4,6 +4,17 @@ Status: implementation and runtime qualification in progress (PVX-1854/PVX-1855)
 Baseline: `78f4ce3a0311e506d5deaee0e56396ee25249bbb`.
 Authority: ADR-006, CLINX_MONITOR.md and observer-v1.schema.json.
 
+## Current source maintenance entry (2026-10-25)
+
+The source unit `clinx-observer-history-guard.service` now invokes
+`bin/clinx-observer --history-mount-guard` in the selected Observer release.
+That release must provide the verified native `clinx-observer` binary. The old
+Python guard is retired. The Rust command preserves the six fixed inode probes,
+stable-source and active-PID rechecks, and Observer-only `try-restart`; it never
+opens history contents. This source change does not upgrade an installed release
+or authorize running the guard. See [retirement evidence](../RUST_COMPAT_RETIREMENT.md).
+The deployment records below describe their original source identities.
+
 ## Objective and boundaries
 
 Deploy only the independent GET-only Observer against the existing P620 registry.

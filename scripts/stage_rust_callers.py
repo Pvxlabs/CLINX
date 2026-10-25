@@ -12,11 +12,7 @@ import os
 import pwd
 import shutil
 import subprocess
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.build.mcp_runtime_config import compile_config
 
 
 def main():
@@ -33,6 +29,8 @@ def main():
             raise RuntimeError('CALLER_UNIT_EXISTS:' + name)
     release = args.release.resolve(strict=True)
     manifest = json.loads((release / "manifest.json").read_text())
+    if manifest.get('config_compiler') != 'RUST_CONFIG_COMPILER_V1':
+        raise RuntimeError('QUALIFIED_RUST_CONFIG_COMPILER_REQUIRED')
     if manifest.get('source_layout') != 'qualified-clinx-v1':
         raise RuntimeError('QUALIFIED_PACKAGE_LAYOUT_REQUIRED')
     if (manifest.get('provider_exchange') != 'RUST_PROVIDER_V1'
@@ -66,14 +64,14 @@ def main():
             or hashlib.sha256(path.read_bytes()).hexdigest() != digest
         ):
             raise RuntimeError("IMMUTABLE_RELEASE_REQUIRED")
-    # Config identity codecs now use the exact verified Rust release.
-    os.environ["CLINX_NODE_BINARY"] = str(release / "clinx-node")
     root = Path("/var/lib/clinx-rust")
     api = pwd.getpwnam("clinx-api")
     worker = pwd.getpwnam((root / "config/worker-user").read_text().strip())
     authority = pwd.getpwnam("clinx-authority")
     mcp_config = root / "config/mcp-runtime.json"
-    compiled_mcp = compile_config(root / 'config/bridge.toml')
+    compiled = subprocess.run([str(release / 'clinx-node'), '--compile-config', 'mcp',
+                               str(root / 'config/bridge.toml')], check=True, capture_output=True, text=True)
+    compiled_mcp = json.loads(compiled.stdout)
     if mcp_config.exists():
         if json.loads(mcp_config.read_text()) != compiled_mcp:
             raise RuntimeError('MCP_CONFIG_IDENTITY_MISMATCH')

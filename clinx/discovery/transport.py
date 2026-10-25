@@ -7,10 +7,7 @@ TLS with pinned self-signed Ed25519 certificates. No PIN/token is reused.
 from __future__ import annotations
 
 import json
-import socket
-import socketserver
 import ssl
-import threading
 import time
 from dataclasses import asdict, dataclass
 from typing import Any, Protocol
@@ -20,21 +17,8 @@ from .identity import (
     DeviceError,
     NodeIdentity,
     TrustedPeerStore,
-    certificate_public,
-    decoded,
-    encoded,
-    public_record,
 )
-from .pairing import (
-    DEV_PROTOCOL,
-    PRODUCTION_PROTOCOL as PRODUCTION_PROTOCOL,
-    PRODUCTION_TRUST,
-    PairingProtocol,
-    PairingWindow,
-    Spake2Protocol,
-    confirmation,
-    verify_confirmation,
-)
+from .pairing import PairingWindow
 
 MAX_FRAME = 16384
 
@@ -102,20 +86,6 @@ class DeviceTransport(Protocol):
     def reconnect(self, candidate: Candidate) -> DeviceSession: ...
 
 
-def check_candidate(
-    candidate: Candidate, peers: TrustedPeerStore, *, pairing: bool = False
-) -> None:
-    if candidate.mismatch:
-        raise DeviceError("IDENTITY_MISMATCH")
-    old = peers.all().get(candidate.node_id)
-    if old and old["fingerprint"] != candidate.fingerprint:
-        raise DeviceError("IDENTITY_MISMATCH")
-    if old and old["trust_state"] != "TRUSTED":
-        raise DeviceError("TRUST_REVOKED")
-    if not pairing and not old:
-        raise DeviceError("UNTRUSTED_DEVICE")
-
-
 def _enrollment(operation, **arguments):
     from .identity import _state_call
     try:
@@ -147,122 +117,27 @@ class RustConnection:
 
 
 class LanTransport:
+    """Compatibility DTO boundary; enrollment, authentication and TLS are Rust-owned."""
     def __init__(self, identity: NodeIdentity, peers: TrustedPeerStore, *, allow_dev: bool = False, allow_direct: bool = False):
-        self.identity, self.peers, self.allow_dev, self.allow_direct = identity, peers, allow_dev, allow_direct
+        if allow_dev:
+            raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
+        self.identity, self.peers, self.allow_direct = identity, peers, allow_direct
 
-    def _connect(self, candidate: Candidate, *, pairing: bool) -> ssl.SSLSocket:
-        if not self.allow_dev:
-            return RustConnection(_enrollment('client.connect', root=str(self.identity.store.root), candidate=asdict(candidate), pairing=pairing, allow_direct=self.allow_direct))
-        check_candidate(candidate, self.peers, pairing=pairing)
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.minimum_version = ssl.TLSVersion.TLSv1_3
-        context.check_hostname = False  # Verify pinned identity instead of IP/DNS.
-        if pairing:
-            context.verify_mode = ssl.CERT_NONE  # PAKE authenticates initial server key.
-        else:
-            peer = self.peers.all()[candidate.node_id]
-            if peer["security_status"] == "DEV_ONLY" and not self.allow_dev:
-                raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
-            context.load_verify_locations(cadata=peer["certificate"])
-            self.identity.load_tls_credentials(context)
-        for address, port in candidate.endpoints:
-            if not self.allow_direct:
-                lan_address(address)
-            raw = None
-            sock = None
-            try:
-                raw = socket.create_connection((address, port), timeout=5)
-                sock = context.wrap_socket(raw, server_hostname=None)
-                pub = certificate_public(peer_certificate(sock))
-                from .identity import fingerprint
-
-                if fingerprint(pub) != candidate.fingerprint:
-                    raise DeviceError("IDENTITY_MISMATCH")
-                return sock
-            except (DeviceError, ssl.SSLError):
-                if sock:
-                    sock.close()
-                elif raw:
-                    raw.close()
-                # Never downgrade/fail over following an authentication failure.
-                raise
-            except OSError:
-                if raw:
-                    raw.close()
-        raise DeviceError("DEVICE_UNREACHABLE")
+    def _connect(self, candidate: Candidate, *, pairing: bool) -> RustConnection:
+        return RustConnection(_enrollment('client.connect', root=str(self.identity.store.root), candidate=asdict(candidate), pairing=pairing, allow_direct=self.allow_direct))
 
     def pair(self, candidate: Candidate, code: str) -> DeviceSession:
-        if not self.allow_dev:
-            return self._pair_production(candidate, code)
-        if candidate.node_id == self.identity.public["node_id"]:
-            raise DeviceError("DUPLICATE_LOCAL_NODE_ID")
-        with self._connect(candidate, pairing=True) as sock:
-            cert = peer_certificate(sock)
-            send(
-                sock,
-                dict(
-                    op="pair",
-                    protocol=DEV_PROTOCOL,
-                    identity=self.identity.public,
-                    certificate=self.identity.certificate,
-                ),
-            )
-            hello = receive(sock)
-            if hello.get("protocol") != DEV_PROTOCOL:
-                raise DeviceError("PAIRING_PROTOCOL_MISMATCH")
-            server = public_record(hello["identity"])
-            if server["node_id"] != candidate.node_id or server["public_key"] != certificate_public(
-                cert
-            ):
-                raise DeviceError("IDENTITY_MISMATCH")
-            exchange: PairingProtocol = Spake2Protocol(
-                code,
-                role="A",
-                client=self.identity.public,
-                server=server,
-                window_id=hello["window_id"],
-                allow_dev=self.allow_dev,
-            )
-            outbound = exchange.start()
-            key = exchange.finish(decoded(hello["message"]))
-            send(
-                sock, dict(message=encoded(outbound), confirmation=encoded(confirmation(key, "A")))
-            )
-            result = receive(sock)
-            verify_confirmation(key, "B", decoded(result["confirmation"]))
-            self.peers.trust(server, cert, security_status=exchange.security_status)
-        # Prove both durable trust writes with a fresh mutual-TLS connection.
-        return self.reconnect(candidate)
-
-    def _pair_production(self, candidate: Candidate, code: str) -> DeviceSession:
         raw = _enrollment('client.pair', root=str(self.identity.store.root), candidate=asdict(candidate), code=code, allow_direct=self.allow_direct)
         raw['capabilities'] = tuple(raw['capabilities'])
         return DeviceSession(**raw)
 
     def reconnect(self, candidate: Candidate) -> DeviceSession:
-        if not self.allow_dev:
-            raw = _enrollment('client.reconnect', root=str(self.identity.store.root), candidate=asdict(candidate), allow_direct=self.allow_direct)
-            raw['capabilities'] = tuple(raw['capabilities'])
-            return DeviceSession(**raw)
-        with self._connect(candidate, pairing=False) as sock:
-            public = certificate_public(peer_certificate(sock))
-            send(sock, dict(op="session", node_id=self.identity.public["node_id"]))
-            reply = receive(sock)
-            if reply != dict(
-                node_id=candidate.node_id,
-                capabilities=[],
-                authority_granted=False,
-                authorization_required=True,
-            ):
-                raise DeviceError("INVALID_CAPABILITY_NEGOTIATION")
-            peer = self.peers.authenticate(candidate.node_id, public, allow_dev=self.allow_dev)
-            return DeviceSession(candidate.node_id, peer["fingerprint"])
+        raw = _enrollment('client.reconnect', root=str(self.identity.store.root), candidate=asdict(candidate), allow_direct=self.allow_direct)
+        raw['capabilities'] = tuple(raw['capabilities'])
+        return DeviceSession(**raw)
 
     def observer_connection(self, candidate: Candidate) -> dict[str, Any]:
         from .observer_bootstrap import validate_connection
-
-        if self.allow_dev:
-            raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
         return validate_connection(_enrollment('client.observer', root=str(self.identity.store.root), candidate=asdict(candidate), allow_direct=self.allow_direct))
 
 
@@ -279,187 +154,38 @@ class DeviceServer:
         window: PairingWindow | None = None,
         observer_bootstrap: Any = None,
     ):
+        if allow_dev:
+            raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
         if address != "0.0.0.0":
             lan_address(address)
-        self.identity, self.peers, self.allow_dev, self.allow_direct = identity, peers, allow_dev, allow_direct
+        self.identity, self.peers, self.allow_direct = identity, peers, allow_direct
         self.window = window or PairingWindow()
         self.observer_bootstrap = observer_bootstrap
         self._rust_server = None
-        if not allow_dev:
-            import uuid
-            from .identity import _enrollment_callbacks, _runtime_lock
-            self._handler_token = uuid.uuid4().hex
+        import uuid
+        from .identity import _enrollment_callbacks, _runtime_lock
+        self._handler_token = uuid.uuid4().hex
+        with _runtime_lock:
+            _enrollment_callbacks[self._handler_token] = self
+        try:
+            result = _enrollment('server.start', root=str(identity.store.root), address=address, port=port,
+                allow_direct=allow_direct, window=self.window._window, handler_token=self._handler_token,
+                custom_clock=self.window.clock is not time.monotonic, observer_enabled=observer_bootstrap is not None)
+            self._rust_server, self.port = result['server'], result['port']
+        except Exception:
             with _runtime_lock:
-                _enrollment_callbacks[self._handler_token] = self
-            try:
-                result = _enrollment('server.start', root=str(identity.store.root), address=address, port=port,
-                    allow_direct=allow_direct, window=self.window._window, handler_token=self._handler_token,
-                    custom_clock=self.window.clock is not time.monotonic, observer_enabled=observer_bootstrap is not None)
-                self._rust_server, self.port = result['server'], result['port']
-            except Exception:
-                with _runtime_lock:
-                    _enrollment_callbacks.pop(self._handler_token, None)
-                raise
-            return
-        self._slots = threading.BoundedSemaphore(16)
-        self._lease = identity.store.lock("server.lock", nonblocking=True)
-        self._lease.__enter__()
-        owner = self
-
-        class Server(socketserver.ThreadingTCPServer):
-            daemon_threads = False
-            block_on_close = True
-            allow_reuse_address = True
-
-            def process_request(self, request: Any, client_address: Any) -> None:
-                if not owner._slots.acquire(blocking=False):
-                    request.close()
-                    return
-                try:
-                    super().process_request(request, client_address)
-                except Exception:
-                    owner._slots.release()
-                    raise
-
-        class Handler(socketserver.BaseRequestHandler):
-            def handle(self) -> None:
-                try:
-                    # LAN v1 rejects public source addresses even on a wildcard bind.
-                    if not owner.allow_direct:
-                        lan_address(self.client_address[0])
-                    self.request.settimeout(5)
-                    with owner._context().wrap_socket(self.request, server_side=True) as sock:
-                        owner._handle(sock)
-                except Exception:
-                    # Do not log wire frames, identities, PIN, or crypto exceptions.
-                    pass
-                finally:
-                    owner._slots.release()
-
-        try:
-            self.server = Server((address, port), Handler)
-        except Exception:
-            self._lease.__exit__(None, None, None)
+                _enrollment_callbacks.pop(self._handler_token, None)
             raise
-        self.port = self.server.server_address[1]
-        self._thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self._thread.start()
-
-    def _context(self) -> ssl.SSLContext:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.minimum_version = ssl.TLSVersion.TLSv1_3
-        self.identity.load_tls_credentials(context)
-        context.verify_mode = ssl.CERT_OPTIONAL
-        # Rebuild on each connection so trust/revocation changes are immediate.
-        certificates = [
-            p["certificate"]
-            for p in self.peers.all().values()
-            if p["trust_state"] == "TRUSTED"
-            and (p["security_status"] == PRODUCTION_TRUST or self.allow_dev)
-        ]
-        if certificates:
-            context.load_verify_locations(cadata="".join(certificates))
-        return context
-
-    def _handle(self, sock: ssl.SSLSocket) -> None:
-        reservation = None
-        try:
-            request = receive(sock)
-            if request.get("op") == "session":
-                pub = certificate_public(peer_certificate(sock))
-                self.peers.authenticate(request["node_id"], pub, allow_dev=self.allow_dev)
-                send(
-                    sock,
-                    dict(
-                        node_id=self.identity.public["node_id"],
-                        capabilities=[],
-                        authority_granted=False,
-                        authorization_required=True,
-                    ),
-                )
-            elif request.get("op") == "observer_connection":
-                pub = certificate_public(peer_certificate(sock))
-                self.peers.authenticate(request["node_id"], pub)
-                if self.allow_dev or self.observer_bootstrap is None:
-                    raise DeviceError("OBSERVER_SHARING_DISABLED")
-                connection = self.observer_bootstrap.connection()
-                send(sock, dict(connection, node_id=self.identity.public["node_id"]))
-            elif request.get("op") == "pair":
-                reservation, window_id, code = self.window.reserve()
-                expected_protocol = DEV_PROTOCOL
-                if request.get("protocol") != expected_protocol:
-                    raise DeviceError("PAIRING_PROTOCOL_MISMATCH")
-                client = public_record(request["identity"])
-                if client["node_id"] == self.identity.public["node_id"]:
-                    raise DeviceError("DUPLICATE_LOCAL_NODE_ID")
-                cert = request["certificate"]
-                if certificate_public(cert) != client["public_key"]:
-                    raise DeviceError("IDENTITY_MISMATCH")
-                old = self.peers.all().get(client["node_id"])
-                if old and (
-                    old["public_key"] != client["public_key"] or old["trust_state"] != "TRUSTED"
-                ):
-                    raise DeviceError("IDENTITY_MISMATCH")
-                exchange: PairingProtocol = Spake2Protocol(
-                    code,
-                    role="B",
-                    client=client,
-                    server=self.identity.public,
-                    window_id=window_id,
-                    allow_dev=self.allow_dev,
-                )
-                code = ""  # The PAKE library still owns its in-memory secret until return.
-                send(
-                    sock,
-                    dict(
-                        protocol=DEV_PROTOCOL,
-                        identity=self.identity.public,
-                        window_id=window_id,
-                        message=encoded(exchange.start()),
-                    ),
-                )
-                answer = receive(sock)
-                key = exchange.finish(decoded(answer["message"]))
-                verify_confirmation(key, "A", decoded(answer["confirmation"]))
-                token, reservation = reservation, None
-                self.window.complete(
-                    token,
-                    success=True,
-                    commit=lambda: self.peers.trust(
-                        client, cert, security_status=exchange.security_status
-                    ),
-                )
-                send(sock, dict(confirmation=encoded(confirmation(key, "B"))))
-            else:
-                # No host/terminal/task/MCP/production operations on this listener.
-                raise DeviceError("EXISTING_AUTHORIZATION_REQUIRED")
-        except Exception:
-            if reservation is not None:
-                try:
-                    self.window.complete(reservation, success=False)
-                except DeviceError:
-                    pass
-            try:
-                send(sock, {"error": "REQUEST_REJECTED"})
-            except OSError:
-                pass
 
     def close(self) -> None:
-        if not self.allow_dev:
-            from .identity import _enrollment_callbacks, _runtime_lock
-            server, self._rust_server = self._rust_server, None
-            try:
-                if server is not None:
-                    _enrollment('server.close', server=server)
-            finally:
-                with _runtime_lock:
-                    _enrollment_callbacks.pop(self._handler_token, None)
-            return
-        self.window.close()
-        self.server.shutdown()
-        self.server.server_close()
-        self._thread.join(timeout=6)
-        self._lease.__exit__(None, None, None)
+        from .identity import _enrollment_callbacks, _runtime_lock
+        server, self._rust_server = self._rust_server, None
+        try:
+            if server is not None:
+                _enrollment('server.close', server=server)
+        finally:
+            with _runtime_lock:
+                _enrollment_callbacks.pop(self._handler_token, None)
 
     def __enter__(self) -> DeviceServer:
         return self

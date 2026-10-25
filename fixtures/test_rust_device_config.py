@@ -9,7 +9,6 @@ import pytest
 
 from clinx.authority.request_pipe import api_config, invoke
 from clinx.contracts.runtime_config import BridgeConfig
-from tools.build.runtime_sources import SOURCE_ROOT, copy_native_monitor_resources
 
 
 BASE = '[linear]\nteam_id="t"\ntrigger_label="go"\ntodo_state="Todo"\nrunning_state="Run"\nreview_state="Review"\n'
@@ -79,7 +78,10 @@ def test_current_monitor_resources_are_python_free_and_remove_old_readonly_runti
         path.write_text("retired")
     (root / "DiscoveryRuntime/bin").chmod(0o500)
     (root / "icon.icns").write_bytes(b"asset")
-    copy_native_monitor_resources(SOURCE_ROOT, root)
+    binary = Path(os.environ.get("CLINX_BUILD_BINARY") or
+                  str(Path(os.environ["CLINX_TEST_RUST_BIN_DIR"]) / "clinx-build"))
+    subprocess.run([str(binary), "native-monitor-resources",
+                    str(Path(__file__).resolve().parents[1]), str(root)], check=True, timeout=10)
     receipt = json.loads((root / "python-sources.json").read_text())
     assert receipt["files"] == {}
     assert receipt["required_helpers"] == ["clinx-provider", "clinx-node", "clinx-node-daemon"]

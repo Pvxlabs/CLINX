@@ -5,7 +5,9 @@ use regex::Regex;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 mod native;
-pub use native::{api_config, expanduser, hostname, native_load, provider_endpoints};
+pub use native::{
+    api_config, compile_config, expanduser, hostname, native_load, provider_endpoints,
+};
 
 fn string(v: &Value) -> String {
     match v {

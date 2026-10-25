@@ -3,10 +3,33 @@ import hashlib
 import importlib.util
 import json
 import os
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from tools.build.runtime_sources import SOURCE_ROOT, copy_monitor_sources, data_paths, source_paths
+
+
+def test_current_monitor_builder_uses_native_tool_without_python(tmp_path):
+    binary = Path(os.environ.get('CLINX_BUILD_BINARY') or
+                  str(Path(os.environ['CLINX_TEST_RUST_BIN_DIR']) / 'clinx-build'))
+    resources = tmp_path/'App/Contents/Resources'
+    resources.mkdir(parents=True)
+    (resources/'bridge.py').write_text('retired')
+    (resources/'AppIcon.icns').write_bytes(b'swift asset')
+    # No interpreter or command lookup is available to the actual cleanup tool.
+    result = subprocess.run([str(binary), 'native-monitor-resources', str(SOURCE_ROOT), str(resources)],
+                            env={'PATH': '/nonexistent'}, text=True, capture_output=True, check=True, timeout=10)
+    assert json.loads(result.stdout)['contract'] == 'RUST_MONITOR_BUILD_V1'
+    assert json.loads((resources/'python-sources.json').read_text())['files'] == {}
+    assert not (resources/'bridge.py').exists()
+    assert (resources/'AppIcon.icns').read_bytes() == b'swift asset'
+    script = (SOURCE_ROOT/'MonitorApp/Scripts/build-app.sh').read_text()
+    assert 'python3' not in script and 'runtime_sources.py' not in script
+    assert 'clinx-build" native-monitor-resources' in script
+    assert 'for helper in clinx-provider clinx-node clinx-node-daemon;' in script
 
 
 def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monkeypatch):
@@ -36,9 +59,14 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     # This packaging unit fixture uses synthetic executables. Stub only their
     # protocol probe; binary/protocol execution is covered by the Rust fixtures.
     real_run = stage.subprocess.run
+    compiler_marker = 'RUST_CONFIG_COMPILER_V1\n'
+    compiler_probes = []
     def fixture_run(command, *args, **kwargs):
         if command == [str(binaries['node_binary']), '--network-contract']:
             return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_NODE_NETWORK_V1\n', stderr='')
+        if command == [str(binaries['node_binary']), '--config-compile-contract']:
+            compiler_probes.append(command)
+            return stage.subprocess.CompletedProcess(command, 0, stdout=compiler_marker, stderr='')
         if command == [str(binaries['node_binary']), '--observation-contract']:
             return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_OBSERVATION_V1\n', stderr='')
         if command == [str(binaries['node_binary']), '--collector-contract']:
@@ -85,6 +113,8 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     assert (release/'clinx-observer').read_bytes() == b'observer'
     assert (release/'clinx-device').read_bytes() == b'device'
     assert receipt['node_api'] == 'RUST_NODE_API_V1'
+    assert receipt['config_compiler'] == 'RUST_CONFIG_COMPILER_V1'
+    assert compiler_probes == [[str(binaries['node_binary']), '--config-compile-contract']]
     assert (release/'clinx-node').read_bytes() == b'node'
     assert receipt['mcp_runtime'] == 'RUST_MCP_V1'
     assert (release/'clinx-mcp').read_bytes() == b'mcp'
@@ -99,6 +129,13 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     assert (release/'clinx-provider').read_bytes() == b'provider'
     assert receipt['provider_exchange'] == receipt['workspace_observer'] == 'RUST_PROVIDER_V1'
     assert not (release/'control/clinx/provider/rust_workspace_probe.py').exists()
+    # Old Node binaries can exit successfully with empty stdout for unknown
+    # options. They must not acquire the new release capability accidentally.
+    compiler_marker = ''
+    args.output = tmp_path/'rejected-receipt.json'
+    with pytest.raises(SystemExit, match='QUALIFIED_RUST_CONFIG_COMPILER_REQUIRED'):
+        stage.stage_desktop(args, SOURCE_ROOT)
+    assert not args.output.exists()
 
 
 def test_incremental_monitor_copy_removes_legacy_and_matches_declared_closure(tmp_path):

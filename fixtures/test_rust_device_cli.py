@@ -66,6 +66,41 @@ def test_shell_launcher_preserves_argument_values_without_python(tmp_path):
     assert json.loads(result.stdout)==['--config',str(ROOT/'bridge.toml'),*args]
 
 
+@pytest.mark.parametrize('entry', ['shell', 'python_exec', 'python_argparse'])
+def test_launchers_reject_retired_development_pairing_without_python_backend(tmp_path, entry):
+    state = tmp_path/'not-created'
+    arguments = ['devices', '--allow-dev-pairing', '--state-dir', str(state)]
+    if entry == 'shell':
+        command = [str(ROOT/'bin/clinx'), *arguments]
+    else:
+        source = '''
+import importlib.abc, sys
+class NoBackend(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, *args):
+        if name.startswith(('tools.qualification', 'clinx.discovery.pairing', 'spake2')):
+            raise AssertionError('retired backend imported: '+name)
+sys.meta_path.insert(0, NoBackend())
+from clinx.discovery import cli
+'''
+        if entry == 'python_exec':
+            source += 'raise SystemExit(cli.main())\n'
+        else:
+            source += '''
+import argparse
+p = argparse.ArgumentParser()
+p.add_argument('--config', default='bridge.toml')
+cli.add_commands(p.add_subparsers(dest='command', required=True))
+raise SystemExit(cli.handle(p.parse_args()))
+'''
+        command = [sys.executable, '-B', '-c', source, *arguments]
+    result = subprocess.run(command, cwd=ROOT,
+        env=dict(os.environ, CLINX_DEVICE_BINARY=str(BIN), CLINX_PYTHON='/absent-python'),
+        capture_output=True, text=True, timeout=5)
+    assert result.returncode == 2
+    assert result.stderr.strip() == 'DEVICE_ERROR: SECURITY_BLOCKER_DEV_ONLY'
+    assert not result.stdout and not state.exists()
+
+
 def old_url_codec(raw):
     try:
         url=urlsplit(raw['endpoint'])

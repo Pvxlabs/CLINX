@@ -1,5 +1,6 @@
 //! Standalone read-only Observer assembly. HTTP, projections and native reads
 //! share this process; no Python callbacks, authority mutation or Provider start.
+pub mod history_guard;
 use crate::{
     native_history, native_observer_bridge,
     node_tls::Result,

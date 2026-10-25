@@ -11,9 +11,9 @@ Owner、Registry、实验包和独立 Provider。必须同时提供已验证的 
 `workspace_observer=RUST_PROVIDER_V1`、`mcp_runtime=RUST_MCP_V1`、`node_api=RUST_NODE_API_V1`、`node_network=RUST_NODE_NETWORK_V1`。服务模板直接执行 Rust native/Host worker；
 新增 `observation_runtime=RUST_OBSERVATION_V1`，构建、安装与 Mac 打包实际探测
 `clinx-node --observation-contract`；旧 Node binary 不能运行新历史/观察客户端。
-`python -m tools.build.host_runtime_config --config <toml> --output <new-json>`
+`clinx-node --compile-config host <toml>`（JSON 输出至 stdout）
 仅在构建/安装时编译 Host 配置。
-`python -m tools.build.mcp_runtime_config --config <toml> --output <new-json>` 编译 MCP 配置；
+`clinx-node --compile-config mcp <toml>` 编译 MCP 配置；
 MCP 服务模板直接执行同 release 的 `clinx-mcp`，不经 Python 业务 server。Python Dispatcher、Host runner 及投递账本实现已删除；
 `deps/` 继承同样排除重复 CLINX 包和已退役的平铺模块。
 
@@ -31,7 +31,7 @@ pytest 命令依赖本机被忽略的 `tests/` 目录，Git clone 不包含它�
 
 | 入口 | 用途与副作用 |
 | --- | --- |
-| `python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/adapter-tests test_rust_native_routing.py test_rust_request_contract.py` | Rust MCP 请求及路由 fixture 回归；无需现役任务 |
+| `cargo test --locked --manifest-path kernel/Cargo.toml --test mcp_retirement_qualification` | Rust MCP 请求及路由回归；无需现役任务 |
 | `python -B -m tools.qualification.run_local_tests --work-dir /data/artifacts/<unique-task>/collection --collect-only` | 全仓库 pytest 收集，不执行测试 |
 | `python tests/run_tests.py basic` / `owner` | 历史 profile 含已退役实验的测试，当前会收集失败；不能作为当前完整门禁 |
 | `python tests/run_tests.py transport --temp-parent <task-artifact-dir>` | 隔离发布/传输回归；要求 `/data/artifacts` 下临时目录及精确外部制品 |
@@ -54,18 +54,23 @@ MCP 源码启动器只执行 Rust `clinx-mcp-relay`，连接现有 Rust MCP Unix
 使用独立的 release，不因编辑源码而升级。
 
 一次性实验资格器随对应实验退役。本地旧测试文件保持原字节，因此全量收集会显示
-9 个退役实验模块的导入错误；不会通过改断言或跳过测试把它们变成 PASS。历史回执位置见
+已退役 Python API 的导入错误；不会通过改断言或跳过测试把它们变成 PASS。历史回执位置见
 [文档索引](../docs/README.md#历史资料恢复)。构建与测试只回收本任务拥有的输出；
 部署包、manifest、数据库、回退和证据按各自运行契约保留。
 
 Collector 调用端还要求 `collector_runtime=RUST_COLLECTOR_V1`；构建时实际探测 `clinx-node --collector-contract`，拒绝旧 Node binary。
 
-客户端/Observer/Discovery/监督策略调用端要求 `client_runtime=RUST_CLIENT_RUNTIME_V1`。构建必须实测 `clinx-node --client-runtime-contract`；独立 Tunnel builder 使用 `--supervisor-binary`（或 CLINX_TUNNEL_BINARY）打包已验证的 `clinx-tunnel`，不携带 Python supervisor 或 clinx-node。MCP 配置编译 CLI 同样接受 `--node-binary`，安装工具固定使用已校验 release 的二进制。
+客户端/Observer/Discovery/监督策略调用端要求 `client_runtime=RUST_CLIENT_RUNTIME_V1`。构建必须实测 `clinx-node --client-runtime-contract`；独立 Tunnel builder 使用 `--supervisor-binary`（或 CLINX_TUNNEL_BINARY）打包已验证的 `clinx-tunnel`，不携带 Python supervisor 或 clinx-node。Host/MCP 配置编译均由已校验 release 的 `clinx-node --compile-config` 执行，无 Python 编译器。
 
 最新客户端还要求 `thin_runtime=RUST_THIN_RUNTIME_V1` 和实际 `clinx-node --thin-runtime-contract` 探测。全仓 Python <5% 的固定只读统计使用 Rust `clinx-source-audit`，未达标退出 2，详见架构文档。
 
 设备运行产物要求 `device_runtime=RUST_DEVICE_RUNTIME_V1` 与 `node_daemon=RUST_NODE_DAEMON_V1`。
 `stage_rust_release.py` 必须提供 `--node-daemon-binary`，并实测两个 marker；Centre service
-直接启动 release 内 `clinx-node-daemon`。当前 App 使用 `--native-monitor-resources`，
+直接启动 release 内 `clinx-node-daemon`。当前 App 使用 Rust `clinx-build native-monitor-resources <source-root> <resources>`，
 不发布 Python closure/DiscoveryRuntime/wheel。旧 `--monitor-resources` 仅供原 API 布局资格。
 这些是候选构建/安装工具契约，源码迁移不自动部署、切换产物或重启服务。
+
+策略维护入口为 `clinx-mcp --policy-maintenance --config <mcp-runtime.json> --stdio`，
+仅暴露原有四个 policy 工具，不含执行/恢复服务。旧 Python/TOML 维护入口已删除。
+Observer inode guard 为 `bin/clinx-observer --history-mount-guard`；该维护命令可能
+对唯一的 Observer 服务执行 try-restart，测试只使用临时文件和替身命令，本轮没有执行实际 guard。

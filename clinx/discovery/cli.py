@@ -23,8 +23,7 @@ def _binary():
 
 
 def add_commands(sub):
-    # Existing callers can still compose their argparse parser; this is argument
-    # metadata only. DEV_ONLY orchestration is not imported by production main.
+    # Argument compatibility only; Rust rejects the retired development flag.
     for name in ('devices', 'pair', 'serve'):
         parser = sub.add_parser(name)
         parser.add_argument('--state-dir', type=Path)
@@ -40,10 +39,9 @@ def add_commands(sub):
 
 
 def handle(args):
-    if args.allow_dev_pairing:
-        from tools.qualification.discovery_dev_cli import handle as dev_handle
-        return dev_handle(args)
     argv = ['--config', str(args.config), args.command, '--wait', str(args.wait)]
+    if args.allow_dev_pairing:
+        argv.append('--allow-dev-pairing')
     for attr, flag in [('state_dir', '--state-dir'), ('display_name', '--display-name'),
                        ('observer_config', '--observer-config'), ('port', '--port')]:
         value = getattr(args, attr, None)
@@ -61,9 +59,6 @@ def handle(args):
 
 
 def main():
-    if '--allow-dev-pairing' in sys.argv[1:]:
-        from tools.qualification.discovery_dev_cli import main as dev_main
-        return dev_main()
     try:
         os.execv(_binary(), ['clinx', *sys.argv[1:]])
     except (OSError, ValueError):

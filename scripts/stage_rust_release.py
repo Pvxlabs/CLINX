@@ -76,6 +76,13 @@ def stage_desktop(args, source):
             if contract.returncode or contract.stdout.strip() != 'RUST_NODE_NETWORK_V1':
                 raise SystemExit('QUALIFIED_RUST_NODE_NETWORK_REQUIRED')
             try:
+                compiler = subprocess.run([str(binary), '--config-compile-contract'], input='', text=True,
+                    capture_output=True, timeout=5, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                raise SystemExit('QUALIFIED_RUST_CONFIG_COMPILER_REQUIRED') from None
+            if compiler.returncode or compiler.stdout.strip() != 'RUST_CONFIG_COMPILER_V1':
+                raise SystemExit('QUALIFIED_RUST_CONFIG_COMPILER_REQUIRED')
+            try:
                 observation = subprocess.run([str(binary), '--observation-contract'], input='', text=True,
                     capture_output=True, timeout=5, check=False)
             except (OSError, subprocess.TimeoutExpired):
@@ -149,7 +156,7 @@ def stage_desktop(args, source):
                   head=subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip(),
                   base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1', host_transport='RUST_HOST_V1', mcp_runtime='RUST_MCP_V1', node_api='RUST_NODE_API_V1', node_network='RUST_NODE_NETWORK_V1', observation_runtime='RUST_OBSERVATION_V1', collector_runtime='RUST_COLLECTOR_V1', client_runtime='RUST_CLIENT_RUNTIME_V1', thin_runtime='RUST_THIN_RUNTIME_V1', device_runtime='RUST_DEVICE_RUNTIME_V1', node_daemon='RUST_NODE_DAEMON_V1', provider_exchange='RUST_PROVIDER_V1', workspace_observer='RUST_PROVIDER_V1',
                   observation_directory='RUST_OBSERVATION_DIRECTORY_V1', observer_runtime='RUST_OBSERVER_V1', device_cli='RUST_DEVICE_CLI_V1',
-                  desktop_socket_maintenance='RUST_DESKTOP_SOCKET_V1', python_sources=[], python_dependencies=[],
+                  desktop_socket_maintenance='RUST_DESKTOP_SOCKET_V1', config_compiler='RUST_CONFIG_COMPILER_V1', python_sources=[], python_dependencies=[],
                   source_replacements=replacements, runtime_source_profile='rust', source_layout='qualified-clinx-v1',
                   retired_files=sorted(set(manifest['files']) - set(files)),
                   files=files, status='STAGED_NOT_SELECTED')

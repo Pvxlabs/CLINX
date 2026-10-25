@@ -40,7 +40,7 @@
       "profiles": [
         "monitor"
       ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Compatibility API client delegating business mapping, selection and projection to Rust; read-only Provider protocol callback retained for existing clients; normal Helper bypasses this class"
+      "reason": "Compatibility request facade still consumed by scripts/transfer_rust_native_session.py; normal Helper uses Rust. Removal requires migrating that exact maintenance consumer and its qualification."
     },
     {
       "path": "clinx/authority/rust_reads.py",
@@ -246,7 +246,7 @@
       "profiles": [
         "monitor"
       ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public configuration DTO and TOML/platform Path codec. Defaults, binding, host selection and executor/workflow validation execute in Rust runtime_config."
+      "reason": "Public BridgeConfig DTO for remaining compatibility/qualification consumers. Runtime/installation config parsing and validation now use Rust."
     },
     {
       "path": "clinx/contracts/runtime_contracts.py",
@@ -266,11 +266,9 @@
     },
     {
       "path": "clinx/contracts/workspace_contract.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Last Python MCP factory consumer retired; Rust Node selectors, request validation and Authority workspace contracts remain authoritative."
     },
     {
       "path": "clinx/discovery/__init__.py",
@@ -284,7 +282,7 @@
       "path": "clinx/discovery/cli.py",
       "role": "COMPAT",
       "profiles": [],
-      "reason": "Compatibility argv/exec facade only; devices/pair/serve lifecycle is native Rust. Explicit DEV_ONLY SPAKE2 qualification delegates to tools, never packaged."
+      "reason": "Historical CLI exec facade; invokes Rust device executable with no Python DEV fallback."
     },
     {
       "path": "clinx/discovery/discovery.py",
@@ -304,11 +302,9 @@
     },
     {
       "path": "clinx/discovery/monitor_helper.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Historical executable alias that execs clinx-node --discovery-gui; current Swift invokes the bundled Rust binary directly"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Historical exec alias has no import or dynamic-file consumer in tracked source or preserved local tests; Swift calls clinx-node --discovery-gui directly."
     },
     {
       "path": "clinx/discovery/observer_bootstrap.py",
@@ -324,7 +320,7 @@
       "profiles": [
         "monitor"
       ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public pairing API and explicit DEV_ONLY SPAKE2 qualification; normal OPAQUE transcript and protocol state run in the shared Rust core without Python wheel"
+      "reason": "Rust OPAQUE/window qualification DTOs; retired SPAKE2 API fails closed before IO. No Python PAKE/HKDF implementation."
     },
     {
       "path": "clinx/discovery/transport.py",
@@ -332,7 +328,7 @@
       "profiles": [
         "monitor"
       ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Python public transport DTO and explicit DEV_ONLY TLS/SPAKE2 qualification; production first pairing/mTLS enrollment and reconnect run in Rust discovery_enrollment"
+      "reason": "Rust enrollment/session DTOs and independent OpenSSL oracle; obsolete DEV_ONLY Python TLS server/client removed."
     },
     {
       "path": "clinx/host/__init__.py",
@@ -386,7 +382,7 @@
       "profiles": [
         "monitor"
       ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Observation/explicit maintenance codec namespace; normal business MCP server is Rust"
+      "reason": "Namespace for shared registry.json schemas compiled into Rust; Python server removed."
     },
     {
       "path": "clinx/mcp/consultation_schema.py",
@@ -396,11 +392,9 @@
     },
     {
       "path": "clinx/mcp/mcp_server.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Observation/explicit maintenance injectable codec and retired CLI launcher; normal business MCP is clinx-mcp Rust executable"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Rust clinx-mcp business, observation and policy-maintenance profiles replace the last Python server/factory; remaining Node qualifications ported with original assertions."
     },
     {
       "path": "clinx/mcp/rust_mcp.py",
@@ -418,11 +412,9 @@
     },
     {
       "path": "clinx/monitor/native_associations.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Typed private client for Rust read-only exact native association lookup; no Python SQL."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "No remaining tracked or preserved-local Python, Rust, Swift, shell, service or dynamic-name consumer; former Python MCP/Observer factory retired. Current Rust observation/Provider implementation and qualification remain."
     },
     {
       "path": "clinx/monitor/native_observation_bridge.py",
@@ -442,11 +434,9 @@
     },
     {
       "path": "clinx/monitor/observation_mcp.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public injectable schema/read API for qualification. Normal stdio/MCP directory is Rust; retired Python subprocess backend removed."
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Rust observation profile owns all tools; last Python factory consumer retired."
     },
     {
       "path": "clinx/monitor/observation_source.py",
@@ -466,11 +456,9 @@
     },
     {
       "path": "clinx/monitor/rust_monitor.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Python public Monitor/observation facade and IO callbacks; managed result/context/recheck and MCP read policy delegated to Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "No remaining tracked or preserved-local Python, Rust, Swift, shell, service or dynamic-name consumer; former Python MCP/Observer factory retired. Current Rust observation/Provider implementation and qualification remain."
     },
     {
       "path": "clinx/monitor/rust_observation.py",
@@ -558,11 +546,9 @@
     },
     {
       "path": "clinx/provider/liveness.py",
-      "role": "COMPAT",
-      "profiles": [
-        "monitor"
-      ],
-      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public dataclass/result codec for Rust evidence liveness classification"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "No remaining tracked or preserved-local Python, Rust, Swift, shell, service or dynamic-name consumer; former Python MCP/Observer factory retired. Current Rust observation/Provider implementation and qualification remain."
     },
     {
       "path": "clinx/provider/native_history.py",
@@ -646,9 +632,9 @@
     },
     {
       "path": "fixtures/test_rust_node_contract.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "All 24 original parameter cases mapped into kernel/tests/node_contract_qualification.rs; original local tests preserved."
     },
     {
       "path": "fixtures/transport_only_mcp.py",
@@ -827,15 +813,15 @@
     },
     {
       "path": "tools/maintenance/observer_history_guard.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "clinx-observer --history-mount-guard preserves six fixed inode probes and active-PID guarded Observer-only try-restart; source service template updated, not deployed."
     },
     {
       "path": "tools/maintenance/policy_maintenance.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/deployment/maintenance tooling; excluded from runtime packages"
+      "reason": "No current CLI consumer remains after the Rust operator-only MCP profile replaces policy validation/framing; invoke clinx-mcp --policy-maintenance with compiled JSON. Historical restore tools use exact old source."
     },
     {
       "path": "tools/qualification/__init__.py",
@@ -901,9 +887,9 @@
     },
     {
       "path": "tools/build/host_runtime_config.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Build/install conversion of existing Host TOML configuration to Rust worker JSON."
+      "reason": "clinx-node --compile-config host uses the existing Rust configuration contract; installers invoke their verified release binary."
     },
     {
       "path": "fixtures/test_rust_host_runtime.py",
@@ -919,9 +905,9 @@
     },
     {
       "path": "tools/build/mcp_runtime_config.py",
-      "role": "DEVOPS",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Install-time TOML-to-Rust-MCP JSON compiler; no runtime state or execution"
+      "reason": "clinx-node --compile-config mcp preserves static aliases without adding runtime self-routes; installers invoke their verified release binary."
     },
     {
       "path": "fixtures/test_rust_node_runtime.py",
@@ -1047,9 +1033,9 @@
     },
     {
       "path": "tools/qualification/discovery_dev_cli.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit DEV_ONLY SPAKE2 CLI qualification; never imported or packaged by normal Rust device path"
+      "reason": "Obsolete incompatible SPAKE2 DEV_ONLY CLI and Python TLS server/client retired; production OPAQUE and independent OpenSSL qualification retained."
     },
     {
       "path": "fixtures/test_rust_device_cli.py",
