@@ -1,3 +1,6 @@
+> 文档分类：HISTORICAL。本页保留原日期、实现阶段、验收结果与失败记录；旧命令和路径仅适用于原基准。
+> 当前源码定义见[当前契约](CONTRACTS.md)与[架构](REPOSITORY_ARCHITECTURE.md)，不得据本页推断当前部署或重新引入旧实现。
+
 # P1 最小发布与 CAS 回退准备
 
 状态：PREPARED_AND_OFFLINE_QUALIFIED / NOT_DEPLOYED。本次不授予生产激活权限。

@@ -1,33 +1,24 @@
-# Owner、authority 与存储边界
+# Authority 与存储边界
 
-`execution_owner.py` 持有业务写入口；MCP、节点和调用方通过既有 Owner transport
-发送操作。Owner 缺失时拒绝本地写入，不自行建立第二个 authority。
-`kernel/src/bin/clinx-owner-client.rs` 是传输客户端，不持有 DB/WAL/SHM。
+用途：定义当前唯一业务 writer 和持久化恢复责任。适用范围：Rust Authority 与调用方。
+状态：CURRENT。验证：[Authority 回归](../kernel/tests/authority_store.rs)、
+[业务回归](../kernel/tests/business.rs)及[完整测试指南](TESTING.md)。
 
-Rust 迁移分支另有原生 SQLite candidate，见 [Rust authority](RUST_AUTHORITY.md)。
-它已在源码中恢复冻结 core 并直接提交 SQLite；当前生产调用方仍使用上述 Python
-Owner。迁移分支已新增 Rust 业务事务和可选 MCP／Dispatcher／Node 执行适配；
-原生转发以外的能力、物理隔离和实际部署仍未完成，不能把隔离验收当作生产切换。
+当前实现是 [clinx-runtime](../kernel/src/bin/clinx-runtime.rs) 直接持有
+[Store](../kernel/src/authority_store.rs) 的 SQLite 连接；`business` 通过该连接提交业务事务。
+状态目录包含 `authority.sqlite3`、SQLite WAL/SHM 和 writer lock；初始化与已有库打开
+明确区分。生产模式要求独立的非 root Authority、caller 和 Transport principal 及受控 policy。
 
-`canonical_authority.py` 的 resource/epoch/operation identity、`authority_mapping.py`
-的 canonical/runtime 映射与 `authority_transactions.py` 的同连接事务共同约束写入。
-业务 mutation、commit receipt、outbox 在同一 SQLite 事务提交；delivery 与 commit
-分开记录。重复操作返回原回执，旧 epoch 和错误 owner 被拒绝，commit 后丢 ACK
-保留可读回事实，不能据此重放 Provider turn。
+协议客户端只通过现有 Authority IPC 发送操作，不因 Owner 不可达而新建数据库或 fallback。
+`clinx-owner-client` 是保留的开发/兼容客户端，不是另一个 Owner；Python Owner 已不在当前源码。
+Node Registry、设备 trust、Collector 与观察库只拥有各自领域数据，不能提交 Task 业务状态。
 
-`runtime_control/store.py` 和 `runtime_control/transport.py` 保留 runtime allocation、
-CAS、事件与恢复状态。`authority_outbox.py` 使用稳定 identity 和接收端回执处理
-重复投递；跨数据库或外部系统的 ACK 不等于全局事务或业务 exactly-once。
-结果、终态、租约释放须经原有 finalizer，并保留未知状态。
+业务 mutation、command receipt、事件/projection/outbox 在已有事务边界提交；
+相同 identity/hash 返回原回执，冲突、过期 epoch 与错误 owner 被拒绝。
+发送意图、delivery ACK 和 commit 是不同事实；提交后丢 ACK 应读回，不重放 Provider turn。
+取消、终态提交、资源释放语义以[当前契约](CONTRACTS.md)及冻结 core 为准。
 
-SQLite 约束和同 UID 的只读 worker 连接不提供 OS 级物理写隔离。持有原始可写 FD
-的进程仍可能绕过 SQL，生产隔离能力必须独立验证。旧版本源码或切换前备份不能
-覆盖已经提交的新 authority 事实。
-
-对应回归是 `tests/test_execution_owner.py`、`tests/test_owner_callers.py`、
-`tests/test_owner_authority_transport.py`、`tests/test_owner_business_commit.py`、
-`tests/test_canonical_authority.py`、`tests/test_authority_closure.py`、
-`tests/test_runtime_authority_transport.py` 和 `tests/test_prepare_contract_idempotency.py`。
-用[测试指南](TESTING.md)中的 `owner` 入口运行；测试使用隔离 SQLite/socket、
-真实 Rust client 和脚本化 Provider。原 schema 兼容性另需 schema-only JSON，
-不得将生产数据库当作测试输入。
+同 UID 的逻辑只读或 SQLite CAS 不构成 OS 物理隔离。已持有 DB/WAL/SHM 可写 FD
+的旧进程必须在单独授权的部署中实际撤权并证明；本次源码检查不声明已完成生产撤权。
+回退不能用旧数据库或快照覆盖新的已提交事实。历史部署和容量修复记录保留在
+[Rust Authority 报告](RUST_AUTHORITY.md)，不从其中推导当前进程状态。

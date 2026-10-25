@@ -1,5 +1,8 @@
 # Native full access
 
+用途：普通 native forwarding 配置。适用范围：当前源码；历史验收段落按原日期理解。
+状态：CURRENT。验证：[测试指南](TESTING.md)与下述实际入口；不声明当前已部署版本。
+
 普通 Codex 任务采用 `NATIVE_FULL_ACCESS`，实际 `turn/start` 使用
 `sandboxPolicy={"type":"dangerFullAccess"}` 和 `approvalPolicy="never"`。
 CLINX 不注入可写目录白名单、网络禁用或额外审批。旧 `network_access`

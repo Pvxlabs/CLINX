@@ -1,80 +1,79 @@
-# Current native regression and qualification
+# 测试与质量验收
 
-All current runtime and portable qualification tests are tracked Rust. A fresh clone
-can run them without the ignored local Python `tests/`, pytest, PyO3 or a Python wheel.
-Original migration cases and checks remain mapped in `fixtures/*retirement*.json` and
-[the retirement report](RUST_PYTHON_RETIREMENT.md). Older count snapshots belong to their
-respective dated migration reports.
+用途：当前构建、回归和证据边界的唯一命令入口。适用范围：Rust 源码及私有 Linux 资格；
+macOS 与生产另行验收。状态：CURRENT。验证方法：执行以下命令并保留逐项退出码和日志。
 
-## Isolated Linux run
+## 隔离 Linux 验证
 
-Use Rust 1.98+, Git, a native C linker and OpenSSL CLI. Do not inherit production state
-or set test endpoints to installed services. P620 builds belong under `/lab`; disposable
-repositories belong under the task-owned `/data/artifacts` location. Use short temporary
-paths for Unix sockets. The following illustrates environment variables for an already
-created, private task directory; replace the placeholders with your task-owned paths.
+需要 Rust 1.98+、Git、C linker、OpenSSL CLI。先创建属于本任务的目录，P620 构建放 `/lab`，
+状态和临时资格仓库放 `/data/artifacts`；Unix socket 路径应短。以下路径为占位值，替换后执行。
+保留原工具链/cache 的显式 `CARGO_HOME`、`RUSTUP_HOME`；不要继承生产 CLINX 环境变量。
 
 ```sh
-export CARGO_TARGET_DIR=/lab/runtime-worktrees/p620/<task>/target
-export HOME=/data/artifacts/<short-task>/home
-export XDG_CONFIG_HOME=/data/artifacts/<short-task>/config
-export XDG_STATE_HOME=/data/artifacts/<short-task>/state
-export XDG_DATA_HOME=/data/artifacts/<short-task>/data
-export XDG_RUNTIME_DIR=/data/artifacts/<short-task>/run
-export TMPDIR=/data/artifacts/<short-task>/tmp
-# Retain explicit existing RUSTUP_HOME/CARGO_HOME for the installed toolchain/cache.
+export CARGO_TARGET_DIR=/lab/runtime-worktrees/p620/your-task/target
+# 创建自己的 0700 HOME/XDG/TMPDIR 后，给测试子进程传入私有环境。
 cargo build --locked --manifest-path kernel/Cargo.toml --bins --examples
-cargo test --locked --manifest-path kernel/Cargo.toml
+"$CARGO_TARGET_DIR/debug/clinx-source-audit" --check-structure
+"$CARGO_TARGET_DIR/debug/clinx-source-audit" --check-project
+"$CARGO_TARGET_DIR/debug/clinx-source-audit"
+env HOME=/data/artifacts/your-task/home XDG_CONFIG_HOME=/data/artifacts/your-task/config \
+  XDG_STATE_HOME=/data/artifacts/your-task/state XDG_DATA_HOME=/data/artifacts/your-task/data \
+  XDG_RUNTIME_DIR=/data/artifacts/your-task/run TMPDIR=/data/artifacts/your-task/tmp \
+  cargo test --locked --manifest-path kernel/Cargo.toml
 cargo test --locked --manifest-path native/opaque_pairing/Cargo.toml
 cargo build --locked --release --manifest-path kernel/Cargo.toml --bins --examples
-"$CARGO_TARGET_DIR/release/clinx-source-audit" --check-structure
-"$CARGO_TARGET_DIR/release/clinx-source-audit"
+cargo clippy --locked --manifest-path kernel/Cargo.toml --all-targets
+cargo fmt --manifest-path kernel/Cargo.toml --check
 git diff --check
 ```
 
-The examples `qualification_workspace` and `qualification_tunnel` are real private
-child programs used by integration tests; build them in the same target/profile as the tests.
-They replace embedded Python fixtures and do not enter runtime/App packages.
+测试子进程也需要能找到上述 Cargo/Rustup 路径；不得把生产 socket/Provider/database 用作测试输入。
+`qualification_workspace`、`qualification_tunnel` 是真实私有子进程，需在同 target/profile
+预先构建，不进入运行发布包。网络缓存完整时可追加 `--offline`，缺失依赖应记录 BLOCKED。
 
-## Coverage
+## 分层与覆盖
 
-| Suite | Important obligations |
+| 层级 | 覆盖与入口 |
 | --- | --- |
-| Authority/native/Host | Atomic receipts, exact operation identity, concurrent attempts, send once, ACK uncertainty, cancellation, restart and no blind replay |
-| Node/Device/Discovery | Authenticated principal/scope intersection, reverse Authority, paired Provider route, 6-way concurrent traffic, restart, revocation, independent OpenSSL in both directions, expired certificates, CLI/PTY PIN handling |
-| Provider/workspace | Exact thread/turn/input and cwd/repository proof, identity mismatch, process/SSH/Unix/WebSocket protocol, backlog and duplicate responses |
-| Collector/Observer/MCP | Independent SQL/JSON oracle, read-only bytes, checkpoints and duplicate ACK, cursor scope, auth/audit, concurrent writes, restart and permission errors |
-| Build/install | Explicit release members/hash/marker, no inherited Python/development binaries, deterministic archives, CAS path/preflight, exact service/config templates and no service activation |
-| Tunnel/relay | Persistent identity/budget, original deterministic fault clocks, ownership/TERM/KILL, partial byte streams, half-close, no replay, bounded metrics IO and passive diagnostics |
-| OPAQUE | Mutual confirmation, single consumption, context mismatch and malformed finish; now tested directly in Rust |
+| core / Authority / 业务事务 | 状态 guard、scoped identity、receipt/outbox 原子性、WAL、并发、取消、未知 ACK 和 restart；`authority_store`、`business`、`execution_core_qualification` |
+| Provider / Host / native | exact thread/turn/input/cwd、send once、工具 ACK、process/SSH/Unix/WebSocket、Host 证据；`provider_*`、`host_runtime_qualification`、`native_transport*` |
+| Node / Discovery | principal/scope、配对 mTLS、双向独立 OpenSSL、到期证书、并发、重启、撤销、CLI/PTY；`node_*`、`discovery_*`、`device_python_retirement_qualification` |
+| Collector / Observer / MCP | 独立 SQL/JSON oracle、只读字节、checkpoint/重复 ACK、cursor scope、分页、权限错误；`collector_qualification`、`observer_*`、`mcp_retirement_qualification` |
+| build / install / 语言与文档 | 发布成员/hash/marker、无 Python、CAS preflight、服务模板无 activation、文档与依赖；`build_release_qualification`、`monitor_build`、`install_tools`、`source_structure`、`project_policy` |
+| Tunnel / relay | 进程归属、TERM/KILL、持久预算、half-close、partial bytes、不重放；`tunnel_runtime`、`mcp_relay_retirement` |
+| OPAQUE / Swift | 原生 OPAQUE 确认/上下文/单次消费；macOS 使用 `swift test` 与 App 构建，见[App 指南](../MonitorApp/README.md) |
 
-## Platform and artifact limits
+所有 Rust 集成测试在 [kernel/tests](../kernel/tests/)，冻结期望在 [fixtures](../fixtures/)。
+不得把测试名称含 `python_retirement` 误读成运行 Python。
 
-Native macOS UI/App building and signing require macOS/Xcode; Linux native-resource
-assembly tests are not that acceptance. Physical LAN multicast and real Mac-to-P620
-execution are separately authorized device qualifications. The Discovery smoke example
-requires an explicit `--lan` option for physical multicast; isolated `--loopback` results
-must not be called physical LAN PASS.
+## 本次自动化的针对性回归
 
-Administrator install, provision, maintenance and deployed isolation checks are not
-run against production by this suite. Their filesystem/command boundaries are tested
-using private fixtures. Historical Python-to-Rust cgroup/old-provider-unit migration
-probes are retired scenarios, retained in the matching Git source and prior receipts;
-this does not create new proof of production isolation.
+```sh
+cargo test --locked --manifest-path kernel/Cargo.toml --test source_structure --test project_policy
+cargo test --locked --manifest-path kernel/Cargo.toml --test build_release_qualification --test monitor_build --test mcp_relay_retirement
+"$CARGO_TARGET_DIR/release/clinx-source-audit" --check-project
+"$CARGO_TARGET_DIR/release/clinx-source-audit" --check-artifact /absolute/private/staged-release
+```
 
-The full pinned Go transport build requires the exact source and toolchain archives
-accepted by `clinx-build build-transport-runtime`. Unit/dependency/archive tests do not
-replace that two-directory reproducibility proof when the toolchain archive is unavailable.
+`--check-project` 组合原结构检查、全部 Markdown 链接/锚点与索引覆盖、当前文档元信息、
+Rust/Swift 归属、直接模块依赖、Cargo targets 与发布名单一致性。负向测试必须覆盖损坏链接、
+漏登记、Python/其他语言、违规依赖及被污染的 release，失败输出明确 code/path。
+`--check-artifact` 只验证实际 Rust stage release；不执行其中二进制，不修改安装状态。
+原构建回归继续验证 contract marker、App helpers、archive 和 rollback capsule。
 
-## Historical suite and failure reporting
+CI 运行同一 Cargo/audit 入口，不依赖新的文档框架。workflow 与本地执行通过并不证明远端
+分支保护、真实设备、生产部署或业务验收。
 
-The ignored Python `tests/` archive remains byte-for-byte unchanged. It references retired
-APIs and cannot serve as the current passing gate. Re-run comparisons only in private
-state using the preserved original relocation harness and exact baseline checkout;
-keep the original pytest counts, collection errors, skips and masked expected-exception
-outcomes. Do not edit/skip historical tests to manufacture PASS.
+## 未验证与既有失败
 
-Normal Clippy may pass with pre-existing warnings. Record `cargo fmt --check` and strict
-warning failures separately, compare their exact diagnostic sites with the baseline,
-and fix new issues introduced by your change. Source retirement does not excuse a
-current Rust test failure.
+Linux wire/loopback 不代替物理 LAN multicast、Mac→P620 或真实 Codex/ChatGPT connector。
+smoke 的 `--lan` 需要单独显式设备资格；普通测试不得接触生产。管理员 install/provision 与
+writer FD 撤权只在私有 fixture 验证，不构成生产权限隔离证明。
+
+固定 Go Transport 的全新双构建需要精确归档；普通打包测试不替代该证明。历史证据见
+[重建报告](GO_TRANSPORT_REBUILD.md)，不能拿其旧 PASS 当本次执行结果。
+
+ignored Python `tests/` 是历史归档，保留原字节、失败、skip 和独立断言。
+恢复历史测试需匹配原源码与依赖，不向当前 runtime 恢复 Python 来满足旧 imports。
+全仓 fmt/Clippy 若有基线问题，保留完整诊断并与基线位置比较；修改文件必须无新增问题。
+当前 Rust 功能测试失败不能因迁移已完成而被豁免。

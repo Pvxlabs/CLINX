@@ -1,5 +1,9 @@
 # CLINX 架构与源码布局
 
+用途：当前源码组件、语言归属和发布边界的权威定义。适用范围：Git 源码；不代表运行现场。
+状态：CURRENT。验证：[源码分类清单](../architecture/source-policy.json)、Cargo metadata、
+`clinx-source-audit --check-project` 和[回归指南](TESTING.md)。
+
 目标和当前源码：**Rust 核心 + 适合客户端的前端技术**。Rust 承担 Task Authority、执行生命周期、
 持久化/幂等/恢复、MCP/Provider/Host/Transport、Node/Discovery，以及构建、维护和资格工具。
 macOS UI 使用 Swift。受版本控制的 Python 源码已全部退役；没有必须保留的 Python 兼容层。
@@ -60,7 +64,7 @@ prepare/start/cancel、完成/恢复和 metadata outbox 仍由 Authority 原子�
 Monitor 只构建、复制并签名三个 Helper：`clinx-provider`、`clinx-node`、`clinx-node-daemon`。
 当前 App 没有 Python 解释器、pip 依赖或 OPAQUE wheel。
 
-Rust release 只继承允许的 native `host-worker`，使用明确的运行二进制名单和协议数据；
+Rust release 只继承允许的 native `host-worker`（基线 C 降权启动器），使用明确的运行二进制名单和协议数据；
 不继承旧 `deps/`、旧 Python 源码或开发维护工具。构建实际探测 Node/daemon/Provider 等契约 marker，
 不能只覆盖源码、复用不匹配的旧 binary。安装时使用同 release 的
 `clinx-node --compile-config host|mcp` 编译 TOML；运行时不调用 Python 配置解释器。
@@ -79,3 +83,34 @@ Rust release 只继承允许的 native `host-worker`，使用明确的运行二�
 
 Linux 私有进程/mTLS/OpenSSL/DNS wire/数据库测试不替代物理 Mac 跨设备、原生 App 构建签名、
 管理员安装或生产切换验收。源码提交、候选产物、选中的 release 和实际进程身份必须分别核对。
+
+## 依赖方向、执行流与遗留边界
+
+```mermaid
+flowchart LR
+  UI[Swift UI] --> N[Rust Node / Observer client]
+  M[MCP API] --> A[Rust Authority]
+  N --> A
+  A --> DB[业务 SQLite / receipt / outbox]
+  T[Rust Transport] <-->|领取原 dispatch / 提交证据| A
+  T --> P[Rust Provider / Host adapter]
+  P --> E[外部 Codex / Host]
+  E --> O[Rust Collector / Observer 投影]
+  O --> UI
+```
+
+这是运行数据流；Rust 同 crate 内有共享类型依赖，不是宣称模块 import 图为单向 DAG。
+业务写入只由 Authority 负责；终态、取消和不确定 ACK 语义引用[契约入口](CONTRACTS.md)。
+`runtime_lab.rs` 是 Authority 仍复用的状态类型；`lib.rs` 保留旧 evaluator 协议常量，
+不能以 `NON_AUTHORITATIVE` 常量推断当前 runtime 不拥有业务库。
+
+直接源码依赖及每份受控代码的角色登记在 `architecture/source-policy.json`。新增文件必须分类，
+新增跨模块引用必须更新依赖声明并人工审查。运行库不能导入开发工具、test/example 或 UI；
+Swift 只能通过原生 Helper/HTTP/IPC 适配读取或提交请求。SQL 是声明性 schema 数据。
+
+现存 `runtime/host_worker.c` 与 `fixtures/check_transport_profile.go` 是锁定的基线遗留项，
+外部 Go Transport 也仍有构建链。它们与“全后端 Rust”目标之间的边界和禁止扩展规则
+见 [ADR-007](architecture/ADR-007-rust-source-policy.md)。本轮不进行新的运行迁移。
+固定源码百分比只保留历史比较用途，准入要求是零 Python 源码/依赖，而不是低于 5% 即可。
+
+当前配置与服务入口见[配置与运维](OPERATIONS.md)，不从历史报告推断已部署版本。

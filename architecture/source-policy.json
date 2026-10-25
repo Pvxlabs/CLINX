@@ -1,0 +1,1451 @@
+{
+  "schema": 1,
+  "baseline": "1340861e6e9956cdb21532031a542c0b86645178",
+  "decision": "docs/architecture/ADR-007-rust-source-policy.md",
+  "release_binaries": [
+    "clinx-runtime",
+    "clinx-mcp-relay",
+    "clinx-native-transport",
+    "clinx-provider",
+    "clinx-mcp",
+    "clinx-node",
+    "clinx-node-daemon",
+    "clinx-observer",
+    "clinx-device"
+  ],
+  "standalone_binaries": [
+    "clinx-tunnel"
+  ],
+  "sources": {
+    "MonitorApp/Package.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Scripts/CLINXNodeService": {
+      "role": "glue"
+    },
+    "MonitorApp/Scripts/build-app.sh": {
+      "role": "glue"
+    },
+    "MonitorApp/Scripts/capture-window-geometry.sh": {
+      "role": "glue"
+    },
+    "MonitorApp/Scripts/make-app-icon.swift": {
+      "role": "glue"
+    },
+    "MonitorApp/Scripts/setup-discovery-runtime.sh": {
+      "role": "glue"
+    },
+    "MonitorApp/Scripts/setup-local-signing.sh": {
+      "role": "glue"
+    },
+    "MonitorApp/Sources/CLINXMonitor/ActivityMarkdownView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/ActivityModels.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/ActivityStore.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/ActivityView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/AppMark.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/CLINXMonitorApp.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/CaptureHarness.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/CopyableMetadataValue.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/DesignTokens.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/DeviceConnectionStore.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/DeviceDiscoveryClient.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/DevicesSettingsView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/ExecutionListView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/FullSizeContentConfigurator.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/InspectorView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/LayerSpinner.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/LocalArchiveEntry.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/LocalArchiveView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/MonitorComponents.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/MonitorMenuBar.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/MonitorPollingPolicy.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/MonitorRootView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/MonitorSettingsView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/MonitorState.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/NavigationEntry.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/NavigationHistoryView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/NetworkObservationAdapter.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/NetworkObservationModels.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/NetworkObservationStore.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/NetworkObservationView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/NodeServiceController.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/ObservationActivityView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/ObserverClient.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/ObserverModels.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/SidebarView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/StatusSystem.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/SyntheticData.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/TaskOverview.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/TaskPresentation.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/TextSettingsView.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/TypographyPreferences.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Sources/CLINXMonitor/WindowGeometryProbe.swift": {
+      "role": "ui"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/ActivityLayoutTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/ActivityTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/DeviceConnectionTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/ExecutionRowSnapshotTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/FinalizedUIRuleTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/InspectorMetadataTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/LayerSpinnerTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/MonitorTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/NativeURITests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/NavigationHistoryTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/NetworkObservationTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/NodeServiceControllerTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/PresentationPerformanceTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/RedesignTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/TimelineArchiveTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/TypographyTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/WindowChromeTests.swift": {
+      "role": "qualification"
+    },
+    "MonitorApp/Tests/CLINXMonitorTests/WindowReopenTests.swift": {
+      "role": "qualification"
+    },
+    "bin/clinx": {
+      "role": "glue"
+    },
+    "bin/clinx-context-mcp": {
+      "role": "glue"
+    },
+    "bin/clinx-node-centre": {
+      "role": "glue"
+    },
+    "bin/clinx-observer": {
+      "role": "glue"
+    },
+    "fixtures/check_transport_profile.go": {
+      "role": "legacy_locked",
+      "sha256": "7b817b424e94cdc039fabb72b1daf1ffec147badaef0b91b0f9e2ed2473cbde4"
+    },
+    "kernel/examples/check_execution_core_contract.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/execution_core.rs"
+      ]
+    },
+    "kernel/examples/local_discovery_smoke.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/examples/support/local_discovery_smoke.rs"
+      ]
+    },
+    "kernel/examples/qualification_provider.rs": {
+      "role": "qualification",
+      "dependencies": []
+    },
+    "kernel/examples/qualification_tunnel.rs": {
+      "role": "qualification",
+      "dependencies": []
+    },
+    "kernel/examples/qualification_workspace.rs": {
+      "role": "qualification",
+      "dependencies": []
+    },
+    "kernel/examples/support/local_discovery_smoke.rs": {
+      "role": "qualification",
+      "dependencies": []
+    },
+    "kernel/src/authority_client.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/native_transport.rs"
+      ]
+    },
+    "kernel/src/authority_state.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/execution_core.rs",
+        "kernel/src/runtime_lab.rs"
+      ]
+    },
+    "kernel/src/authority_store.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/authority_state.rs",
+        "kernel/src/business.rs",
+        "kernel/src/execution_core.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-build.rs": {
+      "role": "tool",
+      "dependencies": [
+        "kernel/src/build_release.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-device.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/discovery_cli.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-diagnostics.rs": {
+      "role": "tool",
+      "dependencies": [
+        "kernel/src/devops_command.rs",
+        "kernel/src/diagnostics.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-install.rs": {
+      "role": "tool",
+      "dependencies": [
+        "kernel/src/devops_command.rs",
+        "kernel/src/install_tools.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-kernel-bench.rs": {
+      "role": "tool",
+      "dependencies": []
+    },
+    "kernel/src/bin/clinx-kernel-eval.rs": {
+      "role": "tool",
+      "dependencies": []
+    },
+    "kernel/src/bin/clinx-maintenance.rs": {
+      "role": "tool",
+      "dependencies": [
+        "kernel/src/maintenance_transfer.rs",
+        "kernel/src/mcp.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-mcp-relay.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_transport.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-mcp.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/mcp.rs",
+        "kernel/src/mcp_api.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-native-transport.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/host_executor.rs",
+        "kernel/src/host_transport.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/remote_provider.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-node-daemon.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_daemon.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-node.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/discovery_gui.rs",
+        "kernel/src/node_network.rs",
+        "kernel/src/observation_runtime.rs",
+        "kernel/src/provider_client.rs",
+        "kernel/src/request_pipe.rs",
+        "kernel/src/runtime_config.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-observer.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/observation_runtime.rs",
+        "kernel/src/observer_runtime.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-owner-client.rs": {
+      "role": "tool",
+      "dependencies": []
+    },
+    "kernel/src/bin/clinx-provider.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/desktop_socket.rs",
+        "kernel/src/node_provider.rs",
+        "kernel/src/provider.rs",
+        "kernel/src/workspace_probe.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-runtime.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs",
+        "kernel/src/native_transport.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-source-audit.rs": {
+      "role": "tool",
+      "dependencies": [
+        "kernel/src/source_policy.rs"
+      ]
+    },
+    "kernel/src/bin/clinx-tunnel.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/tunnel_runtime.rs"
+      ]
+    },
+    "kernel/src/build_archive.rs": {
+      "role": "tool",
+      "dependencies": []
+    },
+    "kernel/src/build_cas.rs": {
+      "role": "tool",
+      "dependencies": []
+    },
+    "kernel/src/build_release.rs": {
+      "role": "tool",
+      "dependencies": [
+        "kernel/src/build_archive.rs",
+        "kernel/src/build_cas.rs",
+        "kernel/src/build_transport.rs",
+        "kernel/src/build_tunnel.rs"
+      ]
+    },
+    "kernel/src/build_transport.rs": {
+      "role": "tool",
+      "dependencies": []
+    },
+    "kernel/src/build_tunnel.rs": {
+      "role": "tool",
+      "dependencies": []
+    },
+    "kernel/src/business.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business_handoff.rs",
+        "kernel/src/business_node.rs",
+        "kernel/src/business_targets.rs",
+        "kernel/src/business_workspace.rs",
+        "kernel/src/execution_core.rs"
+      ]
+    },
+    "kernel/src/business_handoff.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/business_node.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/business_targets.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/business_workspace.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/desktop_socket.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/src/devops_command.rs": {
+      "role": "tool",
+      "dependencies": []
+    },
+    "kernel/src/diagnostics.rs": {
+      "role": "tool",
+      "dependencies": [
+        "kernel/src/tunnel_supervisor.rs"
+      ]
+    },
+    "kernel/src/discovery_bootstrap.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/discovery_index.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/runtime_config.rs"
+      ]
+    },
+    "kernel/src/discovery_cli.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/discovery_bootstrap.rs",
+        "kernel/src/discovery_enrollment.rs",
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/discovery_index.rs",
+        "kernel/src/discovery_state.rs",
+        "kernel/src/mdns_runtime.rs",
+        "kernel/src/node_daemon.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/python_numeric.rs",
+        "kernel/src/runtime_config.rs"
+      ]
+    },
+    "kernel/src/discovery_enrollment.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/discovery_index.rs",
+        "kernel/src/discovery_state.rs",
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/discovery_gui.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/discovery_bootstrap.rs",
+        "kernel/src/discovery_enrollment.rs",
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/discovery_index.rs",
+        "kernel/src/discovery_state.rs",
+        "kernel/src/mdns_runtime.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/runtime_config.rs"
+      ]
+    },
+    "kernel/src/discovery_identity.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/discovery_index.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/discovery_bootstrap.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/discovery_state.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/execution_contracts.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_tls.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/execution_core.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/host_executor.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/src/host_transport.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs",
+        "kernel/src/host_executor.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/src/install_tools.rs": {
+      "role": "tool",
+      "dependencies": []
+    },
+    "kernel/src/lib.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/authority_client.rs",
+        "kernel/src/authority_state.rs",
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs",
+        "kernel/src/desktop_socket.rs",
+        "kernel/src/discovery_bootstrap.rs",
+        "kernel/src/discovery_cli.rs",
+        "kernel/src/discovery_enrollment.rs",
+        "kernel/src/discovery_gui.rs",
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/discovery_index.rs",
+        "kernel/src/discovery_state.rs",
+        "kernel/src/execution_contracts.rs",
+        "kernel/src/execution_core.rs",
+        "kernel/src/host_executor.rs",
+        "kernel/src/host_transport.rs",
+        "kernel/src/mcp.rs",
+        "kernel/src/mcp_api.rs",
+        "kernel/src/mdns_runtime.rs",
+        "kernel/src/native_history.rs",
+        "kernel/src/native_observer_bridge.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/node_api.rs",
+        "kernel/src/node_centre.rs",
+        "kernel/src/node_daemon.rs",
+        "kernel/src/node_gateway.rs",
+        "kernel/src/node_network.rs",
+        "kernel/src/node_observation_router.rs",
+        "kernel/src/node_owner.rs",
+        "kernel/src/node_paired.rs",
+        "kernel/src/node_provider.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/node_relay.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_service.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observation.rs",
+        "kernel/src/observation_collector.rs",
+        "kernel/src/observation_directory.rs",
+        "kernel/src/observation_runtime.rs",
+        "kernel/src/observation_source.rs",
+        "kernel/src/observer_http.rs",
+        "kernel/src/observer_runtime.rs",
+        "kernel/src/provider.rs",
+        "kernel/src/provider_client.rs",
+        "kernel/src/python_numeric.rs",
+        "kernel/src/read_projection.rs",
+        "kernel/src/remote_provider.rs",
+        "kernel/src/request_pipe.rs",
+        "kernel/src/runtime_config.rs",
+        "kernel/src/runtime_lab.rs",
+        "kernel/src/tunnel_runtime.rs",
+        "kernel/src/tunnel_supervisor.rs",
+        "kernel/src/workspace_probe.rs"
+      ]
+    },
+    "kernel/src/maintenance_transfer.rs": {
+      "role": "tool",
+      "dependencies": [
+        "kernel/src/mcp_api.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/src/mcp.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/mcp_api.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/observation_directory.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/src/mcp_api.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/src/mdns_runtime.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/discovery_index.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/native_history.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observation.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/native_observer_bridge.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_transport.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observer_projection.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/native_transport.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/src/node_api.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/mcp_api.rs",
+        "kernel/src/native_transport.rs"
+      ]
+    },
+    "kernel/src/node_centre.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/node_daemon.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/discovery_enrollment.rs",
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/discovery_state.rs",
+        "kernel/src/execution_contracts.rs",
+        "kernel/src/execution_core.rs",
+        "kernel/src/mcp_api.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/node_api.rs",
+        "kernel/src/node_centre.rs",
+        "kernel/src/node_gateway.rs",
+        "kernel/src/node_observation_router.rs",
+        "kernel/src/node_owner.rs",
+        "kernel/src/node_paired.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/node_relay.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_service.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observation.rs",
+        "kernel/src/observation_collector.rs",
+        "kernel/src/observation_runtime.rs",
+        "kernel/src/python_numeric.rs",
+        "kernel/src/read_projection.rs",
+        "kernel/src/runtime_config.rs"
+      ]
+    },
+    "kernel/src/node_gateway.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_relay.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/provider.rs",
+        "kernel/src/remote_provider.rs"
+      ]
+    },
+    "kernel/src/node_network.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/authority_client.rs",
+        "kernel/src/discovery_enrollment.rs",
+        "kernel/src/discovery_index.rs",
+        "kernel/src/discovery_state.rs",
+        "kernel/src/execution_contracts.rs",
+        "kernel/src/mdns_runtime.rs",
+        "kernel/src/native_history.rs",
+        "kernel/src/native_observer_bridge.rs",
+        "kernel/src/node_gateway.rs",
+        "kernel/src/node_observation_router.rs",
+        "kernel/src/node_paired.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/node_relay.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_service.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observation.rs",
+        "kernel/src/observation_collector.rs",
+        "kernel/src/observation_runtime.rs",
+        "kernel/src/observation_source.rs",
+        "kernel/src/observer_http.rs",
+        "kernel/src/provider_client.rs",
+        "kernel/src/tunnel_supervisor.rs"
+      ]
+    },
+    "kernel/src/node_observation_router.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_history.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_service.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/node_owner.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/node_paired.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_relay.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/node_provider.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/business.rs",
+        "kernel/src/provider.rs",
+        "kernel/src/workspace_probe.rs"
+      ]
+    },
+    "kernel/src/node_registry.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/node_relay.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_provider.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/node_scope.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/node_service.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/node_tls.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/observation.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_history.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/observation_collector.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observation.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/observation_directory.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/discovery_state.rs",
+        "kernel/src/execution_contracts.rs",
+        "kernel/src/mcp.rs",
+        "kernel/src/mcp_api.rs",
+        "kernel/src/native_observer_bridge.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/node_observation_router.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observation.rs",
+        "kernel/src/observer_runtime.rs",
+        "kernel/src/read_projection.rs",
+        "kernel/src/runtime_config.rs"
+      ]
+    },
+    "kernel/src/observation_runtime.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/authority_client.rs",
+        "kernel/src/native_history.rs",
+        "kernel/src/native_observer_bridge.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observation_source.rs",
+        "kernel/src/provider.rs",
+        "kernel/src/provider_client.rs",
+        "kernel/src/read_projection.rs",
+        "kernel/src/runtime_config.rs",
+        "kernel/src/workspace_probe.rs"
+      ]
+    },
+    "kernel/src/observation_source.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_history.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/observer_http.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_tls.rs",
+        "kernel/src/python_numeric.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/observer_projection.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/observer_runtime.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_history.rs",
+        "kernel/src/native_observer_bridge.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observation_directory.rs",
+        "kernel/src/observation_runtime.rs",
+        "kernel/src/observer_http.rs",
+        "kernel/src/observer_runtime/history_guard.rs",
+        "kernel/src/provider.rs",
+        "kernel/src/python_numeric.rs",
+        "kernel/src/read_projection.rs",
+        "kernel/src/runtime_config.rs"
+      ]
+    },
+    "kernel/src/observer_runtime/history_guard.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_tls.rs",
+        "kernel/src/runtime_config.rs"
+      ]
+    },
+    "kernel/src/provider.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_transport.rs"
+      ]
+    },
+    "kernel/src/provider_client.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/observation.rs",
+        "kernel/src/provider.rs",
+        "kernel/src/provider_client/api.rs",
+        "kernel/src/provider_client/observation.rs",
+        "kernel/src/provider_client/wire.rs"
+      ]
+    },
+    "kernel/src/provider_client/api.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/provider_client/observation.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_history.rs",
+        "kernel/src/read_projection.rs"
+      ]
+    },
+    "kernel/src/provider_client/wire.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/python_numeric.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/read_projection.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/remote_provider.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/src/request_pipe.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/mcp_api.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/node_api.rs",
+        "kernel/src/node_centre.rs",
+        "kernel/src/node_network.rs",
+        "kernel/src/node_owner.rs",
+        "kernel/src/runtime_config.rs"
+      ]
+    },
+    "kernel/src/runtime_config.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/host_executor.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/python_numeric.rs",
+        "kernel/src/read_projection.rs",
+        "kernel/src/runtime_config/native.rs"
+      ]
+    },
+    "kernel/src/runtime_config/native.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/execution_contracts.rs",
+        "kernel/src/mcp_api.rs",
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/src/runtime_lab.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/execution_core.rs"
+      ]
+    },
+    "kernel/src/source_policy.rs": {
+      "role": "tool",
+      "dependencies": []
+    },
+    "kernel/src/tunnel_retirement_tests.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/tunnel_runtime.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/tunnel_retirement_tests.rs",
+        "kernel/src/tunnel_supervisor.rs"
+      ]
+    },
+    "kernel/src/tunnel_supervisor.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/workspace_probe.rs": {
+      "role": "runtime",
+      "dependencies": [
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs",
+        "kernel/src/remote_provider.rs"
+      ]
+    },
+    "kernel/tests/authority_store.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/execution_core.rs"
+      ]
+    },
+    "kernel/tests/build_release_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/build_release.rs"
+      ]
+    },
+    "kernel/tests/business.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs"
+      ]
+    },
+    "kernel/tests/collector_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/observation.rs",
+        "kernel/src/observation_collector.rs",
+        "kernel/src/observation_runtime.rs",
+        "kernel/src/observation_source.rs",
+        "kernel/tests/support/observation.rs"
+      ]
+    },
+    "kernel/tests/config_compile.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/host_executor.rs",
+        "kernel/src/mcp_api.rs"
+      ]
+    },
+    "kernel/tests/contract_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/execution_contracts.rs",
+        "kernel/src/runtime_config.rs"
+      ]
+    },
+    "kernel/tests/device_python_retirement_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/discovery_bootstrap.rs",
+        "kernel/tests/support/node_qualification.rs"
+      ]
+    },
+    "kernel/tests/devops_command.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/devops_command.rs",
+        "kernel/src/tunnel_supervisor.rs"
+      ]
+    },
+    "kernel/tests/diagnostics.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/diagnostics.rs"
+      ]
+    },
+    "kernel/tests/discovery_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/discovery_bootstrap.rs",
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/discovery_index.rs",
+        "kernel/src/discovery_state.rs"
+      ]
+    },
+    "kernel/tests/discovery_retirement_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/tests/support/node_qualification.rs"
+      ]
+    },
+    "kernel/tests/discovery_smoke_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/examples/support/local_discovery_smoke.rs"
+      ]
+    },
+    "kernel/tests/execution_core_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/examples/check_execution_core_contract.rs",
+        "kernel/src/execution_core.rs"
+      ]
+    },
+    "kernel/tests/helper_observation_config_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/discovery_identity.rs",
+        "kernel/tests/support/observation.rs",
+        "kernel/tests/support/provider.rs"
+      ]
+    },
+    "kernel/tests/host_runtime_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/tests/support/provider.rs",
+        "kernel/tests/support/runtime_qualification.rs"
+      ]
+    },
+    "kernel/tests/install_tools.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/install_tools.rs"
+      ]
+    },
+    "kernel/tests/maintenance_transfer.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/maintenance_transfer.rs",
+        "kernel/tests/support/provider.rs",
+        "kernel/tests/support/runtime_qualification.rs"
+      ]
+    },
+    "kernel/tests/mcp_relay_retirement.rs": {
+      "role": "qualification",
+      "dependencies": []
+    },
+    "kernel/tests/mcp_retirement_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/mcp.rs",
+        "kernel/src/mcp_api.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs",
+        "kernel/tests/support/provider.rs",
+        "kernel/tests/support/runtime_qualification.rs"
+      ]
+    },
+    "kernel/tests/monitor_build.rs": {
+      "role": "qualification",
+      "dependencies": []
+    },
+    "kernel/tests/native_observer_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/native_history.rs",
+        "kernel/src/native_observer_bridge.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observation_runtime.rs",
+        "kernel/src/observation_source.rs",
+        "kernel/tests/support/observer_fixture.rs"
+      ]
+    },
+    "kernel/tests/native_routing.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs"
+      ]
+    },
+    "kernel/tests/native_transport.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs"
+      ]
+    },
+    "kernel/tests/native_transport_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/mcp_api.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/node_api.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/observation.rs",
+        "kernel/tests/support/native_network.rs",
+        "kernel/tests/support/provider.rs",
+        "kernel/tests/support/runtime_qualification.rs"
+      ]
+    },
+    "kernel/tests/node_contract_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/tests/support/node_qualification.rs"
+      ]
+    },
+    "kernel/tests/node_network_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/tests/support/node_qualification.rs"
+      ]
+    },
+    "kernel/tests/node_python_retirement_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/tests/support/node_qualification.rs",
+        "kernel/tests/support/provider.rs"
+      ]
+    },
+    "kernel/tests/node_requests.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs"
+      ]
+    },
+    "kernel/tests/node_router_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/tests/support/node_qualification.rs"
+      ]
+    },
+    "kernel/tests/observation_python_retirement_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/discovery_state.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/observation.rs",
+        "kernel/tests/support/node_qualification.rs",
+        "kernel/tests/support/observation.rs",
+        "kernel/tests/support/provider.rs"
+      ]
+    },
+    "kernel/tests/observation_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/native_history.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/read_projection.rs",
+        "kernel/tests/support/observation.rs"
+      ]
+    },
+    "kernel/tests/observer_http_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/node_tls.rs",
+        "kernel/src/observer_http.rs",
+        "kernel/tests/support/observer_fixture.rs"
+      ]
+    },
+    "kernel/tests/observer_process_retirement_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/observation.rs",
+        "kernel/tests/support/observation.rs",
+        "kernel/tests/support/observer_fixture.rs",
+        "kernel/tests/support/provider.rs"
+      ]
+    },
+    "kernel/tests/policy_maintenance.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/mcp.rs",
+        "kernel/src/mcp_api.rs",
+        "kernel/src/native_transport.rs",
+        "kernel/src/provider.rs",
+        "kernel/tests/support/runtime_qualification.rs"
+      ]
+    },
+    "kernel/tests/project_policy.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/build_release.rs",
+        "kernel/src/source_policy.rs"
+      ]
+    },
+    "kernel/tests/provider_api_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/provider_client.rs"
+      ]
+    },
+    "kernel/tests/provider_client_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/provider_client.rs",
+        "kernel/tests/support/provider.rs"
+      ]
+    },
+    "kernel/tests/provider_retirement_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_client.rs",
+        "kernel/src/authority_store.rs",
+        "kernel/src/node_provider.rs",
+        "kernel/src/node_relay.rs",
+        "kernel/src/observation_runtime.rs",
+        "kernel/tests/support/provider.rs"
+      ]
+    },
+    "kernel/tests/provider_runtime_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_client.rs",
+        "kernel/src/discovery_enrollment.rs",
+        "kernel/src/discovery_identity.rs",
+        "kernel/src/discovery_state.rs",
+        "kernel/src/node_centre.rs",
+        "kernel/src/node_gateway.rs",
+        "kernel/src/node_owner.rs",
+        "kernel/src/node_paired.rs",
+        "kernel/src/node_provider.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/node_relay.rs",
+        "kernel/src/node_scope.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/tests/support/provider.rs"
+      ]
+    },
+    "kernel/tests/source_structure.rs": {
+      "role": "qualification",
+      "dependencies": []
+    },
+    "kernel/tests/support/native_network.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/native_transport.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/tests/support/node_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/node_tls.rs"
+      ]
+    },
+    "kernel/tests/support/observation.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/native_history.rs",
+        "kernel/src/node_registry.rs",
+        "kernel/src/node_tls.rs",
+        "kernel/src/observation.rs",
+        "kernel/src/observation_runtime.rs"
+      ]
+    },
+    "kernel/tests/support/observer_fixture.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/node_tls.rs",
+        "kernel/src/observer_http.rs"
+      ]
+    },
+    "kernel/tests/support/provider.rs": {
+      "role": "qualification",
+      "dependencies": []
+    },
+    "kernel/tests/support/runtime_qualification.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/native_transport.rs"
+      ]
+    },
+    "kernel/tests/support/workspace_oracle.rs": {
+      "role": "qualification",
+      "dependencies": []
+    },
+    "kernel/tests/tunnel_runtime.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/tunnel_runtime.rs",
+        "kernel/src/tunnel_supervisor.rs"
+      ]
+    },
+    "kernel/tests/workspace_observer.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs",
+        "kernel/tests/support/workspace_oracle.rs"
+      ]
+    },
+    "kernel/tests/workspace_routes.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs",
+        "kernel/tests/support/workspace_oracle.rs"
+      ]
+    },
+    "native/opaque_pairing/src/lib.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "runtime/host_worker.c": {
+      "role": "legacy_locked",
+      "sha256": "8936b0b9b7380bf6504718c66220bb1eb077f9c8fa70122a2e71e616244dbf59"
+    }
+  }
+}

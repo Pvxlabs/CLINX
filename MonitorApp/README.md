@@ -1,5 +1,8 @@
 # CLINX macOS app
 
+用途：macOS UI 构建、使用和本地签名。适用范围：当前源码；历史验收段落按原日期理解。
+状态：CURRENT。验证：[测试指南](../docs/TESTING.md)与下述实际入口；不声明当前已部署版本。
+
 macOS 13+ SwiftUI read-only client for the private CLINX Observer. `Package.swift` is the
 project manifest; Xcode can open this package. `Sources/CLINXMonitor` contains the shipping
 model, HTTPS client, view model and UI. The Swift files in `docs/monitor` remain the

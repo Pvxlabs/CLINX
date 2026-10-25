@@ -1,3 +1,6 @@
+> 文档分类：REFERENCE。本页保留原日期、实现阶段、验收结果与失败记录；旧命令和路径仅适用于原基准。
+> 当前源码定义见[当前契约](../CONTRACTS.md)与[架构](../REPOSITORY_ARCHITECTURE.md)，不得据本页推断当前部署或重新引入旧实现。
+
 # CLINX Monitor Activity v1
 
 Status: IMPLEMENTED; real new-message latency measurement remains pending. Authorized 2026-10-02: near-real-time persisted activity, approximately 2s polling.

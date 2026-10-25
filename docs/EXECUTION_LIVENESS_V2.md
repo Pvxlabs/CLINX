@@ -1,3 +1,6 @@
+> 文档分类：SUPERSEDED。本页保留原日期、实现阶段、验收结果与失败记录；旧命令和路径仅适用于原基准。
+> 当前源码定义见[当前契约](CONTRACTS.md)与[架构](REPOSITORY_ARCHITECTURE.md)，不得据本页推断当前部署或重新引入旧实现。
+
 # CLINX Execution Liveness Reconciliation v2
 
 STATUS: PASS（本地修复及定向验收）；全仓回归存在已确认的 5 项 Monitor UI 基线失败。公共控制面未激活。

@@ -1,3 +1,6 @@
+> 文档分类：HISTORICAL。本页保留原日期、实现阶段、验收结果与失败记录；旧命令和路径仅适用于原基准。
+> 当前源码定义见[当前契约](CONTRACTS.md)与[架构](REPOSITORY_ARCHITECTURE.md)，不得据本页推断当前部署或重新引入旧实现。
+
 # Python 源码最终退役
 
 基准：`52f6ce9244baa1dcfb4a7b514f2ca9c569e67e12`，2026-10-25。

@@ -1,7 +1,10 @@
 # 原生构建与维护入口
 
-当前没有 Python 脚本。下列命令来自同源码构建的 Rust 二进制；所有完整参数可用 `--help`
-读取。运行时、工具和发布边界见 [仓库架构](../docs/REPOSITORY_ARCHITECTURE.md)。
+用途：原生开发与运维命令索引。适用范围：当前源码；历史验收段落按原日期理解。
+状态：CURRENT。验证：[测试指南](../docs/TESTING.md)与下述实际入口；不声明当前已部署版本。
+
+当前没有 Python 脚本。下列命令来自同源码构建的 Rust 二进制；下表构建/维护工具参数可用对应 `--help`
+读取；运行程序以各自解析器和 contract probe 为准。运行时、工具和发布边界见 [仓库架构](../docs/REPOSITORY_ARCHITECTURE.md)。
 固定 Transport 依赖的 EOF 处理和实际双构建证据见
 [Go Transport 重建](../docs/GO_TRANSPORT_REBUILD.md)：仅模块获取有限重试，完整性错误不重试，
 获取后验证缓存，测试/编译使用 `GOPROXY=off`，各次失败日志保留。
@@ -20,6 +23,8 @@
 | `clinx-diagnostics tunnel-health --url-file PATH [--max-age 120]` | 精确 systemd PID 与已确认 loopback listener 的新鲜 poll，只读 |
 | `clinx-diagnostics embedded-bridge --base-url URL --tunnel-pid PID --bridge-pid PID` | 固定旧 binary/进程身份的被动观察；绝不 Warmup/RPC/recycle，quiet 仍返回 BLOCKED |
 | `clinx-source-audit [--revision COMMIT]` | 固定全源码统计口径；目标低于 5%，当前 Python 源码为零 |
+| `clinx-source-audit --check-project` | 组合结构、文档链接/锚点/索引、源码角色、直接依赖和 Cargo/发布分类门禁 |
+| `clinx-source-audit --check-artifact PATH` | 只读验证实际 Rust stage release 的完整成员、hash、native 格式及 Python 污染 |
 | `clinx-source-audit --check-structure` | 验证 DEAD 源码不存在、无新增 Python、无运行依赖及 schema 数据完整 |
 | `cargo run --locked --manifest-path kernel/Cargo.toml --example local_discovery_smoke -- --loopback --node-binary PATH` | 两 Node 私有配对/重启/mTLS；`--lan` 为另行显式物理 LAN 资格 |
 

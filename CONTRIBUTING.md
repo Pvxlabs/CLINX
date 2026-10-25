@@ -1,47 +1,44 @@
-# Contributing to CLINX
+# CLINX 贡献与编码规范
 
-Read applicable `AGENTS.md` and inspect the checkout before editing. Preserve unrelated
-changes. The current runtime, compatibility contracts, build/maintenance tools and
-portable qualification suite use Rust; macOS UI uses Swift. Python is not a build or
-test prerequisite for current source.
+用途：开发流程和代码审查准则。适用范围：本仓库全部代码、文档及发布工具。
+状态：CURRENT。验证：执行[测试指南](docs/TESTING.md)及 `clinx-source-audit --check-project`。
+语言、数据保护和工作区要求以 [AGENTS](AGENTS.md) 为强制定义。
 
-Use Rust 1.98 or later, Git, a C linker and OpenSSL CLI for the independent wire tests.
-On P620 use a task-owned target under `/lab/runtime-worktrees/p620` and private,
-short temporary paths under `/data/artifacts`; Unix socket paths have a finite limit.
-See [Testing](docs/TESTING.md) for exact commands and platform limits.
+## 工作顺序
 
-Build the test examples before running the suite. They are independent child programs
-used by real process/Provider/transport qualifications; they are never runtime release members.
+1. 读适用 AGENTS、[架构](docs/REPOSITORY_ARCHITECTURE.md)和[契约](docs/CONTRACTS.md)，
+   核对 HEAD、实时远端、工作区和现有任务协调。记录不属于本任务的修改，不 reset/clean/stash。
+2. 先定位实际入口、状态 owner、事务和故障证据；选择最小修复。复用 canonical 仓库，
+   必要资格仓库放在任务所属 `/data/artifacts`，不建长期重复项目。
+3. 保持现有公开接口和独立 oracle。新增实现使用 Rust；Swift 仅处理 UI/native integration。
+   模块加入[源码分类清单](architecture/source-policy.json)，说明职责和依赖，不自动放宽边界。
+4. 按影响范围运行构建、回归、审计和发布检查；保存命令、环境、退出码、失败与未验证项。
+5. 对照显式文件白名单审核 diff 并提交。推送、部署或生产操作分别按用户授权执行；
+   推送后重新读取本地 HEAD、tracking ref、实时远端 SHA 和 ahead/behind。
 
-```sh
-cargo build --locked --manifest-path kernel/Cargo.toml --bins --examples
-cargo test --locked --manifest-path kernel/Cargo.toml
-cargo test --locked --manifest-path native/opaque_pairing/Cargo.toml
-cargo build --locked --release --manifest-path kernel/Cargo.toml --bins --examples
-"$CARGO_TARGET_DIR/release/clinx-source-audit" --check-structure
-"$CARGO_TARGET_DIR/release/clinx-source-audit"
-git diff --check
-```
+## 编码与模块边界
 
-Set `CARGO_TARGET_DIR` to your task-owned build directory before these commands.
-Use private HOME/XDG/TMPDIR for process tests; never substitute production sockets,
-identities, databases or Provider endpoints. A test must not replay an unknown request
-or fabricate terminal evidence to make teardown pass.
+- Rust 使用明确的类型、作用域和 `Result` 错误；不得吞掉未知状态或把协议失败转换为成功。
+  边界错误使用稳定 code，诊断附上下文但不得泄露凭据、提示词或跨任务数据。
+- JSON/IPC 输入必须校验长度、类型、版本与 identity；保持 typed request ID、scope、epoch、
+  capability、generation、request/task/execution/thread/turn 关联，不按“最新结果”替代精确读。
+- 业务写入集中于现有 Authority 事务；结果、receipt、outbox 与状态提交保持原子性。
+  Provider、Transport、Node 与只读投影不得直接打开业务库成为第二 writer。
+- 超时、断连、取消 ACK 和失联不证明未执行。持久化意图后按原 identity 读取证据，
+  不盲目重发；释放 lease 和业务完成是独立事实。
+- 不跨模块复制状态机或同一类型。公共契约留在现有模块，I/O 放在所属适配器；
+  后端不能依赖 Swift UI、`kernel/tests`、`kernel/examples` 或仅开发工具。
+- 使用受控 `Command` 参数，避免插值 shell；显式超时、输出边界、进程归属与 teardown。
+  测试不得连接生产 socket、真实 Provider 或共享运行数据库。
+- 修改过的 Rust 文件需通过 rustfmt，相关 Clippy 不引入新诊断。全仓既有格式/lint 问题
+  单独列出，不能顺手大范围改写或隐藏。Swift 修改需在 macOS 做相关构建与验证。
 
-Place native tests in `kernel/tests/`; preserve unique identity, request, concurrency,
-WAL, ACK, cancellation, recovery, process ownership and failure-boundary assertions.
-Frozen JSON/SQL oracles belong in `fixtures/`. Keep independent expectations separate
-from the implementation under test. Do not convert failures into skips or weaken assertions.
+## 回归与交付
 
-The ignored local Python `tests/` is a historical archive. Do not edit or force-add it.
-Recovery of an old test uses its exact Git source and pinned dependencies in a disposable,
-task-owned checkout. The historical relocation runner and Python requirements are no
-longer current source dependencies. See the [retirement evidence](docs/RUST_PYTHON_RETIREMENT.md).
+当前测试在 `kernel/tests/`，冻结 JSON/SQL oracle 在 `fixtures/`，子进程资格程序在
+`kernel/examples/`。测试应验证独立语义、边界和失败恢复，不能只复制实现逻辑。
+保留历史 ignored `tests/` 原字节；恢复历史套件时必须匹配原源码和依赖。
 
-Report current PASS separately from existing formatting/lint failures, historical API
-failures, unavailable external artifacts, native macOS build/signing and real-device
-acceptance. A successful private test or source commit does not prove a deployed release.
-
-Remove only your own disposable checkouts and regenerable build outputs after retaining
-logs, hashes and recovery bundles. Do not remove installed releases, credentials,
-DB/WAL/SHM files, rollback dependencies, pre-existing caches or runtime data.
+重要变更同步维护架构、契约、测试和 [CHANGELOG](CHANGELOG.md)；文档格式及历史处置
+见[文档标准](docs/DOCUMENTATION.md)。交付报告分别给出源码、候选包、部署、实机和业务状态。
+完成后仅回收本任务的临时仓库和可再生 build，保留独有日志、hash、receipt 和恢复材料。

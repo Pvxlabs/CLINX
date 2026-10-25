@@ -1,3 +1,6 @@
+> 文档分类：HISTORICAL。本页保留原日期、实现阶段、验收结果与失败记录；旧命令和路径仅适用于原基准。
+> 当前源码定义见[当前契约](CONTRACTS.md)与[架构](REPOSITORY_ARCHITECTURE.md)，不得据本页推断当前部署或重新引入旧实现。
+
 # Rust Observer、观察 MCP 与设备 CLI 迁移
 
 基线：`4efdf20159ab4fb5a10412b0b3d50bc28a0ecee2`。本轮关闭剩余正常观察入口和设备 CLI

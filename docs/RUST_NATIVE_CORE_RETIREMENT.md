@@ -1,3 +1,6 @@
+> 文档分类：HISTORICAL。本页保留原日期、实现阶段、验收结果与失败记录；旧命令和路径仅适用于原基准。
+> 当前源码定义见[当前契约](CONTRACTS.md)与[架构](REPOSITORY_ARCHITECTURE.md)，不得据本页推断当前部署或重新引入旧实现。
+
 # Rust native 执行核心退役验证
 
 本轮从 `69b2471e22d9f693a2bb4ece306c90a7f9b6a26f` 的 main 开始。
@@ -57,7 +60,7 @@ Monitor 使用原 `build-app.sh` 在隔离 Mac 源码包中构建：Swift releas
 没有安装该 App。资格结束移除可再生 App/源码/临时仓库及资格凭据，保留日志与收据。
 
 Centre gateway 支持多个独立 endpoint；Authority 的 endpoint→host 唯一性约束保持不变。
-映射配置见[仓库架构](REPOSITORY_ARCHITECTURE.md#远端路由配置契约)。
+映射配置见[仓库架构](CONTRACTS.md)。
 production 接线尚未部署，不能从源码通过推断已安装 Helper 已切换。
 
 ## 实机闭环

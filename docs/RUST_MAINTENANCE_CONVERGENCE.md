@@ -1,3 +1,6 @@
+> 文档分类：HISTORICAL。本页保留原日期、实现阶段、验收结果与失败记录；旧命令和路径仅适用于原基准。
+> 当前源码定义见[当前契约](CONTRACTS.md)与[架构](REPOSITORY_ARCHITECTURE.md)，不得据本页推断当前部署或重新引入旧实现。
+
 # Rust 维护工具与 Monitor 兼容闭包收敛
 
 基准：`26af9ee3f5f76979e6b1f28a1ec2ea3ace512acf`，2026-10-25。

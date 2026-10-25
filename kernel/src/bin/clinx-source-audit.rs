@@ -1,4 +1,6 @@
 //! Stable source-size acceptance gate. Never rewrites files or language metadata.
+#[path = "../source_policy.rs"]
+mod source_policy;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::Path, process::Command};
@@ -201,6 +203,23 @@ fn audit(revision: Option<&str>, limit: f64) -> Result<Value, String> {
 }
 fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args == ["--check-project"] || args.first().is_some_and(|a| a == "--check-artifact") {
+        let result = if args == ["--check-project"] {
+            structure().and_then(|_| source_policy::project(Path::new(".")))
+        } else if args.len() == 2 {
+            source_policy::artifact(Path::new("."), Path::new(&args[1]))
+        } else {
+            Err("INVALID_ARGUMENTS".into())
+        };
+        match result {
+            Ok(v) => println!("{v}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if args == ["--check-structure"] {
         match structure() {
             Ok(v) => println!("{v}"),
@@ -226,7 +245,7 @@ fn main() {
             }
             "--help" => {
                 println!(
-                    "clinx-source-audit [--revision COMMIT] [--max-python-percent 5]\nclinx-source-audit --check-structure\nRead-only source census. Exit 0 only when Python bytes are strictly below the limit; exit 2 for an unmet target. Structure mode rejects Python source or runtime dependencies and validates retained data."
+                    "clinx-source-audit [--revision COMMIT] [--max-python-percent 5]\nclinx-source-audit --check-structure\nclinx-source-audit --check-project\nclinx-source-audit --check-artifact RUST_STAGE_DIRECTORY\nRead-only source census. Exit 0 only when Python bytes are strictly below the limit; exit 2 for an unmet target. Structure mode rejects Python source or runtime dependencies and validates retained data."
                 );
                 return;
             }
