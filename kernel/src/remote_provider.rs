@@ -34,6 +34,12 @@ impl Provider for Connection {
             Self::Remote(c) => c.request(method, params),
         }
     }
+    fn error_details(&self, code: &str, stage: &str) -> Value {
+        match self {
+            Self::Local(c) => c.error_details(code, stage),
+            Self::Remote(c) => c.error_details(code, stage),
+        }
+    }
 }
 impl Providers for RoutedProviders {
     type Connection = Connection;
@@ -56,6 +62,7 @@ impl Providers for RoutedProviders {
                 gateway,
                 uid: self.gateway_uid,
                 context,
+                last_error: None,
             }))
         } else {
             self.connect(endpoint)
@@ -66,12 +73,28 @@ pub struct Relay {
     gateway: PathBuf,
     uid: u32,
     context: Value,
+    last_error: Option<String>,
 }
 impl Relay {
-    pub fn new(gateway:PathBuf,uid:u32,context:Value)->Self{Self{gateway,uid,context}}
+    pub fn new(gateway: PathBuf, uid: u32, context: Value) -> Self {
+        Self {
+            gateway,
+            uid,
+            context,
+            last_error: None,
+        }
+    }
 }
 impl Provider for Relay {
+    fn error_details(&self, code: &str, stage: &str) -> Value {
+        crate::provider::error_diagnostic(
+            self.last_error.as_deref().unwrap_or(code),
+            stage,
+            &Value::Null,
+        )
+    }
     fn request(&mut self, method: &str, params: Value) -> Result<Value> {
+        self.last_error = None;
         let info = self
             .gateway
             .symlink_metadata()
@@ -133,6 +156,7 @@ impl Provider for Relay {
             return Err("PROVIDER_DELIVERY_UNKNOWN".into());
         }
         if let Some(error) = reply["error"].as_str() {
+            self.last_error = Some(error.to_owned());
             return Err(error.to_owned());
         }
         let result = reply["result"]

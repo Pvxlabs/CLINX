@@ -212,6 +212,7 @@ impl Providers for UnixProviders {
 pub struct NativeTransport<A: Authority, P: Providers> {
     pub authority: A,
     pub providers: P,
+    pub last_provider_error: Option<Value>,
 }
 fn text<'a>(v: &'a Value, k: &str) -> Result<&'a str> {
     v[k].as_str()
@@ -229,6 +230,7 @@ impl<A: Authority, P: Providers> NativeTransport<A, P> {
         Self {
             authority,
             providers,
+            last_provider_error: None,
         }
     }
     fn call(&mut self, op: &str, p: Value) -> Result<Value> {
@@ -371,6 +373,7 @@ impl<A: Authority, P: Providers> NativeTransport<A, P> {
         self.call("observe_commit",json!({"execution_ref":eid,"nonce":challenge["nonce"],"observations":observations,"turn":turn}))
     }
     pub fn dispatch(&mut self, eid: &str, resume: bool) -> Result<Value> {
+        self.last_provider_error = None;
         let take = if resume {
             self.call("resume_dispatch", json!({"execution_ref":eid}))?
         } else {
@@ -394,6 +397,20 @@ impl<A: Authority, P: Providers> NativeTransport<A, P> {
             .ok_or("EXACT_DESKTOP_ENDPOINT_REQUIRED")?;
         let scope = json!({"execution_ref":eid,"epoch":take["epoch"],"ticket":take["ticket"]});
         let mut client = self.providers.connect_scoped(endpoint,Self::context("dispatch",&json!({"host":prepared["host"],"project":prepared["project"],"cwd":prepared["workspace_contract"]["cwd"],"node_principal":prepared["node_principal"]}),json!({"execution_ref":eid,"thread_id":take["thread_id"],"prompt":prepared["prompt"],"model":prepared["model"],"effort":prepared["reasoning_effort"]})))?;
+        let selection =
+            match client.model_selection(&prepared["model"], &prepared["reasoning_effort"]) {
+                Ok(v) => v,
+                Err(code) => {
+                    let detail = client.error_details(&code, "model/list");
+                    let mut result = self.once(
+                        "fail_before_send",
+                        json!({"execution_ref":eid,"reason":code,"provider_error":detail}),
+                        eid,
+                    )?;
+                    result["provider_error"] = detail;
+                    return Ok(result);
+                }
+            };
         let mut thread = if let Some(tid) = take["thread_id"].as_str() {
             // Reading/re-attaching an existing exact thread never replays input.
             // A generic remote error is not proof that the thread does not exist.
@@ -445,14 +462,18 @@ impl<A: Authority, P: Providers> NativeTransport<A, P> {
             return Ok(grant);
         }
         let mut params = json!({"threadId":tid,"input":[{"type":"text","text":prepared["prompt"]}],"cwd":cwd,"clientUserMessageId":crate::business::native_client_id(&tid,eid),"sandboxPolicy":{"type":"dangerFullAccess"},"approvalPolicy":"never"});
-        for (source, target) in [("model", "model"), ("reasoning_effort", "effort")] {
-            if !prepared[source].is_null() {
-                params[target] = prepared[source].clone();
-            }
+        for (key, value) in selection.as_object().ok_or("PROVIDER_MODEL_LIST_INVALID")? {
+            params[key] = value.clone();
         }
         // A lost ACK leaves SENDING in Authority. Reopening this process only
         // scans Provider input; it never repeats turn/start.
-        thread = client.request("turn/start", params)?;
+        thread = match client.request("turn/start", params) {
+            Ok(v) => v,
+            Err(code) => {
+                self.last_provider_error = Some(client.error_details(&code, "turn/start"));
+                return Err(code);
+            }
+        };
         if thread["turn"]["id"].as_str().is_none() {
             return Err("PROVIDER_DELIVERY_UNKNOWN".into());
         }
@@ -553,7 +574,9 @@ impl<A: Authority, P: Providers> NativeTransport<A, P> {
             })();
             results.push(match result {
                 Ok(v) => json!({"execution_ref":eid,"result":v}),
-                Err(error) => json!({"execution_ref":eid,"status":"BLOCKED","error":error}),
+                Err(error) => json!({"execution_ref":eid,"status":"BLOCKED","error":error,
+                    "provider_error":self.last_provider_error.take(),"retry_allowed":false,
+                    "recovery_action":"READ_EXACT_ORIGINAL_EXECUTION"}),
             });
         }
         Ok(json!({"authority":"RUST","transport":"RUST_NATIVE","results":results}))

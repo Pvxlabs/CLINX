@@ -33,6 +33,7 @@ REFERENCE 中的历史 implementation mapping 也不是当前路径定义，使�
 | [docs/CHATGPT_CONSULTATIONS.md](CHATGPT_CONSULTATIONS.md) | SUPERSEDED | OP ChatGPT consultations；旧定义已被当前 Rust 入口替代；保留取证/决策背景 |
 | [docs/CLINX_MONITOR.md](CLINX_MONITOR.md) | REFERENCE | CLINX Monitor — Phase 0/1 specification and observer contract；专项语义/历史实现参考；现行实现以契约地图为准 |
 | [docs/CONTRACTS.md](CONTRACTS.md) | CURRENT | 当前接口与执行契约；现行入口；按用途维护 |
+| [docs/CODEX_MODEL_SELECTION.md](CODEX_MODEL_SELECTION.md) | CURRENT | Codex 模型能力、参数映射与错误诊断；现行入口；按用途维护 |
 | [docs/DESKTOP_NATIVE_EXECUTION.md](DESKTOP_NATIVE_EXECUTION.md) | REFERENCE | Desktop 原生执行；专项语义/历史实现参考；现行实现以契约地图为准 |
 | [docs/DOCUMENTATION.md](DOCUMENTATION.md) | CURRENT | 文档标准与维护规则；现行入口；按用途维护 |
 | [docs/EXACT_NATIVE_READ_ROUTING.md](EXACT_NATIVE_READ_ROUTING.md) | REFERENCE | Exact native conversation reads；专项语义/历史实现参考；现行实现以契约地图为准 |

@@ -2525,10 +2525,12 @@
             "type": "string"
           },
           "model": {
-            "type": "string"
+            "type": "string",
+            "description": "Exact native model ID advertised by the target Provider model/list; display names and automatic fallback are not accepted."
           },
           "reasoning_effort": {
-            "type": "string"
+            "type": "string",
+            "description": "Effort supported by the selected model in model/list. extra_high and Extra High map to xhigh. Specify model with an explicit effort; omission preserves Provider default/inherited settings."
           },
           "reasoning": {
             "type": "string"

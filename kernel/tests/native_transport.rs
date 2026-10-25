@@ -31,6 +31,10 @@ struct State {
     lose_title: bool,
     live: bool,
     wrong_input: bool,
+    catalog: Option<Value>,
+    catalog_unavailable: bool,
+    input_params: Vec<Value>,
+    turn_error: Option<Value>,
 }
 #[derive(Clone)]
 struct Factory(Rc<RefCell<State>>);
@@ -46,6 +50,15 @@ impl Provider for Connection {
     fn request(&mut self, method: &str, p: Value) -> Result<Value> {
         let mut s = self.0.borrow_mut();
         match method {
+            "model/list" => {
+                if s.catalog_unavailable {
+                    Err("PROVIDER_REMOTE_ERROR".into())
+                } else {
+                    Ok(s.catalog.clone().unwrap_or_else(|| json!({"data":[
+                    {"id":"gpt-6-astra","model":"gpt-6-astra","defaultReasoningEffort":"low",
+                     "supportedReasoningEfforts":[{"reasoningEffort":"low"},{"reasoningEffort":"xhigh"}]}],"nextCursor":null})))
+                }
+            }
             "thread/start" => {
                 s.created += 1;
                 s.thread = json!({"id":"native-thread","cwd":p["cwd"],"status":{"type":"idle"},"name":null});
@@ -69,6 +82,7 @@ impl Provider for Connection {
             }
             "turn/start" => {
                 s.sent += 1;
+                s.input_params.push(p.clone());
                 let id = format!("native-turn-{}", s.sent);
                 let client = if s.wrong_input {
                     json!("somebody-else")
@@ -76,7 +90,11 @@ impl Provider for Connection {
                     p["clientUserMessageId"].clone()
                 };
                 let status = if s.live { "inProgress" } else { "completed" };
-                let turn = json!({"id":id,"status":status,"items":[{"id":format!("input-{}",s.sent),"type":"userMessage","clientId":client,"content":p["input"]},{"id":"result","type":"agentMessage","phase":"final_answer","text":"Exact native result"}]});
+                let mut turn = json!({"id":id,"status":status,"items":[{"id":format!("input-{}",s.sent),"type":"userMessage","clientId":client,"content":p["input"]},{"id":"result","type":"agentMessage","phase":"final_answer","text":"Exact native result"}]});
+                if let Some(error) = &s.turn_error {
+                    turn["status"] = json!("failed");
+                    turn["error"] = error.clone();
+                }
                 s.turns.insert(0, turn.clone());
                 if s.lose_input {
                     Err("PROVIDER_DELIVERY_UNKNOWN".into())
@@ -336,4 +354,245 @@ fn concurrent_worker_cannot_reuse_another_workers_cached_send_permit() {
     assert_eq!(factory.0.borrow().sent, 0);
     drop(worker);
     fs::remove_dir_all(dir).unwrap();
+}
+
+fn selected(api: &mut Api, key: &str, model: Value, effort: Value) -> Value {
+    let p = api.call("prepare", json!({"host":"air","project":"fixture","title":"Model qualification",
+        "prompt":"Reply only OK. Use no tools.","approved":true,"model":model,"reasoning_effort":effort}),
+        &format!("prepare-{key}")).unwrap();
+    api.call(
+        "start",
+        json!({"prepared_execution_ref":p["prepared_execution_ref"],"approved":true}),
+        &format!("start-{key}"),
+    )
+    .unwrap()
+}
+#[test]
+fn selected_model_default_mapping_lost_ack_and_exact_read_never_resend() {
+    let (dir, mut api, factory) = environment("model-lost-ack");
+    let e = selected(&mut api, "astra", json!("gpt-6-astra"), json!("extra_high"));
+    let eid = e["execution_ref"].as_str().unwrap();
+    factory.0.borrow_mut().lose_input = true;
+    let mut worker = NativeTransport::new(api, factory.clone());
+    assert_eq!(
+        worker.dispatch(eid, false).unwrap_err(),
+        "PROVIDER_DELIVERY_UNKNOWN"
+    );
+    assert_eq!(
+        worker.last_provider_error.as_ref().unwrap()["request_stage"],
+        "turn/start"
+    );
+    assert_eq!(factory.0.borrow().input_params[0]["model"], "gpt-6-astra");
+    assert_eq!(factory.0.borrow().input_params[0]["effort"], "xhigh");
+    assert_eq!(
+        worker.recover_input(eid).unwrap()["dispatch_state"],
+        "ACKED"
+    );
+    assert_eq!(worker.observe(eid).unwrap()["status"], "SUCCEEDED");
+    worker.tick().unwrap();
+    assert_eq!(factory.0.borrow().sent, 1);
+    fs::remove_dir_all(dir).unwrap();
+}
+#[test]
+fn invalid_selection_and_unavailable_catalog_close_before_any_native_mutation() {
+    for (name, model, effort, missing, expected) in [
+        (
+            "effort",
+            "gpt-6-astra",
+            json!("nonsense"),
+            false,
+            "PROVIDER_REASONING_EFFORT_UNSUPPORTED",
+        ),
+        (
+            "display",
+            "GPT-6-Astra",
+            json!("low"),
+            false,
+            "PROVIDER_MODEL_UNAVAILABLE",
+        ),
+        (
+            "missing",
+            "unavailable-model",
+            Value::Null,
+            false,
+            "PROVIDER_MODEL_UNAVAILABLE",
+        ),
+        (
+            "catalog",
+            "gpt-6-astra",
+            Value::Null,
+            true,
+            "PROVIDER_MODEL_LIST_UNAVAILABLE",
+        ),
+    ] {
+        let (dir, mut api, factory) = environment(&format!("reject-{name}"));
+        factory.0.borrow_mut().catalog_unavailable = missing;
+        let e = selected(&mut api, name, json!(model), effort);
+        let eid = e["execution_ref"].as_str().unwrap();
+        let mut worker = NativeTransport::new(api, factory.clone());
+        let result = worker.dispatch(eid, false).unwrap();
+        assert_eq!(result["status"], "FAILED");
+        assert_eq!(result["delivery_certainty"], "NOT_DISPATCHED");
+        assert_eq!(result["resource_state"], "RELEASED");
+        assert_eq!(result["execution_result"]["reason"], expected);
+        assert_eq!(
+            result["execution_result"]["provider_error"]["code"],
+            expected
+        );
+        worker.tick().unwrap();
+        assert_eq!(
+            (factory.0.borrow().created, factory.0.borrow().sent),
+            (0, 0)
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+#[test]
+fn provider_terminal_error_is_durable_structural_and_redacted() {
+    let (dir, mut api, factory) = environment("upstream-terminal");
+    factory.0.borrow_mut().turn_error = Some(json!({"codexErrorInfo":"other",
+        "message":"{\"error\":{\"type\":\"upstream_error\",\"message\":\"Upstream request failed SECRET_SENTINEL\"}}",
+        "additionalDetails":"Authorization: Bearer SECRET_SENTINEL"}));
+    let e = selected(&mut api, "terminal", json!("gpt-6-astra"), Value::Null);
+    let eid = e["execution_ref"].as_str().unwrap();
+    let mut worker = NativeTransport::new(api, factory.clone());
+    assert_eq!(
+        worker.dispatch(eid, false).unwrap()["dispatch_state"],
+        "ACKED"
+    );
+    assert!(factory.0.borrow().input_params[0].get("effort").is_none());
+    let result = worker.observe(eid).unwrap();
+    assert_eq!(result["status"], "FAILED");
+    let detail = &result["execution_result"]["provider_error"];
+    assert_eq!(detail["category"], "UPSTREAM_SERVICE");
+    assert_eq!(detail["provider_type"], "upstream_error");
+    assert_eq!(detail["request_stage"], "turn/terminal");
+    assert!(
+        !result["execution_result"]
+            .to_string()
+            .contains("SECRET_SENTINEL")
+    );
+    assert_eq!(
+        worker
+            .authority
+            .call(
+                "get_status",
+                json!({"execution_ref":eid}),
+                "exact-error-status"
+            )
+            .unwrap()["execution_result"],
+        result["execution_result"]
+    );
+    fs::remove_dir_all(dir).unwrap();
+}
+#[test]
+fn capability_values_are_model_specific_native_ids_and_diagnostics_do_not_guess_from_400() {
+    use clinx_decision_kernel::provider::{error_diagnostic, validate_model_selection};
+    let catalog = json!({"data":[{"id":"picker-entry","model":"native-model","displayName":"Friendly Name",
+        "supportedReasoningEfforts":[{"reasoningEffort":"ultra"}],"defaultReasoningEffort":"ultra"}]});
+    assert_eq!(
+        validate_model_selection(&catalog, &json!("native-model"), &json!("ultra")).unwrap(),
+        json!({"model":"native-model","effort":"ultra"})
+    );
+    for wrong in ["picker-entry", "Friendly Name", "MODEL"] {
+        assert_eq!(
+            validate_model_selection(&catalog, &json!(wrong), &Value::Null).unwrap_err(),
+            "PROVIDER_MODEL_UNAVAILABLE"
+        );
+    }
+    for (remote, expected) in [
+        (
+            json!({"code":-32602,"message":"secret"}),
+            "INVALID_PARAMETERS",
+        ),
+        (
+            json!({"code":-32000,"type":"authentication_error"}),
+            "AUTHENTICATION",
+        ),
+        (
+            json!({"code":-32000,"type":"error","message":"{\"error\":{\"code\":\"model_not_found\"}}"}),
+            "MODEL_UNAVAILABLE",
+        ),
+        (
+            json!({"codexErrorInfo":{"httpConnectionFailed":{"httpStatusCode":null}}}),
+            "NETWORK",
+        ),
+        (
+            json!({"codexErrorInfo":{"responseStreamConnectionFailed":{"httpStatusCode":503}}}),
+            "UPSTREAM_SERVICE",
+        ),
+        (
+            json!({"data":{"httpStatusCode":400},"message":"Upstream request failed"}),
+            "UNKNOWN",
+        ),
+        (
+            json!({"data":{"httpStatusCode":400},"message":"{\"error\":{\"type\":\"upstream_error\"}}"}),
+            "UPSTREAM_SERVICE",
+        ),
+    ] {
+        let detail = error_diagnostic("PROVIDER_REMOTE_ERROR", "turn/start", &remote);
+        assert_eq!(detail["category"], expected, "{remote}");
+        assert!(!detail.to_string().contains("secret"));
+        assert_eq!(
+            error_diagnostic(&detail.to_string(), "turn/start", &Value::Null)["category"],
+            expected
+        );
+    }
+}
+
+#[test]
+fn model_catalog_pagination_malformed_and_hidden_entries_fail_closed() {
+    struct Catalog {
+        pages: std::collections::VecDeque<Value>,
+        cursors: Vec<Value>,
+    }
+    impl Provider for Catalog {
+        fn request(&mut self, method: &str, params: Value) -> Result<Value> {
+            assert_eq!(method, "model/list");
+            self.cursors.push(params["cursor"].clone());
+            Ok(self.pages.pop_front().unwrap())
+        }
+    }
+    let row = json!({"id":"native","supportedReasoningEfforts":["low"]});
+    let mut provider = Catalog {
+        pages: [
+            json!({"data":[],"nextCursor":"next"}),
+            json!({"data":[row],"nextCursor":null}),
+        ]
+        .into(),
+        cursors: vec![],
+    };
+    assert_eq!(
+        provider
+            .model_selection(&json!("native"), &json!("low"))
+            .unwrap(),
+        json!({"model":"native","effort":"low"})
+    );
+    assert_eq!(provider.cursors, vec![Value::Null, json!("next")]);
+    for (catalog, expected) in [
+        (
+            json!({"data":[{"id":"native","supportedReasoningEfforts":null}]}),
+            "PROVIDER_MODEL_CAPABILITY_INVALID",
+        ),
+        (
+            json!({"data":[{"id":"native","supportedReasoningEfforts":["low"],"hidden":true}]}),
+            "PROVIDER_MODEL_UNAVAILABLE",
+        ),
+        (json!({"data":[row,row]}), "PROVIDER_MODEL_UNAVAILABLE"),
+        (
+            json!({"data":[{"id":"native","supportedReasoningEfforts":["low"],"defaultReasoningEffort":"high"}]}),
+            "PROVIDER_MODEL_CAPABILITY_INVALID",
+        ),
+    ] {
+        let mut provider = Catalog {
+            pages: [catalog].into(),
+            cursors: vec![],
+        };
+        assert_eq!(
+            provider
+                .model_selection(&json!("native"), &json!("low"))
+                .unwrap_err(),
+            expected
+        );
+    }
 }

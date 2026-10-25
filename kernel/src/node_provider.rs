@@ -45,6 +45,17 @@ pub fn validate(context: &Value, body: &Value) -> Result<()> {
         return Ok(());
     }
     match method {
+        "model/list" => {
+            if context["mode"] != "dispatch"
+                || p.as_object()
+                    .is_none_or(|o| o.keys().any(|k| !["limit", "cursor"].contains(&k.as_str())))
+                || !p["limit"].as_u64().is_some_and(|n| (1..=100).contains(&n))
+                || p.get("cursor")
+                    .is_some_and(|v| !v.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 4096))
+            {
+                return Err("PROVIDER_METHOD_DENIED".into());
+            }
+        }
         "thread/start" => {
             if context["mode"] != "dispatch" || tid.is_some() || p["cwd"] != context["cwd"] {
                 return Err("PROVIDER_CREATE_DENIED".into());
@@ -73,7 +84,11 @@ pub fn validate(context: &Value, body: &Value) -> Result<()> {
                 "sandboxPolicy":{"type":"dangerFullAccess"},"approvalPolicy":"never"});
             for key in ["model", "effort"] {
                 if !context[key].is_null() {
-                    expected[key] = context[key].clone();
+                    expected[key] = if key == "effort" {
+                        crate::provider::normalize_effort(&context[key])?
+                    } else {
+                        context[key].clone()
+                    };
                 }
             }
             if context["mode"] != "dispatch" || execution.is_none() || *p != expected {
@@ -126,7 +141,7 @@ pub fn exchange(
     {
         return Err("NATIVE_THREAD_NOT_LOADED".into());
     }
-    result
+    result.map_err(|code| client.error_details(&code, method).to_string())
 }
 
 #[cfg(test)]

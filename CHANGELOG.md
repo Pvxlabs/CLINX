@@ -5,6 +5,11 @@
 
 ## Unreleased — 2026-10-25
 
+- 修复 Codex 显式模型选择：原生/Host/API 发送前读取目标 Provider 的有界模型清单，
+  校验原生 ID 与各模型 effort，统一 `extra_high` → `xhigh`；禁止静默降级。
+  失败回执保留脱敏 Provider 类别、底层码和阶段，发送未知继续精确读回原执行。
+  契约及本次证据边界见 [模型选择](docs/CODEX_MODEL_SELECTION.md)。源码修复不代表部署。
+
 - 以 `1340861e6e9956cdb21532031a542c0b86645178` 为核对基线，统一产品、架构、开发、
   契约、配置运维、测试与历史文档地图。修正 Python Owner 和 pytest 当前入口矛盾。
 - AGENTS 强制 Rust 后端、Swift UI、零 Python 运行/构建/发布依赖和单一权威；新增 ADR-007。

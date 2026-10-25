@@ -440,7 +440,8 @@
         "kernel/src/business_node.rs",
         "kernel/src/business_targets.rs",
         "kernel/src/business_workspace.rs",
-        "kernel/src/execution_core.rs"
+        "kernel/src/execution_core.rs",
+        "kernel/src/provider.rs"
       ]
     },
     "kernel/src/business_handoff.rs": {

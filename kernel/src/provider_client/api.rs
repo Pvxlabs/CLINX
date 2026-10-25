@@ -220,10 +220,7 @@ fn resolve(payload: &Value, requested: &Value, effort: &Value) -> Result<Value> 
         }
         matches[0]
     };
-    let effort = effort
-        .as_str()
-        .map(|s| json!(s.trim()))
-        .unwrap_or_else(|| effort.clone());
+    let effort = super::normalized_effort(effort).map_err(|code| error("model", code))?;
     if !effort.is_null()
         && !effort
             .as_str()
@@ -581,11 +578,38 @@ impl<F: FnMut(&str, Value) -> super::Result<Value>> Api<'_, F> {
                 Ok(Value::Null)
             }
             "model_list" => {
-                let r = self.request("model/list", json!({}))?;
-                if !r.is_object() {
-                    return Err(protocol("model/list result must be an object"));
+                let mut params = json!({"limit":100});
+                let mut data = vec![];
+                let mut seen = BTreeSet::new();
+                let mut bytes = 0;
+                for _ in 0..5 {
+                    let r = self
+                        .request("model/list", params.clone())
+                        .map_err(|e| super::public_request_error(&e, "model/list"))?;
+                    bytes += serde_json::to_vec(&r)
+                        .map_err(|_| protocol("PROVIDER_MODEL_LIST_INVALID"))?
+                        .len();
+                    if bytes > 16 * 1024 * 1024 {
+                        return Err(error("model", "PROVIDER_MODEL_LIST_INCOMPLETE"));
+                    }
+                    data.extend(
+                        r["data"]
+                            .as_array()
+                            .ok_or_else(|| protocol("model/list result is missing data"))?
+                            .iter()
+                            .cloned(),
+                    );
+                    match r.get("nextCursor") {
+                        None | Some(Value::Null) => {
+                            return Ok(json!({"data":data,"nextCursor":null}));
+                        }
+                        Some(Value::String(c)) if !c.is_empty() && seen.insert(c.clone()) => {
+                            params["cursor"] = json!(c)
+                        }
+                        _ => return Err(error("model", "PROVIDER_MODEL_LIST_INCOMPLETE")),
+                    }
                 }
-                Ok(r)
+                Err(error("model", "PROVIDER_MODEL_LIST_INCOMPLETE"))
             }
             "resolve_model" => {
                 let p = self.call("model_list", json!({}))?;
@@ -602,6 +626,13 @@ impl<F: FnMut(&str, Value) -> super::Result<Value>> Api<'_, F> {
                 if !a["network_access"].is_null() && !a["network_access"].is_boolean() {
                     return Err(error("sandbox", "network_access must be a boolean"));
                 }
+                let selection = if a["model"].is_null() && a["reasoning_effort"].is_null() {
+                    json!({})
+                } else {
+                    let catalog = self.run("model_list", &json!({}))?;
+                    super::validated_selection(&catalog, &a["model"], &a["reasoning_effort"])
+                        .map_err(|code| error("model", code))?
+                };
                 let mut p = json!({"threadId":a["thread_id"],"input":[{"type":"text","text":a["prompt"]}],"cwd":a["cwd"]});
                 if forwarding || truth(&self.policy["rust_authority_request_id"]) {
                     let key = [
@@ -614,15 +645,10 @@ impl<F: FnMut(&str, Value) -> super::Result<Value>> Api<'_, F> {
                     .unwrap();
                     p["clientUserMessageId"] = json!(client_id(text(&a["thread_id"]), text(key)));
                 }
-                put(
-                    &mut p,
-                    a,
-                    &[
-                        ("model", "model"),
-                        ("reasoning_effort", "effort"),
-                        ("approval_policy", "approvalPolicy"),
-                    ],
-                );
+                put(&mut p, a, &[("approval_policy", "approvalPolicy")]);
+                for (key, value) in selection.as_object().unwrap() {
+                    p[key] = value.clone();
+                }
                 if truth(&a["full_access"]) {
                     p["sandboxPolicy"] = json!({"type":"dangerFullAccess"});
                     p["approvalPolicy"] = json!("never");
@@ -648,9 +674,9 @@ impl<F: FnMut(&str, Value) -> super::Result<Value>> Api<'_, F> {
                     }
                     p["sandboxPolicy"] = json!({"type":"workspaceWrite","writableRoots":roots,"networkAccess":a["network_access"]});
                 }
-                let r=self.request("turn/start",p.clone()).map_err(|e|{
-                    if e.get("remote").is_some_and(|v|!v.is_null())&&(truth(&a["network_access"])||truth(&a["full_access"])){let prefix=if truth(&a["full_access"]){"TURN_START=BLOCKED: app-server rejected the requested native permissions: "}else{"NETWORK_ACCESS=ENABLED TURN_START=BLOCKED: app-server rejected or could not apply workspaceWrite network policy: "};error("sandbox",format!("{prefix}{}",text(&e["message"])))}else{e}
-                })?;
+                let r = self
+                    .request("turn/start", p.clone())
+                    .map_err(|e| super::public_request_error(&e, "turn/start"))?;
                 if !r.is_object() {
                     return Err(protocol("turn/start result must be an object"));
                 }

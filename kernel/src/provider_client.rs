@@ -4,6 +4,28 @@ mod api;
 mod observation;
 mod wire;
 use crate::provider;
+// Shared presentation-to-wire mapping for the API and authoritative transports.
+fn normalized_effort(value: &serde_json::Value) -> Result<serde_json::Value> {
+    provider::normalize_effort(value)
+}
+fn validated_selection(catalog: &Value, model: &Value, effort: &Value) -> Result<Value> {
+    provider::validate_model_selection(catalog, model, effort)
+}
+fn public_request_error(error: &Value, stage: &str) -> Value {
+    let kind = match error["kind"].as_str() {
+        Some("remote") => "remote",
+        Some("protocol") => "protocol",
+        _ => "transport",
+    };
+    let code = match kind {
+        "remote" => "PROVIDER_REMOTE_ERROR",
+        "protocol" => "PROVIDER_PROTOCOL_INVALID",
+        _ => "PROVIDER_DELIVERY_UNKNOWN",
+    };
+    let diagnostic = provider::error_diagnostic(code, stage, &error["remote"]);
+    json!({"kind":kind,"message":"Provider request failed; see diagnostic",
+        "remote":{"code":diagnostic["rpc_code"]},"diagnostic":diagnostic})
+}
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,

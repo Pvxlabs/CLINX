@@ -909,7 +909,10 @@ impl Store {
                 )?
             }
             "prepare" => {
-                let r: Prepare = decode(p)?;
+                let mut r: Prepare = decode(p)?;
+                r.reasoning_effort = crate::provider::normalize_effort(&json!(r.reasoning_effort))?
+                    .as_str()
+                    .map(str::to_owned);
                 if !r.approved
                     || r.prompt.trim().is_empty()
                     || r.prompt.len() > 262144
@@ -1573,7 +1576,9 @@ impl Store {
                         result = public(&e);
                     }
                     "fail_before_send" => {
-                        if !core::keys(p, "execution_ref reason") {
+                        if !core::keys(p, "execution_ref reason")
+                            && !core::keys(p, "execution_ref reason provider_error")
+                        {
                             return Err("INVALID_PRE_SEND_FAILURE".into());
                         }
                         let reason = string(p, "reason")?;
@@ -1588,6 +1593,14 @@ impl Store {
                                 &mut changes,
                                 &mut fault,
                             )?;
+                            if let Some(detail) = p.get("provider_error") {
+                                e["execution_result"]["provider_error"] =
+                                    crate::provider::error_diagnostic(
+                                        &detail.to_string(),
+                                        "model/list",
+                                        &Value::Null,
+                                    );
+                            }
                         }
                         result = public(&e);
                     }
@@ -2005,6 +2018,13 @@ fn finalize(
     e["terminal_turn"] = p["turn"].clone();
     e["execution_result"] =
         json!({"response_text":response,"outcome":outcome,"result_ref":core::digest(&p["turn"])});
+    if outcome == "FAILED" && p["turn"]["error"].is_object() {
+        e["execution_result"]["provider_error"] = crate::provider::error_diagnostic(
+            "PROVIDER_TURN_FAILED",
+            "turn/terminal",
+            &p["turn"]["error"],
+        );
+    }
     e["ticket"] = Value::Null;
     let tid = string(e, "task_ref")?;
     let mut t = row(c, "task", tid)?;

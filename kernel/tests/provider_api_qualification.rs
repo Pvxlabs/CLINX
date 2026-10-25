@@ -450,3 +450,63 @@ fn concurrent_api_calls_produce_distinct_owned_turn_patches() {
     assert_eq!(replies[0]["patch"]["owned_turns"], json!({"a":"a-turn"}));
     assert_eq!(replies[1]["patch"]["owned_turns"], json!({"b":"b-turn"}));
 }
+
+#[test]
+fn api_explicit_selection_uses_catalog_maps_effort_and_preserves_upstream_diagnosis() {
+    let mut requests = vec![];
+    let reply = api(
+        "turn_start",
+        json!({"thread_id":"exact","prompt":"OK","cwd":"/fixture",
+        "model":"gpt-6-astra","reasoning_effort":"extra_high","full_access":true}),
+        json!({}),
+        |_, a| {
+            assert_eq!(a["operation"], "request");
+            let r = &a["arguments"];
+            requests.push(r.clone());
+            match r["method"].as_str().unwrap() {
+                "model/list" => Ok(
+                    json!({"result":{"data":[{"id":"gpt-6-astra","model":"gpt-6-astra",
+                "supportedReasoningEfforts":[{"reasoningEffort":"xhigh"}]}],"nextCursor":null}}),
+                ),
+                "turn/start" => {
+                    assert_eq!(r["params"]["model"], "gpt-6-astra");
+                    assert_eq!(r["params"]["effort"], "xhigh");
+                    Ok(
+                        json!({"error":{"kind":"remote","message":"rejected","remote":{"code":-32000,
+                    "message":"{\"error\":{\"type\":\"upstream_error\",\"message\":\"SECRET_SENTINEL\"}}"}}}),
+                    )
+                }
+                other => panic!("unexpected {other}"),
+            }
+        },
+    );
+    assert_eq!(requests.len(), 2);
+    assert_eq!(reply["error"]["kind"], "remote");
+    assert_eq!(reply["error"]["diagnostic"]["category"], "UPSTREAM_SERVICE");
+    assert_eq!(reply["error"]["diagnostic"]["rpc_code"], -32000);
+    assert!(!reply.to_string().contains("SECRET_SENTINEL"));
+}
+#[test]
+fn api_invalid_effort_and_missing_or_incomplete_catalog_never_send_input() {
+    for catalog in [
+        json!({"data":[{"id":"native","supportedReasoningEfforts":["low"]}]}),
+        json!({}),
+        json!({"data":[],"nextCursor":"repeated"}),
+    ] {
+        let mut calls = 0;
+        let result = api(
+            "turn_start",
+            json!({"thread_id":"exact","prompt":"OK","cwd":"/fixture",
+            "model":"native","reasoning_effort":"xhigh"}),
+            json!({}),
+            |_, a| {
+                calls += 1;
+                assert_eq!(a["arguments"]["method"], "model/list");
+                Ok(json!({"result":catalog}))
+            },
+        );
+        assert!(result.get("error").is_some());
+        assert!(calls <= 2);
+        assert_eq!(result["patch"]["owned_turns"], json!({}));
+    }
+}

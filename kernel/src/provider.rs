@@ -15,6 +15,185 @@ pub type Result<T> = std::result::Result<T, String>;
 pub const MAX_MESSAGE: usize = 16 * 1024 * 1024;
 const MAX_HEADER: usize = 65536;
 
+/// Presentation spelling is not a wire value. Unknown native values remain
+/// unchanged and must be advertised by this exact Provider before use.
+pub fn normalize_effort(value: &Value) -> Result<Value> {
+    match value {
+        Value::Null => Ok(Value::Null),
+        Value::String(s) if !s.trim().is_empty() => Ok(json!(match s.trim() {
+            "extra_high" | "Extra High" | "extra high" => "xhigh",
+            native => native,
+        })),
+        _ => Err("PROVIDER_REASONING_EFFORT_INVALID".into()),
+    }
+}
+
+/// Explicit selections require an exact native model ID, never a display name,
+/// suffix guess, upgrade, or fallback. Omitted effort stays omitted so the
+/// Provider retains its own default/inherited-setting semantics.
+pub fn validate_model_selection(catalog: &Value, model: &Value, effort: &Value) -> Result<Value> {
+    let effort = normalize_effort(effort)?;
+    if model.is_null() && effort.is_null() {
+        return Ok(json!({}));
+    }
+    let wanted = model
+        .as_str()
+        .filter(|s| !s.is_empty() && *s == s.trim())
+        .ok_or("PROVIDER_MODEL_REQUIRED")?;
+    let rows = catalog["data"]
+        .as_array()
+        .ok_or("PROVIDER_MODEL_LIST_INVALID")?;
+    let matches: Vec<_> = rows
+        .iter()
+        .filter(|r| r["hidden"] != true && r.get("model").unwrap_or(&r["id"]) == wanted)
+        .collect();
+    if matches.len() != 1 {
+        return Err("PROVIDER_MODEL_UNAVAILABLE".into());
+    }
+    let row = matches[0];
+    let options = row["supportedReasoningEfforts"]
+        .as_array()
+        .ok_or("PROVIDER_MODEL_CAPABILITY_INVALID")?;
+    let levels = options
+        .iter()
+        .map(|v| {
+            if v.is_object() {
+                v["reasoningEffort"].as_str()
+            } else {
+                v.as_str()
+            }
+            .filter(|s| !s.is_empty() && *s == s.trim())
+            .ok_or("PROVIDER_MODEL_CAPABILITY_INVALID")
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    if let Some(default) = row.get("defaultReasoningEffort").filter(|v| !v.is_null())
+        && !default.as_str().is_some_and(|d| levels.contains(&d))
+    {
+        return Err("PROVIDER_MODEL_CAPABILITY_INVALID".into());
+    }
+    if !effort.is_null() && !effort.as_str().is_some_and(|e| levels.contains(&e)) {
+        return Err("PROVIDER_REASONING_EFFORT_UNSUPPORTED".into());
+    }
+    let mut selection = json!({"model":wanted});
+    if !effort.is_null() {
+        selection["effort"] = effort;
+    }
+    Ok(selection)
+}
+
+/// Public diagnostic projection: allowlisted structural fields only. Arbitrary
+/// Provider messages, details, headers, URLs and response bodies may contain
+/// credentials or user content and are never copied into a receipt/log.
+pub fn error_diagnostic(code: &str, stage: &str, remote: &Value) -> Value {
+    fn token(v: &Value) -> Value {
+        v.as_str()
+            .filter(|s| {
+                s.len() <= 80
+                    && !s.is_empty()
+                    && s.bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || b"_-.".contains(&c))
+            })
+            .map_or(Value::Null, |s| json!(s))
+    }
+    // Paired transports retain the existing string-error envelope. Re-project
+    // its diagnostic rather than trusting arbitrary serialized fields.
+    if code.len() <= 4096
+        && let Ok(v) = serde_json::from_str::<Value>(code)
+        && v["contract"] == "CLINX_PROVIDER_DIAGNOSTIC_V1"
+    {
+        let safe_code = token(&v["code"]);
+        let remote = json!({"code":v["rpc_code"],"type":token(&v["provider_type"]),
+                    "codexErrorInfo":token(&v["codex_error_info"]),
+                    "data":{"httpStatusCode":v["http_status"]},
+                    "message":json!({"error":{"type":token(&v["provider_type"]),"code":token(&v["provider_code"])}}).to_string()});
+        let mut detail = error_diagnostic(
+            safe_code.as_str().unwrap_or("PROVIDER_REMOTE_ERROR"),
+            stage,
+            &remote,
+        );
+        detail["message_redacted"] = json!(v["message_redacted"].as_bool().unwrap_or(false));
+        return detail;
+    }
+    let parsed = remote["message"]
+        .as_str()
+        .filter(|s| s.len() <= 8192)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .unwrap_or(Value::Null);
+    let upstream = if parsed["error"].is_object() {
+        &parsed["error"]
+    } else {
+        remote
+    };
+    let info = remote
+        .get("codexErrorInfo")
+        .unwrap_or(&remote["data"]["codexErrorInfo"]);
+    let variant = info.as_str().or_else(|| {
+        info.as_object()
+            .and_then(|o| o.keys().next().map(String::as_str))
+    });
+    let status = remote["data"]["httpStatusCode"]
+        .as_u64()
+        .or_else(|| remote["httpStatusCode"].as_u64())
+        .or_else(|| variant.and_then(|v| info[v]["httpStatusCode"].as_u64()))
+        .filter(|n| (100..=599).contains(n));
+    let provider_type = token(&upstream["type"]);
+    let provider_code = token(&upstream["code"]);
+    let category = match (
+        variant,
+        provider_type.as_str(),
+        provider_code.as_str(),
+        status,
+    ) {
+        (_, Some("upstream_error"), _, _) => "UPSTREAM_SERVICE",
+        (Some("unauthorized"), _, _, _)
+        | (_, _, _, Some(401 | 403))
+        | (_, Some("authentication_error"), _, _)
+        | (_, _, Some("invalid_api_key" | "authentication_error"), _) => "AUTHENTICATION",
+        (_, _, Some("model_not_found" | "model_not_available"), _) => "MODEL_UNAVAILABLE",
+        (_, Some("invalid_request_error"), _, _) if upstream["param"] == "model" => {
+            "MODEL_UNAVAILABLE"
+        }
+        (_, Some("invalid_request_error"), _, _) | (Some("badRequest"), _, _, _) => {
+            "INVALID_PARAMETERS"
+        }
+        (
+            Some(
+                "httpConnectionFailed"
+                | "responseStreamConnectionFailed"
+                | "responseStreamDisconnected",
+            ),
+            _,
+            _,
+            None,
+        ) => "NETWORK",
+        (Some("serverOverloaded" | "internalServerError"), _, _, _)
+        | (_, _, _, Some(500..=599)) => "UPSTREAM_SERVICE",
+        _ if remote["code"] == -32602 => "INVALID_PARAMETERS",
+        _ if code == "PROVIDER_MODEL_UNAVAILABLE" => "MODEL_UNAVAILABLE",
+        _ if matches!(
+            code,
+            "PROVIDER_MODEL_REQUIRED"
+                | "PROVIDER_REASONING_EFFORT_INVALID"
+                | "PROVIDER_REASONING_EFFORT_UNSUPPORTED"
+        ) =>
+        {
+            "INVALID_PARAMETERS"
+        }
+        _ if code.starts_with("PROVIDER_MODEL_LIST_")
+            || code == "PROVIDER_MODEL_CAPABILITY_INVALID" =>
+        {
+            "CAPABILITY_UNAVAILABLE"
+        }
+        _ if code == "PROVIDER_UNAVAILABLE" || code == "PROVIDER_DELIVERY_UNKNOWN" => "NETWORK",
+        _ => "UNKNOWN",
+    };
+    json!({"contract":"CLINX_PROVIDER_DIAGNOSTIC_V1","code":code,"category":category,"request_stage":stage,
+        "rpc_code":remote["code"].as_i64(),"provider_type":provider_type,
+        "provider_code":provider_code,"codex_error_info":token(&json!(variant)),
+        "http_status":status,"message_redacted":!remote["message"].is_null(),
+        "retry_allowed":false})
+}
+
 fn random<const N: usize>() -> Result<[u8; N]> {
     let mut bytes = [0; N];
     File::open("/dev/urandom")
@@ -42,6 +221,50 @@ fn base64(bytes: &[u8]) -> String {
 
 pub trait Provider {
     fn request(&mut self, method: &str, params: Value) -> Result<Value>;
+    fn error_details(&self, code: &str, stage: &str) -> Value {
+        error_diagnostic(code, stage, &Value::Null)
+    }
+    fn model_selection(&mut self, model: &Value, effort: &Value) -> Result<Value> {
+        let normalized = normalize_effort(effort)?;
+        if model.is_null() && normalized.is_null() {
+            return Ok(json!({}));
+        }
+        if !model.is_string() {
+            return Err("PROVIDER_MODEL_REQUIRED".into());
+        }
+        let mut params = json!({"limit":100});
+        let mut rows = vec![];
+        let mut seen = BTreeSet::new();
+        let mut bytes = 0;
+        for _ in 0..5 {
+            let page = self
+                .request("model/list", params.clone())
+                .map_err(|_| "PROVIDER_MODEL_LIST_UNAVAILABLE")?;
+            bytes += serde_json::to_vec(&page)
+                .map_err(|_| "PROVIDER_MODEL_LIST_INVALID")?
+                .len();
+            if bytes > MAX_MESSAGE {
+                return Err("PROVIDER_MODEL_LIST_INCOMPLETE".into());
+            }
+            rows.extend(
+                page["data"]
+                    .as_array()
+                    .ok_or("PROVIDER_MODEL_LIST_INVALID")?
+                    .iter()
+                    .cloned(),
+            );
+            match page.get("nextCursor") {
+                None | Some(Value::Null) => {
+                    return validate_model_selection(&json!({"data":rows}), model, &normalized);
+                }
+                Some(Value::String(c)) if !c.is_empty() && seen.insert(c.clone()) => {
+                    params["cursor"] = json!(c)
+                }
+                _ => return Err("PROVIDER_MODEL_LIST_INCOMPLETE".into()),
+            }
+        }
+        Err("PROVIDER_MODEL_LIST_INCOMPLETE".into())
+    }
     fn thread(&mut self, tid: &str) -> Result<Value> {
         let thread =
             self.request("thread/read", json!({"threadId":tid,"includeTurns":false}))?["thread"]
@@ -405,6 +628,13 @@ impl Client {
 impl Provider for Client {
     fn request(&mut self, method: &str, params: Value) -> Result<Value> {
         self.rpc(method, params, None)
+    }
+    fn error_details(&self, code: &str, stage: &str) -> Value {
+        error_diagnostic(
+            code,
+            stage,
+            self.last_error.as_ref().unwrap_or(&Value::Null),
+        )
     }
 }
 impl Client {

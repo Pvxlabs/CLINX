@@ -516,6 +516,17 @@ fn run_session(
                 .to_owned();
             let mut c = Client::connect(Path::new(&endpoint), timeout)?;
             let scope = json!({"execution_ref":eid,"epoch":take["epoch"],"ticket":take["ticket"]});
+            let selection = match c.model_selection(&p["model"], &p["reasoning_effort"]) {
+                Ok(v) => v,
+                Err(reason) => {
+                    call(
+                        &mut authority,
+                        "fail_before_send",
+                        json!({"execution_ref":eid,"reason":reason,"provider_error":c.error_details(&reason,"model/list")}),
+                    )?;
+                    return Err(c.error_details(&reason, "model/list").to_string());
+                }
+            };
             let mut recovered_empty = false;
             let thread = if take["successor_required"] == true {
                 successor(
@@ -584,12 +595,12 @@ fn run_session(
                 return Ok(());
             }
             let mut params = json!({"threadId":tid,"input":[{"type":"text","text":p["prompt"]}],"cwd":thread["cwd"],"clientUserMessageId":crate::business::native_client_id(&tid,eid),"sandboxPolicy":{"type":"workspaceWrite","writableRoots":[thread["cwd"]],"networkAccess":false}});
-            for (source, target) in [("model", "model"), ("reasoning_effort", "effort")] {
-                if !p[source].is_null() {
-                    params[target] = p[source].clone();
-                }
+            for (key, value) in selection.as_object().ok_or("PROVIDER_MODEL_LIST_INVALID")? {
+                params[key] = value.clone();
             }
-            let ack = c.request_collect("turn/start", params, &mut events)?;
+            let ack = c
+                .request_collect("turn/start", params, &mut events)
+                .map_err(|code| c.error_details(&code, "turn/start").to_string())?;
             let committed = reader.recover_input(eid)?;
             let turn = text(&committed, "native_turn_id")?.to_owned();
             if ack["turn"]["id"] != turn {

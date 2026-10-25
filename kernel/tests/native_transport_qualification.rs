@@ -34,13 +34,21 @@ struct State {
     interrupts: Vec<Value>,
     lose_input: bool,
     lose_cancel: bool,
+    reject_catalog: bool,
 }
 impl State {
     fn reply(&mut self, m: Value) -> Option<Vec<Value>> {
         let p = &m["params"];
+        if m["method"] == "model/list" && self.reject_catalog {
+            return Some(vec![json!({"id":m["id"],"error":{"code":-32000,
+                "message":"{\"error\":{\"type\":\"upstream_error\",\"message\":\"SECRET_SENTINEL\"}}",
+                "data":{"httpStatusCode":400}}})]);
+        }
         let result = match m["method"].as_str().unwrap() {
             "initialized" => return Some(vec![]),
             "initialize" => json!({}),
+            "model/list" => json!({"data":[{"id":"gpt-6-astra","model":"gpt-6-astra",
+                "defaultReasoningEffort":"low","supportedReasoningEfforts":[{"reasoningEffort":"low"},{"reasoningEffort":"xhigh"}]}],"nextCursor":null}),
             "thread/start" => {
                 let tid = format!("thread-{}", self.threads.len() + 1);
                 let value = json!({"id":tid,"cwd":p["cwd"],"name":null,"status":{"type":"idle"}});
@@ -674,4 +682,58 @@ fn mcp_routed() {
 #[test]
 fn node_routed() {
     sequence(Entry::Node, Routing::Routed);
+}
+
+#[test]
+fn explicit_model_capabilities_cross_paired_node_without_changing_input_identity() {
+    let h = Harness::new(Entry::Direct, Routing::Paired);
+    let p = h.r.call("prepare", json!({"host":"air","project":"fixture","title":"Model qualification",
+        "prompt":"synthetic","approved":true,"model":"gpt-6-astra","reasoning_effort":"extra_high"}));
+    assert_eq!(p["reasoning_effort"], "xhigh");
+    let e = h.r.call(
+        "start",
+        json!({"prepared_execution_ref":p["prepared_execution_ref"],"approved":true}),
+    );
+    h.tick();
+    h.tick();
+    assert_eq!(h.r.status(&e)["status"], "SUCCEEDED");
+    h.state(|s| {
+        assert_eq!(s.inputs.len(), 1);
+        assert_eq!(s.inputs[0]["model"], "gpt-6-astra");
+        assert_eq!(s.inputs[0]["effort"], "xhigh");
+    });
+}
+
+#[test]
+fn paired_catalog_failure_retains_remote_code_category_and_stage_without_native_send() {
+    let h = Harness::new(Entry::Direct, Routing::Paired);
+    h.state(|s| s.reject_catalog = true);
+    let p = h.r.call(
+        "prepare",
+        json!({"host":"air","project":"fixture","title":"Model failure qualification",
+        "prompt":"synthetic","approved":true,"model":"gpt-6-astra","reasoning_effort":"xhigh"}),
+    );
+    let e = h.r.call(
+        "start",
+        json!({"prepared_execution_ref":p["prepared_execution_ref"],"approved":true}),
+    );
+    h.tick();
+    let status = h.r.status(&e);
+    assert_eq!(status["status"], "FAILED");
+    assert_eq!(status["delivery_certainty"], "NOT_DISPATCHED");
+    assert_eq!(
+        status["execution_result"]["reason"],
+        "PROVIDER_MODEL_LIST_UNAVAILABLE"
+    );
+    let error = &status["execution_result"]["provider_error"];
+    assert_eq!(error["rpc_code"], -32000);
+    assert_eq!(error["category"], "UPSTREAM_SERVICE");
+    assert_eq!(error["provider_type"], "upstream_error");
+    assert_eq!(error["http_status"], 400);
+    assert_eq!(error["request_stage"], "model/list");
+    assert!(!status.to_string().contains("SECRET_SENTINEL"));
+    h.state(|s| {
+        assert!(s.inputs.is_empty());
+        assert!(s.threads.is_empty());
+    });
 }
