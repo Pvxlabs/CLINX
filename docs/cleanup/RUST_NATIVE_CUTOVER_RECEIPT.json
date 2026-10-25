@@ -1,0 +1,159 @@
+{
+  "schema": "CLINX_NATIVE_CUTOVER_RECEIPT_V1",
+  "checked_at": "2026-10-25T15:22:16.229291+00:00",
+  "status": "DEPLOYED_VERIFIED_WITH_EXPLICIT_UNVERIFIED_SCOPES",
+  "evidence_root": "/data/artifacts/clinx-native-cutover-20261025",
+  "requested_source": "f645055f10d45fb45c36e13817c29bfe814a30fe",
+  "deployed_source": "1340861e6e9956cdb21532031a542c0b86645178",
+  "deployed_release": "/var/lib/clinx-rust/releases/rust-ec90ad3adc3aeb670904",
+  "manifest_sha256": "c6ab21d102c515a6b0e445c35d5410efac6d7d8d0411d24291a42f95783a1591",
+  "verified_file_count": 11,
+  "python_sources_in_release": 0,
+  "regression": {
+    "passed": 593,
+    "failed": 0,
+    "ignored": 0
+  },
+  "scoped_regression_passed": 37,
+  "services": [
+    {
+      "Id": "clinx-rust-authority.service",
+      "MainPID": "2394964",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    {
+      "Id": "clinx-rust-dispatcher.service",
+      "MainPID": "2395176",
+      "NRestarts": "2",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    {
+      "Id": "clinx-rust-centre.service",
+      "MainPID": "2395175",
+      "NRestarts": "2",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    {
+      "Id": "clinx-rust-mcp@134742-2395811-1001.service",
+      "MainPID": "2395813",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    {
+      "Id": "clinx-tunnel.service",
+      "MainPID": "2318101",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running"
+    }
+  ],
+  "tunnel_health": {
+    "action": "READ_ONLY",
+    "pid": 2318101,
+    "poll_fresh": true,
+    "status": "PASS"
+  },
+  "centre_sources": [
+    {
+      "node_id": "air.local",
+      "state": "ONLINE",
+      "ack_seq": 850918,
+      "source_generation": "cca27b86a0c43d03aec6069a3fe4f538",
+      "gap": null,
+      "previous_ack_seq": 846917,
+      "ack_advanced": true
+    },
+    {
+      "node_id": "mac-tinzleungdeimac",
+      "state": "ONLINE",
+      "ack_seq": 678675,
+      "source_generation": "31d1dfd374d8e2599ad50f0b1e8c596e",
+      "gap": null,
+      "previous_ack_seq": 675596,
+      "ack_advanced": true
+    },
+    {
+      "node_id": "p620",
+      "state": "ONLINE",
+      "ack_seq": 1064879,
+      "source_generation": "ce0139c444a565380850a869ef0b2ca2",
+      "gap": "SOURCE_REBUILT",
+      "previous_ack_seq": 1060463,
+      "ack_advanced": true
+    }
+  ],
+  "task_inventory": {
+    "tasks": 25,
+    "active_executions": [],
+    "does_not_prove_pending_adoptions_or_outbox_empty": true
+  },
+  "production_acceptance": {
+    "execution_ref": "exec_10994749ac072058c30cc0c97ec77de6",
+    "state": "SUCCEEDED / ACKED / RELEASED",
+    "duplicate_request": "SAME_EXECUTION",
+    "provider_turns": 1,
+    "provider_tool_items": 0,
+    "cloud_readback": "PASS",
+    "survived_authority_restart": true
+  },
+  "production_cancel": {
+    "execution_ref": "exec_f9b637f713cc15ea53adb81e03cc5107",
+    "state": "CANCELLED / NOT_DISPATCHED / RELEASED",
+    "provider_thread_and_turn": null,
+    "survived_authority_restart": true
+  },
+  "historical_recovery": {
+    "status": "PASS_EXACT_FULL_PROVIDER_EVIDENCE_HASH",
+    "execution_ref": "exec_ef575e91eff9fca282ac0762842dc890",
+    "thread_id": "01a16dd8-a3ff-70a0-b1d1-3bfbe9979742",
+    "turn_id": "01a16dd8-a54a-70b2-8051-dfee55608092",
+    "provider_status": "completed",
+    "authority_status": "SUCCEEDED",
+    "dispatch_state": "ACKED",
+    "resource_state": "RELEASED",
+    "full_turn_bytes": 1587826,
+    "full_turn_sha256": "30e70dcd577aff99d54c94c591126300a9992e68790c0479b0e859adcafd7b75",
+    "response_bytes": 34497,
+    "response_sha256": "7dcd5e3775cc4148a1b077b3ca0090f8c007d3401c17741d9b57aead6f97e123",
+    "provider_turn_count_in_page": 3,
+    "next_cursor": null,
+    "source_items_preserved": 105
+  },
+  "preservation": {
+    "manual_task_database_edits": false,
+    "historical_input_replayed": false,
+    "python_business_fallback": false,
+    "authority_owned_normal_state_commits": true,
+    "original_local_files_verified": 294,
+    "root_backup_directory": "/var/lib/clinx-rust/migration-receipts/native-cutover-20261025"
+  },
+  "not_verified": {
+    "physical_mac_provider_execution": "NOT_RUN; real observation uploads and ACK only",
+    "production_inflight_cancel": "NOT_RUN; pre-send cancellation verified",
+    "production_ack_loss_fault_injection": "NOT_RUN; isolated process regression passed",
+    "historical_adoption": "adopt_6769f0d2e5323b3edcc8060528290a883403a9970a63db11261c28632a4d1964; public prepared lookup does not expose adoption state"
+  },
+  "evidence_sha256": {
+    "forward-full-tests.log": "e9742105efdb62bd6a4c171b8ccb51f8fd4f7da13c5fc8070df6bd8b3d593a0c",
+    "forward-regression.log": "565c6bc4dbf73b9200b91338f71fd35bc3415a11e2bce797529542310d85bb48",
+    "forward-final-build.log": "dd34b162df6bf437ebde1807301b86df783e875ec7fbf2502a864499d9db321c",
+    "forward-clippy.log": "b79ba9bf8adac8c8fdbcffa0af137eef64ee47ef8538caab77a697c3a7a4adc6",
+    "forward-installed-verification.json": "ca34d5971afbaad48db95c2f22a2c23aa018922498348dc2edf4c2f5f1ab4950",
+    "forward/root-receipt.json": "a1823b950ac01ff116021803325de79ec0977fb847a0c84143d618dd83c016a9",
+    "forward/backup.sha256": "bbd4c22e80c277813cc067a9874aa8fad2dfda022821c42d1ab2d399828c7ccf",
+    "closeout-runtime-verification.json": "df4a4d9639d138b47e5a6809d3bf8b3d2974fcf57add456c539f7c2e78cac78f",
+    "large-recovery-exact-evidence.json": "cd4b3a045e7ca79a6122482068082dcadfc0e5c22e9d5e8cfe724c0faafb1d5a",
+    "acceptance-provider-readback.json": "de0fea4e33ad1c3e379e54edc4249bcca83b9a8fdd385b7e31dead9dab1cc25f",
+    "cloud-acceptance.json": "80cdf1c55aa3ed5e09b8bfdc1bf4dbd326ef5a2f65dd1fbb23c7f7a40ce020d2",
+    "acceptance-after-restart.response.json": "b460951552c852d69f64440b66c6e8c2211fdd880df2e8f1b6c232e2e55247dc",
+    "cancel-after-restart.response.json": "94be16d030cdc536e16175a8f82100521e934392a03f21ee226433d7f7b20cb8",
+    "supervisor-release-rebind.json": "8e8f73a6c21917d3efd8e08bb3c9b9ef7353a3be978af8937a10463fee16a115",
+    "index-ownership-recovery.json": "55277401a8424082b032ab61b57d4897ac8c10b2ccdfea680a8ef1cf3a82d082",
+    "closeout-local-preservation.json": "52e837b1ae9bd76700c4c6fa3b090a19a7564829360012abbe3c4d1e49e3cfee"
+  }
+}

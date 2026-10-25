@@ -3,6 +3,14 @@
 日期：2026-10-25，Asia/Shanghai。证据根：
 `/data/artifacts/clinx-native-cutover-20261025`。
 
+最终状态：**原生入口切换及大回执前向修复已部署，生产回读 PASS**。
+当前 Authority、Dispatcher、MCP、Centre 与 MCP relay 使用
+`rust-ec90ad3adc3aeb670904`，实现源码为
+`1340861e6e9956cdb21532031a542c0b86645178`。正式 manifest SHA-256：
+`c6ab21d102c515a6b0e445c35d5410efac6d7d8d0411d24291a42f95783a1591`。
+11 个清单成员已逐项校验；本 release 没有 Python 源码或 Python 依赖。
+后续记录提交只更新文档和回执，不代表运行二进制重新构建。
+
 ## 已执行的切换
 
 `rust-bc61bd1362196018cde3` 的九个运行二进制与 `f645055` 留存 SHA 完全一致，
@@ -11,7 +19,7 @@
 安装前使用 SQLite 只读在线 backup 保全 Authority 和 Centre 数据库，保留配置、服务定义
 及原始状态证据；没有初始化新权威、导入旧数据或手工修改任务/lease。
 
-Authority、Dispatcher、MCP、Centre 已选择该 release 的 Rust 入口，保留原 UID、
+Authority、Dispatcher、MCP、Centre 最初选择该 release 的 Rust 入口，保留原 UID、
 策略、socket、Provider、挂载和观察配置。Centre 仍监听 `0.0.0.0:18773`，没有套用
 首次安装模板中的 loopback 端口。Tunnel 的 MCP launcher 已改用同 release 的 Rust relay。
 
@@ -56,5 +64,44 @@ checkpoint 字节完整、终态及资源释放持久化、同 operation 只提�
 路由回归 37 PASS；Release 全部二进制重建通过。Scoped Clippy 通过，保留 10 个既有
 library 告警；受影响 Rust 文件格式和 `git diff --check` 通过。
 
-本节源码修复的生产安装与历史任务恢复尚待独立回执；不得用新小任务成功代替该历史执行恢复。
-完整切换结果以此证据根内的最终回执为准，不恢复 Python 业务实现。
+## 前向发布后的最终回读
+
+用户执行 `stage-forward-root.sh` 后，核对新快照与正式制品，再将上述四个服务和
+MCP relay 切至 `rust-ec90ad3adc3aeb670904`。Host/MCP 配置继续引用首轮安装的
+`*-runtime-rust-bc61bd1362196018cde3.json`：本次变更只修复二进制证据容量，配置没有变化。
+原生产数据库、任务身份、Provider thread/turn 和备份均保留；没有手工改表、清空任务、
+重放历史输入或恢复 Python 业务实现。
+
+历史执行现为 **SUCCEEDED / ACKED / RELEASED**。认证 Provider 精确回读原 turn，
+105 个原始 items、1,587,826 字节完整证据的 canonical JSON SHA-256 与 Authority
+`result_ref` 完全相同：
+`30e70dcd577aff99d54c94c591126300a9992e68790c0479b0e859adcafd7b75`。
+最终响应为 34,497 字节，SHA-256：
+`7dcd5e3775cc4148a1b077b3ca0090f8c007d3401c17741d9b57aead6f97e123`。
+该历史 thread 当前有三个 turn；本次校验针对原 execution 对应的精确 turn，未新发输入。
+
+新任务的成功终态及发送前取消终态均在 Authority 重启后精确读回，身份不变。
+最终任务清单有 25 个 task，`active_execution` 均为空。
+23:22（Asia/Shanghai）复核服务定义和真实进程参数：Authority PID 2394964、
+Dispatcher PID 2395176、Centre PID 2395175、常驻 MCP PID 2395813、Tunnel PID 2318101。
+Dispatcher/Centre 在依赖 Authority 启动期间各有两次自动重试，随后 PID 和重启计数稳定；
+Authority/Tunnel 的 NRestarts 为 0。旧的已失败 MCP 连接实例记录没有清除，不能将其与
+当前正常运行的 MCP 实例混同。
+
+Tunnel 新鲜 control poll PASS；Centre 的同代 ACK 序列继续推进：Air 846917→850918，
+iMac 675596→678675，两个设备均 ONLINE、无 gap；P620 同代 ACK 也推进，保留已有
+`SOURCE_REBUILT` 标记，不将该标记改写为无缺口。
+
+独立回执见 [生产切换回执](cleanup/RUST_NATIVE_CUTOVER_RECEIPT.json)。完整日志、
+原始请求/响应、备份 SHA 和 root 安装回执留在上述证据根；敏感业务正文不入仓库。
+
+## 未验证边界
+
+- 本轮未在实体 Mac 上新发业务执行。Air/iMac 的真实上传与 ACK 验证不替代 Mac 远端
+  Provider 执行/取消验收。
+- 历史 adoption
+  `adopt_6769f0d2e5323b3edcc8060528290a883403a9970a63db11261c28632a4d1964`
+  的最终状态没有独立读回：公开 prepared 查询不接受 adoption 引用。保留 **NOT_VERIFIED**，
+  不由“活跃 execution 为零”推导 adoption/outbox 已全部清空。
+- 丢 ACK、并发、身份冲突与重启故障注入由隔离回归验证；本轮没有对生产传输人为丢包。
+  生产取消证据覆盖发送前取消，不声称完成了运行中取消的现场验收。
