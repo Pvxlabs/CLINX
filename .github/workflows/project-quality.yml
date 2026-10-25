@@ -23,6 +23,10 @@ jobs:
           rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
           rustup override set 1.98.1
           sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /data/artifacts
+          # P620's digest-bound policy requires the original sudo parser.
+          # Ubuntu 26.04 defaults to sudo-rs; original sudo provides visudo.ws.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends sudo
           command -v openssl
       - name: Build current Rust programs and private qualification children
         run: cargo build --locked --manifest-path kernel/Cargo.toml --bins --examples

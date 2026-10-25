@@ -95,8 +95,10 @@ socket 为 nonblocking，并延迟发送，在 Linux 和 Darwin 均可验证 wor
 
 运维入口回归：`cargo test --locked --manifest-path kernel/Cargo.toml --test admin_tools`，
 检查非法服务/路径/未批准切换、root 路径控制、候选 marker 降权、CLI 拒绝路径，以及
-系统 `bash -n` / `visudo -c -f` 对安装器和实际 sudo 模板的解析。P620/Linux CI 需要 sudo
-自带的 `visudo`；此套特权工具验证不用于 Mac App 构建。生产安装另读回 sudo 规则、
+系统 `bash -n` / `visudo -c -f` 对安装器和实际 sudo 模板的解析。P620/Linux CI 需要原版 sudo
+自带的 `visudo`；Ubuntu 26.04 的 sudo-rs parser 不支持 digest，CI 显式安装原版 sudo，
+存在 `visudo.ws` 时测试使用它，不移除摘要约束。root 文件正向用例取 coreutils 的 canonical
+路径，仍独立断言符号链接必须拒绝。此套特权工具验证不用于 Mac App 构建。生产安装另读回 sudo 规则、
 摘要、所有权、有效 ACL 和 `sudo -n … status`，不要把私有测试当作已安装。
 
 Linux wire/loopback 不代替物理 LAN multicast、Mac→P620 或真实 Codex/ChatGPT connector。

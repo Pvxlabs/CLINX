@@ -71,7 +71,10 @@ fn root_control_rejects_operator_files_writable_paths_and_symlinks() {
             .unwrap_err()
             .contains("ADMIN_ROOT_CONTROL_REQUIRED")
     );
-    admin::trusted(Path::new("/usr/bin/true"), 0).unwrap();
+    // Some distributions use a symlink to a multicall coreutils executable.
+    // The positive case must be its actual root-owned file. The symlink
+    // rejection above remains unconditional.
+    admin::trusted(&fs::canonicalize("/usr/bin/true").unwrap(), 0).unwrap();
 }
 #[test]
 fn candidate_markers_never_execute_with_root_identity() {
@@ -145,7 +148,14 @@ fn bootstrap_shell_and_exact_sudo_policy_parse_with_system_validators() {
     let d = tempfile::tempdir().unwrap();
     let path = d.path().join("sudoers");
     fs::write(&path, rule).unwrap();
-    let out = Command::new("/usr/sbin/visudo")
+    // Ubuntu's sudo-rs visudo does not implement command digests. Validate this
+    // P620 policy with the original sudo parser, shipped as visudo.ws there.
+    let validator = if Path::new("/usr/sbin/visudo.ws").exists() {
+        "/usr/sbin/visudo.ws"
+    } else {
+        "/usr/sbin/visudo"
+    };
+    let out = Command::new(validator)
         .args(["-c", "-f"])
         .arg(path)
         .output()
