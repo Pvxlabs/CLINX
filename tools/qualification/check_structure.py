@@ -15,6 +15,9 @@ def check(source: Path = SOURCE_ROOT) -> dict:
     actual = {str(p.relative_to(source)) for folder in ('clinx', 'tools', 'scripts', 'fixtures')
               for p in (source / folder).rglob('*.py') if '__pycache__' not in p.parts}
     assert actual == declared, {'undeclared': sorted(actual-declared), 'missing': sorted(declared-actual)}
+    native = json.loads((source / 'architecture/native-runtime.json').read_text())
+    assert native['monitor_python_sources'] == native['monitor_python_dependencies'] == []
+    assert native['monitor_helpers'] == ['clinx-provider', 'clinx-node', 'clinx-node-daemon']
     rust = {str(p.relative_to(source)) for p in source_paths(source, 'rust')}
     monitor = {str(p.relative_to(source)) for p in source_paths(source, 'monitor')}
     edges = []
@@ -45,7 +48,8 @@ def check(source: Path = SOURCE_ROOT) -> dict:
                         path, node.lineno, 'Monitor release imports outside its profile', name)
                 edges.append({'source': path, 'line': node.lineno, 'target': target})
     return {'status': 'PASS', 'python_modules': len(actual), 'root_python_modules': 0,
-            'rust_sources': len(rust), 'monitor_sources': len(source_paths(source, 'monitor')),
+            'rust_sources': len(rust), 'monitor_compatibility_sources': len(source_paths(source, 'monitor')),
+            'monitor_native_python_sources': 0, 'monitor_native_helpers': native['monitor_helpers'],
             'edges': edges}
 
 

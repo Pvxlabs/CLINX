@@ -140,9 +140,9 @@ def observe_desktop(
             except (AppServerError, OSError):
                 return dict(unavailable=True)
         if operation == "desktop.writer":
-            from clinx.provider.native_provider import observe_native_writer
+            from clinx.provider.native_writer_probe import writer
 
-            return observe_native_writer(
+            return writer(
                 directory.native_home,
                 args["thread_id"],
                 args["turn_id"],

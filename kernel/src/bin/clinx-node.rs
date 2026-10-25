@@ -1,5 +1,27 @@
 //! Helper request API and paired Node network process. Never a task-state writer.
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--discovery-gui") {
+        std::process::exit(clinx_decision_kernel::discovery_gui::main_cli());
+    }
+    if std::env::args().nth(1).as_deref() == Some("--device-runtime-contract") {
+        println!("RUST_DEVICE_RUNTIME_V1");
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("--native-writer-probe") {
+        let result = std::env::args()
+            .nth(2)
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .ok_or_else(|| "NATIVE_PROBE_INVALID".to_string())
+            .map(|v| clinx_decision_kernel::observation_runtime::inspect_writer(&v));
+        match result {
+            Ok(value) => println!("{value}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("--thin-runtime-contract") {
         println!("RUST_THIN_RUNTIME_V1");
         return;

@@ -1,0 +1,309 @@
+{
+  "schema": "CLINX_DEVICE_RUNTIME_MIGRATION_V1",
+  "baseline": "da7fb7b2ad6835838a396ce9234f9665128bc127",
+  "artifact_root": "/data/artifacts/clinx-device-runtime-20261025",
+  "rust_binaries": {
+    "clinx-kernel-bench": "9e6cf7034f5618d091fec2217006c0935cd98d4cd01dce0fea012975b31aea1e",
+    "clinx-kernel-eval": "51066cd8d689da2fdea88393715878b310ffc46a7d917534fb89ac9c03edf433",
+    "clinx-mcp": "4dc3cd3820d5040d952bbc6f79e477716f31b7ec3d88ee43ddc85efd378a578f",
+    "clinx-mcp-relay": "6edd6ba2cad51cc2e0af1913dde919aaf3a202b64a07d7476247a427aace2695",
+    "clinx-native-transport": "4014fd6fb00b17a535f968bd4ee8d3aa1726796fe3f97aee5dc85b5b69672465",
+    "clinx-node": "786d2d5a1a43eb0d0453ed0c43259c0a1bc87555f2e55fef663f212a931c320b",
+    "clinx-node-daemon": "60e39ff1b15a3ddf61c6a84cbd551f822cee065657b03e94c3b6106054bf6cd9",
+    "clinx-owner-client": "f7926bea480cfe4f406cf47d00c4aa919293d3809a40bd3da24e751060e5eb6e",
+    "clinx-provider": "4f4f3222823586a0328f1c493896223e9b4043f71b9f138a0da49d8a61a81c4f",
+    "clinx-runtime": "58726c1bfa44676576ae96ba84d04e11e6574a69cce346e79f9d822b14a7586b",
+    "clinx-source-audit": "3750cdaa8d9b258d5cd9baf754fbb2b7eb3741d975e63996ec9a7588d17c5f2c",
+    "clinx-tunnel": "2a98419b1a852994eac0a7b3646de233fe5883d4bad8f6ba6124d6b0e7b60989"
+  },
+  "rust_tests": 114,
+  "tracked_fixture_counts": {
+    "pass": 400
+  },
+  "local_suite": {
+    "before": {
+      "error": 104,
+      "pass": 295,
+      "failure": 31,
+      "skipped": 2
+    },
+    "after": {
+      "error": 104,
+      "pass": 294,
+      "failure": 32,
+      "skipped": 2
+    },
+    "outcome_changes": [
+      {
+        "classname": "test_local_discovery",
+        "name": "test_cli_launcher_from_another_directory",
+        "before": "failure",
+        "after": "pass"
+      },
+      {
+        "classname": "test_local_discovery_production",
+        "name": "test_missing_backend_fails_closed_before_network",
+        "before": "pass",
+        "after": "failure"
+      },
+      {
+        "classname": "test_local_discovery_production",
+        "name": "test_unknown_backend_version_fails_closed",
+        "before": "pass",
+        "after": "failure"
+      },
+      {
+        "classname": "test_local_discovery_production",
+        "name": "test_actual_tls_key_substitution_and_wrong_client_rejected",
+        "before": "failure",
+        "after": "pass"
+      },
+      {
+        "classname": "test_local_discovery_production",
+        "name": "test_backend_status_does_not_claim_available_when_missing",
+        "before": "pass",
+        "after": "failure"
+      }
+    ]
+  },
+  "protected_local_tests": 124,
+  "existing_assertions": [
+    {
+      "path": "fixtures/test_runtime_packages.py",
+      "original_assertions": 19,
+      "added_assertions": 0
+    },
+    {
+      "path": "fixtures/test_rust_node_router.py",
+      "original_assertions": 70,
+      "added_assertions": 2
+    }
+  ],
+  "clippy": {
+    "before": 10,
+    "after": 10
+  },
+  "services_unchanged": true,
+  "retired": {
+    "baseline": "da7fb7b2ad6835838a396ce9234f9665128bc127",
+    "reason": "Closed historical NON_AUTHORITATIVE Stage3/P4/P5 lab qualification chain; three runners require absent tests/test_rust_runtime_lab.py and pinned old receipts. No current Python/Rust/Swift/script/service consumer outside this closed set; current production State and Rust tests retained.",
+    "missing_fixture": true,
+    "deleted": [
+      {
+        "path": "scripts/qualify_runtime_shadow.py",
+        "lines": 989,
+        "bytes": 38757,
+        "sha256": "b41217ea9cc2be28b5748263b15d0289d96e05eea063f4f463977c7ea26bed15"
+      },
+      {
+        "path": "scripts/qualify_runtime_migration.py",
+        "lines": 605,
+        "bytes": 34504,
+        "sha256": "02f6167814a31f50c111a5f4347fbff4082aba24df0139de10cf7e127fdf61df"
+      },
+      {
+        "path": "scripts/qualify_rust_runtime.py",
+        "lines": 126,
+        "bytes": 7329,
+        "sha256": "eb9295acab68c106ea7daddf4b4ca3668c53d0e351194406e6a4b0759c6caf6a"
+      },
+      {
+        "path": "tools/qualification/runtime_lab/__init__.py",
+        "lines": 1,
+        "bytes": 87,
+        "sha256": "941a05b0ed3f6daf915e20c9d542c147604d53b788352efb6d5261da3992c2d6"
+      },
+      {
+        "path": "tools/qualification/runtime_lab/reference.py",
+        "lines": 287,
+        "bytes": 14096,
+        "sha256": "eab95da5eff0f1f9783974974018042f530a87f142f126829f9d3567748332bb"
+      },
+      {
+        "path": "tools/qualification/runtime_lab/shadow_probe.rs",
+        "lines": 22,
+        "bytes": 940,
+        "sha256": "9792dc8289343371d67ad81f6c6a7ad0e2f9f057f27900dfb0a6421326a0faab"
+      },
+      {
+        "path": "kernel/src/bin/clinx-runtime-lab.rs",
+        "lines": 64,
+        "bytes": 2377,
+        "sha256": "5997cc2b17f7f0079af7bb73b5c1902b3e112ba2b0418254778f9d4ac4cbbb0a"
+      }
+    ],
+    "retained": [
+      "kernel/src/runtime_lab.rs",
+      "kernel/src/authority_state.rs",
+      "kernel/src/execution_core.rs",
+      "scripts/check_execution_core_contract.py",
+      "fixtures/execution_core_v1.json"
+    ],
+    "original_local_tests_modified": false
+  },
+  "size_before": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 952898,
+        "files": 117,
+        "lines": 22031
+      },
+      "Rust": {
+        "bytes": 1357903,
+        "files": 74,
+        "lines": 34312
+      },
+      "Shell": {
+        "bytes": 11985,
+        "files": 9,
+        "lines": 252
+      },
+      "Swift": {
+        "bytes": 525634,
+        "files": 62,
+        "lines": 11355
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 33.11567783371787,
+    "python_line_percent": 31.999012331333788,
+    "python_roles": {
+      "ACTIVE_RUNTIME": {
+        "bytes": 361667,
+        "files": 53,
+        "lines": 8792
+      },
+      "COMPAT": {
+        "bytes": 24940,
+        "files": 2,
+        "lines": 510
+      },
+      "DEVOPS": {
+        "bytes": 96750,
+        "files": 18,
+        "lines": 2158
+      },
+      "QUALIFICATION": {
+        "bytes": 469541,
+        "files": 44,
+        "lines": 10571
+      }
+    },
+    "revision": "da7fb7b2ad6835838a396ce9234f9665128bc127",
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "size_after": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 873194,
+        "files": 116,
+        "lines": 20502
+      },
+      "Rust": {
+        "bytes": 1546403,
+        "files": 80,
+        "lines": 39150
+      },
+      "Shell": {
+        "bytes": 9552,
+        "files": 9,
+        "lines": 205
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 29.267437573319928,
+    "python_line_percent": 28.431957175941978,
+    "python_roles": {
+      "ACTIVE_RUNTIME": {
+        "bytes": 335653,
+        "files": 53,
+        "lines": 8378
+      },
+      "COMPAT": {
+        "bytes": 24940,
+        "files": 2,
+        "lines": 510
+      },
+      "DEVOPS": {
+        "bytes": 99924,
+        "files": 18,
+        "lines": 2208
+      },
+      "QUALIFICATION": {
+        "bytes": 412677,
+        "files": 43,
+        "lines": 9406
+      }
+    },
+    "revision": null,
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "limits": [
+    "NOT_DEPLOYED",
+    "MAC_NATIVE_BUILD_NOT_VERIFIED",
+    "PHYSICAL_MAC_P620_LOOP_NOT_VERIFIED",
+    "REAL_LAN_MULTICAST_NOT_VERIFIED",
+    "PYTHON_BELOW_5_PERCENT_NOT_MET"
+  ],
+  "verified_source_sha256": "96584c0a0bb480f55f4785cae05968f4128e25633293515516ae041328e3835d",
+  "verified_source_file_count": 269,
+  "discovery_oracle": {
+    "status": "PASS",
+    "tests": 17,
+    "original_native_opaque_tests": 3,
+    "evidence": "discovery/final-receipt.json"
+  },
+  "mdns_qualification": {
+    "private_udp": "PASS",
+    "ptr_only_resolve_deadline_seconds": 1.5,
+    "real_lan_multicast": "NOT_VERIFIED"
+  },
+  "runtime_python_lines": {
+    "before": 9150,
+    "after": 8736,
+    "note": "Includes public compatibility and qualification interfaces under clinx; normal new Helper/Centre processes do not launch Python"
+  },
+  "native_monitor": {
+    "python_files": 0,
+    "python_interpreter": false,
+    "helpers": [
+      "clinx-provider",
+      "clinx-node",
+      "clinx-node-daemon"
+    ],
+    "actual_launcher_fixture": "PASS",
+    "macos_native_build": "NOT_VERIFIED"
+  },
+  "artifact_build_log": "build-complete.log"
+}

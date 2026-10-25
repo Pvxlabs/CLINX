@@ -514,14 +514,25 @@ def test_packaged_helper_registers_reads_and_restarts_without_business_execution
 ):
     from clinx.nodes.node_protocol import NodeAuthorizationStore
     from clinx.nodes.node_runtime import AuthorizedRemoteClient
-    from tools.build.runtime_sources import copy_monitor_sources
+    from tools.build.runtime_sources import copy_native_monitor_resources
 
     resources = tmp_path / "App/Contents/Resources"
-    copy_monitor_sources(Path(__file__).resolve().parents[1], resources)
+    copy_native_monitor_resources(Path(__file__).resolve().parents[1], resources)
+    assert not list(resources.rglob("*.py"))
+    assert not (resources / "DiscoveryRuntime").exists()
     binary = resources.parent / "Helpers/clinx-node"
     binary.parent.mkdir()
     shutil.copyfile(Path(os.environ["CLINX_TEST_RUST_BIN_DIR"]) / "clinx-node", binary)
     binary.chmod(0o755)
+    daemon = binary.with_name("clinx-node-daemon")
+    shutil.copyfile(Path(os.environ["CLINX_TEST_RUST_BIN_DIR"]) / daemon.name, daemon)
+    daemon.chmod(0o755)
+    provider = binary.with_name("clinx-provider")
+    shutil.copyfile(Path(os.environ["CLINX_TEST_RUST_BIN_DIR"]) / provider.name, provider)
+    provider.chmod(0o755)
+    launcher = resources / "CLINXNodeService"
+    shutil.copyfile(Path(__file__).resolve().parents[1] / "MonitorApp/Scripts/CLINXNodeService", launcher)
+    launcher.chmod(0o755)
     NodeAuthorizationStore(route.node.store.root).grant(
         "centre", user_scope="alice", read_sessions=True
     )
@@ -557,10 +568,7 @@ def test_packaged_helper_registers_reads_and_restarts_without_business_execution
         with (tmp_path / f"helper-{generation}.log").open("wb") as log:
             process = subprocess.Popen(
                 [
-                    os.sys.executable,
-                    "-I",
-                    "-B",
-                    str(resources / "clinx/nodes/node_service_entrypoint.py"),
+                    str(launcher),
                 ],
                 cwd=resources,
                 env=env,

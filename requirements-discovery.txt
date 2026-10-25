@@ -1,5 +1,7 @@
-# Optional LAN device dependencies. Legacy CLINX remains stdlib-only.
+# Explicit legacy/dev qualification dependencies. Current Rust discovery and
+# the signed macOS App require none of these Python packages.
 cryptography==50.0.2
 zeroconf==0.151.5
 ifaddr==0.2.0
-# Native production PAKE: build/install native/opaque_pairing with its Cargo.lock.
+# The native wheel is only needed for old-protocol oracle/DEV qualifications;
+# current OPAQUE is linked directly into clinx-node and clinx-node-daemon.

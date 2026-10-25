@@ -309,7 +309,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "zeroconf/interface IO and Candidate objects; TXT/TTL/capacity/conflict/device projection delegated to Rust"
+      "reason": "Public candidate DTO and explicit injected test index; normal DNS-SD UDP, interface IO, advertisement, TTL cache and discovery run in Rust mdns_runtime"
     },
     {
       "path": "clinx/discovery/identity.py",
@@ -318,7 +318,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Local key/certificate bootstrap and identity objects/PrivateStore IO; public identity/certificate checks and atomic trust lifecycle delegated to Rust"
+      "reason": "Python identity/store DTO and private worker binding; key/certificate creation, validation, locking and durable store IO run in Rust discovery_identity/enrollment"
     },
     {
       "path": "clinx/discovery/monitor_helper.py",
@@ -327,7 +327,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+      "reason": "Historical executable alias that execs clinx-node --discovery-gui; current Swift invokes the bundled Rust binary directly"
     },
     {
       "path": "clinx/discovery/observer_bootstrap.py",
@@ -345,7 +345,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Existing OPAQUE native-wheel codec and explicit DEV_ONLY qualification protocol; pairing window TTL, one-shot consumption and failure/rate state owned by Rust"
+      "reason": "Public pairing API and explicit DEV_ONLY SPAKE2 qualification; normal OPAQUE transcript and protocol state run in the shared Rust core without Python wheel"
     },
     {
       "path": "clinx/discovery/transport.py",
@@ -354,7 +354,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+      "reason": "Python public transport DTO and explicit DEV_ONLY TLS/SPAKE2 qualification; production first pairing/mTLS enrollment and reconnect run in Rust discovery_enrollment"
     },
     {
       "path": "clinx/host/__init__.py",
@@ -486,7 +486,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Rust Collector/source private client; spool, lock, checkpoint/outbox transactions, scheduling policy, ACK recovery, sample merge and historical SQL run in Rust. Python retains existing identity/registration callbacks, live-writer protocol/cache, local-time scalar codec and explicit qualification inspection property."
+      "reason": "Public Collector facade and explicitly injected qualification callbacks; normal native/Provider/remote probes, live cache and decisions run in Rust observation_runtime"
     },
     {
       "path": "clinx/monitor/observer_server.py",
@@ -527,9 +527,10 @@
       "path": "clinx/nodes/node_centre_entrypoint.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [
-        "rust"
+        "rust",
+        "monitor"
       ],
-      "reason": "Centre entrypoint; wires reverse requests to Rust when Rust mode is enabled; retains existing pairing and approval boundary"
+      "reason": "Historical CLI alias that execs Rust clinx-node-daemon; Rust assembles Centre, paired Authority route and Collector lifecycle"
     },
     {
       "path": "clinx/nodes/node_protocol.py",
@@ -555,7 +556,7 @@
       "profiles": [
         "monitor"
       ],
-      "reason": "Helper CLI/configuration, callback IO and signal wait; history selection plus registration/heartbeat/collector scheduling owned by Rust"
+      "reason": "Historical CLI alias that execs Rust clinx-node-daemon helper; normal Helper loads TOML, assembles Node/Provider/Collector and schedules entirely in Rust"
     },
     {
       "path": "clinx/nodes/provider_relay.py",
@@ -635,7 +636,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Existing read-only writer probe API; socket peer identity comes from the same Rust socket, not remote self-report"
+      "reason": "Public writer probe binding and explicit injected qualification callback; normal exact OS/process/FD evidence and read-only probe execution run solely in Rust observation_runtime"
     },
     {
       "path": "clinx/provider/rust_workspace_probe.py",
@@ -775,15 +776,15 @@
     },
     {
       "path": "scripts/qualify_runtime_migration.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Historical offline runtime qualification; requires archived test_rust_runtime_lab.py and exact prior source/receipt hashes, absent from the retained local suite; not a current passing gate or runtime dependency"
+      "reason": "Closed historical NON_AUTHORITATIVE Stage3/P4/P5 lab qualification chain; three runners require absent tests/test_rust_runtime_lab.py and pinned old receipts. No current Python/Rust/Swift/script/service consumer outside this closed set; current production State and Rust tests retained."
     },
     {
       "path": "scripts/qualify_runtime_shadow.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Historical offline runtime qualification; requires archived test_rust_runtime_lab.py and exact prior source/receipt hashes, absent from the retained local suite; not a current passing gate or runtime dependency"
+      "reason": "Closed historical NON_AUTHORITATIVE Stage3/P4/P5 lab qualification chain; three runners require absent tests/test_rust_runtime_lab.py and pinned old receipts. No current Python/Rust/Swift/script/service consumer outside this closed set; current production State and Rust tests retained."
     },
     {
       "path": "scripts/qualify_rust_legacy_cgroup.py",
@@ -799,9 +800,9 @@
     },
     {
       "path": "scripts/qualify_rust_runtime.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Historical offline runtime qualification; requires archived test_rust_runtime_lab.py and exact prior source/receipt hashes, absent from the retained local suite; not a current passing gate or runtime dependency"
+      "reason": "Closed historical NON_AUTHORITATIVE Stage3/P4/P5 lab qualification chain; three runners require absent tests/test_rust_runtime_lab.py and pinned old receipts. No current Python/Rust/Swift/script/service consumer outside this closed set; current production State and Rust tests retained."
     },
     {
       "path": "scripts/qualify_rust_service_isolation.py",
@@ -925,15 +926,15 @@
     },
     {
       "path": "tools/qualification/runtime_lab/__init__.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Closed historical NON_AUTHORITATIVE Stage3/P4/P5 lab qualification chain; three runners require absent tests/test_rust_runtime_lab.py and pinned old receipts. No current Python/Rust/Swift/script/service consumer outside this closed set; current production State and Rust tests retained."
     },
     {
       "path": "tools/qualification/runtime_lab/reference.py",
-      "role": "QUALIFICATION",
+      "role": "DEAD",
       "profiles": [],
-      "reason": "Explicit development or qualification only; excluded from runtime packages"
+      "reason": "Closed historical NON_AUTHORITATIVE Stage3/P4/P5 lab qualification chain; three runners require absent tests/test_rust_runtime_lab.py and pinned old receipts. No current Python/Rust/Swift/script/service consumer outside this closed set; current production State and Rust tests retained."
     },
     {
       "path": "fixtures/test_runtime_packages.py",
@@ -1072,7 +1073,35 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Private-process regression for Rust thin-runtime migration; no production access."
+    },
+    {
+      "path": "fixtures/test_rust_device_config.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Private Rust device runtime and original wire/config/packaging equivalence regressions; no production state"
+    },
+    {
+      "path": "fixtures/test_rust_device_enrollment.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Private Rust device runtime and original wire/config/packaging equivalence regressions; no production state"
+    },
+    {
+      "path": "fixtures/test_rust_node_daemon.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Private Rust device runtime process and wire/probe equivalence regression; no production tasks or state"
+    },
+    {
+      "path": "fixtures/test_rust_observation_runtime.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Private Rust device runtime process and wire/probe equivalence regression; no production tasks or state"
     }
   ],
-  "python_byte_percent_target": 5
+  "python_byte_percent_target": 5,
+  "profile_notes": {
+    "rust": "Current Python compatibility/maintenance closure alongside native binaries; no retired business core",
+    "monitor": "Historical Python API/layout qualification closure only. Current App uses architecture/native-runtime.json with zero Python sources/dependencies."
+  }
 }

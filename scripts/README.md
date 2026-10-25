@@ -63,3 +63,9 @@ Collector 调用端还要求 `collector_runtime=RUST_COLLECTOR_V1`；构建时�
 客户端/Observer/Discovery/监督策略调用端要求 `client_runtime=RUST_CLIENT_RUNTIME_V1`。构建必须实测 `clinx-node --client-runtime-contract`；独立 Tunnel builder 使用 `--supervisor-binary`（或 CLINX_TUNNEL_BINARY）打包已验证的 `clinx-tunnel`，不携带 Python supervisor 或 clinx-node。MCP 配置编译 CLI 同样接受 `--node-binary`，安装工具固定使用已校验 release 的二进制。
 
 最新客户端还要求 `thin_runtime=RUST_THIN_RUNTIME_V1` 和实际 `clinx-node --thin-runtime-contract` 探测。全仓 Python <5% 的固定只读统计使用 Rust `clinx-source-audit`，未达标退出 2，详见架构文档。
+
+设备运行产物要求 `device_runtime=RUST_DEVICE_RUNTIME_V1` 与 `node_daemon=RUST_NODE_DAEMON_V1`。
+`stage_rust_release.py` 必须提供 `--node-daemon-binary`，并实测两个 marker；Centre service
+直接启动 release 内 `clinx-node-daemon`。当前 App 使用 `--native-monitor-resources`，
+不发布 Python closure/DiscoveryRuntime/wheel。旧 `--monitor-resources` 仅供原 API 布局资格。
+这些是候选构建/安装工具契约，源码迁移不自动部署、切换产物或重启服务。

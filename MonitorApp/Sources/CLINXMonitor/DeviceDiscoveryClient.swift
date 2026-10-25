@@ -26,14 +26,14 @@ enum DeviceConnectionError: Error, LocalizedError {
     case runtimeUnavailable, timeout, failed(String)
     var errorDescription: String? {
         switch self {
-        case .runtimeUnavailable: return "Device pairing is not installed on this Mac. Run the discovery runtime setup included with CLINX."
+        case .runtimeUnavailable: return "The device pairing helper is unavailable. Reinstall CLINX Monitor."
         case .timeout: return "The device did not respond in time. Check that it is online and try again."
         case .failed(let code):
             switch code {
             case "DEVICE_OFFLINE", "DEVICE_UNREACHABLE": return "This device is offline. Connect both devices to the same local network and try again."
             case "IDENTITY_MISMATCH": return "This device’s identity has changed. Verify the device before pairing again."
             case "OBSERVER_SHARING_UNAVAILABLE": return "The device is paired, but Monitor sharing is not enabled on it yet. Enable sharing on that device, then connect again."
-            case "PRODUCTION_PAKE_UNAVAILABLE", "PRODUCTION_PAKE_VERSION_MISMATCH": return "The secure pairing runtime is unavailable. Reinstall the discovery runtime."
+            case "PRODUCTION_PAKE_UNAVAILABLE", "PRODUCTION_PAKE_VERSION_MISMATCH": return "The secure pairing runtime is unavailable. Reinstall CLINX Monitor."
             case "REMOTE_REQUEST_REJECTED", "INVALID_PAIRING_CODE": return "Pairing was not accepted. Open a new pairing window on the other device and enter its four-digit code."
             default: return "Could not connect to this device. Check its pairing window and local network, then try again."
             }
@@ -67,15 +67,13 @@ private final class DiscoveryProcess: @unchecked Sendable {
     }
 
     func run(operation: String, nodeID: String?, pin: String) throws -> DeviceResponse {
-        let runtime = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/CLINX Monitor/DiscoveryRuntime/bin/python")
-        guard FileManager.default.isExecutableFile(atPath: runtime.path),
-              let root = Bundle.main.resourceURL,
-              FileManager.default.fileExists(atPath: root.appendingPathComponent("clinx/discovery/monitor_helper.py").path)
+        let runtime = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers/clinx-node")
+        guard FileManager.default.isExecutableFile(atPath: runtime.path)
         else { throw DeviceConnectionError.runtimeUnavailable }
         let input = Pipe(), output = Pipe()
         process.executableURL = runtime
-        process.arguments = ["-I", "-B", root.appendingPathComponent("clinx/discovery/monitor_helper.py").path]
+        process.arguments = ["--discovery-gui"]
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice

@@ -8,25 +8,15 @@ from __future__ import annotations
 
 import base64
 import contextlib
-import datetime as dt
-import fcntl
-import json
 import os
-import stat
-import tempfile
 import threading
 import uuid
 from pathlib import Path
 from typing import Any, Iterator
 
-from cryptography import x509
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.x509.oid import NameOID
-
 from clinx.contracts.execution_semantics import HostIdentity, normalize_host
 
-from . import PROTOCOL_VERSION
+from . import PROTOCOL_VERSION as PROTOCOL_VERSION
 
 
 class DeviceError(ValueError):
@@ -36,9 +26,20 @@ class DeviceError(ValueError):
 _runtime_lock = threading.Lock()
 _runtime_worker = None
 _runtime_callbacks = {}
+_enrollment_callbacks = {}
 
 
 def _state_callback(event):
+    if event['operation'].startswith('discovery.enrollment.'):
+        with _runtime_lock:
+            owner = _enrollment_callbacks.get(event['arguments']['token'])
+        if owner is None:
+            raise DeviceError('DEVICE_UNAVAILABLE')
+        if event['operation'] == 'discovery.enrollment.clock':
+            return owner.window.clock()
+        if event['operation'] == 'discovery.enrollment.observer':
+            return owner.observer_bootstrap.connection()
+        raise DeviceError('DEVICE_CALLBACK_INVALID')
     with _runtime_lock:
         context = _runtime_callbacks.get(event['arguments']['token'])
     if event['operation'] != 'discovery.commit' or context is None:
@@ -107,132 +108,53 @@ def certificate_public(pem: str) -> str:
 
 
 class PrivateStore:
+    """Existing owner-only file API; Rust performs all storage and lock IO."""
     def __init__(self, root: Path):
         self.root = root.expanduser().absolute()
-        if self.root.is_symlink():
-            raise DeviceError("UNSAFE_STATE_DIRECTORY")
-        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        self._check(self.root, directory=True)
+        _state_call('store.open', root=str(self.root))
 
     @staticmethod
     def _check(path: Path, *, directory: bool = False) -> None:
-        info = path.lstat()
-        expected = stat.S_ISDIR if directory else stat.S_ISREG
-        if not expected(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
-            raise DeviceError("UNSAFE_STATE_PERMISSIONS")
+        _state_call('store.check', path=str(path), directory=directory)
 
     @contextlib.contextmanager
-    def lock(self, name: str = "store.lock", *, nonblocking: bool = False) -> Iterator[None]:
-        path = self.root / name
-        fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    def lock(self, name: str = 'store.lock', *, nonblocking: bool = False) -> Iterator[None]:
+        handle = _state_call('store.lock', root=str(self.root), name=name, nonblocking=nonblocking)
         try:
-            self._check(path)
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | (fcntl.LOCK_NB if nonblocking else 0))
-            except BlockingIOError as exc:
-                raise DeviceError("DEVICE_ALREADY_SERVING") from exc
             yield
         finally:
-            os.close(fd)
+            _state_call('store.unlock', lock=handle)
 
     def read(self, name: str) -> dict[str, Any] | None:
-        path = self.root / name
-        if not path.exists() and not path.is_symlink():
-            return None
-        self._check(path)
-        if path.stat().st_size > 2_000_000:
-            raise DeviceError("STATE_TOO_LARGE")
-        try:
-            raw = json.loads(path.read_text())
-            if not isinstance(raw, dict) or raw.get("schema_version") != 1:
-                raise DeviceError("UNSUPPORTED_STATE_SCHEMA")
-            return raw
-        except (ValueError, TypeError) as exc:
-            raise DeviceError("INVALID_STATE") from exc
+        return _state_call('store.read', root=str(self.root), name=name)
 
     def write(self, name: str, raw: dict[str, Any]) -> None:
-        target = self.root / name
-        if target.exists() or target.is_symlink():
-            self._check(target)
-        fd, tmp = tempfile.mkstemp(prefix=".atomic-", dir=self.root)
-        try:
-            with os.fdopen(fd, "w") as stream:
-                json.dump(raw, stream, sort_keys=True)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(tmp, target)
-            parent = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(parent)
-            finally:
-                os.close(parent)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
+        _state_call('store.write', root=str(self.root), name=name, value=raw)
 
 
 class NodeIdentity:
     def __init__(self, store: PrivateStore, host: str, display_name: str | None = None):
         self.store = store
         host_id = valid_node(normalize_host(host).stable_identifier)
-        with store.lock():
-            raw = store.read("identity.json")
-            if raw is None:
-                key = Ed25519PrivateKey.generate()
-                pub = encoded(
-                    key.public_key().public_bytes(
-                        serialization.Encoding.Raw, serialization.PublicFormat.Raw
-                    )
-                )
-                now = dt.datetime.now(dt.timezone.utc)
-                subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host_id)])
-                cert = (
-                    x509.CertificateBuilder()
-                    .subject_name(subject)
-                    .issuer_name(subject)
-                    .public_key(key.public_key())
-                    .serial_number(x509.random_serial_number())
-                    .not_valid_before(now - dt.timedelta(minutes=5))
-                    .not_valid_after(now + dt.timedelta(days=3650))
-                    .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
-                    .sign(key, algorithm=None)
-                )
-                raw = dict(
-                    schema_version=1,
-                    node_id=host_id,
-                    display_name=valid_name(display_name or host_id),
-                    protocol_version=PROTOCOL_VERSION,
-                    public_key=pub,
-                    fingerprint=fingerprint(pub),
-                    created_at=now.isoformat(),
-                    private_key=key.private_bytes(
-                        serialization.Encoding.PEM,
-                        serialization.PrivateFormat.PKCS8,
-                        serialization.NoEncryption(),
-                    ).decode(),
-                    certificate=cert.public_bytes(serialization.Encoding.PEM).decode(),
-                )
-                store.write("identity.json", raw)
-            self.public = public_record(raw)
-            if self.public["node_id"] != host_id:
-                raise DeviceError("CONFIGURED_HOST_IDENTITY_CHANGED")
-            self._private_pem = raw["private_key"]
-            self.certificate = raw["certificate"]
-            loaded_key = serialization.load_pem_private_key(
-                self._private_pem.encode(), password=None
-            )
-            if not isinstance(loaded_key, Ed25519PrivateKey):
-                raise DeviceError("INVALID_PRIVATE_KEY")
-            actual = encoded(
-                loaded_key.public_key().public_bytes(
-                    serialization.Encoding.Raw, serialization.PublicFormat.Raw
-                )
-            )
-            if (
-                actual != self.public["public_key"]
-                or certificate_public(self.certificate) != actual
-            ):
-                raise DeviceError("LOCAL_KEY_MISMATCH")
+        if type(store) is PrivateStore:
+            raw = _state_call('identity.open', root=str(store.root), host=host_id, display_name=display_name)
+            self.public, self.certificate = raw['public'], raw['certificate']
+        else:
+            # Preserve explicit read/write qualification seams; crypto and
+            # record validation still execute the same Rust implementation.
+            with store.lock():
+                raw = store.read('identity.json')
+                if raw is None:
+                    raw = _state_call('identity.generate', host=host_id, display_name=display_name)
+                    store.write('identity.json', raw)
+                self.public = _state_call('identity.validate', value=raw, host=host_id)
+                self.certificate = raw['certificate']
+
+    @property
+    def _private_pem(self):
+        # Explicit Python SSL qualification only. Normal production TLS reads
+        # and uses this key entirely inside the Rust process.
+        return _state_call('identity.credentials', root=str(self.store.root))['private_key']
 
     @property
     def host_identity(self) -> HostIdentity:

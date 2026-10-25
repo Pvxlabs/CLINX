@@ -13,9 +13,6 @@ import threading
 import time
 from typing import Any, Callable, Protocol
 
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
 from .identity import DeviceError
 
 
@@ -81,6 +78,8 @@ class Spake2Protocol:
 
 
 def confirmation(key: bytes, role: str) -> bytes:
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
     # Upstream SPAKE2 documented explicit key confirmation, RFC 5869 HKDF.
     return HKDF(
         algorithm=hashes.SHA256(),
@@ -105,7 +104,10 @@ def _drain_window_disposals():
     while True:
         window = _window_disposals.get()
         try:
-            _state_call('window.delete', window=window)
+            if isinstance(window, tuple):
+                _state_call('opaque.delete', exchange=window[1])
+            else:
+                _state_call('window.delete', window=window)
         except Exception:
             # Best-effort disposal only; an unknown delete is never replayed.
             pass
@@ -179,15 +181,42 @@ DEV_PROTOCOL = "DEV-SPAKE2-PYTHON-v1"
 PRODUCTION_TRUST = "OPAQUE_V1"
 
 
-def production_backend() -> Any:
-    try:
-        import _clinx_opaque as backend
+class _RustOpaqueExchange:
+    def __init__(self, code, context, client, server, inbound=None):
+        import weakref
+        from .identity import _state_call, encoded
+        _start_window_cleanup()
+        self._exchange = _state_call('opaque.client' if inbound is None else 'opaque.server',
+            code=encoded(code), binding=[encoded(v) for v in (context, client, server)],
+            message=encoded(inbound) if inbound is not None else None)
+        self._finalizer = weakref.finalize(self, _window_disposals.put, ('opaque', self._exchange))
 
-        if backend.BACKEND_ID != PRODUCTION_PROTOCOL or backend.OPAQUE_KE_VERSION != "4.0.1":
-            raise DeviceError("PRODUCTION_PAKE_VERSION_MISMATCH")
-        return backend
-    except (ImportError, AttributeError, OSError):
-        raise DeviceError("PRODUCTION_PAKE_UNAVAILABLE") from None
+    def start(self):
+        from .identity import _state_call, decoded
+        return decoded(_state_call('opaque.start', exchange=self._exchange))
+
+    def finish(self, inbound):
+        from .identity import _state_call, decoded, encoded
+        return decoded(_state_call('opaque.finish', exchange=self._exchange, message=encoded(inbound)))
+
+
+class _RustOpaqueBackend:
+    BACKEND_ID = PRODUCTION_PROTOCOL
+    OPAQUE_KE_VERSION = '4.0.1'
+    Client = _RustOpaqueExchange
+    Server = _RustOpaqueExchange
+
+
+def production_backend() -> Any:
+    from clinx.authority.rust_authority import RustAuthorityError
+    from .identity import _state_call
+    try:
+        actual = _state_call('opaque.status')
+    except (RustAuthorityError, OSError, TimeoutError):
+        raise DeviceError('PRODUCTION_PAKE_UNAVAILABLE') from None
+    if not isinstance(actual, dict) or actual.get('BACKEND_ID') != PRODUCTION_PROTOCOL or actual.get('OPAQUE_KE_VERSION') != '4.0.1':
+        raise DeviceError('PRODUCTION_PAKE_VERSION_MISMATCH')
+    return _RustOpaqueBackend
 
 
 def backend_status(*, allow_dev: bool = False) -> str:
@@ -207,38 +236,10 @@ def pairing_binding(
     session_id: str,
     client_nonce: str,
 ) -> tuple[bytes, bytes, bytes]:
-    """RFC 9807 context and explicit role identifiers, identical at both ends."""
-    import re
-
-    from .identity import public_record
-
-    client, server = public_record(client), public_record(server)
-    if client["node_id"] == server["node_id"] or client["public_key"] == server["public_key"]:
-        raise DeviceError("DUPLICATE_PAIRING_IDENTITY")
-    if any(
-        not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{32}", value)
-        for value in (window_id, session_id, client_nonce)
-    ):
-        raise DeviceError("INVALID_PAIRING_SESSION")
-
-    def canonical(value: dict[str, Any]) -> bytes:
-        return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-
-    client_id = canonical(dict(role="initiator", identity=client))
-    server_id = canonical(dict(role="acceptor", identity=server))
-    context = canonical(
-        dict(
-            service="CLINX_LOCAL_PAIRING",
-            version=2,
-            protocol=PRODUCTION_PROTOCOL,
-            window_id=window_id,
-            session_id=session_id,
-            client_nonce=client_nonce,
-            initiator=client,
-            acceptor=server,
-        )
-    )
-    return context, client_id, server_id
+    """Rust canonicalizes the existing RFC 9807 transcript and role identity."""
+    from .identity import _state_call, decoded
+    return tuple(decoded(v) for v in _state_call('opaque.binding', client=client, server=server,
+        window_id=window_id, session_id=session_id, client_nonce=client_nonce))
 
 
 class OpaqueClientProtocol:

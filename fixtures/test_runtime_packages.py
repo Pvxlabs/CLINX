@@ -28,7 +28,7 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     (base/'manifest.json').write_text(json.dumps(dict(files={
         p: hashlib.sha256(data).hexdigest() for p, data in previous.items()})))
     binaries = {}
-    for key in ('runtime', 'mcp_relay', 'native_transport', 'provider', 'mcp', 'node'):
+    for key in ('runtime', 'mcp_relay', 'native_transport', 'provider', 'mcp', 'node', 'node_daemon'):
         path = tmp_path/key
         path.write_bytes(key.encode())
         path.chmod(0o755)
@@ -47,6 +47,10 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
             return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_CLIENT_RUNTIME_V1\n', stderr='')
         if command == [str(binaries['node_binary']), '--thin-runtime-contract']:
             return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_THIN_RUNTIME_V1\n', stderr='')
+        if command == [str(binaries['node_binary']), '--device-runtime-contract']:
+            return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_DEVICE_RUNTIME_V1\n', stderr='')
+        if command == [str(binaries['node_daemon_binary']), '--daemon-contract']:
+            return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_NODE_DAEMON_V1\n', stderr='')
         return real_run(command, *args, **kwargs)
     monkeypatch.setattr(stage.subprocess, 'run', fixture_run)
     real_stat = Path.stat

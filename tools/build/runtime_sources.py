@@ -71,6 +71,11 @@ def data_paths(source: Path, profile: str) -> list[Path]:
 
 
 def copy_monitor_sources(source: Path, resources: Path) -> None:
+    """Retained compatibility package fixture; current App uses native resources.
+
+    Existing adapter contract qualifications still exercise this old layout.
+    It is not the installed Monitor source closure.
+    """
     paths = source_paths(source, 'monitor') + data_paths(source, 'monitor')
     resources.mkdir(parents=True, exist_ok=True)
     # Remove only old copied Python sources; keep the interpreter, Swift assets,
@@ -100,11 +105,39 @@ def copy_monitor_sources(source: Path, resources: Path) -> None:
          'required_helpers': ['clinx-node', 'clinx-provider'], 'files': hashes}, indent=2) + '\n')
 
 
+def copy_native_monitor_resources(source: Path, resources: Path) -> None:
+    """Clean only known build-owned runtime paths; preserve unrelated assets."""
+    resources.mkdir(parents=True, exist_ok=True)
+    for path in resources.glob('*.py'):
+        path.unlink()
+    for name in ('clinx', 'Discovery', 'local_discovery', 'domain', 'shadow_ledger',
+                 'runtime_control', 'provider_adapters', 'DiscoveryRuntime'):
+        path = resources / name
+        if path.is_symlink():
+            path.unlink()
+        elif path.exists():
+            if name == 'DiscoveryRuntime':
+                # Previous builder made its private Python tree read-only.
+                for directory in [path, *(p for p in path.rglob('*') if p.is_dir() and not p.is_symlink())]:
+                    directory.chmod(directory.stat().st_mode | 0o700)
+            shutil.rmtree(path)
+    manifest = json.loads((source / 'architecture/native-runtime.json').read_text())
+    (resources / 'python-sources.json').write_text(json.dumps(
+        {'schema': 1, 'profile': 'monitor-native', 'files': {},
+         'device_runtime': manifest['device_runtime'],
+         'required_helpers': manifest['monitor_helpers']}, indent=2) + '\n')
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--monitor-resources', type=Path, required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--monitor-resources', type=Path, help='Compatibility qualification layout only')
+    group.add_argument('--native-monitor-resources', type=Path, help='Current Swift/Rust application resources')
     args = parser.parse_args()
-    copy_monitor_sources(SOURCE_ROOT, args.monitor_resources)
+    if args.native_monitor_resources:
+        copy_native_monitor_resources(SOURCE_ROOT, args.native_monitor_resources)
+    else:
+        copy_monitor_sources(SOURCE_ROOT, args.monitor_resources)
 
 
 if __name__ == '__main__':

@@ -17,6 +17,20 @@ Install Python 3.12 and the pinned dependencies as described in
 discovery development pins; there is one source of package versions.
 The local `tests/README.md` index maps suites and naming conventions.
 
+## Current device runtime qualification
+
+[Rust device runtime migration](RUST_DEVICE_RUNTIME_MIGRATION.md) covers native
+OPAQUE/TLS enrollment, identity/certificates, DNS-SD, Node/Centre/Helper assembly,
+Collector probes and outer scheduling. Set `CLINX_NODE_DAEMON_BINARY` to the same
+qualified release directory as `CLINX_NODE_BINARY` and the other Rust binaries.
+The App builder uses the Python-free native resource profile. The old Python
+`monitor` profile remains solely for existing compatibility-layout fixtures.
+
+Retired Stage3/P4/P5 runtime_lab runners are no longer current gates; their old
+CLI depended on a removed local test and frozen historical source hashes.
+The active Rust Authority State and execution_core golden contract remain tested.
+No retained local test, existing assertion or skip policy was removed to get PASS.
+
 ## Latest thin runtime qualification
 
 [Rust thin runtime migration](RUST_THIN_RUNTIME_MIGRATION.md) records native Provider

@@ -5,14 +5,13 @@ project manifest; Xcode can open this package. `Sources/CLINXMonitor` contains t
 model, HTTPS client, view model and UI. The Swift files in `docs/monitor` remain the
 Phase 0/1 handoff snapshot and are not the app build source.
 
-The shared [Python source manifest](../architecture/python-sources.json) supplies
-the Helper package under `Resources/clinx/`; the bundle records exact copied
-hashes in `Resources/python-sources.json`. Swift discovery invokes
-`clinx/discovery/monitor_helper.py`, and `CLINXNodeService` invokes
-`clinx/nodes/node_service_entrypoint.py`. Incremental builds remove old flat
-Python files and `Discovery/` copies while preserving the embedded interpreter,
-native wheel and Swift resources. The Mac execution core remains COMPAT; see
-[the architecture boundary](../docs/REPOSITORY_ARCHITECTURE.md).
+The [native runtime manifest](../architecture/native-runtime.json) declares three signed
+Rust helpers: `clinx-node`, `clinx-provider` and `clinx-node-daemon`. Swift discovery
+calls `clinx-node --discovery-gui` through bounded private pipes; `CLINXNodeService`
+execs `clinx-node-daemon helper`. The App contains no Python sources, interpreter
+or OPAQUE wheel. Incremental builds remove the old build-owned runtime trees and
+preserve Swift assets. Device state remains in the original private state directory.
+See [the architecture boundary](../docs/REPOSITORY_ARCHITECTURE.md).
 
 ## Build and run (macOS)
 
@@ -144,19 +143,12 @@ The existing **Connection** tab remains the manual configuration route. Pairing 
 health failures do not replace the current connection. Pairing success followed by
 a service failure offers **Connect Monitor** without making you pair again.
 
-Local developer setup (Python 3.13, uv, Rust and Xcode command-line tools):
-
-```sh
-sh MonitorApp/Scripts/setup-discovery-runtime.sh
-sh MonitorApp/Scripts/build-app.sh
-```
-
-The dedicated runtime is installed under
-`~/Library/Application Support/CLINX Monitor/DiscoveryRuntime`; matching adapter
-sources are copied into the signed App. The runtime must be installed on each Mac;
-the App reports when it is unavailable. It does not silently use an unqualified
-cryptographic backend. This is a local installation flow, not a notarized standalone
-installer with an embedded Python distribution.
+Local developer setup requires a native macOS Rust toolchain and Xcode command-line
+tools. Run `sh MonitorApp/Scripts/build-app.sh`. The historical
+`setup-discovery-runtime.sh` command now delegates to that App build; it does not
+install a per-user Python environment. Existing device identities and peer files
+remain compatible. Native Mac build/signing and LAN discovery must be qualified on
+macOS before distributing the new artifact; Linux wire tests do not establish this.
 
 Host opt-in uses an owner-only (0600) JSON file, for example:
 

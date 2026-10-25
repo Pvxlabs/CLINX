@@ -1,3 +1,5 @@
+> 历史记录：本文件保留当时的验证结果。2026-10-25 已退役下述 Stage3 CLI、Python reference 与旧资格脚本；复现需恢复 `da7fb7b` 或更早对应源码。现役 `kernel/src/runtime_lab.rs` 仍被 Authority 使用，未删除。当前验证见 [设备运行链迁移](../RUST_DEVICE_RUNTIME_MIGRATION.md)。
+
 # 第三阶段：隔离 Rust Runtime 原型
 
 任务：`CLINX-STAGE3-RUST-RUNTIME-20261022`。

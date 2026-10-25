@@ -42,6 +42,10 @@ def main():
         raise RuntimeError('QUALIFIED_RUST_OBSERVATION_REQUIRED')
     if manifest.get('client_runtime') != 'RUST_CLIENT_RUNTIME_V1':
         raise RuntimeError('QUALIFIED_RUST_CLIENT_RUNTIME_REQUIRED')
+    if (manifest.get('device_runtime') != 'RUST_DEVICE_RUNTIME_V1'
+            or manifest.get('node_daemon') != 'RUST_NODE_DAEMON_V1'
+            or 'clinx-node-daemon' not in manifest['files']):
+        raise RuntimeError('QUALIFIED_RUST_DEVICE_RUNTIME_REQUIRED')
     if manifest.get('thin_runtime') != 'RUST_THIN_RUNTIME_V1':
         raise RuntimeError('QUALIFIED_RUST_THIN_RUNTIME_REQUIRED')
     if manifest.get('collector_runtime') != 'RUST_COLLECTOR_V1':
@@ -143,7 +147,7 @@ Description=CLINX Centre Rust projection (pre-cutover loopback)
 After=clinx-rust-authority.service
 Requires=clinx-rust-authority.service
 [Service]
-{common}ExecStart=/usr/bin/python3 -m clinx.nodes.node_centre_entrypoint --state {state} --node-id p620 serve --registry {state}/registry.sqlite3 --observations {state}/observations.sqlite3 --bind 127.0.0.1 --port 18774 --rust-projection --local-owner-host p620 --local-provider-config {root}/config/bridge.toml --stale-after 45
+{common}ExecStart={release}/clinx-node-daemon --state {state} --node-id p620 serve --registry {state}/registry.sqlite3 --observations {state}/observations.sqlite3 --bind 127.0.0.1 --port 18774 --rust-projection --local-owner-host p620 --local-provider-config {root}/config/bridge.toml --stale-after 45
 Restart=on-failure
 RestartSec=3
 """,

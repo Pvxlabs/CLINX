@@ -2,8 +2,9 @@
 
 **Target architecture:** Rust owns the complete runtime core (Authority,
 lifecycle, persistence/recovery, MCP/Provider/Host/Transport and Node/Discovery);
-Swift owns the macOS UI. Python is ultimately limited to development and
-maintenance tooling. Remaining Python runtime modules are explicitly classified; the migration is incomplete.
+Swift owns the macOS UI. Python is limited to the thinnest necessary compatibility
+layer and tooling; the all-source target is strictly below 5% Python bytes.
+Remaining Python modules are explicitly classified; the migration is incomplete.
 The old Mac business core has been retired from source and new release profiles.
 
 Start with [the repository architecture and layout](docs/REPOSITORY_ARCHITECTURE.md).
@@ -14,6 +15,9 @@ the Python Dispatcher and Host runner have been deleted. See the
 [Host migration verification](docs/RUST_HOST_RUNTIME_MIGRATION.md).
 `tools/` contains build/maintenance/qualification code.
 There are no root Python modules or flat import shims.
+The current Mac Helper/Centre, first pairing, certificate setup, DNS-SD and
+Collector probes/scheduling now execute in Rust. The App build contains no
+Python runtime; see [device runtime verification](docs/RUST_DEVICE_RUNTIME_MIGRATION.md).
 
 **AI Task Routing & Execution Infrastructure**
 

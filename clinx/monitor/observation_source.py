@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime as dt
 import os
 import sqlite3
-import time
 from pathlib import Path
 
 from clinx.nodes.network_worker import read_command as _read_command
@@ -56,11 +55,11 @@ class CodexObservationSource:
         self.canonical_db = Path(canonical_db) if canonical_db else None
         self.provider_config = provider_config
         self.native_writer_observation = native_writer_observation
-        self.live_cache = {}
         import threading
 
         self._source_lock = threading.Lock()
         self._source_worker = None
+        self._native_initialized = False
         from clinx.contracts.execution_semantics import normalize_host
 
         self.owner_host = normalize_host(owner_host or node_id).stable_identifier
@@ -120,7 +119,29 @@ class CodexObservationSource:
         state.update(updated)
         return turns, coverage
 
-    def sample(self, metadata, state):
+    def _runtime_config(self):
+        import json
+        from dataclasses import asdict, is_dataclass
+
+        config = self.provider_config
+        return dict(
+            native_home=str(self.history.root),
+            node_id=self.node_id,
+            canonical_path=str(self.canonical_db) if self.canonical_db else None,
+            owner_host=self.owner_host,
+            provider_config=json.loads(json.dumps(asdict(config), default=str))
+            if is_dataclass(config)
+            else config
+            if isinstance(config, dict)
+            else None,
+            injected_provider=config is not None
+            and not is_dataclass(config)
+            and not isinstance(config, dict),
+            native_writer_observation=self.native_writer_observation,
+            native_observer_socket=os.environ.get("CLINX_NATIVE_OBSERVER_SOCKET"),
+        )
+
+    def _worker(self):
         from clinx.authority.rust_authority import RustAuthorityError
         from clinx.nodes.network_worker import Worker
 
@@ -148,10 +169,35 @@ class CodexObservationSource:
 
                 self._source_worker = Worker(callback=callback)
                 atexit.register(self._source_worker.close)
-            worker = self._source_worker
+            if not self._native_initialized:
+                self._source_worker.call(
+                    "source_runtime.init", config=self._runtime_config()
+                )
+                self._native_initialized = True
+            return self._source_worker
+
+    def sample(self, metadata, state):
+        from clinx.authority.rust_authority import RustAuthorityError
+
+        worker = self._worker()
+        # Public subclasses and explicit method injections retain their callbacks.
+        # Unmodified source objects execute all reads and probes inside Rust.
+        direct = (
+            type(self) is CodexObservationSource
+            and not any(
+                key in self.__dict__
+                for key in (
+                    "_observe_live",
+                    "native_turns",
+                    "_legacy",
+                    "canonical_turns",
+                )
+            )
+            and not self._runtime_config()["injected_provider"]
+        )
         try:
             events, updated = worker.call(
-                "source.sample",
+                "source_runtime.sample" if direct else "source.sample",
                 metadata=metadata,
                 state=state,
                 canonical_db=bool(self.canonical_db),
@@ -169,6 +215,10 @@ class CodexObservationSource:
 
     def _callback(self, event):
         operation, args = event["operation"], event["arguments"]
+        if operation == "source_runtime.observe_thread":
+            from clinx.provider.native_provider import observe_thread
+
+            return observe_thread(self.provider_config, args["tid"])
         if operation == "source.native_turns":
             state = args["state"]
             turns, coverage = self.native_turns(args["metadata"], state)
@@ -185,37 +235,11 @@ class CodexObservationSource:
             "OBSERVATION_CALLBACK_INVALID", "Unexpected source callback"
         )
 
-    def _observe_live(self,tid,project,turn_id):
-        """Bounded reads of configured existing owners; no execution/lease writes."""
-        from clinx.provider.native_provider import observe_thread
-        from clinx.provider.liveness import classify
-        stamp=time.time()
-        cached=self.live_cache.get(tid)
-        if cached and cached["turn_id"]==turn_id and 0<=stamp-cached["observed_at"]<10:
-            return cached
-        if self.native_writer_observation:
-            from clinx.provider.native_provider import observe_native_writer
-            evidence=observe_native_writer(self.history.root,tid,turn_id,project)
-            endpoint=os.environ.get('CLINX_NATIVE_OBSERVER_SOCKET')
-            if evidence['liveness'] != 'LIVE' and endpoint:
-                from clinx.provider.native_writer_probe import observe
-                evidence=observe(endpoint,self.history.root,tid,turn_id,project)
-            proof=dict(thread_id=tid,turn_id=turn_id,observed_at=stamp,
-                liveness=evidence["liveness"],reason=evidence["reason"])
-            self.live_cache[tid]=proof
-            if len(self.live_cache)>128: self.live_cache.pop(next(iter(self.live_cache)))
-            return proof
-        rows=observe_thread(self.provider_config,tid)["observations"]
-        evidence=classify(rows,tid,turn_id)
-        owner=next((r for r in rows if r.get("endpoint")==evidence["owner_endpoint"]),{})
-        live=evidence["provider_liveness"]=="LIVE" and owner.get("cwd")==project
-        proof=dict(thread_id=tid,turn_id=turn_id,observed_at=stamp,
-            liveness="LIVE" if live else "UNKNOWN",
-            reason=evidence["liveness_reason"] if owner.get("cwd")==project or not owner else "WORKSPACE_MISMATCH")
-        if len(self.live_cache)>=128: self.live_cache.pop(next(iter(self.live_cache)))
-        self.live_cache[tid]=proof
-        return proof
-
+    def _observe_live(self, tid, project, turn_id):
+        # Compatibility method only; cache and liveness decisions are Rust-owned.
+        return self._worker().call(
+            "source_runtime.observe_live", tid=tid, project=project, turn_id=turn_id
+        )
 
 
 class ObservationCollector:
@@ -347,29 +371,63 @@ class LocalObservationRegistration:
     The local read_sessions grant is explicit and persisted. No self-pair,
     alternate identity, canonical task, execution or Provider is created.
     """
-    def __init__(self,identity,registry,approvals,writer,stale_after=45,codex_host_id=None):
-        self.identity,self.registry,self.approvals,self.writer=identity,registry,approvals,writer
-        self.stale_after=stale_after
-        self.codex_host_id=codex_host_id
 
-    def heartbeat(self,identity,scope,*,port,capabilities):
-        from clinx.nodes.node_protocol import NodeRecord,_now
-        approved=self.approvals.get(self.identity.public["node_id"])
-        if identity is not self.identity or approved is None or not approved.allows("observation.upload"):
-            old=self.registry.get(self.identity.public["node_id"])
-            if old: self.registry.revoke(old.node_id,old.user_scope)
-            return {"registered":False,"error_code":"LOCAL_OBSERVATION_SCOPE_DENIED"}
-        previous=self.registry.get(identity.public["node_id"])
-        routes=(self.codex_host_id,) if self.codex_host_id else previous.route_ids if previous else ()
-        record=NodeRecord(node_id=identity.public["node_id"],user_scope=approved.user_scope,
-            public_key_fingerprint=identity.public["fingerprint"],display_name=identity.public["display_name"],
+    def __init__(
+        self, identity, registry, approvals, writer, stale_after=45, codex_host_id=None
+    ):
+        self.identity, self.registry, self.approvals, self.writer = (
+            identity,
+            registry,
+            approvals,
+            writer,
+        )
+        self.stale_after = stale_after
+        self.codex_host_id = codex_host_id
+
+    def heartbeat(self, identity, scope, *, port, capabilities):
+        from clinx.nodes.node_protocol import NodeRecord, _now
+
+        approved = self.approvals.get(self.identity.public["node_id"])
+        if (
+            identity is not self.identity
+            or approved is None
+            or not approved.allows("observation.upload")
+        ):
+            old = self.registry.get(self.identity.public["node_id"])
+            if old:
+                self.registry.revoke(old.node_id, old.user_scope)
+            return {"registered": False, "error_code": "LOCAL_OBSERVATION_SCOPE_DENIED"}
+        previous = self.registry.get(identity.public["node_id"])
+        routes = (
+            (self.codex_host_id,)
+            if self.codex_host_id
+            else previous.route_ids
+            if previous
+            else ()
+        )
+        record = NodeRecord(
+            node_id=identity.public["node_id"],
+            user_scope=approved.user_scope,
+            public_key_fingerprint=identity.public["fingerprint"],
+            display_name=identity.public["display_name"],
             route_ids=routes,
-            capabilities=("session.read","session.status"),state="ONLINE",last_seen=_now(),stale_after_seconds=self.stale_after)
-        self.registry.register(record,approved)
-        return {"registered":True,"scope":approved.as_dict()}
+            capabilities=("session.read", "session.status"),
+            state="ONLINE",
+            last_seen=_now(),
+            stale_after_seconds=self.stale_after,
+        )
+        self.registry.register(record, approved)
+        return {"registered": True, "scope": approved.as_dict()}
 
-    def upload(self,identity,scope,**batch):
-        approved=self.approvals.get(self.identity.public["node_id"])
-        if identity is not self.identity or approved is None or not approved.allows("observation.upload"):
-            raise NodeProtocolError("LOCAL_OBSERVATION_SCOPE_DENIED","Local read_sessions approval is required")
-        return self.writer.accept(identity.public["node_id"],approved,batch)
+    def upload(self, identity, scope, **batch):
+        approved = self.approvals.get(self.identity.public["node_id"])
+        if (
+            identity is not self.identity
+            or approved is None
+            or not approved.allows("observation.upload")
+        ):
+            raise NodeProtocolError(
+                "LOCAL_OBSERVATION_SCOPE_DENIED",
+                "Local read_sessions approval is required",
+            )
+        return self.writer.accept(identity.public["node_id"], approved, batch)

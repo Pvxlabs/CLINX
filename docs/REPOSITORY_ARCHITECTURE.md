@@ -16,8 +16,10 @@ Provider 分块/IPC、Node Registry 持久化及请求去重/恢复也已由 Rus
 Node 观察路由、Helper 心跳调度、Observer 查询投影、信任记录事务与配对窗口也由 Rust 承担。
 Provider 客户端请求契约、默认 Process/SSH/WebSocket、Observer HTTP listener/auth/router、
 配置校验与 Workflow 规则、独立 Tunnel 完整生命周期也已迁 Rust。
-Python 仍承载平台装配、mDNS/初次 enrollment、公开对象兼容及部分采样与 Centre 外层调度。
-当前边界和验证见 [薄兼容层迁移](RUST_THIN_RUNTIME_MIGRATION.md)；
+首次 OPAQUE enrollment、密钥/证书初始化、DNS-SD、配置文件读取、Node/Centre/Helper 装配、
+Collector 探针/cache 和进程外层调度现由 Rust 执行。正常 Swift 配对和 Helper 不启动 Python。
+Python 仍有公开 API/DTO、显式 DEV_ONLY 资格后端、Observer/MCP 观察入口及维护装配。
+当前边界和验证见 [设备运行链迁移](RUST_DEVICE_RUNTIME_MIGRATION.md)；
 每组 Python 的实际用途见 [Python 运行边界](PYTHON_RUNTIME_BOUNDARIES.md)。
 
 ## 布局
@@ -33,9 +35,9 @@ Python 仍承载平台装配、mDNS/初次 enrollment、公开对象兼容及部
 | `clinx/provider/` | Codex 公开协议 API 与平台 IO；客户端请求契约、默认 Process/SSH/Unix RPC、事件、live-writer/精确证据判断由 Rust 实现 | ACTIVE_RUNTIME；仍含资格/维护用旧传输公开 API |
 | `clinx/host/` | Workflow 公开 DTO；schema/validation/render 已迁 Rust；冻结操作目录仅用于资格验证 | 配置 codec 仍 ACTIVE_RUNTIME；执行、投递、恢复已迁 Rust |
 | `clinx/transport/` | Tunnel 历史公开资格 API；正常 CLI exec Rust | QUALIFICATION；运行服务直接启动 `clinx-tunnel`，不发布此 Python 实现 |
-| `clinx/nodes/` | Rust Node/Registry/Provider 客户端、配置与 IO 装配 | ACTIVE_RUNTIME；路由/cursor/read 投影/Helper 注册心跳调度由 Rust 实现 |
-| `clinx/discovery/` | 本机密钥与证书建立、OPAQUE enrollment/mDNS IO 与 Helper 设置 | ACTIVE_RUNTIME；信任事务/窗口/候选索引规则由 Rust 实现 |
-| `clinx/monitor/` | Observer HTTP/codec 与身份/协议装配；历史/查询/精确证据/checkpoint/投影委托 Rust | ACTIVE_RUNTIME；HTTP listener/auth/router 已迁 Rust；采样探针/cache 装配仍为 Python |
+| `clinx/nodes/` | Rust Node/Registry/Provider 公开 Python 客户端、历史 CLI exec 别名 | ACTIVE_RUNTIME；正常 Helper/Centre 装配、路由/cursor/read 投影/注册心跳及外层调度全部由 Rust 实现 |
+| `clinx/discovery/` | 公开身份/配对 DTO、设备设置 CLI、显式 DEV_ONLY 后端 | ACTIVE_RUNTIME；正常密钥/证书、信任事务、OPAQUE/TLS enrollment、DNS-SD、GUI helper 全由 Rust 实现 |
+| `clinx/monitor/` | Observer HTTP/codec 与身份/协议装配；历史/查询/精确证据/checkpoint/投影委托 Rust | ACTIVE_RUNTIME；HTTP listener/auth/router 与正常 Collector 探针/cache 已迁 Rust；Observer CLI 仍有 Python 装配 |
 | `clinx/compat/`（已删除） | 旧 Mac Bridge/Registry/M9 及 completion/recovery/outbox | DEAD；由 Rust Authority 事务与 native Transport 替代 |
 | `tools/build/` | 共用运行源码清单处理与增量 App 拷贝 | DEVOPS |
 | `tools/maintenance/` | 显式维护工具 | DEVOPS；不进入运行包 |
@@ -50,21 +52,20 @@ DEAD 项注明替代实现，源码应不存在。`module-moves.json` 为导入/
 不是运行时 import alias；生产代码没有平铺旧模块 shim。
 
 `kernel/src/runtime_lab.rs` 仍被 `authority_state.rs` 复用，属于 ACTIVE_RUNTIME。
-`tools/qualification/runtime_lab/` 是 Python/探针资格实现，两者不能因为名称相似一并删除。
+`tools/qualification/runtime_lab/` 及三条旧阶段资格启动脚本现已退役：它们只相互引用，
+依赖已不存在的 Stage3 测试与固定旧源码哈希。现役 execution_core 冻结契约和测试保留。
 
 ## 发布规则
 
-Rust release 和 Monitor bundle 使用同一份 `architecture/python-sources.json`，由
-`tools/build/runtime_sources.py` 校验。Rust profile 禁止 COMPAT/DEVOPS/QUALIFICATION。
-Monitor profile 同样禁止 COMPAT；新增文件不会通过目录 glob 自动进入包。
-
-运行包保留 `clinx/<职责>/<模块>.py` 层级及 package initializer。源码根目录或 release 的
-`control/` 是 Python import root；Helper 使用 App Resources 作为 import root。
-包内没有源码仓库、`tools/`、本地测试、旧平铺 `.py` 或 `Discovery/` 副本。
-增量 App 构建清除旧 Python 拷贝目录，保留解释器、原生 wheel 和 Swift 资源。
+Rust Python 兼容源码清单仍由 `architecture/python-sources.json` 声明，禁止退役业务核心进入运行包。
+当前 Monitor 使用 `architecture/native-runtime.json`，仅包含 Swift 与三个 Rust Helper，
+不再拷贝 Python 模块、解释器、OPAQUE wheel 或 pip 依赖。`runtime_sources.py --native-monitor-resources`
+清除构建目录中的旧 Python closure 和 DiscoveryRuntime，保留 Swift 资源；不触及已安装应用或用户数据。
+旧 `monitor` Python profile / `copy_monitor_sources` 只保留为既有 API/旧布局资格 fixture，
+正常 App builder 不再调用它；新增资格验证检查真实当前包中 Python 文件为零。
 
 `scripts/stage_rust_release.py` 需要匹配新布局、已测试的 `--runtime-binary` 和
-`--mcp-relay-binary`、`--native-transport-binary`、`--provider-binary`、`--mcp-binary`、`--node-binary`。不能只更换 Python 文件再继承引用旧路径的 Authority binary。
+`--mcp-relay-binary`、`--native-transport-binary`、`--provider-binary`、`--mcp-binary`、`--node-binary`、`--node-daemon-binary`。不能只更换 Python 文件再继承引用旧路径的 Authority binary。
 清单标记 `source_layout=qualified-clinx-v1`、`host_transport=RUST_HOST_V1`；新服务模板仅接受该布局。
 服务直接启动 Rust worker 和 `clinx-mcp`；安装工具把现有 TOML 编译为
 `host-runtime.json` 与 `mcp-runtime.json`，运行时不启动配置编译器。
@@ -76,11 +77,13 @@ Monitor profile 同样禁止 COMPAT；新增文件不会通过目录 glob 自动
 `clinx-node --thin-runtime-contract`；旧 binary 不支持新配置/Observer/Provider 契约，构建必须拒绝。
 客户端还要求 `client_runtime=RUST_CLIENT_RUNTIME_V1` 和实测
 `clinx-node --client-runtime-contract`；同一 marker 覆盖 Provider、Observer、Discovery、
-Node router、身份兼容契约及 Tunnel policy。Monitor 源码 manifest 同样声明这些契约和所需的两个 Rust Helper。`architecture/runtime-data.json`
+Node router、身份兼容契约及 Tunnel policy。当前设备运行还要求 `device_runtime=RUST_DEVICE_RUNTIME_V1`、`node_daemon=RUST_NODE_DAEMON_V1`；
+构建实际检查 Node 和 daemon marker，拒绝缺失新装配入口的旧产物。`architecture/runtime-data.json`
 显式声明共享 schema 数据，Rust 在编译时嵌入，Python 观察/维护 codec 从包内读取。
 新清单还须声明 `provider_exchange=RUST_PROVIDER_V1`、`workspace_observer=RUST_PROVIDER_V1`，
 Authority 从 release 同级的 `clinx-provider` 执行观察。Mac 构建用本机 Rust toolchain 编译
-`clinx-provider` 与 `clinx-node`，放入 `Contents/Helpers/` 并分别签名；Helper launcher 固定这两个路径。
+`clinx-provider`、`clinx-node` 与 `clinx-node-daemon`，放入 `Contents/Helpers/` 并分别签名；
+Swift 配对直接调用 `clinx-node --discovery-gui`，Helper launcher 直接 exec `clinx-node-daemon helper`。
 继承的 `deps/` 禁止夹带另一份 `clinx` 包或已退役的平铺 Python 核心。
 候选发布仍为 STAGED_NOT_SELECTED，构建不会选择 production target。
 
@@ -97,7 +100,7 @@ clinx-mcp --config <new-mcp-json> --stdio
 # 安装/构建时编译配置，运行时直接启动 Rust；以下均使用独立开发环境。
 python -m tools.build.host_runtime_config --config <config> --output <new-host-json>
 clinx-native-transport --socket <authority-socket> --authority-uid <uid> --host-config <new-host-json>
-python -m clinx.nodes.node_centre_entrypoint --help
+clinx-node-daemon --help
 bin/clinx-observer
 bin/clinx --help
 
@@ -115,9 +118,9 @@ MCP 保持 `CLINX_AUTHORITY=rust` 与既有 socket/UID 配置契约。以上命�
 
 ## 原生执行与剩余运行时
 
-Helper 默认通过 `RustNodeExecutionAdapter.from_config` 调用 `clinx-node`，不构造 Python
-`RustIntegration`、Registry 或 Dispatcher。Node 目标/scope/canonical 校验与所有业务映射在 Rust；
-Rust 子进程的 Authority 请求由 Python 经已有 OPAQUE 配对与 mTLS 转发 Centre，
+Helper 正常入口是 `clinx-node-daemon helper`，直接 Rust 配置、监听器、NativeReads、
+Provider relay、Collector 与 supervisor，不构造 Python Registry/Dispatcher/M9。
+Node 目标/scope/canonical 校验、业务映射、OPAQUE 配对与 mTLS 反向请求全部在 Rust，
 由 Centre 本地 IPC 调用 Rust Authority。Mac 不使用 Linux Unix socket 或自报 UID 充当远端认证。
 Rust `clinx-native-transport` 经 Centre 的 Provider gateway 调用该节点的真实 Codex Provider；
 thread/turn/input 证据由 Rust 校验并原子提交。workspace observer 同样按 host 路由，
@@ -146,7 +149,7 @@ take/begin/complete/ACK、successor checkpoint 和取消许可，不持有数据
 详见 [Rust MCP 迁移报告](RUST_MCP_RUNTIME_MIGRATION.md)。
 
 Node 配对后的 TLS、Centre/Owner scope、反向请求路由、Provider 分块/IPC、设备 Registry
-及执行请求恢复已由 Rust 实现，Python 仍装配现有身份对象、监听器与回调；详见
+及执行请求恢复已由 Rust 实现；正常服务装配也已迁 Rust，公开 Python 对象仅为兼容 API；详见
 [Rust Node 网络迁移](RUST_NODE_NETWORK_MIGRATION.md)。
 
 原生历史 SQL、JSONL 解析、fork/projection/turn 身份证明、增量历史 checkpoint，以及
@@ -160,50 +163,10 @@ Python `NativeHistory`、`ObservationWriter` 和 `ObservationDirectory` 使用�
 Collector 的 spool/outbox、调度决策、checkpoint/ACK 事务、采样合并及历史 canonical SQL
 已迁 Rust，见 [Collector 迁移](RUST_COLLECTOR_MIGRATION.md)。
 
-**仍是 Python 运行时**：公开客户端 DTO/API 与错误编解码；TOML 和已安装配置读取；
-Observer HTTP 路由、mDNS IO、初次 OPAQUE enrollment 的 Python TLS/协议编排；
-本机密钥/证书 bootstrap、Collector live probe/cache 装配、Centre 外层 tick 及 Tunnel
-owned-process/信号 IO。Provider 子进程/SSH 资格 API 仍有 Python 兼容实现，未以新名称隐藏。
-Discovery 密码算法继续用既有 Rust OPAQUE 原生库；这不等于 enrollment 网络 IO 已全迁 Rust。
-具体逐文件职责、发布范围和剩余收敛项见 [Python 运行边界](PYTHON_RUNTIME_BOUNDARIES.md)。
-Collector 队列和 Task Authority metadata outbox 分别由 Rust 持久化；Python 没有第二套任务状态。
-`rust_integration.py` 已删除重复业务判断，保留原接口委托 Rust、对象视图和只读 Provider 协议回调；
-正常 Helper 不调用该兼容接口，直接使用 Rust NativeReads。它与配对转发客户端仍为 ACTIVE_RUNTIME，不能标为开发工具。
-本轮协议、原 Python 行为向量、完整套件前后对照和 Mac 验证边界见
-[Rust Node API 迁移](RUST_NODE_API_MIGRATION.md)。
-这些明确未完成迁移，25% 目标尚未达到。
-Python 的 `host_contract.py` 仅作为冻结资格参考保留，不进入 Rust release 或 Helper 包。
-
-`clinx-provider` 已接管 Node 对精确 thread/turn/execution/prompt/cwd 的请求校验与
-Provider RPC；配对 mTLS 和 chunk 去重已由 Rust 接管，Python `NodeProviderRelay` 保留既有协议对象接口。
-`clinx/provider/rust_workspace_probe.py` 已删除，固定 Git 元数据命令及 UID 证据校验在
-`kernel/src/workspace_probe.rs`。隔离回归、发布包验证及 Mac 未验证边界见
-[Rust Provider/workspace 迁移报告](RUST_PROVIDER_RUNTIME_MIGRATION.md)。
-
-## 远端路由配置契约
-
-Centre `serve --provider-gateway <absolute-path>` 可以重复，为不同节点建立独立 IPC endpoint；
-每个 endpoint 保留既有 Transport UID，observer UID 仅可执行固定 `workspace/inspect`。
-跨 Linux UID 时由 `--provider-gateway-gid` 指定既有共享 IPC 组（如 `clinx-ipc`），不修改账号成员关系。
-Authority `provider_routes` 继续要求 endpoint 归属唯一，不放宽为多个 host 共享同一地址。
-Transport 与 observer 使用 `CLINX_RUST_PROVIDER_GATEWAYS`（JSON host→绝对 socket 路径映射）
-及 `CLINX_RUST_PROVIDER_GATEWAY_UID`；worker 转换为重复的 `--provider-route HOST PATH`。
-单节点旧配置 `CLINX_RUST_REMOTE_HOSTS` 与 `CLINX_RUST_PROVIDER_GATEWAY` 继续有效。
-这些是待部署的配置接口，本轮未安装/选择 release 或重启生产服务。
-
-## 全仓 Python 低于 5% 的验收
-
-`clinx-source-audit` 是只读 Rust 工具，固定使用 Python/Rust/Swift/Go/C/Shell 六语言
-物理源码字节口径，包含 tracked 和非 ignored 新源码中的测试、构建及维护工具。
-不更改 Linguist、不排除 Python 资格代码、不把生成代码加入分母。
-同时输出物理行数、分类规模和根目录 Python 列表。
-
-```sh
-<task-target>/release/clinx-source-audit --revision HEAD
-<task-target>/release/clinx-source-audit
-```
-
-默认严格小于 5% 才退出 0；未达标退出 2，工具错误退出 1。当前目标仍未达成。
-运行包不含旧核心、局部迁移 PASS 和全仓占比达标是三个独立验收项。
-资格工具占有显著 Python 规模，必须保留测试身份、断言和覆盖地迁移到 Rust；
-不能通过删除测试或调整统计口径达标。
+**剩余 Python 边界**：公开 DTO/API/异常与私有 stdio 协议客户端；Observer 与只读 MCP 观察入口的
+配置/对象装配；设备设置 CLI 与显式 DEV_ONLY SPAKE2/SSL 资格注入；构建、资格和维护工具。
+现役测试和原回归断言保留；不能为降低比例删除现役资格链。
+新设备运行链不调用 Python enrollment、DNS-SD、Collector live probe/cache 或 Centre 外层调度。
+Collector 队列和 Task Authority metadata outbox 仍分别由 Rust 持久化，无第二套任务权威。
+跨 macOS 实机、原生 App 构建签名与真实 LAN 多播验证边界见 [本轮报告](RUST_DEVICE_RUNTIME_MIGRATION.md)。
+全仓 Python <5% 仍是未完成目标；每组用途、发布范围见 [Python 运行边界](PYTHON_RUNTIME_BOUNDARIES.md)。

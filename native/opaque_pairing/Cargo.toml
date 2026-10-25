@@ -10,9 +10,13 @@ license = "MIT"
 name = "_clinx_opaque"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["python"]
+python = ["dep:pyo3"]
+
 [dependencies]
 opaque-ke = { version = "=4.0.1", default-features = false, features = ["ristretto255", "argon2", "std"] }
-pyo3 = { version = "=0.27.2", features = ["abi3-py311"] }
+pyo3 = { version = "=0.27.2", features = ["abi3-py311"], optional = true }
 sha2 = "=0.10.9"
 zeroize = "=1.8.2"
 rand = { version = "=0.8.8", features = ["getrandom"] }

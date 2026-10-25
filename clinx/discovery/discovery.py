@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import socket
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Any, Callable
-
-from zeroconf import ServiceListener
+from typing import Any
 
 from . import SERVICE_TYPE
 from .identity import DeviceError, NodeIdentity
@@ -69,6 +67,14 @@ class DiscoveryIndex:
         self._records = _command("expire", records=self._records, now=self.clock())
 
     def candidates(self):
+        runtime = getattr(self, "_runtime", None)
+        if runtime is not None:
+            return {
+                key: Candidate(
+                    **dict(value, endpoints=tuple(tuple(e) for e in value["endpoints"]))
+                )
+                for key, value in runtime._candidates().items()
+            }
         if self.refresher:
             self.refresher()
         with self._lock:
@@ -92,37 +98,61 @@ def device_rows(identity, peers, index):
 
 
 def local_addresses():
-    import ifaddr
+    # Explicit legacy qualification injection; normal interface IO is Rust-owned.
+    import sys
 
-    return _command(
-        "local_addresses",
-        adapters=[
-            dict(name=adapter.name, ips=[entry.ip for entry in adapter.ips])
-            for adapter in ifaddr.get_adapters()
-        ],
-    )
+    module = sys.modules.get("ifaddr")
+    injected = getattr(module, "get_adapters", None)
+    if injected is not None and not getattr(
+        injected, "__module__", "ifaddr"
+    ).startswith("ifaddr"):
+        return _command(
+            "local_addresses",
+            adapters=[
+                {"name": adapter.name, "ips": [entry.ip for entry in adapter.ips]}
+                for adapter in injected()
+            ],
+        )
+    from clinx.nodes.network_worker import read_command
+
+    return read_command("mdns.local_addresses")
 
 
-class LanDiscovery(ServiceListener):
+class LanDiscovery:
+    """Public object binding for the Rust DNS-SD socket/cache lifecycle."""
+
     def __init__(self, index: DiscoveryIndex, *, interfaces: list[str] | None = None):
-        from zeroconf import IPVersion, ServiceBrowser, Zeroconf
+        from clinx.nodes.network_worker import Worker
 
         self.index = index
-        self.interfaces = (
-            local_addresses()
-            if interfaces is None
-            else [lan_address(a) for a in interfaces]
-        )
-        self._services: dict[str, Any] = {}
-        self._service_lock = threading.Lock()
-        self.advertisement: Any = None
-        self.zc: Any = None
-        self.browser: Any = None
-        # Offline browsing must still render This Device / Offline Trusted.
-        if self.interfaces:
-            self.zc = Zeroconf(interfaces=self.interfaces, ip_version=IPVersion.V4Only)
-            self.browser = ServiceBrowser(self.zc, SERVICE_TYPE, listener=self)
-            self.index.refresher = self.refresh
+        self._worker = Worker()
+        self._closed = False
+        try:
+            result = self._call(
+                "start",
+                interfaces=local_addresses() if interfaces is None else interfaces,
+            )
+        except Exception:
+            self._worker.close()
+            raise
+        self._id, self.interfaces = result["id"], result["interfaces"]
+        self.advertisement = None
+        self.zc = self if self.interfaces else None
+        self.browser = self if self.interfaces else None
+        self.index._runtime = self
+
+    def _call(self, operation, **arguments):
+        from clinx.authority.rust_authority import RustAuthorityError
+
+        try:
+            if hasattr(self, "_id"):
+                arguments["id"] = self._id
+            return self._worker.call("mdns." + operation, **arguments)
+        except RustAuthorityError as exc:
+            raise DeviceError(str(exc)) from None
+
+    def _candidates(self):
+        return self._call("candidates")["candidates"]
 
     def add_service(self, zc: Any, type_: str, name: str) -> None:
         self.update_service(zc, type_, name)
@@ -141,6 +171,8 @@ class LanDiscovery(ServiceListener):
         self.index.remove(name)
 
     def refresh(self) -> None:
+        if hasattr(self, "_worker"):
+            return
         # ServiceBrowser suppresses callbacks for unchanged refreshed records.
         # Read actual remaining DNS TTLs instead of extending cached metadata
         # by its original TTL (which would keep an offline device alive).
@@ -193,36 +225,26 @@ class LanDiscovery(ServiceListener):
     def advertise(
         self, identity: NodeIdentity, port: int, addresses: list[str] | None = None
     ) -> None:
-        from zeroconf import ServiceInfo
-
-        addresses = self.interfaces if addresses is None else addresses
-        if not addresses or self.zc is None:
-            raise DeviceError("NO_PRIVATE_LAN_INTERFACE")
-        props = {
-            key: str(identity.public[key.decode()]).encode("utf-8") for key in TXT_KEYS
-        }
-        label = identity.public["node_id"]
-        info = ServiceInfo(
-            SERVICE_TYPE,
-            label + "." + SERVICE_TYPE,
-            addresses=[socket.inet_aton(lan_address(a)) for a in addresses],
-            port=port,
-            properties=props,
-            server=label + ".local.",
-            host_ttl=30,
-            other_ttl=30,
+        self.advertisement = self._call(
+            "advertise", identity=identity.public, port=port, addresses=addresses
         )
-        self.zc.register_service(info, allow_name_change=False)
-        self.advertisement = info
+
+    def unregister_service(self, advertisement):
+        if advertisement != self.advertisement:
+            raise DeviceError("INVALID_DISCOVERY_METADATA")
+        self._call("unregister")
+        self.advertisement = None
+
+    def cancel(self):
+        self.close()
 
     def close(self) -> None:
-        self.index.refresher = None
-        if self.browser:
-            self.browser.cancel()
-        if self.zc:
-            if self.advertisement:
-                self.zc.unregister_service(self.advertisement)
-            self.zc.close()
+        if not self._closed:
+            self._call("close")
+            self._worker.close()
+            self._closed = True
+            self.index._runtime = None
+            self.index.refresher = None
 
     def __enter__(self) -> LanDiscovery:
         return self

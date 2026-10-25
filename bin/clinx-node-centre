@@ -5,13 +5,15 @@ repo_root=$(CDPATH= cd -- "$launcher_dir/.." && pwd)
 state_dir=${CLINX_NODE_CENTRE_STATE:-${HOME}/.local/state/clinx/node-centre}
 node_id=${CLINX_NODE_ID:-$(hostname | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_.-]/-/g' | cut -c1-63)}
 registry_path=${CLINX_NODE_REGISTRY:-${HOME}/.local/state/clinx/tasks.sqlite3.nodes.sqlite3}
-exec "${CLINX_PYTHON:-python3}" "$repo_root/clinx/nodes/node_centre_entrypoint.py" \
+daemon=${CLINX_NODE_DAEMON_BINARY:-$repo_root/clinx-node-daemon}
+test -x "$daemon"
+exec "$daemon" \
   --state "$state_dir" --node-id "$node_id" serve \
   --registry "$registry_path" \
   --observations "${CLINX_OBSERVATION_DB:-$state_dir/observations.sqlite3}" \
   --bind "${CLINX_NODE_CENTRE_BIND:-0.0.0.0}" \
   --port "${CLINX_NODE_CENTRE_PORT:-8771}" \
   --local-native-home "${CLINX_NATIVE_HOME:-$HOME/.codex}" \
-  --local-canonical-db "${CLINX_OBSERVATION_CANONICAL_DB:-$HOME/.local/state/clinx/tasks.sqlite3}" \
+  --rust-projection \
   --local-owner-host "${CLINX_OBSERVATION_OWNER_HOST:-$node_id}" \
   --stale-after "${CLINX_NODE_CENTRE_STALE_AFTER:-45}"

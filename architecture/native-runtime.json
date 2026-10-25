@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "device_runtime": "RUST_DEVICE_RUNTIME_V1",
+  "monitor_helpers": ["clinx-provider", "clinx-node", "clinx-node-daemon"],
+  "monitor_python_sources": [],
+  "monitor_python_dependencies": [],
+  "centre_entrypoint": "clinx-node-daemon --state PATH --node-id ID serve",
+  "helper_entrypoint": "clinx-node-daemon helper",
+  "discovery_gui_entrypoint": "clinx-node --discovery-gui",
+  "compatibility_source_profile": "monitor",
+  "compatibility_profile_purpose": "Retained Python API/layout qualification only; never copied by the current App builder"
+}

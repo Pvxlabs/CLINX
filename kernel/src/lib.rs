@@ -1669,6 +1669,12 @@ pub mod discovery_state;
 
 pub mod discovery_index;
 pub mod runtime_config;
+pub mod discovery_identity;
+pub mod discovery_enrollment;
+pub mod observation_runtime;
+pub mod mdns_runtime;
+pub mod node_daemon;
+pub mod discovery_gui;
 pub mod tunnel_runtime;
 pub mod observer_http;
 pub mod python_numeric;
