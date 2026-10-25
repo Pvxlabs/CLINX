@@ -748,14 +748,21 @@ pub(crate) fn commit_core(
 #[cfg(test)]
 mod writer_lock_regression {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
     use std::process::{Command, Stdio};
 
     #[test]
     fn closed_store_releases_writer_lock_while_unrelated_child_keeps_inherited_fd() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = Store::open(directory.path(), true).unwrap();
+        // Match the production state contract regardless of the runner's umask
+        // or a platform temp-directory symlink. Keep the writer-lock assertions.
+        let directory = tempfile::Builder::new()
+            .permissions(fs::Permissions::from_mode(0o700))
+            .tempdir()
+            .unwrap();
+        let path = directory.path().canonicalize().unwrap();
+        let store = Store::open(&path, true).unwrap();
         assert_eq!(
-            Store::open(directory.path(), false).err().unwrap(),
+            Store::open(&path, false).err().unwrap(),
             "WRITER_ALREADY_ACTIVE"
         );
         // Deterministically hold the same open-file description across a child,
@@ -767,7 +774,7 @@ mod writer_lock_regression {
             .spawn()
             .unwrap();
         drop(store);
-        let reopened = Store::open(directory.path(), false);
+        let reopened = Store::open(&path, false);
         let child_was_alive = child.try_wait().unwrap().is_none();
         child.kill().unwrap();
         child.wait().unwrap();

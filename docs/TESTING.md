@@ -93,3 +93,5 @@ ignored Python `tests/` 是历史归档，保留原字节、失败、skip 和独
 恢复历史测试需匹配原源码与依赖，不向当前 runtime 恢复 Python 来满足旧 imports。
 全仓 fmt/Clippy 若有基线问题，保留完整诊断并与基线位置比较；修改文件必须无新增问题。
 当前 Rust 功能测试失败不能因迁移已完成而被豁免。
+writer-lock 回归显式使用 `0700` 的 canonical 临时目录，不依赖开发机的 `umask 077`；
+CI 首次在 `umask 022` 暴露的目录权限失败保留记录，修复不得放宽生产路径校验。
