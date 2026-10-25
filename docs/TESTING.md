@@ -275,3 +275,22 @@ These use a protocol Provider fixture and temporary repositories, not physical
 Mac or real business tasks. Package fixtures exercise both copied source profiles
 without the source checkout or PYTHONPATH. Full evidence and historical failures:
 [Rust Node API migration](RUST_NODE_API_MIGRATION.md).
+
+## Rust native history and observation directory
+
+The same isolated binary settings qualify `fixtures/test_rust_observation.py`.
+It exercises real disposable SQLite indexes and JSONL rollouts, exact fork/turn
+identity, display privacy, incremental checkpoints, HMAC cursors, concurrent
+batch claims, duplicate/conflicting sequences, terminal merge, scope revocation,
+restart, native permission errors and packaged Helper reads without a checkout.
+The required companion binary reports `RUST_OBSERVATION_V1` via
+`clinx-node --observation-contract`; release and Monitor builders reject older
+binaries. Native indexes are read-only. The writable observation database is a
+display projection, never Task Authority storage.
+
+The [migration report](RUST_OBSERVATION_MIGRATION.md) records the before/after
+historical suite separately, preserves all 124 local test/support files and
+qualifies 33 original standalone observation cases without changing assertions.
+The permission cases require an unprivileged user; running as root does not
+prove native file access denial. Collector spool/outbox and physical macOS
+build/signing remain separate migration/qualification boundaries.

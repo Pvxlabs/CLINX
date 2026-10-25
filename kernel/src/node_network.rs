@@ -237,6 +237,17 @@ impl Worker {
     }
 }
 pub fn command(operation: &str, a: &Value) -> Result<Value> {
+    if operation == "registry.read" {
+        return crate::node_registry::Registry::read(a);
+    }
+    if operation.starts_with("history.") {
+        return crate::native_history::invoke(operation, a);
+    }
+    if operation.starts_with("observation.") {
+        return crate::observation::invoke(operation, a, |_, _| {
+            Err("OBSERVATION_CALLBACK_REQUIRED".into())
+        });
+    }
     if operation == "scope.intersect" {
         return crate::node_scope::intersect(
             crate::node_scope::optional(&a["local"])?,
@@ -322,7 +333,13 @@ pub fn serve() -> Result<()> {
                 "relay.handle" => worker.relay.handle(&v["arguments"], |context, body| {
                     worker.callback("relay.exchange", json!({"context":context,"body":body}))
                 }),
+                "registry.read" => crate::node_registry::Registry::read(&v["arguments"]),
                 op if op.starts_with("registry.") => worker.registry.invoke(op, &v["arguments"]),
+                op if op.starts_with("observation.") => {
+                    crate::observation::invoke(op, &v["arguments"], |op, args| {
+                        worker.callback(op, args)
+                    })
+                }
                 _ => command(operation, &v["arguments"]),
             };
             let response = match result {

@@ -453,7 +453,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+      "reason": "Typed private client for Rust read-only exact native association lookup; no Python SQL."
     },
     {
       "path": "clinx/monitor/native_observation_bridge.py",
@@ -471,7 +471,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+      "reason": "Private Rust observation store/directory clients, existing identity object facts and opaque remote call binding; SQL, validation, stream receipts, cursors and projection run in Rust. Environment/identity wiring remains Python runtime."
     },
     {
       "path": "clinx/monitor/observation_mcp.py",
@@ -489,7 +489,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+      "reason": "Collector scheduling/checkpoint/outbox and live writer observation remain Python runtime; native inventory/turn sampling is Rust. Base historical canonical read compatibility and sample merge still Python; normal managed source overrides it with Rust Authority reads."
     },
     {
       "path": "clinx/monitor/observer_server.py",
@@ -620,7 +620,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+      "reason": "Private Rust history client and historical constants; native SQLite/JSONL reads, identity, privacy, model and context/cursors run in clinx-node. Explicit historical canonical SQL budget helper still used by observation source."
     },
     {
       "path": "clinx/provider/native_provider.py",
@@ -990,13 +990,19 @@
         "rust",
         "monitor"
       ],
-      "reason": "Bounded stdio IO and callback façade for Rust Node networking; no socket, authentication or protocol state"
+      "reason": "Bounded multiplexed stdio IO and callbacks for Rust Node/network/history/observation; no sockets, SQL or business projection state."
     },
     {
       "path": "fixtures/test_rust_node_network.py",
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Rust paired Node TLS/OpenSSL interoperability, durable registry identity, lost ACK and restart uncertainty regression"
+    },
+    {
+      "path": "fixtures/test_rust_observation.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Real disposable native/history and Rust observation store tests, old cursor/digest compatibility, concurrency/restart/revocation and packaged Helper binary closure"
     }
   ]
 }

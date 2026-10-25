@@ -1,524 +1,115 @@
-"""Bounded, exact reads of the current Unix user's native Codex history.
+"""Typed private client for Rust native history; no SQL, parser or read decisions."""
 
-No registry, migrations, provider startup, subscriptions or writer claims. The
-existing Codex index is the authority; legacy files are a bounded compatibility
-source, not a second index. Cursors are scoped to host, thread and source.
-"""
-from __future__ import annotations
-
-import base64
-import json
-import os
-import re
 from pathlib import Path
-import sqlite3
 
-try:
-    # The full CLINX centre imports the shared identity reader.  The bundled
-    # user-session node intentionally ships only this read-only history
-    # module, so keep the same small primitives available without pulling the
-    # task registry or execution plane into the macOS helper.
-    from clinx.contracts.thread_identity import ThreadLookupError, readonly
-except ImportError:  # pragma: no cover - exercised by the standalone bundle
-    import contextlib
-
-    class ThreadLookupError(ValueError):
-        def __init__(self, code, reason):
-            super().__init__(reason)
-            self.code, self.reason = code, reason
-
-    @contextlib.contextmanager
-    def readonly(path):
-        conn = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
-        conn.row_factory = sqlite3.Row
-        try:
-            conn.execute("PRAGMA query_only=ON")
-            conn.execute("BEGIN")
-            yield conn
-        finally:
-            conn.close()
+from clinx.authority.rust_authority import RustAuthorityError
+from clinx.contracts.thread_identity import ThreadLookupError
+from clinx.contracts.thread_identity import readonly as readonly
+from clinx.nodes.network_worker import read_command
 
 SCAN_BYTES = 512 * 1024
 SQL_STEPS = 250_000
 
-
-def model_identifier(value):
-    """Only a bounded public model identifier, never configuration or payloads."""
-    return value if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}', value) else None
-
-# One-time retirement of CLINX's former developer-level output template.
-# Stored by Codex in its own history; never rewrite old records or replace
-# the thread's developer configuration (which may contain user instructions).
 LEGACY_REPLY_RETIREMENT = (
-    'CLINX_LEGACY_REPLY_FORMAT_RETIRED_V1\n'
-    'The reply-format requirements in the earlier CLINX MANAGED EXECUTION CONTRACT are retired: '
-    'CLINX no longer owns or constrains the final response format. The CLINX_EXECUTION_RESULT marker '
-    'and STATUS, SUMMARY, CHANGED_FILES, VALIDATION, BLOCKERS, NEXT_STATE fields are no longer required. '
-    'This only retires that CLINX-generated output template; all other instructions remain in effect.'
+    "CLINX_LEGACY_REPLY_FORMAT_RETIRED_V1\n"
+    "The reply-format requirements in the earlier CLINX MANAGED EXECUTION CONTRACT are retired: "
+    "CLINX no longer owns or constrains the final response format. The CLINX_EXECUTION_RESULT marker "
+    "and STATUS, SUMMARY, CHANGED_FILES, VALIDATION, BLOCKERS, NEXT_STATE fields are no longer required. "
+    "This only retires that CLINX-generated output template; all other instructions remain in effect."
 )
 
-# Native turn status is a provider fact.  Keep the original value in the
-# payload and derive a small, stable vocabulary for read-plane presentation.
-# This vocabulary never changes a managed execution_state.
-_NATIVE_STATUS_ALIASES = {
-    'inprogress': 'RUNNING',
-    'running': 'RUNNING',
-    'active': 'RUNNING',
-    'started': 'RUNNING',
-    'processing': 'RUNNING',
-    'paused': 'PAUSED',
-    'completed': 'COMPLETED',
-    'succeeded': 'COMPLETED',
-    'success': 'COMPLETED',
-    'failed': 'FAILED',
-    'error': 'FAILED',
-    'errored': 'FAILED',
-    'systemerror': 'FAILED',
-    'timeout': 'TIMED_OUT',
-    'timedout': 'TIMED_OUT',
-    'cancelled': 'CANCELLED',
-    'canceled': 'CANCELLED',
-    'interrupted': 'INTERRUPTED',
-    'aborted': 'INTERRUPTED',
-    'disconnected': 'DISCONNECTED',
-    'connectionlost': 'DISCONNECTED',
-    'connectionclosed': 'DISCONNECTED',
-}
-_NATIVE_TERMINAL_STATES = frozenset({
-    'COMPLETED', 'FAILED', 'TIMED_OUT', 'CANCELLED', 'INTERRUPTED', 'DISCONNECTED',
-})
+
+def _read(operation, **arguments):
+    try:
+        return read_command("history." + operation, **arguments)
+    except RustAuthorityError as exc:
+        raise ThreadLookupError(str(exc), str(exc)) from None
+
+
+def model_identifier(value):
+    return _read("model", value=value)
 
 
 def normalize_native_status(value):
-    """Return a presentation token without treating missing data as active."""
-    if isinstance(value, dict):
-        value = value.get('type') or value.get('status') or value.get('state')
-    key = str(value or '').replace('_', '').replace('-', '').casefold()
-    return _NATIVE_STATUS_ALIASES.get(key, 'UNKNOWN')
+    return _read("normalize", value=value)
 
 
 def native_status_is_terminal(value):
-    return normalize_native_status(value) in _NATIVE_TERMINAL_STATES
+    return normalize_native_status(value) in {
+        "COMPLETED",
+        "FAILED",
+        "TIMED_OUT",
+        "CANCELLED",
+        "INTERRUPTED",
+        "DISCONNECTED",
+    }
+
+
+def message(item):
+    value = _read("message", value=item)
+    return tuple(value) if value else None
 
 
 def cursor_encode(tid, host, mode, before):
-    return base64.urlsafe_b64encode(json.dumps([1, tid, host, mode, before]).encode()).decode().rstrip('=')
+    return _read("cursor_encode", tid=tid, host=host, mode=mode, before=before)
 
 
 def cursor_decode(cursor, tid, host, mode):
-    if cursor is None:
-        return None
-    try:
-        if not isinstance(cursor, str) or len(cursor) > 1024:
-            raise ValueError()
-        value = json.loads(base64.b64decode(cursor + '=' * (-len(cursor) % 4), altchars=b'-_', validate=True))
-        if value[:4] != [1, tid, host, mode] or len(value) != 5 or type(value[4]) is not int or value[4] < 0:
-            raise ValueError()
-        return value[4]
-    except (ValueError, TypeError):
-        raise ThreadLookupError('INVALID_CONTEXT_CURSOR', 'Cursor does not match the exact host/thread/source') from None
+    return _read("cursor_decode", cursor=cursor, tid=tid, host=host, mode=mode)
 
 
 def _budget_sql(conn):
+    # Kept only for the remaining explicit historical canonical read interface.
     steps = 0
+
     def progress():
         nonlocal steps
         steps += 1000
         return int(steps > SQL_STEPS)
+
     conn.set_progress_handler(progress, 1000)
-
-
-def message(item):
-    """Strict display allowlist; never recursively walk arbitrary protocol data."""
-    kind = item.get('type')
-    if item.get('channel') in ('analysis', 'reasoning') or item.get('phase') in ('analysis', 'reasoning'):
-        return None
-    if kind == 'agentMessage':
-        role, text = 'assistant', item.get('text')
-    elif kind == 'userMessage' or (kind == 'message' and item.get('role') in ('user', 'assistant')):
-        role = 'user' if kind == 'userMessage' else item['role']
-        content = item.get('content', [])
-        text = '\n'.join(c['text'] for c in content if isinstance(c, dict)
-                         and c.get('type') in ('text', 'input_text', 'output_text')
-                         and isinstance(c.get('text'), str)) if isinstance(content, list) else None
-    else:
-        return None
-    if not isinstance(text, str) or not text.strip():
-        return None
-    # Display text must retain Markdown paragraphs, tables and code indentation.
-    # bridge._context_text intentionally flattens whitespace for recovery markers;
-    # keep its privacy filters here without applying that lossy transformation.
-    text = re.sub(r'(?i)\b(authorization\s*[:=]\s*bearer\s+|(?:api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*)[^\s,;]+', r'\1[REDACTED]', text)
-    text = re.sub(r'\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,})\b', '[REDACTED]', text)
-    text = re.sub(r'-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----', '[REDACTED]', text, flags=re.S)
-    text = re.sub(r'\blin_api_[A-Za-z0-9]+\b', '[REDACTED]', text)
-    text = re.sub(r'<in-app-browser-context\b[^>]*>.*?</in-app-browser-context>', '', text, flags=re.I | re.S)
-    return role, text.replace('\x00', '')
-
-
-def context_result(tid, entries, *, source, max_bytes, turns, next_cursor=None, incomplete=False, evidence=None):
-    # Entries arrive oldest first. Reserve space for both roles so a long final
-    # answer cannot evict the user's request (or vice versa).
-    latest = {}
-    for row in entries:
-        parsed = message(row['item'])
-        if parsed:
-            role, text = parsed
-            latest[role] = (text, row.get('turn_id'), row.get('timestamp'))
-    budget = max_bytes // max(len(latest), 1)
-    texts, truncated, refs = {}, incomplete, {}
-    for role, (value, turn_id, timestamp) in latest.items():
-        data = value.encode('utf-8')
-        texts[role] = data[:budget].decode('utf-8', errors='ignore')
-        truncated |= len(data) > budget
-        refs[role] = {'turn_id': turn_id, 'timestamp': timestamp}
-    return dict(context_status='AVAILABLE' if texts else 'CONTEXT_UNAVAILABLE',
-                context_source=source, context_scope='THREAD_RECENT', context_range='cursor-page',
-                context_truncated=bool(truncated or next_cursor), next_cursor=next_cursor,
-                last_user_intent=texts.get('user'), last_codex_result=texts.get('assistant'),
-                provenance={'queried_thread_id': tid, 'context_turn_refs': turns,
-                            'message_refs': refs, 'execution_attribution': 'NOT_CLAIMED', **(evidence or {})})
 
 
 class NativeHistory:
     def __init__(self, root):
         self.root = Path(root).resolve()
 
-    def metadata(self, tid):
-        path = self.root / 'state_5.sqlite'
-        if not path.exists():
-            raise ThreadLookupError('NATIVE_INDEX_UNAVAILABLE', 'Native state index is unavailable')
-        if not os.access(path, os.R_OK):
-            raise ThreadLookupError('NATIVE_ACCESS_DENIED', 'Native index permission denied')
-        try:
-            with readonly(path) as c:
-                columns = {r[1] for r in c.execute('PRAGMA table_info(threads)')}
-                if not {'id', 'cwd', 'rollout_path'} <= columns:
-                    raise ThreadLookupError('NATIVE_SCHEMA_UNSUPPORTED', 'Native threads index lacks identity columns')
-                selected = ['id', 'cwd', 'rollout_path'] + [
-                    f'substr({k},1,512) AS {k}' if k in ('name', 'title') else k for k in (
-                    'name', 'title', 'history_mode', 'archived', 'created_at', 'updated_at',
-                    'cli_version', 'project_id') if k in columns]
-                r = c.execute('SELECT ' + ','.join(selected) + ' FROM threads WHERE id=?', (tid,)).fetchone()
-                return dict(r) if r else None
-        except PermissionError:
-            raise ThreadLookupError('NATIVE_ACCESS_DENIED', 'Native index permission denied') from None
-        except sqlite3.Error:
-            raise ThreadLookupError('NATIVE_INDEX_UNAVAILABLE', 'Native index cannot be read in read-only mode') from None
+    def _read(self, operation, **arguments):
+        return _read(operation, root=str(self.root), **arguments)
 
-    def context(self, tid, host, metadata, recent_turns, max_bytes, *, anchor=None, cursor=None):
-        if metadata.get('history_mode') == 'paginated':
-            return self._paginated(tid, host, metadata, recent_turns, max_bytes, anchor, cursor)
-        return self._legacy(tid, host, metadata, recent_turns, max_bytes, anchor, cursor)
+    def metadata(self, tid):
+        return self._read("metadata", tid=tid)
+
+    def context(
+        self, tid, host, metadata, recent_turns, max_bytes, *, anchor=None, cursor=None
+    ):
+        return self._read(
+            "context",
+            tid=tid,
+            host=host,
+            metadata=metadata,
+            recent_turns=recent_turns,
+            max_bytes=max_bytes,
+            anchor=anchor,
+            cursor=cursor,
+        )
 
     def identity(self, tid, metadata):
-        """Validate a durable native session header for explicit adoption only."""
-        with self._path(tid, metadata).open('rb') as stream:
-            header = json.loads(stream.readline(131072))
-        meta = header.get('payload', {})
-        if (header.get('type') != 'session_meta' or meta.get('id') != tid
-                or Path(meta.get('cwd', '')).resolve() != Path(metadata['cwd']).resolve()):
-            raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Native session identity disagrees with index')
-        return {'id': tid, 'sessionId': meta['id'], 'cwd': metadata['cwd'],
-                'projectId': metadata.get('project_id'), 'ephemeral': False,
-                'status': {'type': 'UNKNOWN'}, 'cliVersion': metadata.get('cli_version') or meta.get('cli_version'),
-                'name': metadata.get('name') or metadata.get('title'),
-                'identity_source': 'CODEX_STATE_AND_SESSION_HEADER'}
+        return self._read("identity", tid=tid, metadata=metadata)
 
     def legacy_reply_format_pending(self, tid, metadata):
-        """Recognize only our old developer template and its durable retirement.
-
-        Stream the history with bounded memory so a later conversation cannot
-        evict the retirement marker from a tail window and cause reinjection.
-        User/assistant quotations never count as developer configuration.
-        """
-        self.identity(tid, metadata)
-        pending = False
-        with self._path(tid, metadata).open('rb') as stream:
-            while line := stream.readline(1024 * 1024):
-                if not line.endswith(b'\n'):
-                    # Skip oversized records rather than parsing fragments.
-                    while line and not line.endswith(b'\n'):
-                        line = stream.readline(1024 * 1024)
-                    continue
-                if b'CLINX' not in line or b'developer' not in line:
-                    continue
-                try:
-                    row = json.loads(line)
-                except ValueError:
-                    continue
-                item = row.get('payload', {})
-                if row.get('type') != 'response_item' or item.get('role') != 'developer':
-                    continue
-                text = ''.join(p.get('text', '') for p in item.get('content', [])
-                               if isinstance(p, dict) and p.get('type') in ('input_text', 'text'))
-                if text == LEGACY_REPLY_RETIREMENT:
-                    pending = False
-                elif (text.startswith('CLINX MANAGED EXECUTION CONTRACT\n')
-                      and 'CLINX owns the final response format' in text
-                      and 'CLINX_EXECUTION_RESULT' in text
-                      and 'END CLINX MANAGED EXECUTION CONTRACT' in text):
-                    pending = True
-        return pending
+        return self._read("pending", tid=tid, metadata=metadata)
 
     def status(self, tid, metadata):
-        base = {
-            'source': 'NATIVE_PERSISTED_HISTORY',
-            'status': None,
-            'state': 'UNKNOWN',
-            'terminal': False,
-        }
-        if metadata.get('history_mode') != 'paginated':
-            return dict(base, reason='NATIVE_HISTORY_MODE_UNSUPPORTED')
-        try:
-            with readonly(self.root / 'thread_history_1.sqlite') as conn:
-                history_tid = self.projection_thread_id(tid, metadata, conn)
-                row = conn.execute('SELECT turn_id,status,started_at,completed_at FROM thread_turns '
-                    'WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1', (history_tid,)).fetchone()
-                if row is None:
-                    return dict(base, reason='NATIVE_TURN_UNAVAILABLE')
-                value = dict(row)
-                state = normalize_native_status(value.get('status'))
-                return dict(base, **value, state=state, history_thread_id=history_tid,
-                            terminal=native_status_is_terminal(value.get('status')))
-        except ThreadLookupError as exc:
-            return dict(base, reason=exc.code)
-        except (OSError, sqlite3.Error):
-            return dict(base, reason='NATIVE_HISTORY_UNAVAILABLE')
+        return self._read("status", tid=tid, metadata=metadata)
 
     def turn_model(self, tid, metadata, turn_id, offset):
-        """Read only this indexed turn's context; never borrow the latest model.
-
-        Older indexes without offsets remain UNKNOWN. Reads stop at the next turn
-        and at 128 KiB, including oversized/partial records.
-        """
-        if not turn_id or type(offset) is not int or offset < 0:
-            return None
-        try:
-            path = self._path(tid, metadata)
-            with path.open('rb') as stream:
-                if offset >= path.stat().st_size:
-                    return None
-                stream.seek(offset)
-                remaining = 128 * 1024
-                anchored = False
-                while remaining > 0:
-                    line = stream.readline(remaining)
-                    remaining -= len(line)
-                    if not line or not line.endswith(b'\n'):
-                        return None
-                    row = json.loads(line)
-                    if not isinstance(row, dict) or not isinstance(row.get('payload'), dict):
-                        return None
-                    payload = row['payload']
-                    is_start = row.get('type') == 'event_msg' and payload.get('type') == 'task_started'
-                    is_context = row.get('type') == 'turn_context'
-                    if not anchored:
-                        if not (is_start or is_context) or payload.get('turn_id') != turn_id:
-                            return None
-                        anchored = True
-                    if (is_start or is_context) and payload.get('turn_id') != turn_id:
-                        return None
-                    if is_context:
-                        if payload.get('cwd', metadata['cwd']) != metadata['cwd']:
-                            return None
-                        return model_identifier(payload.get('model'))
-        except (OSError, ValueError, TypeError, ThreadLookupError):
-            return None
-        return None
-
-    def _paginated(self, tid, host, metadata, recent_turns, max_bytes, anchor, cursor):
-        before = cursor_decode(cursor, tid, host, 'paginated')
-        history_path = self.root / 'thread_history_1.sqlite'
-        if not history_path.exists():
-            raise ThreadLookupError('NATIVE_HISTORY_UNAVAILABLE', 'Native paginated history index is missing')
-        if not os.access(history_path, os.R_OK):
-            raise ThreadLookupError('NATIVE_ACCESS_DENIED', 'Native history permission denied')
-        try:
-            with readonly(history_path) as c:
-                _budget_sql(c)
-                history_tid = self.projection_thread_id(tid, metadata, c)
-                predicate, args = 'thread_id=?', [history_tid]
-                if anchor:
-                    predicate += ' AND turn_id=?'; args.append(anchor)
-                if before is not None:
-                    predicate += ' AND rollout_ordinal<?'; args.append(before)
-                turns = [dict(r) for r in c.execute(
-                    'SELECT turn_id,rollout_ordinal,status,started_at,completed_at FROM thread_turns WHERE '
-                    + predicate + ' ORDER BY rollout_ordinal DESC LIMIT ?', (*args, recent_turns + 1))]
-                more = len(turns) > recent_turns
-                turns = turns[:recent_turns]
-                entries = []
-                content_parts_truncated = False
-                # Query only display types and extract bounded fields inside SQLite.
-                # Tool/reasoning JSON never crosses the read-plane boundary.
-                for turn in reversed(turns):
-                    for kind in ('userMessage', 'agentMessage'):
-                        rows = c.execute(
-                            "SELECT item_id,rollout_ordinal,created_at_ms,"
-                            "substr(json_extract(item_json,'$.text'),1,?) AS text,"
-                            "substr(json_extract(item_json,'$.phase'),1,32) AS phase,"
-                            "substr(json_extract(item_json,'$.channel'),1,32) AS channel,"
-                            "json_array_length(item_json,'$.content') AS content_parts,"
-                            "CASE WHEN item_type='userMessage' THEN (SELECT substr(group_concat(substr(json_extract(value,'$.text'),1,?), char(10)),1,?) "
-                            "FROM (SELECT value FROM json_each(item_json,'$.content') LIMIT 32) WHERE json_extract(value,'$.type') IN ('text','input_text')) END AS content "
-                            "FROM thread_items WHERE thread_id=? AND turn_id=? AND item_type=? "
-                            "AND coalesce(json_extract(item_json,'$.phase'),'') NOT IN ('analysis','reasoning') "
-                            "AND coalesce(json_extract(item_json,'$.channel'),'') NOT IN ('analysis','reasoning') "
-                            "ORDER BY rollout_ordinal DESC LIMIT 1", (max_bytes + 1, max_bytes + 1, max_bytes + 1, history_tid, turn['turn_id'], kind))
-                        for row in rows:
-                            content_parts_truncated |= (row['content_parts'] or 0) > 32
-                            entries.append({'item': {'type': kind, 'text': row['text'],
-                                'phase': row['phase'], 'channel': row['channel'],
-                                'content': [{'type': 'text', 'text': row['content'] or ''}]},
-                                'turn_id': turn['turn_id'], 'timestamp': row['created_at_ms']})
-                projection = c.execute('SELECT next_rollout_byte_offset FROM thread_history_projection_state WHERE thread_id=?', (history_tid,)).fetchone()
-                offset = projection[0] if projection else None
-        except ThreadLookupError:
-            raise
-        except sqlite3.OperationalError as exc:
-            code = 'NATIVE_HISTORY_BUDGET_EXHAUSTED' if 'interrupted' in str(exc) else 'NATIVE_SCHEMA_UNSUPPORTED'
-            raise ThreadLookupError(code, 'Native history unavailable within the bounded read contract') from None
-        except (sqlite3.Error, ValueError):
-            raise ThreadLookupError('NATIVE_SCHEMA_UNSUPPORTED', 'Native paginated history is incompatible') from None
-        path = self._path(tid, metadata)
-        size = path.stat().st_size if path and path.exists() else None
-        incomplete = offset is None or size is None or offset < size
-        return context_result(tid, entries, source='CODEX_NATIVE_HISTORY', max_bytes=max_bytes,
-            turns=[t['turn_id'] for t in reversed(turns)],
-            next_cursor=cursor_encode(tid, host, 'paginated', turns[-1]['rollout_ordinal']) if more else None,
-            incomplete=incomplete or content_parts_truncated, evidence={'indexed_source': 'CODEX_THREAD_HISTORY_PRIMARY_KEY',
-                'native_turns': turns, 'history_thread_id': history_tid,
-                'projection_byte_offset': offset, 'rollout_bytes': size,
-                'projection_incomplete': incomplete, 'sql_step_budget': SQL_STEPS,
-                'body_byte_budget': max_bytes, 'content_parts_limit': 32,
-                'content_parts_truncated': content_parts_truncated})
+        return self._read(
+            "turn_model", tid=tid, metadata=metadata, turn_id=turn_id, offset=offset
+        )
 
     def _path(self, tid, metadata):
-        path = Path(metadata['rollout_path']).resolve()
-        fork = re.fullmatch(r'.*-' + re.escape(tid) +
-            r'_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl', path.name)
-        if not path.is_relative_to(self.root) or not (path.name.endswith('-' + tid + '.jsonl') or fork):
-            raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Indexed rollout is outside the native history root')
-        if fork:
-            # The header identifies the original conversation. Its creation cwd
-            # may differ from the current workspace recorded by native Codex.
-            try:
-                with path.open('rb') as stream:
-                    header = json.loads(stream.readline(131072))
-            except (OSError, ValueError):
-                raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Fork rollout header unavailable') from None
-            meta = header.get('payload', {}) if isinstance(header, dict) else {}
-            if (not isinstance(header, dict) or not isinstance(meta, dict) or header.get('type') != 'session_meta'
-                    or meta.get('id') != tid or not isinstance(meta.get('cwd'), str)):
-                raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Fork rollout session header disagrees with native index')
-            if (Path(meta['cwd']).resolve() != Path(metadata['cwd']).resolve()
-                    and not self._observed_workspace(path, metadata['cwd'])):
-                raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Indexed workspace lacks native turn context evidence')
-        return path
-
-    @staticmethod
-    def _observed_workspace(path, cwd):
-        """Bounded evidence of a native workspace move, never a directory alias."""
-        with path.open('rb') as stream:
-            size = path.stat().st_size
-            for offset in dict.fromkeys((0, max(0, size - SCAN_BYTES))):
-                stream.seek(offset)
-                if offset:
-                    stream.readline(SCAN_BYTES)  # discard a partial record
-                for line in stream.read(SCAN_BYTES).splitlines():
-                    try:
-                        row = json.loads(line)
-                    except (ValueError, UnicodeError):
-                        continue
-                    if not isinstance(row, dict) or row.get('type') != 'turn_context':
-                        continue
-                    payload = row.get('payload', {})
-                    if (isinstance(payload, dict) and isinstance(payload.get('cwd'), str)
-                            and Path(payload['cwd']).resolve() == Path(cwd).resolve()):
-                        return True
-        return False
+        return Path(self._read("path", tid=tid, metadata=metadata))
 
     def projection_thread_id(self, tid, metadata, conn):
-        """Resolve only the indexed fork's projection; keep public identity intact."""
-        path = self._path(tid, metadata)
-        if path.name.endswith('-' + tid + '.jsonl'):
-            return tid
-        history_tid = path.stem.rsplit('_', 1)[1]
-        projection = conn.execute('SELECT next_rollout_byte_offset FROM thread_history_projection_state '
-                                  'WHERE thread_id=?', (history_tid,)).fetchone()
-        if projection is None:
-            return tid  # Older native versions project the fork under its original id.
-        turn = conn.execute('SELECT turn_id,rollout_byte_offset FROM thread_turns WHERE thread_id=? '
-                            'ORDER BY rollout_ordinal DESC LIMIT 1', (history_tid,)).fetchone()
-        if turn is not None:
-            try:
-                offset = turn['rollout_byte_offset']
-                if type(offset) is not int or not 0 <= offset < path.stat().st_size:
-                    raise ValueError()
-                with path.open('rb') as stream:
-                    stream.seek(offset)
-                    row = json.loads(stream.readline(131072))
-                payload = row.get('payload', {})
-                if (row.get('type') != 'event_msg' or payload.get('type') != 'task_started'
-                        or payload.get('turn_id') != turn['turn_id']):
-                    raise ValueError()
-            except (OSError, ValueError, AttributeError):
-                raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Fork projection does not match the indexed rollout') from None
-        return history_tid
-
-    def _legacy(self, tid, host, metadata, recent_turns, max_bytes, anchor, cursor):
-        before = cursor_decode(cursor, tid, host, 'legacy')
-        path = self._path(tid, metadata)
-        with path.open('rb') as f:
-            header = json.loads(f.readline(131072))
-            meta = header.get('payload', {})
-            if header.get('type') != 'session_meta' or meta.get('id') != tid or Path(meta.get('cwd', '')).resolve() != Path(metadata['cwd']).resolve():
-                raise ThreadLookupError('NATIVE_IDENTITY_CONFLICT', 'Rollout session header disagrees with native index')
-            start = f.tell()
-            f.seek(0, 2); size = f.tell()
-            end = min(before if before is not None else size, size)
-            offset = max(start, end - SCAN_BYTES)
-            f.seek(offset); data = f.read(end - offset)
-        # A page ending inside a huge tool record skips that partial record;
-        # the next cursor still makes progress toward earlier display messages.
-        next_offset = offset
-        page_start = offset
-        if offset > start:
-            split = data.find(b'\n')
-            if split >= 0:
-                page_start = offset + split + 1
-                next_offset = min(page_start, end - 1)
-                data = data[split + 1:]
-            else:
-                data = b''
-        if before is not None and not data.endswith(b'\n'):
-            data = data.rsplit(b'\n', 1)[0] if b'\n' in data else b''
-        entries, turns, current, turn_offsets = [], [], None, {}
-        line_start = page_start
-        for raw_line in data.splitlines(keepends=True):
-            line = raw_line.rstrip(b'\r\n')
-            record_offset = line_start
-            line_start += len(raw_line)
-            try:
-                row = json.loads(line)
-            except (ValueError, UnicodeError):
-                continue
-            payload = row.get('payload', {})
-            if row.get('type') == 'turn_context':
-                current = payload.get('turn_id')
-                if current and current not in turns:
-                    turns.append(current)
-                    turn_offsets[current] = record_offset
-            if row.get('type') == 'response_item' and message(payload):
-                entries.append({'item': payload, 'turn_id': current, 'timestamp': row.get('timestamp')})
-        allowed = {anchor} if anchor else set(turns[-recent_turns:])
-        entries = [r for r in entries if not allowed or r['turn_id'] in allowed]
-        if not anchor and len(turns) > recent_turns:
-            next_offset = turn_offsets[turns[-recent_turns]]
-        return context_result(tid, entries, source='CODEX_LOCAL_SESSION', max_bytes=max_bytes,
-            turns=[anchor] if anchor else turns[-recent_turns:],
-            next_cursor=cursor_encode(tid, host, 'legacy', next_offset) if next_offset > start else None,
-            incomplete=offset > start or len(turns) > recent_turns,
-            evidence={'indexed_source': 'CODEX_STATE_THREADS_PRIMARY_KEY', 'source_bytes': end - offset,
-                      'scan_byte_budget': SCAN_BYTES, 'body_byte_budget': max_bytes})
+        return self._read("projection", tid=tid, metadata=metadata)

@@ -1647,3 +1647,7 @@ pub mod node_gateway;
 pub mod node_registry;
 pub mod node_service;
 pub mod node_owner;
+
+pub mod read_projection;
+pub mod native_history;
+pub mod observation;

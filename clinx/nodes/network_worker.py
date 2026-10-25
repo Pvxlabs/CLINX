@@ -56,14 +56,14 @@ class Worker:
                     raise BrokenPipeError('NODE_WORKER_UNAVAILABLE')
                 view = view[n:]
 
-    def call(self, method, **arguments):
+    def call(self, rpc_method, **arguments):
         with self.lock:
             self.sequence += 1
             ident = self.sequence
             future = concurrent.futures.Future()
             self.pending[ident] = future
         try:
-            self._send(dict(id=ident, operation=method, arguments=arguments))
+            self._send(dict(id=ident, operation=rpc_method, arguments=arguments))
             return future.result(timeout=125)
         finally:
             with self.lock:
@@ -142,3 +142,19 @@ class Worker:
             self.child.wait()
         self.reader.join(timeout=2)
         self.child.stdout.close()
+
+
+_read_lock = threading.Lock()
+_read_worker = None
+
+
+def read_command(operation, **arguments):
+    """Multiplex stateless Rust reads; no retry or Python projection state."""
+    global _read_worker
+    with _read_lock:
+        if _read_worker is None:
+            import atexit
+            _read_worker = Worker()
+            atexit.register(_read_worker.close)
+        worker = _read_worker
+    return worker.call(operation, **arguments)

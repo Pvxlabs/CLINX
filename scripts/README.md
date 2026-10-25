@@ -9,6 +9,8 @@ Owner、Registry、实验包和独立 Provider。必须同时提供已验证的 
 该命令只生成候选，不选择或启动服务。独立 Provider 的旧 bootstrap 打包分支已退役。
 候选标记 `host_transport=RUST_HOST_V1`、`provider_exchange=RUST_PROVIDER_V1`、
 `workspace_observer=RUST_PROVIDER_V1`、`mcp_runtime=RUST_MCP_V1`、`node_api=RUST_NODE_API_V1`、`node_network=RUST_NODE_NETWORK_V1`。服务模板直接执行 Rust native/Host worker；
+新增 `observation_runtime=RUST_OBSERVATION_V1`，构建、安装与 Mac 打包实际探测
+`clinx-node --observation-contract`；旧 Node binary 不能运行新历史/观察客户端。
 `python -m tools.build.host_runtime_config --config <toml> --output <new-json>`
 仅在构建/安装时编译 Host 配置。
 `python -m tools.build.mcp_runtime_config --config <toml> --output <new-json>` 编译 MCP 配置；

@@ -1,0 +1,215 @@
+{
+  "schema": 1,
+  "date": "2026-10-25",
+  "baseline_head": "95c6b564f89731ba87850e1e8ceb6aed0c8ac543",
+  "status": "PARTIAL_TARGET_MIGRATION",
+  "deployment": "NOT_DEPLOYED",
+  "production_mutations": false,
+  "contracts": {
+    "observation_runtime": "RUST_OBSERVATION_V1",
+    "node_network": "RUST_NODE_NETWORK_V1"
+  },
+  "scope": [
+    "native index/history and bounded incremental JSONL",
+    "exact identity, model evidence, privacy and context pagination",
+    "observation store, atomic stream receipts and projection directory",
+    "read-only native association lookup"
+  ],
+  "validation": {
+    "rust_release_binaries": "PASS",
+    "rust_tests": {
+      "status": "PASS",
+      "passed": 84
+    },
+    "tracked_fixtures": {
+      "status": "PASS",
+      "passed": 134,
+      "baseline_passed": 98,
+      "added_cases": 36
+    },
+    "original_observation_tests": {
+      "status": "PASS",
+      "passed": 33,
+      "assertions_preserved": true
+    },
+    "baseline_algorithm_comparisons": {
+      "status": "PASS",
+      "comparisons": 1035,
+      "float_codec_vectors": 1000,
+      "baseline_source": "95c6b564f89731ba87850e1e8ceb6aed0c8ac543",
+      "old_receipt_replay": "ACK_WITHOUT_DUPLICATION",
+      "inputs": "DISPOSABLE_ONLY"
+    },
+    "historical_local_suite": {
+      "status": "EXISTING_FAILURES_UNCHANGED",
+      "identities": 432,
+      "before": {
+        "error": 104,
+        "passed": 295,
+        "failure": 31,
+        "skipped": 2
+      },
+      "after": {
+        "error": 104,
+        "passed": 295,
+        "failure": 31,
+        "skipped": 2
+      },
+      "added_failures": [],
+      "removed_tests": []
+    },
+    "original_tests": {
+      "files": 124,
+      "unchanged": true
+    },
+    "strict_clippy": {
+      "status": "BLOCKED_EXISTING",
+      "baseline_diagnostics": 10,
+      "final_diagnostics": 10,
+      "new_diagnostics": 0
+    },
+    "source_classification_import_closure": "PASS",
+    "rewritten_python_lint": "PASS",
+    "affected_python_E9_F": "PASS",
+    "new_rust_format": "PASS",
+    "helper_shell_syntax": "PASS",
+    "release_monitor_source_profiles": "PASS",
+    "production_service_readback": "UNCHANGED",
+    "macos_native_build_signing": "NOT_VERIFIED",
+    "physical_mac_p620_new_artifact": "NOT_VERIFIED"
+  },
+  "scale": {
+    "before": {
+      "Python": {
+        "files": 105,
+        "lines": 21188,
+        "bytes": 1015845
+      },
+      "Rust": {
+        "files": 50,
+        "lines": 20656,
+        "bytes": 824735
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      "Go": {
+        "files": 3,
+        "lines": 849,
+        "bytes": 26718
+      },
+      "C": {
+        "files": 1,
+        "lines": 50,
+        "bytes": 2345
+      },
+      "Shell": {
+        "files": 9,
+        "lines": 248,
+        "bytes": 11585
+      },
+      "python_share_percent": 42.20620043857936,
+      "active_runtime_python": {
+        "files": 55,
+        "lines": 12495,
+        "bytes": 602841
+      }
+    },
+    "after": {
+      "Python": {
+        "files": 106,
+        "lines": 21075,
+        "bytes": 979380
+      },
+      "Rust": {
+        "files": 53,
+        "lines": 23207,
+        "bytes": 925720
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      "Go": {
+        "files": 3,
+        "lines": 849,
+        "bytes": 26718
+      },
+      "C": {
+        "files": 1,
+        "lines": 50,
+        "bytes": 2345
+      },
+      "Shell": {
+        "files": 9,
+        "lines": 249,
+        "bytes": 11684
+      },
+      "python_share_percent": 39.62725183806795,
+      "active_runtime_python": {
+        "files": 55,
+        "lines": 11714,
+        "bytes": 541459
+      }
+    },
+    "deleted_python_files": 0,
+    "runtime_python_net_lines_removed": 781,
+    "runtime_python_bytes_removed": 61382,
+    "runtime_python_removed_diff_lines": 1156,
+    "runtime_python_added_diff_lines": 375
+  },
+  "binaries": {
+    "clinx-kernel-bench": {
+      "sha256": "c9de6403fade090bfa4d0f3cb35bb55171b4a3b064f7eaf46120523a5a4a2a88",
+      "bytes": 1093056
+    },
+    "clinx-kernel-eval": {
+      "sha256": "bb154d289e454a108ae9a5435b6c76dd5d111b3af79e2db7045675ce27f4253f",
+      "bytes": 1320120
+    },
+    "clinx-mcp": {
+      "sha256": "6e6d23cd9c90b3bc61f0a4d6dbae5fa47ba198d8fd562faa79d4eec62c63e5fb",
+      "bytes": 4195032
+    },
+    "clinx-mcp-relay": {
+      "sha256": "d8f8f463419a57b75e1335ba656201a522ef46513406bd5aea96936bc13f4f4b",
+      "bytes": 525248
+    },
+    "clinx-native-transport": {
+      "sha256": "f9c1633236bba3bc1690cb98bb54e6c1dc69c5fc123b55bba89b35ec3d6c5ead",
+      "bytes": 4373496
+    },
+    "clinx-node": {
+      "sha256": "72c77b3fd0a2a5a5c7a1019e2d0f4151129a3d7af39e5927afe079032fdd28b3",
+      "bytes": 9430336
+    },
+    "clinx-owner-client": {
+      "sha256": "3cbd0e7ca8849dcc011d280a3c3b19f5ab70bc60a324623397731a8d8374dbf5",
+      "bytes": 621384
+    },
+    "clinx-provider": {
+      "sha256": "d7062ed164f0c0b43636565ad095c066abcfd73f7acfe8d3545d327515fbbf92",
+      "bytes": 1471376
+    },
+    "clinx-runtime": {
+      "sha256": "08f0fdb3f4893e3d2971ceaed79005eeca3708df113cfcf5ab4a13dafef42acb",
+      "bytes": 4574344
+    },
+    "clinx-runtime-lab": {
+      "sha256": "0f35f1099d4f7deaf5cbbef53cd549a06f4a633963de974b7ee65ec8b5cf6d9a",
+      "bytes": 1466568
+    }
+  },
+  "evidence_root": "/data/artifacts/clinx-observation-rust-20261025",
+  "remaining_python": [
+    "Collector SQLite spool/outbox, checkpoint ACK and scheduling",
+    "sample merge, historical canonical SQL seam and live writer probe",
+    "Provider subprocess/protocol and observation clients",
+    "Observer HTTP/MCP codecs and listener assembly",
+    "mDNS, OPAQUE enrollment and identity creation",
+    "Node entrypoint supervision, tunnel, configuration and IPC"
+  ]
+}

@@ -11,8 +11,9 @@ Node 的精确 Provider 请求校验、协议调用和 workspace probe 也已迁
 Node 的目标校验、canonical handoff、prepare/start/cancel/context 请求映射已由 Rust `clinx-node` 接管；
 Node 的 TCP/mTLS、现有配对身份校验、Centre/Owner 授权交集、反向 Authority 路由、
 Provider 分块/IPC、Node Registry 持久化及请求去重/恢复也已由 Rust 接管。
-Discovery 配对建立与 mDNS、观察目录/路由及入口 supervision 仍有 Python 运行时。
-本轮边界和验证见 [Rust Node 网络迁移](RUST_NODE_NETWORK_MIGRATION.md)。
+原生历史、观察目录存储/查询/去重与游标已迁 Rust；Collector 队列、观察 HTTP/codec、
+Discovery 配对建立与 mDNS 及入口 supervision 仍有 Python 运行时。
+本轮边界和验证见 [Rust 历史与观察目录迁移](RUST_OBSERVATION_MIGRATION.md)。
 
 ## 布局
 
@@ -24,12 +25,12 @@ Discovery 配对建立与 mDNS、观察目录/路由及入口 supervision 仍有
 | `clinx/contracts/` | 公共配置、身份选择、策略与响应契约 | ACTIVE_RUNTIME；运行职责待迁 Rust |
 | `clinx/authority/` | 当前 Python IPC/配对请求转发、兼容 API 与只读 Provider 协议客户端 | ACTIVE_RUNTIME；业务请求选择与投影已迁 Rust |
 | `clinx/mcp/` | 观察/显式维护用兼容 codec、Rust CLI launcher、共享公开 schema 数据 | 观察 codec 仍 ACTIVE_RUNTIME；正常业务入口已迁 Rust |
-| `clinx/provider/` | Codex 协议、原生历史、精确证据读取和观测判断 | ACTIVE_RUNTIME；待迁 Rust |
+| `clinx/provider/` | Codex 协议客户端、live-writer 观察；原生历史接口委托 Rust | ACTIVE_RUNTIME；剩余协议客户端与 live-writer 判断待迁 Rust |
 | `clinx/host/` | 安装配置的 workflow schema；冻结的操作目录参考仅用于资格验证 | 配置解析仍 ACTIVE_RUNTIME；执行、投递、恢复已迁 Rust |
 | `clinx/transport/` | Tunnel supervisor | ACTIVE_RUNTIME；待迁 Rust；Python Dispatcher 已删除 |
 | `clinx/nodes/` | Rust Node/Registry/Provider 的私有协议客户端；观察路由、cursor 投影和 Helper/注册 supervision 仍在 Python | ACTIVE_RUNTIME；剩余观察与入口运行职责待迁 Rust |
 | `clinx/discovery/` | 身份建立、OPAQUE enrollment、mDNS/LAN discovery 与 Helper 设置 | ACTIVE_RUNTIME；配对建立/discovery 待迁 Rust；已配对 Node 的传输校验由 Rust 读取同一状态 |
-| `clinx/monitor/` | 监控与观察投影、只读历史 association | ACTIVE_RUNTIME；运行职责待迁 Rust |
+| `clinx/monitor/` | Observer HTTP/codec、Collector 队列/调度与 sample merge；目录和 association 委托 Rust | ACTIVE_RUNTIME；剩余 Collector 与 HTTP 运行职责待迁 Rust |
 | `clinx/compat/`（已删除） | 旧 Mac Bridge/Registry/M9 及 completion/recovery/outbox | DEAD；由 Rust Authority 事务与 native Transport 替代 |
 | `tools/build/` | 共用运行源码清单处理与增量 App 拷贝 | DEVOPS |
 | `tools/maintenance/` | 显式维护工具 | DEVOPS；不进入运行包 |
@@ -64,7 +65,8 @@ Monitor profile 同样禁止 COMPAT；新增文件不会通过目录 glob 自动
 `host-runtime.json` 与 `mcp-runtime.json`，运行时不启动配置编译器。
 新 release 必须标记 `mcp_runtime=RUST_MCP_V1`、`node_api=RUST_NODE_API_V1`、
 `node_network=RUST_NODE_NETWORK_V1`，并包含 `clinx-node`。打包时实际执行
-`clinx-node --network-contract` 校验二进制；不能用旧 Node API binary 配新网络客户端。
+`clinx-node --network-contract` 和 `--observation-contract` 校验二进制；新清单必须有
+`observation_runtime=RUST_OBSERVATION_V1`，不能将新客户端与旧 Node binary 混用。
 Monitor 源码 manifest 同样声明该契约和所需的两个 Rust Helper。`architecture/runtime-data.json`
 显式声明共享 schema 数据，Rust 在编译时嵌入，Python 观察/维护 codec 从包内读取。
 新清单还须声明 `provider_exchange=RUST_PROVIDER_V1`、`workspace_observer=RUST_PROVIDER_V1`，
@@ -134,8 +136,22 @@ take/begin/complete/ACK、successor checkpoint 和取消许可，不持有数据
 不构造 Python `RustIntegration`。该子进程没有新 listener、service 或任务执行权限。
 详见 [Rust MCP 迁移报告](RUST_MCP_RUNTIME_MIGRATION.md)。
 
-**仍是 Python 运行时**：Node/Discovery 注册配对与网络协议、Provider mTLS 分块通道、
-历史读取与监控目录投影，以及配置解析。
+Node 配对后的 TLS、Centre/Owner scope、反向请求路由、Provider 分块/IPC、设备 Registry
+及执行请求恢复已由 Rust 实现，Python 仍装配现有身份对象、监听器与回调；详见
+[Rust Node 网络迁移](RUST_NODE_NETWORK_MIGRATION.md)。
+
+原生历史 SQL、JSONL 解析、fork/projection/turn 身份证明、增量历史 checkpoint，以及
+观察目录 SQL、批次摘要/去重、stream CAS、终态合并、保留策略、签名游标和查询投影，
+已迁入 `native_history.rs`、`observation.rs` 和 `read_projection.rs`。
+Python `NativeHistory`、`ObservationWriter` 和 `ObservationDirectory` 使用现有
+`clinx-node` 私有 stdio 通道；本地原生索引只读，观察数据库只写展示投影，均不承担任务权威。
+旧 Python 实现已移除，保留 public 调用接口；详见
+[Rust 历史与观察目录迁移](RUST_OBSERVATION_MIGRATION.md)。
+
+**仍是 Python 运行时**：Collector 调度、SQLite spool/outbox、sample merge、历史 canonical SQL
+读取及 Provider live-writer probe；Discovery/mDNS、OPAQUE enrollment 与身份文件装配；
+Observer HTTP/MCP 观察 codec、Provider 子进程/协议客户端、tunnel 监督及配置/IPC 装配。
+Collector 队列不是 Task Authority 的 metadata outbox；其重启、批次与 ACK 契约尚需迁入 Rust。
 `rust_integration.py` 已删除重复业务判断，保留原接口委托 Rust、对象视图和只读 Provider 协议回调；
 正常 Helper 不调用该兼容接口，直接使用 Rust NativeReads。它与配对转发客户端仍为 ACTIVE_RUNTIME，不能标为开发工具。
 本轮协议、原 Python 行为向量、完整套件前后对照和 Mac 验证边界见

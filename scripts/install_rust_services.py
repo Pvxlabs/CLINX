@@ -74,6 +74,8 @@ def main():
             or manifest.get('workspace_observer') != 'RUST_PROVIDER_V1'
             or 'clinx-provider' not in manifest['files']):
         raise RuntimeError('QUALIFIED_RUST_PROVIDER_REQUIRED')
+    if manifest.get('observation_runtime') != 'RUST_OBSERVATION_V1':
+        raise RuntimeError('QUALIFIED_RUST_OBSERVATION_REQUIRED')
     if manifest.get('node_network') != 'RUST_NODE_NETWORK_V1':
         raise RuntimeError('QUALIFIED_RUST_NODE_NETWORK_REQUIRED')
     if (manifest.get('node_api') != 'RUST_NODE_API_V1'

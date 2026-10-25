@@ -1,6 +1,5 @@
 """One bounded node collector, durable outbox and checkpoints; no execution APIs."""
 from __future__ import annotations
-import contextlib
 import datetime as dt
 import fcntl
 import hashlib
@@ -11,9 +10,9 @@ import sqlite3
 import time
 import uuid
 
-from clinx.provider.native_history import NativeHistory, ThreadLookupError, message, model_identifier, normalize_native_status, readonly, _budget_sql
-from clinx.monitor.network_observation import compact, clean, MAX_BATCH, TERMINAL
-from clinx.nodes.node_protocol import NODE_PROTOCOL_VERSION, SUPPORTED_PROVIDER, NodeProtocolError
+from clinx.provider.native_history import NativeHistory, readonly, _budget_sql
+from clinx.monitor.network_observation import compact, clean, MAX_BATCH
+from clinx.nodes.node_protocol import SUPPORTED_PROVIDER, NodeProtocolError
 
 PAGE = 16
 OUTBOX_LIMIT = 2048
@@ -48,30 +47,7 @@ class CodexObservationSource:
         return hashlib.sha256(compact([(str(p),p.stat().st_dev,p.stat().st_ino) for p in paths if p.exists()]).encode()).hexdigest()[:32]
 
     def inventory(self,scope,after=None,*,audit=False):
-        path=self.history.root/"state_5.sqlite"
-        if not path.exists(): return [],None,"NATIVE_INDEX_UNAVAILABLE"
-        try:
-            with readonly(path) as c:
-                _budget_sql(c)
-                columns={r[1] for r in c.execute("PRAGMA table_info(threads)")}
-                if not {"id","cwd","updated_at","rollout_path"}<=columns:
-                    return [],None,"NATIVE_SCHEMA_UNSUPPORTED"
-                where=[];args=[]
-                if "*" not in scope.projects:
-                    if not scope.projects: return [],None,"SCOPE_EMPTY"
-                    where.append("cwd IN ("+",".join("?" for _ in scope.projects)+")");args.extend(scope.projects)
-                if after:
-                    where.append("id>?" if audit else "(updated_at,id)>(?,?)")
-                    args.extend([after] if audit else after)
-                fields=["id","cwd","rollout_path","updated_at"]+[("substr("+k+",1,256) AS "+k if k in ("title","name") else k)
-                    for k in ("history_mode","title","name","source","created_at","has_user_event","archived") if k in columns]
-                rows=[dict(r) for r in c.execute("SELECT "+",".join(fields)+" FROM threads"+
-                    (" WHERE "+" AND ".join(where) if where else "")+
-                    (" ORDER BY id" if audit else " ORDER BY updated_at,id")+" LIMIT ?",(*args,PAGE))]
-                last=(rows[-1]["id"] if audit else [rows[-1]["updated_at"],rows[-1]["id"]]) if rows else None
-                return rows,last,"INDEXED"
-        except sqlite3.Error:
-            return [],None,"NATIVE_INDEX_UNAVAILABLE"
+        return self.history._read('inventory', scope=scope.as_dict(), after=after, audit=audit)
 
     def canonical_inventory(self,scope,after=""):
         if not self.canonical_db or not self.canonical_db.exists(): return []
@@ -123,46 +99,15 @@ class CodexObservationSource:
         return turns
 
     def native_turns(self,metadata,state):
-        tid=metadata["id"];turns=[];coverage="INDEXED"
-        if metadata.get("history_mode")=="paginated":
-            try:
-                with readonly(self.history.root/"thread_history_1.sqlite") as c:
-                    _budget_sql(c)
-                    history_tid=self.history.projection_thread_id(tid,metadata,c)
-                    if state.get("history_thread_id")!=history_tid:
-                        for key in ("history_before","history_complete","active_turns"):
-                            state.pop(key,None)
-                        state["history_thread_id"]=history_tid
-                    columns={r[1] for r in c.execute("PRAGMA table_info(thread_turns)")}
-                    fields="turn_id,rollout_ordinal,status,started_at,completed_at,"+(
-                        "rollout_byte_offset" if "rollout_byte_offset" in columns else "NULL AS rollout_byte_offset")
-                    recent=[dict(r) for r in c.execute("SELECT "+fields+" FROM thread_turns WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 4",(history_tid,))]
-                    if state.get("history_complete"):
-                        state["history_before"]=9223372036854775807
-                    before=state.get("history_before",9223372036854775807)
-                    older=[dict(r) for r in c.execute("SELECT "+fields+" FROM thread_turns WHERE thread_id=? AND rollout_ordinal<? ORDER BY rollout_ordinal DESC LIMIT 4",(history_tid,before))]
-                    pending=state.get("active_turns",[])[:64]
-                    active=[dict(r) for r in c.execute("SELECT "+fields+" FROM thread_turns WHERE thread_id=? AND turn_id IN ("+
-                        ",".join("?" for _ in pending)+")",(history_tid,*pending))] if pending else []
-                if older: state["history_before"]=older[-1]["rollout_ordinal"]
-                state["history_complete"]=len(older)<4
-                selected={r["turn_id"]:r for r in recent+older+active}
-                state["active_turns"]=[r["turn_id"] for r in selected.values() if normalize_native_status(r["status"])=="RUNNING"][:64]
-                for r in selected.values():
-                    context=self.history.context(tid,self.node_id,metadata,1,4500,anchor=r["turn_id"])
-                    if context.get("last_user_intent"):
-                        state["user_message_observed"] = True
-                    turns.append({"turn_id":r["turn_id"],"ordinal":order(r["started_at"],r["rollout_ordinal"]),
-                        "native_state":normalize_native_status(r["status"]),"started_at":r["started_at"],
-                        "completed_at":r["completed_at"],"summary":context.get("last_codex_result"),
-                        "progress":context.get("last_codex_result") if normalize_native_status(r["status"])=="RUNNING" else None,
-                        "result_processing":"UNMANAGED",
-                        "model":self.history.turn_model(tid,metadata,r["turn_id"],r["rollout_byte_offset"])})
-                if not state.get("history_complete"): coverage="HISTORY_BACKFILL"
-            except (ThreadLookupError,sqlite3.Error,OSError):
-                coverage="NATIVE_HISTORY_UNAVAILABLE"
-        elif metadata.get("history_mode")!="canonical":
-            turns,coverage=self._legacy(metadata,state)
+        if metadata.get("history_mode") not in ("paginated", "canonical"):
+            return self._legacy(metadata,state)
+        turns,coverage,updated=self.history._read('native_turns', metadata=metadata, state=state, node_id=self.node_id)
+        state.clear();state.update(updated)
+        return turns,coverage
+
+    def _legacy(self,metadata,state):
+        turns,coverage,updated=self.history._read('native_turns', metadata=metadata, state=state, node_id=self.node_id)
+        state.clear();state.update(updated)
         return turns,coverage
 
     def sample(self,metadata,state):
@@ -234,57 +179,6 @@ class CodexObservationSource:
         self.live_cache[tid]=proof
         return proof
 
-    def _legacy(self,metadata,state):
-        """Incremental allowlist parser; never collects reasoning/tool output."""
-        tid=metadata["id"];path=self.history._path(tid,metadata)
-        if not path.exists(): return [],"NATIVE_HISTORY_UNAVAILABLE"
-        stat=path.stat();fileid=[stat.st_dev,stat.st_ino]
-        offset=state.get("offset",0)
-        gap=None
-        if state.get("file_id") not in (None,fileid) or offset>stat.st_size:
-            offset=0;state.pop("current",None);gap="SOURCE_REBUILT"
-        with path.open("rb") as f:
-            f.seek(offset);data=f.read(65536)
-        if not data:
-            return [state["current"]] if state.get("current") else [],"INDEXED"
-        end=data.rfind(b"\n")
-        if end<0:
-            if len(data)==65536:
-                state.update(offset=offset+len(data),file_id=fileid)
-                return [],"OVERSIZED_RECORD_GAP"
-            return [state["current"]] if state.get("current") else [],"PARTIAL_RECORD"
-        data=data[:end+1];turns={};current=state.get("current")
-        for line in data.splitlines():
-            try: row=json.loads(line)
-            except (ValueError,UnicodeError): gap="MALFORMED_RECORD_GAP";continue
-            payload=row.get("payload",{})
-            if not isinstance(payload,dict): continue
-            if row.get("type")=="session_meta" and (payload.get("id")!=tid or payload.get("cwd")!=metadata["cwd"]):
-                raise NodeProtocolError("NATIVE_IDENTITY_CONFLICT","Native header disagrees with index")
-            kind=payload.get("type")
-            turn_id=payload.get("turn_id")
-            if row.get("type")=="turn_context" or (row.get("type")=="event_msg" and kind=="task_started"):
-                if current: turns[current["turn_id"]]=dict(current)
-                current={"turn_id":turn_id,"ordinal":order(row.get("timestamp"),offset),
-                         "native_state":"RUNNING","started_at":row.get("timestamp"),"result_processing":"UNMANAGED"}
-                if row.get("type")=="turn_context":
-                    current["model"]=model_identifier(payload.get("model"))
-            if not current or not current.get("turn_id"): continue
-            if row.get("type")=="event_msg" and kind in ("task_complete","turn_aborted"):
-                if turn_id and turn_id!=current["turn_id"]: continue
-                current.update(native_state="COMPLETED" if kind=="task_complete" else "INTERRUPTED",completed_at=row.get("timestamp"))
-                if kind=="task_complete" and isinstance(payload.get("last_agent_message"),str):
-                    current["summary"]=clean(payload["last_agent_message"],3000)
-            if row.get("type")=="response_item":
-                parsed=message(payload)
-                if parsed and parsed[0]=="user":
-                    state["user_message_observed"] = True
-                if parsed and parsed[0]=="assistant":
-                    current["summary"]=clean(parsed[1],3000)
-                    current["progress"]=clean(parsed[1],1500)
-            turns[current["turn_id"]]=dict(current)
-        state.update(offset=offset+len(data),file_id=fileid,current=current)
-        return list(turns.values()),gap or ("HISTORY_BACKFILL" if state["offset"]<stat.st_size else "INDEXED")
 
 
 class ObservationCollector:

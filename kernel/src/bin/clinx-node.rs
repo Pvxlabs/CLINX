@@ -1,5 +1,9 @@
 //! Helper request API and paired Node network process. Never a task-state writer.
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--observation-contract") {
+        println!("RUST_OBSERVATION_V1");
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("--network-contract") {
         println!("RUST_NODE_NETWORK_V1");
         return;

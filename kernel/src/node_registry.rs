@@ -62,6 +62,22 @@ fn write_scope(c: &Connection, id: &str, scope: &Value) -> Result<()> {
     Ok(())
 }
 impl Registry {
+    /// Observer identity reads never initialize schema or take a writer lock.
+    pub fn read(a: &Value) -> Result<Value> {
+        let op = s(a, "method")?;
+        if !matches!(
+            op,
+            "registry.get" | "registry.list_nodes" | "registry.scope"
+        ) {
+            return Err("OBSERVATION_READ_ONLY".into());
+        }
+        let c = crate::read_projection::readonly(
+            std::path::Path::new(s(a, "path")?),
+            "NODE_REGISTRY_UNAVAILABLE",
+            false,
+        )?;
+        Self::execute(&c, op, &a["arguments"])
+    }
     pub fn invoke(&self, op: &str, a: &Value) -> Result<Value> {
         let mut lock = self
             .connection
