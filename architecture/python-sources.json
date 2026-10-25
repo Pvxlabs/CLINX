@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "target": "Rust runtime; Swift UI; Python development and maintenance tools only",
+  "target": "Rust core; frontend technology suited to existing clients; minimal Python compatibility plus development/build/qualification/maintenance tools",
   "modules": [
     {
       "path": "clinx/__init__.py",
@@ -489,7 +489,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Collector scheduling/checkpoint/outbox and live writer observation remain Python runtime; native inventory/turn sampling is Rust. Base historical canonical read compatibility and sample merge still Python; normal managed source overrides it with Rust Authority reads."
+      "reason": "Rust Collector/source private client; spool, lock, checkpoint/outbox transactions, scheduling policy, ACK recovery, sample merge and historical SQL run in Rust. Python retains existing identity/registration callbacks, live-writer protocol/cache, local-time scalar codec and explicit qualification inspection property."
     },
     {
       "path": "clinx/monitor/observer_server.py",
@@ -620,7 +620,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Private Rust history client and historical constants; native SQLite/JSONL reads, identity, privacy, model and context/cursors run in clinx-node. Explicit historical canonical SQL budget helper still used by observation source."
+      "reason": "Typed private Rust native-history client and historical protocol constants; no Python SQL/parser/state machine. Unused historical SQL budget helper retired."
     },
     {
       "path": "clinx/provider/native_provider.py",
@@ -1003,6 +1003,12 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Real disposable native/history and Rust observation store tests, old cursor/digest compatibility, concurrency/restart/revocation and packaged Helper binary closure"
+    },
+    {
+      "path": "fixtures/test_rust_collector.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Rust collector real spool, checkpoint/ACK atomicity, worker death/restart, duplicate receipts, scope narrowing and source merge regression"
     }
   ]
 }

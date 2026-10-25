@@ -4,11 +4,9 @@ from pathlib import Path
 
 from clinx.authority.rust_authority import RustAuthorityError
 from clinx.contracts.thread_identity import ThreadLookupError
-from clinx.contracts.thread_identity import readonly as readonly
 from clinx.nodes.network_worker import read_command
 
 SCAN_BYTES = 512 * 1024
-SQL_STEPS = 250_000
 
 LEGACY_REPLY_RETIREMENT = (
     "CLINX_LEGACY_REPLY_FORMAT_RETIRED_V1\n"
@@ -56,18 +54,6 @@ def cursor_encode(tid, host, mode, before):
 
 def cursor_decode(cursor, tid, host, mode):
     return _read("cursor_decode", cursor=cursor, tid=tid, host=host, mode=mode)
-
-
-def _budget_sql(conn):
-    # Kept only for the remaining explicit historical canonical read interface.
-    steps = 0
-
-    def progress():
-        nonlocal steps
-        steps += 1000
-        return int(steps > SQL_STEPS)
-
-    conn.set_progress_handler(progress, 1000)
 
 
 class NativeHistory:

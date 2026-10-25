@@ -1,8 +1,8 @@
 # CLINX 目标架构与源码布局
 
 唯一目标：**Rust 承担 Task Authority、执行生命周期、持久化、幂等、恢复、MCP、Provider、
-Host、Transport、Node 与 Discovery 的长期核心；Swift 负责 macOS UI；Python 最终仅保留
-必要的开发、构建、资格验证和维护工具。**
+Host、Transport、Node 与 Discovery 的长期核心；前端采用适合现有客户端的技术（macOS UI 保留 Swift）；
+Python 仅保留尽可能薄的必要兼容层，以及开发、构建、资格验证和维护工具。**
 
 当前实现尚未达到这一目标。Rust 已接管 P620 任务权威、原生执行及 Host 动态工具执行；
 Mac 的旧 Bridge/Registry/M9 核心和 Python Dispatcher/Host runner 已删除。
@@ -11,7 +11,7 @@ Node 的精确 Provider 请求校验、协议调用和 workspace probe 也已迁
 Node 的目标校验、canonical handoff、prepare/start/cancel/context 请求映射已由 Rust `clinx-node` 接管；
 Node 的 TCP/mTLS、现有配对身份校验、Centre/Owner 授权交集、反向 Authority 路由、
 Provider 分块/IPC、Node Registry 持久化及请求去重/恢复也已由 Rust 接管。
-原生历史、观察目录存储/查询/去重与游标已迁 Rust；Collector 队列、观察 HTTP/codec、
+原生历史、观察目录存储/查询/去重与游标，以及 Collector 队列/checkpoint/ACK 恢复已迁 Rust；观察 HTTP/codec、
 Discovery 配对建立与 mDNS 及入口 supervision 仍有 Python 运行时。
 本轮边界和验证见 [Rust 历史与观察目录迁移](RUST_OBSERVATION_MIGRATION.md)。
 
@@ -30,7 +30,7 @@ Discovery 配对建立与 mDNS 及入口 supervision 仍有 Python 运行时。
 | `clinx/transport/` | Tunnel supervisor | ACTIVE_RUNTIME；待迁 Rust；Python Dispatcher 已删除 |
 | `clinx/nodes/` | Rust Node/Registry/Provider 的私有协议客户端；观察路由、cursor 投影和 Helper/注册 supervision 仍在 Python | ACTIVE_RUNTIME；剩余观察与入口运行职责待迁 Rust |
 | `clinx/discovery/` | 身份建立、OPAQUE enrollment、mDNS/LAN discovery 与 Helper 设置 | ACTIVE_RUNTIME；配对建立/discovery 待迁 Rust；已配对 Node 的传输校验由 Rust 读取同一状态 |
-| `clinx/monitor/` | Observer HTTP/codec、Collector 队列/调度与 sample merge；目录和 association 委托 Rust | ACTIVE_RUNTIME；剩余 Collector 与 HTTP 运行职责待迁 Rust |
+| `clinx/monitor/` | Observer HTTP/codec、live-writer 观察及身份/协议装配；Collector、采样合并、目录和 association 委托 Rust | ACTIVE_RUNTIME；剩余 HTTP/观察协议职责待迁 Rust |
 | `clinx/compat/`（已删除） | 旧 Mac Bridge/Registry/M9 及 completion/recovery/outbox | DEAD；由 Rust Authority 事务与 native Transport 替代 |
 | `tools/build/` | 共用运行源码清单处理与增量 App 拷贝 | DEVOPS |
 | `tools/maintenance/` | 显式维护工具 | DEVOPS；不进入运行包 |
@@ -148,10 +148,13 @@ Python `NativeHistory`、`ObservationWriter` 和 `ObservationDirectory` 使用�
 旧 Python 实现已移除，保留 public 调用接口；详见
 [Rust 历史与观察目录迁移](RUST_OBSERVATION_MIGRATION.md)。
 
-**仍是 Python 运行时**：Collector 调度、SQLite spool/outbox、sample merge、历史 canonical SQL
-读取及 Provider live-writer probe；Discovery/mDNS、OPAQUE enrollment 与身份文件装配；
+Collector 的 spool/outbox、调度决策、checkpoint/ACK 事务、采样合并及历史 canonical SQL
+已迁 Rust，见 [Collector 迁移](RUST_COLLECTOR_MIGRATION.md)。
+
+**仍是 Python 运行时**：Provider live-writer probe/cache；Discovery/mDNS、OPAQUE enrollment 与身份文件装配；
 Observer HTTP/MCP 观察 codec、Provider 子进程/协议客户端、tunnel 监督及配置/IPC 装配。
-Collector 队列不是 Task Authority 的 metadata outbox；其重启、批次与 ACK 契约尚需迁入 Rust。
+Collector 队列与 Task Authority 的 metadata outbox 分属观察与任务权威；两者均由 Rust 持久化，
+Python 仅转发现有协议。外层进程监督与 tick 定时唤醒仍待随入口迁移。
 `rust_integration.py` 已删除重复业务判断，保留原接口委托 Rust、对象视图和只读 Provider 协议回调；
 正常 Helper 不调用该兼容接口，直接使用 Rust NativeReads。它与配对转发客户端仍为 ACTIVE_RUNTIME，不能标为开发工具。
 本轮协议、原 Python 行为向量、完整套件前后对照和 Mac 验证边界见

@@ -1651,3 +1651,6 @@ pub mod node_owner;
 pub mod read_projection;
 pub mod native_history;
 pub mod observation;
+
+pub mod observation_collector;
+pub mod observation_source;

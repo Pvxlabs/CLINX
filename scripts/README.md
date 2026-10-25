@@ -57,3 +57,5 @@ MCP 源码启动器只执行 Rust `clinx-mcp-relay`，连接现有 Rust MCP Unix
 9 个退役实验模块的导入错误；不会通过改断言或跳过测试把它们变成 PASS。历史回执位置见
 [文档索引](../docs/README.md#历史资料恢复)。构建与测试只回收本任务拥有的输出；
 部署包、manifest、数据库、回退和证据按各自运行契约保留。
+
+Collector 调用端还要求 `collector_runtime=RUST_COLLECTOR_V1`；构建时实际探测 `clinx-node --collector-contract`，拒绝旧 Node binary。

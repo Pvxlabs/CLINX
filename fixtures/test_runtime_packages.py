@@ -41,6 +41,8 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
             return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_NODE_NETWORK_V1\n', stderr='')
         if command == [str(binaries['node_binary']), '--observation-contract']:
             return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_OBSERVATION_V1\n', stderr='')
+        if command == [str(binaries['node_binary']), '--collector-contract']:
+            return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_COLLECTOR_V1\n', stderr='')
         return real_run(command, *args, **kwargs)
     monkeypatch.setattr(stage.subprocess, 'run', fixture_run)
     real_stat = Path.stat

@@ -294,3 +294,19 @@ qualifies 33 original standalone observation cases without changing assertions.
 The permission cases require an unprivileged user; running as root does not
 prove native file access denial. Collector spool/outbox and physical macOS
 build/signing remain separate migration/qualification boundaries.
+
+
+## Rust Collector spool and recovery
+
+`fixtures/test_rust_collector.py` adds disposable real-SQLite collector cases.
+Use the same private HOME/XDG and all binary variables as the observation suite.
+`clinx-node --collector-contract` must report `RUST_COLLECTOR_V1`; both source
+profiles and builders require `collector_runtime=RUST_COLLECTOR_V1`.
+
+Coverage includes process death before local commit and after Centre commit,
+lost/invalid/wrong-stream ACK, singleton locks, exact duplicate upload receipts,
+no first-use offline grant, scope-redacted queued events, bounded backpressure,
+coverage recovery, recovery fairness, native/canonical merge, and SQLite COMMIT
+BUSY rollback. No Provider execution input is sent. Existing local assertions
+and test files remain unchanged; full-suite failures are reported against the
+same-environment baseline in the [receipt](cleanup/RUST_COLLECTOR_MIGRATION_RECEIPT.json).

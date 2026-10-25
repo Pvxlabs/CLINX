@@ -1,0 +1,196 @@
+{
+  "schema": 1,
+  "date": "2026-10-25",
+  "baseline_head": "3cd582bbc9de555dde08a6f4465999b682c3de10",
+  "status": "PARTIAL_TARGET_MIGRATION",
+  "deployment": "NOT_DEPLOYED",
+  "production_mutations": false,
+  "contracts": {
+    "collector_runtime": "RUST_COLLECTOR_V1"
+  },
+  "validation": {
+    "rust_release_binaries": "PASS",
+    "rust_tests": 84,
+    "tracked_fixtures": {
+      "passed": 152,
+      "added": 18
+    },
+    "final_affected_candidate": {
+      "passed": 57,
+      "source": "candidate-tree.json"
+    },
+    "historical_local_suite": {
+      "status": "EXISTING_FAILURES_UNCHANGED",
+      "identities": 432,
+      "before": {
+        "error": 104,
+        "passed": 295,
+        "failure": 31,
+        "skipped": 2
+      },
+      "after": {
+        "error": 104,
+        "passed": 295,
+        "failure": 31,
+        "skipped": 2
+      },
+      "added_failures": []
+    },
+    "original_local_test_files_unchanged": 124,
+    "independent_parity": {
+      "status": "PASS",
+      "vectors": 29,
+      "equal_public_values_or_error_codes": 28,
+      "preserved_rejection": [
+        {
+          "name": "duplicate_canonical_turn",
+          "baseline": "ValueError rejection",
+          "current": "OBSERVATION_IDENTITY_CONFLICT rejection"
+        }
+      ],
+      "unexpected_differences": []
+    },
+    "strict_clippy": {
+      "status": "BLOCKED_EXISTING",
+      "diagnostics": 10,
+      "new": 0
+    },
+    "source_profiles_and_helper_package": "PASS",
+    "macos_native_build_signing": "NOT_VERIFIED",
+    "physical_device_new_artifact": "NOT_VERIFIED",
+    "production_services": "UNCHANGED"
+  },
+  "scale": {
+    "before": {
+      "Python": {
+        "files": 106,
+        "lines": 21075,
+        "bytes": 979380
+      },
+      "Rust": {
+        "files": 53,
+        "lines": 23207,
+        "bytes": 925720
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      "Go": {
+        "files": 3,
+        "lines": 849,
+        "bytes": 26718
+      },
+      "C": {
+        "files": 1,
+        "lines": 50,
+        "bytes": 2345
+      },
+      "Shell": {
+        "files": 9,
+        "lines": 249,
+        "bytes": 11684
+      },
+      "python_share_percent": 39.62725183806795,
+      "active_runtime_python": {
+        "files": 55,
+        "lines": 11714,
+        "bytes": 541459
+      }
+    },
+    "after": {
+      "Python": {
+        "files": 107,
+        "lines": 21442,
+        "bytes": 983411
+      },
+      "Rust": {
+        "files": 55,
+        "lines": 23911,
+        "bytes": 955374
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      "Go": {
+        "files": 3,
+        "lines": 849,
+        "bytes": 26718
+      },
+      "C": {
+        "files": 1,
+        "lines": 50,
+        "bytes": 2345
+      },
+      "Shell": {
+        "files": 9,
+        "lines": 250,
+        "bytes": 11779
+      },
+      "python_share_percent": 39.25383423124377,
+      "active_runtime_python": {
+        "files": 55,
+        "lines": 11699,
+        "bytes": 532708
+      }
+    },
+    "deleted_python_files": 0,
+    "runtime_python_net_lines_removed": 15,
+    "runtime_python_bytes_removed": 8751,
+    "runtime_python_removed_diff_lines": 291,
+    "runtime_python_added_diff_lines": 276
+  },
+  "binaries": {
+    "clinx-kernel-bench": {
+      "sha256": "0e6746ef1bfe906fa8b64e0ddce2e88fd957475f3e0be894a7a5ebe6cbbc837a",
+      "bytes": 1102752
+    },
+    "clinx-kernel-eval": {
+      "sha256": "fb035d5af5009b2b0c3923e51c39faaa493d62b1367f35314b845c5cc88d57ca",
+      "bytes": 1336632
+    },
+    "clinx-mcp": {
+      "sha256": "45f61f7d0c261942d584708dedc81395415c4e952a86c6985ab3b905728ba570",
+      "bytes": 4205200
+    },
+    "clinx-mcp-relay": {
+      "sha256": "d8f8f463419a57b75e1335ba656201a522ef46513406bd5aea96936bc13f4f4b",
+      "bytes": 525248
+    },
+    "clinx-native-transport": {
+      "sha256": "2d69c88fa3b0c729dbce3a94115365baca018371c9681a0fb93ccf0ea6d1e6aa",
+      "bytes": 4384016
+    },
+    "clinx-node": {
+      "sha256": "6b3b96965aeacd6a5e38acb97749f6401f1f81c960fe1e12c9c65b8dad57ed55",
+      "bytes": 9595792
+    },
+    "clinx-owner-client": {
+      "sha256": "3cbd0e7ca8849dcc011d280a3c3b19f5ab70bc60a324623397731a8d8374dbf5",
+      "bytes": 621384
+    },
+    "clinx-provider": {
+      "sha256": "ac9e776745b14ec4444d2acce48ab45b6deca044df17e2893a4ff8cc8a5df82a",
+      "bytes": 1489592
+    },
+    "clinx-runtime": {
+      "sha256": "f0faa886ff561ff00ea53d251c3035d4e9dac2e68001a90f525fe2e6aae5ac44",
+      "bytes": 4571296
+    },
+    "clinx-runtime-lab": {
+      "sha256": "37f6ec61b85f27987c9e3acad1ea14ceebb6b83267759ae7657616bf7b17dec6",
+      "bytes": 1472088
+    }
+  },
+  "evidence_root": "/data/artifacts/clinx-collector-rust-20261025",
+  "remaining": [
+    "Provider protocol/live-writer callbacks",
+    "Node observation routing",
+    "Observer HTTP/native bridge",
+    "Discovery enrollment and supervision",
+    "local-time scalar codec and explicit qualification inspection seam"
+  ]
+}

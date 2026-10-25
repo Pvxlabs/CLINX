@@ -35,6 +35,7 @@ for helper in clinx-provider clinx-node; do
     if [ "$helper" = clinx-node ]; then
         test "$("$app_dir/Contents/Helpers/$helper" --network-contract)" = RUST_NODE_NETWORK_V1
         test "$("$app_dir/Contents/Helpers/$helper" --observation-contract)" = RUST_OBSERVATION_V1
+        test "$("$app_dir/Contents/Helpers/$helper" --collector-contract)" = RUST_COLLECTOR_V1
     fi
     codesign --force --sign "$signing_identity" --timestamp=none "$app_dir/Contents/Helpers/$helper"
     codesign --verify --strict "$app_dir/Contents/Helpers/$helper"

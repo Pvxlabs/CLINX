@@ -76,6 +76,8 @@ def main():
         raise RuntimeError('QUALIFIED_RUST_PROVIDER_REQUIRED')
     if manifest.get('observation_runtime') != 'RUST_OBSERVATION_V1':
         raise RuntimeError('QUALIFIED_RUST_OBSERVATION_REQUIRED')
+    if manifest.get('collector_runtime') != 'RUST_COLLECTOR_V1':
+        raise RuntimeError('QUALIFIED_RUST_COLLECTOR_REQUIRED')
     if manifest.get('node_network') != 'RUST_NODE_NETWORK_V1':
         raise RuntimeError('QUALIFIED_RUST_NODE_NETWORK_REQUIRED')
     if (manifest.get('node_api') != 'RUST_NODE_API_V1'

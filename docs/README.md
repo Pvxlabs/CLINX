@@ -76,3 +76,5 @@ Owner 候选标识为 `owner-shared-07da5fe20c4119dee1b4`；安装/切换证据�
 
 - [Rust Node 网络、Registry 与执行请求迁移](RUST_NODE_NETWORK_MIGRATION.md)：现有配对 TLS、Centre/Owner scope、Provider 分块/IPC、Node 路由账本及 ACK 不确定恢复。
 - [Rust 原生历史与观察目录迁移](RUST_OBSERVATION_MIGRATION.md)：精确 native 历史、增量扫描、持久观察批次、查询授权与旧摘要/游标兼容；Collector 队列仍待迁移。
+
+- [Rust Collector 队列与恢复迁移](RUST_COLLECTOR_MIGRATION.md)：节点 spool、checkpoint/ACK 原子事务、采样合并、丢 ACK 与进程重启资格。

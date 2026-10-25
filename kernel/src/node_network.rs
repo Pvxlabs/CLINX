@@ -22,6 +22,7 @@ struct Worker {
     stopped: AtomicBool,
     relay: crate::node_relay::Relay,
     registry: crate::node_registry::Registry,
+    collector: crate::observation_collector::Runtime,
     gateways: Mutex<Vec<crate::node_gateway::Gateway>>,
     replies: Mutex<BTreeMap<u64, mpsc::SyncSender<Value>>>,
 }
@@ -240,6 +241,7 @@ pub fn command(operation: &str, a: &Value) -> Result<Value> {
     if operation == "registry.read" {
         return crate::node_registry::Registry::read(a);
     }
+    if operation.starts_with("source.") { return crate::observation_source::invoke(operation,a,|_,_| Err("OBSERVATION_CALLBACK_REQUIRED".into())); }
     if operation.starts_with("history.") {
         return crate::native_history::invoke(operation, a);
     }
@@ -333,6 +335,8 @@ pub fn serve() -> Result<()> {
                 "relay.handle" => worker.relay.handle(&v["arguments"], |context, body| {
                     worker.callback("relay.exchange", json!({"context":context,"body":body}))
                 }),
+                op if op.starts_with("collector.") => worker.collector.invoke(op, &v["arguments"], |op, args| worker.callback(op, args)),
+                op if op.starts_with("source.") => crate::observation_source::invoke(op, &v["arguments"], |op, args| worker.callback(op, args)),
                 "registry.read" => crate::node_registry::Registry::read(&v["arguments"]),
                 op if op.starts_with("registry.") => worker.registry.invoke(op, &v["arguments"]),
                 op if op.starts_with("observation.") => {
