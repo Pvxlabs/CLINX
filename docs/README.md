@@ -26,6 +26,8 @@ Rust Core 唯一状态权威、五条设计原则与效果指标。CLINX 是 AI 
 当前布局、源码分类和发布边界见 [仓库架构](REPOSITORY_ARCHITECTURE.md)。
 最新 [Python 源码退役](RUST_PYTHON_RETIREMENT.md) 记录最后兼容层、构建/维护工具和资格的
 Rust 替代与验证；受版本控制的 Python 源码已为零，不依赖历史本地测试运行当前回归。
+后续 [固定 Go Transport 重建](GO_TRANSPORT_REBUILD.md) 记录依赖 EOF 修复、两份空缓存构建、
+新发布包及回滚验证，解除上轮 fresh Go build 的网络阻塞。
 
 `kernel/` 为 Rust runtime、开发工具和测试；`native/opaque_pairing/` 为直接链接的 OPAQUE core；
 `MonitorApp/` 为 Swift UI。`clinx/mcp/registry.json` 只保留协议数据，`fixtures/` 保留

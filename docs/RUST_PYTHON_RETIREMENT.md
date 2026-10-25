@@ -3,6 +3,8 @@
 基准：`52f6ce9244baa1dcfb4a7b514f2ca9c569e67e12`，2026-10-25。
 本轮完成当前仓库源码中的 Python 退役；**不部署、不重启服务、不操作真实任务或生产数据**。
 机器回执见 [RUST_PYTHON_RETIREMENT_RECEIPT.json](cleanup/RUST_PYTHON_RETIREMENT_RECEIPT.json)。
+后续 [固定 Go Transport 全新重建](GO_TRANSPORT_REBUILD.md) 已完成双独立构建和新包验证；
+本文下方的 `BLOCKED_NETWORK` 保留为本轮清理当时的历史结果，不覆盖原失败证据。
 
 ## 实际交付
 

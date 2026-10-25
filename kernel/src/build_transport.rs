@@ -37,6 +37,53 @@ pub fn dependencies(text: &str) -> Result<()> {
     }
     Ok(())
 }
+// Only immutable module acquisition may retry. Each Go attempt retains its
+// private cache and verifies downloads against the unchanged upstream go.sum.
+// Compiler/test failures and integrity errors never enter this retry path.
+pub fn acquire(
+    command: &mut Command,
+    output: &Path,
+    name: &str,
+    budget: Duration,
+) -> Result<String> {
+    let deadline = Instant::now() + budget;
+    let mut attempts = vec![];
+    for attempt in 1..=3 {
+        let remaining = deadline.saturating_duration_since(Instant::now()).as_secs();
+        if remaining == 0 {
+            return Err("BUILD_COMMAND_TIMEOUT".into());
+        }
+        let stdout = output.join(format!("{name}-attempt-{attempt}.stdout.log"));
+        let stderr = output.join(format!("{name}-attempt-{attempt}.stderr.log"));
+        let result = run_logged(command, remaining, &stdout, &stderr);
+        let retry = result.as_ref().err().is_some_and(|error| {
+            error.starts_with("BUILD_COMMAND_FAILED:")
+                && !error.contains("checksum mismatch")
+                && !error.contains("SECURITY ERROR")
+                && (error.contains("unexpected EOF") || error.contains("connection reset by peer"))
+        });
+        attempts.push(json!({"attempt":attempt,"status":if result.is_ok(){"PASS"}else{"FAILED"},"transient_network_error":retry,"stdout":stdout.file_name().unwrap().to_string_lossy(),"stderr":stderr.file_name().unwrap().to_string_lossy()}));
+        save(
+            &output.join(format!("{name}-attempts.json")),
+            &json!(attempts),
+        )?;
+        match result {
+            Ok((out, err)) => {
+                write(&output.join(format!("{name}.txt")), &out, 0o644)?;
+                write(&output.join(format!("{name}.stderr.log")), &err, 0o644)?;
+                return String::from_utf8(out).map_err(|e| e.to_string());
+            }
+            Err(_) if retry && attempt < 3 => {
+                let pause =
+                    Duration::from_secs(1).min(deadline.saturating_duration_since(Instant::now()));
+                std::thread::sleep(pause);
+                // Retain the exact command, module versions, proxy and sumdb.
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!()
+}
 pub fn qualified(path: &Path) -> Result<PathBuf> {
     let m = value(path)?;
     if m["schema"] != "CLINX_TRANSPORT_RUNTIME_CANDIDATE_V1"
@@ -149,20 +196,23 @@ pub fn build(source_archive: &Path, go_archive: &Path, output: &Path) -> Result<
         let execute = |name: &str, args: Vec<String>, cwd: &Path| -> Result<String> {
             let mut command = Command::new(&go);
             command.args(&args).current_dir(cwd).env_clear().envs(&envs);
-            // A fresh private module cache may need slower network acquisition.
-            // Compiler commands remain bounded at 300s and go test at 90s.
-            let timeout = if name == "dependencies" { 900 } else { 300 };
-            match run(&mut command, timeout) {
-                Ok((out, err)) => {
-                    write(&output.join(format!("{name}.txt")), &out, 0o644)?;
-                    write(&output.join(format!("{name}.stderr.log")), &err, 0o644)?;
-                    String::from_utf8(out).map_err(|e| e.to_string())
-                }
+            if matches!(name, "dependencies" | "test-dependencies") {
+                return acquire(&mut command, &output, name, Duration::from_secs(900));
+            }
+            if matches!(name, "upstream-tests" | "build-a" | "build-b") {
+                command.env("GOPROXY", "off");
+            }
+            match run_logged(
+                &mut command,
+                300,
+                &output.join(format!("{name}.txt")),
+                &output.join(format!("{name}.stderr.log")),
+            ) {
+                Ok((out, _)) => String::from_utf8(out).map_err(|e| e.to_string()),
                 Err(e) => {
-                    write(
-                        &output.join(format!("{name}.stderr.log")),
-                        e.as_bytes(),
-                        0o644,
+                    save(
+                        &output.join(format!("{name}.failure.json")),
+                        &json!({"error":e}),
                     )?;
                     Err(e)
                 }
@@ -188,6 +238,28 @@ pub fn build(source_archive: &Path, go_archive: &Path, output: &Path) -> Result<
             &source,
         )?;
         dependencies(&deps)?;
+        execute(
+            "test-dependencies",
+            [
+                "list",
+                "-mod=readonly",
+                "-deps",
+                "-test",
+                "./cmd/client-runtime",
+                "./pkg/runtimeapp",
+                "./pkg/runtimehealth",
+                "./pkg/runtimeconfig",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+            &source,
+        )?;
+        execute(
+            "module-cache-verify",
+            vec!["mod".into(), "verify".into()],
+            &source,
+        )?;
         execute(
             "upstream-tests",
             [
@@ -230,6 +302,11 @@ pub fn build(source_archive: &Path, go_archive: &Path, output: &Path) -> Result<
         if digest(&binary)? != digest(&b)? {
             return Err("REPRODUCIBLE_BUILD_MISMATCH".into());
         }
+        execute(
+            "module-cache-verify-after",
+            vec!["mod".into(), "verify".into()],
+            &source,
+        )?;
         for (name, hash) in &files {
             if digest(&source.join(name))? != *hash {
                 return Err("UPSTREAM_SOURCE_MODIFIED".into());

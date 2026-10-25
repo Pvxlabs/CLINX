@@ -2,6 +2,9 @@
 
 当前没有 Python 脚本。下列命令来自同源码构建的 Rust 二进制；所有完整参数可用 `--help`
 读取。运行时、工具和发布边界见 [仓库架构](../docs/REPOSITORY_ARCHITECTURE.md)。
+固定 Transport 依赖的 EOF 处理和实际双构建证据见
+[Go Transport 重建](../docs/GO_TRANSPORT_REBUILD.md)：仅模块获取有限重试，完整性错误不重试，
+获取后验证缓存，测试/编译使用 `GOPROXY=off`，各次失败日志保留。
 
 | 命令 | 用途与边界 |
 | --- | --- |

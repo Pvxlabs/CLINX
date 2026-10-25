@@ -151,8 +151,34 @@ pub fn task_output(path: &Path, error: &str) -> Result<PathBuf> {
     Ok(path)
 }
 pub fn run(cmd: &mut Command, timeout: u64) -> Result<(Vec<u8>, Vec<u8>)> {
-    let mut stdout = tempfile::tempfile().map_err(|e| e.to_string())?;
-    let mut stderr = tempfile::tempfile().map_err(|e| e.to_string())?;
+    capture(cmd, timeout, None)
+}
+pub fn run_logged(
+    cmd: &mut Command,
+    timeout: u64,
+    stdout: &Path,
+    stderr: &Path,
+) -> Result<(Vec<u8>, Vec<u8>)> {
+    capture(cmd, timeout, Some((stdout, stderr)))
+}
+fn capture(
+    cmd: &mut Command,
+    timeout: u64,
+    logs: Option<(&Path, &Path)>,
+) -> Result<(Vec<u8>, Vec<u8>)> {
+    let open = |path: Option<&Path>| -> Result<fs::File> {
+        match path {
+            Some(p) => fs::OpenOptions::new()
+                .create_new(true)
+                .read(true)
+                .write(true)
+                .open(p)
+                .map_err(|e| e.to_string()),
+            None => tempfile::tempfile().map_err(|e| e.to_string()),
+        }
+    };
+    let mut stdout = open(logs.map(|v| v.0))?;
+    let mut stderr = open(logs.map(|v| v.1))?;
     let mut child = cmd
         .stdin(Stdio::null())
         .stdout(stdout.try_clone().map_err(|e| e.to_string())?)

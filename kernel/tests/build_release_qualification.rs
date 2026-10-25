@@ -468,6 +468,109 @@ fn transport_exact_dependencies_and_all_forbidden_package_variants() {
     }
 }
 #[test]
+fn dependency_eof_retries_same_private_cache_and_preserves_each_attempt_log() {
+    let t = temp();
+    let program = t.path().join("download");
+    shell(
+        &program,
+        r#"
+if [ ! -f "$1/cache-marker" ]; then
+  printf 'fixed v1.7.0\n' > "$1/cache-marker"
+  printf 'partial stdout\n'
+  printf 'go: downloading fixed v1.7.0: unexpected EOF\n' >&2
+  exit 1
+fi
+[ "$(cat "$1/cache-marker")" = 'fixed v1.7.0' ] || exit 2
+printf 'verified dependency\n'
+"#,
+    );
+    let out = transport::acquire(
+        Command::new(&program).arg(t.path()),
+        t.path(),
+        "dependencies",
+        std::time::Duration::from_secs(8),
+    )
+    .unwrap();
+    assert_eq!(out, "verified dependency\n");
+    assert_eq!(
+        fs::read_to_string(t.path().join("cache-marker")).unwrap(),
+        "fixed v1.7.0\n"
+    );
+    assert_eq!(
+        fs::read_to_string(t.path().join("dependencies-attempt-1.stdout.log")).unwrap(),
+        "partial stdout\n"
+    );
+    assert!(
+        fs::read_to_string(t.path().join("dependencies-attempt-1.stderr.log"))
+            .unwrap()
+            .contains("unexpected EOF")
+    );
+    let attempts = value(&t.path().join("dependencies-attempts.json")).unwrap();
+    assert_eq!(attempts.as_array().unwrap().len(), 2);
+    assert_eq!(attempts[0]["status"], "FAILED");
+    assert_eq!(attempts[1]["status"], "PASS");
+    assert_eq!(
+        fs::read_to_string(t.path().join("dependencies.txt")).unwrap(),
+        out
+    );
+}
+#[test]
+fn integrity_failures_never_retry_and_network_retries_are_bounded() {
+    for (error, expected_attempts) in [
+        ("SECURITY ERROR checksum mismatch; unexpected EOF", 1),
+        ("unknown revision v1.7.0", 1),
+        ("unexpected EOF", 3),
+    ] {
+        let t = temp();
+        let program = t.path().join("download");
+        shell(&program, "printf '%s\\n' \"$1\" >&2\nexit 1");
+        let result = transport::acquire(
+            Command::new(&program).arg(error),
+            t.path(),
+            "dependencies",
+            std::time::Duration::from_secs(8),
+        );
+        assert!(result.unwrap_err().contains(error));
+        let attempts = value(&t.path().join("dependencies-attempts.json")).unwrap();
+        assert_eq!(attempts.as_array().unwrap().len(), expected_attempts);
+        assert!(!t.path().join("dependencies.txt").exists());
+    }
+}
+#[test]
+fn timed_out_acquisition_retains_partial_logs_without_retrying() {
+    let t = temp();
+    let program = t.path().join("download");
+    shell(
+        &program,
+        "printf 'before timeout\\n'\nprintf 'pending download\\n' >&2\nsleep 20",
+    );
+    let started = std::time::Instant::now();
+    let result = transport::acquire(
+        &mut Command::new(program),
+        t.path(),
+        "dependencies",
+        std::time::Duration::from_secs(2),
+    );
+    assert_eq!(result.unwrap_err(), "BUILD_COMMAND_TIMEOUT");
+    assert!(started.elapsed() < std::time::Duration::from_secs(3));
+    assert_eq!(
+        fs::read_to_string(t.path().join("dependencies-attempt-1.stdout.log")).unwrap(),
+        "before timeout\n"
+    );
+    assert_eq!(
+        fs::read_to_string(t.path().join("dependencies-attempt-1.stderr.log")).unwrap(),
+        "pending download\n"
+    );
+    assert_eq!(
+        value(&t.path().join("dependencies-attempts.json"))
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+#[test]
 fn transport_archive_hash_and_all_escape_types_are_rejected_before_writes() {
     let t = temp();
     let p = t.path().join("archive");

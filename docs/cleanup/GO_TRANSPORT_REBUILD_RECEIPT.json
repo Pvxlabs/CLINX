@@ -1,0 +1,550 @@
+{
+  "schema": "CLINX_GO_TRANSPORT_REBUILD_V1",
+  "created_utc": "2026-10-25T14:19:21.942270+00:00",
+  "status": "PASS_NOT_DEPLOYED",
+  "baseline_commit": "f645055f10d45fb45c36e13817c29bfe814a30fe",
+  "scope": "Fixed Go transport dependency acquisition, upstream runtime target tests, full transport compilation and actual release/rollback packages",
+  "evidence_root": "/data/artifacts/clinx-go-rebuild-20261025",
+  "diagnosis": {
+    "historical_failure": "HTTP response/read unexpected EOF for fixed Go module zip URLs; prior private cache was removed by the previous build cleanup, so the failed response bytes are not available for reinspection.",
+    "current_route": {
+      "module_proxy": "https://proxy.golang.org",
+      "checksum_database": "sum.golang.org",
+      "http_connect_proxy": "127.0.0.1:7893",
+      "proxy_http1_and_http2": "both complete, TLS verified, same bytes",
+      "direct_module_proxy": "TCP connection timed out in all four bounded probes",
+      "interpretation": "Interrupted acquisition on the HTTP download path; exact original terminating hop cannot be identified from the preserved error alone. No evidence of missing versions or an upstream checksum mismatch."
+    },
+    "matrix": [
+      {
+        "name": "go-sdk-proxy-http1.1",
+        "exit": 0,
+        "elapsed": 2.1,
+        "http_code": 200,
+        "http_version": "1.1",
+        "remote_ip": "127.0.0.1",
+        "url_host": "proxy.golang.org",
+        "size": 643641,
+        "error": "",
+        "sha256": "324a2a6956be6b4aa8a92057cf2ac71ad91bdbbf4dd3d9a00a192e789843a320",
+        "zip_bad_member": null,
+        "zip_members": 214
+      },
+      {
+        "name": "go-sdk-proxy-http2",
+        "exit": 0,
+        "elapsed": 1.6,
+        "http_code": 200,
+        "http_version": "2",
+        "remote_ip": "127.0.0.1",
+        "url_host": "proxy.golang.org",
+        "size": 643641,
+        "error": "",
+        "sha256": "324a2a6956be6b4aa8a92057cf2ac71ad91bdbbf4dd3d9a00a192e789843a320",
+        "zip_bad_member": null,
+        "zip_members": 214
+      },
+      {
+        "name": "go-sdk-direct-http1.1",
+        "exit": 28,
+        "elapsed": 10.01,
+        "http_code": 0,
+        "http_version": "0",
+        "remote_ip": "",
+        "url_host": "proxy.golang.org",
+        "size": 0,
+        "error": "curl: (28) Failed to connect to proxy.golang.org port 443 after 10002 ms: Timeout was reached",
+        "sha256": null
+      },
+      {
+        "name": "go-sdk-direct-http2",
+        "exit": 28,
+        "elapsed": 10.01,
+        "http_code": 0,
+        "http_version": "0",
+        "remote_ip": "",
+        "url_host": "proxy.golang.org",
+        "size": 0,
+        "error": "curl: (28) Failed to connect to proxy.golang.org port 443 after 10002 ms: Timeout was reached",
+        "sha256": null
+      },
+      {
+        "name": "otel-sdk-proxy-http1.1",
+        "exit": 0,
+        "elapsed": 0.77,
+        "http_code": 200,
+        "http_version": "1.1",
+        "remote_ip": "127.0.0.1",
+        "url_host": "proxy.golang.org",
+        "size": 160474,
+        "error": "",
+        "sha256": "143225cecc6fd0b6b54d3d5e350896c78c886ae1646bbb7e9ea5df1e2f08b40e",
+        "zip_bad_member": null,
+        "zip_members": 111
+      },
+      {
+        "name": "otel-sdk-proxy-http2",
+        "exit": 0,
+        "elapsed": 1.07,
+        "http_code": 200,
+        "http_version": "2",
+        "remote_ip": "127.0.0.1",
+        "url_host": "proxy.golang.org",
+        "size": 160474,
+        "error": "",
+        "sha256": "143225cecc6fd0b6b54d3d5e350896c78c886ae1646bbb7e9ea5df1e2f08b40e",
+        "zip_bad_member": null,
+        "zip_members": 111
+      },
+      {
+        "name": "otel-sdk-direct-http1.1",
+        "exit": 28,
+        "elapsed": 10.01,
+        "http_code": 0,
+        "http_version": "0",
+        "remote_ip": "",
+        "url_host": "proxy.golang.org",
+        "size": 0,
+        "error": "curl: (28) Failed to connect to proxy.golang.org port 443 after 10002 ms: Timeout was reached",
+        "sha256": null
+      },
+      {
+        "name": "otel-sdk-direct-http2",
+        "exit": 28,
+        "elapsed": 10.01,
+        "http_code": 0,
+        "http_version": "0",
+        "remote_ip": "",
+        "url_host": "proxy.golang.org",
+        "size": 0,
+        "error": "curl: (28) Failed to connect to proxy.golang.org port 443 after 10002 ms: Timeout was reached",
+        "sha256": null
+      }
+    ],
+    "go_module_verification": {
+      "exit": 0,
+      "results": [
+        {
+          "Path": "github.com/modelcontextprotocol/go-sdk",
+          "Version": "v1.7.0",
+          "Info": "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/probe-modcache/cache/download/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.info",
+          "GoMod": "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/probe-modcache/cache/download/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.mod",
+          "Zip": "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/probe-modcache/cache/download/github.com/modelcontextprotocol/go-sdk/@v/v1.7.0.zip",
+          "Dir": "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/probe-modcache/github.com/modelcontextprotocol/go-sdk@v1.7.0",
+          "Sum": "h1:yqjY2dsbKAC0LSuWZVBMrHgiG8ukXv6NRo0JiALay44=",
+          "GoModSum": "h1:dL7u98E/zjJTGzEq+j30jQ8K2k1mb6LeAH4inEcSGts=",
+          "Origin": {
+            "VCS": "git",
+            "URL": "https://github.com/modelcontextprotocol/go-sdk",
+            "Hash": "bc72835f62eb94d0fb484439f886b6885b075f36",
+            "Ref": "refs/tags/v1.7.0"
+          },
+          "expected_sum": "h1:yqjY2dsbKAC0LSuWZVBMrHgiG8ukXv6NRo0JiALay44=",
+          "sum_matches_upstream": true,
+          "zip_sha256": "324a2a6956be6b4aa8a92057cf2ac71ad91bdbbf4dd3d9a00a192e789843a320"
+        },
+        {
+          "Path": "go.opentelemetry.io/otel/sdk",
+          "Version": "v1.41.0",
+          "Info": "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/probe-modcache/cache/download/go.opentelemetry.io/otel/sdk/@v/v1.41.0.info",
+          "GoMod": "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/probe-modcache/cache/download/go.opentelemetry.io/otel/sdk/@v/v1.41.0.mod",
+          "Zip": "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/probe-modcache/cache/download/go.opentelemetry.io/otel/sdk/@v/v1.41.0.zip",
+          "Dir": "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/probe-modcache/go.opentelemetry.io/otel/sdk@v1.41.0",
+          "Sum": "h1:YPIEXKmiAwkGl3Gu1huk1aYWwtpRLeskpV+wPisxBp8=",
+          "GoModSum": "h1:ahFdU0G5y8IxglBf0QBJXgSe7agzjE4GiTJ6HT9ud90=",
+          "Origin": {
+            "VCS": "git",
+            "URL": "https://github.com/open-telemetry/opentelemetry-go",
+            "Subdir": "sdk",
+            "Hash": "4575a9774dd9415ffc858dd34955493b0031065a",
+            "Ref": "refs/tags/sdk/v1.41.0"
+          },
+          "expected_sum": "h1:YPIEXKmiAwkGl3Gu1huk1aYWwtpRLeskpV+wPisxBp8=",
+          "sum_matches_upstream": true,
+          "zip_sha256": "143225cecc6fd0b6b54d3d5e350896c78c886ae1646bbb7e9ea5df1e2f08b40e"
+        }
+      ]
+    },
+    "previous_cache_status": "Removed by prior task with cleanup receipt; not reused",
+    "global_default_module_cache_before": "ABSENT /home/pvxlabs/go/pkg/mod/cache/download",
+    "global_default_build_cache_before": "ABSENT /home/pvxlabs/.cache/go-build",
+    "fix_scope": "Bounded retry only for transient module acquisition errors, unchanged versions/proxy/sumdb, individual logs; checksum errors fail immediately; prefetch test dependencies and verify local cache before and after compilation; compilation/test dependency downloads disabled with GOPROXY=off.",
+    "controlled_go_batch_probes": [
+      {
+        "mode": "default",
+        "code": 0,
+        "reason": "EXIT",
+        "seconds": 15.994,
+        "modules": [
+          "go.opentelemetry.io/otel@v1.41.0",
+          "github.com/prometheus/client_model@v0.6.2",
+          "github.com/prometheus/common@v0.66.1",
+          "github.com/prometheus/otlptranslator@v0.0.2",
+          "google.golang.org/protobuf@v1.36.8",
+          "github.com/go-logr/logr@v1.4.3"
+        ],
+        "cache_was_empty": true
+      },
+      {
+        "mode": "http1",
+        "code": 0,
+        "reason": "EXIT",
+        "seconds": 14.741,
+        "modules": [
+          "go.opentelemetry.io/otel@v1.41.0",
+          "github.com/prometheus/client_model@v0.6.2",
+          "github.com/prometheus/common@v0.66.1",
+          "github.com/prometheus/otlptranslator@v0.0.2",
+          "google.golang.org/protobuf@v1.36.8",
+          "github.com/go-logr/logr@v1.4.3"
+        ],
+        "cache_was_empty": true
+      }
+    ],
+    "controlled_probe_conclusion": "Both default Go HTTP and HTTP/1-only acquisition succeeded with equal fixed inputs. No evidence justifies blaming HTTP/2 or globally changing proxy configuration.",
+    "actual_fresh_build_reproduction": "candidate-a first dependency attempt reproduced EOF on additional fixed modules, second attempt passed without changing command/version/cache scope; candidate-b first attempt passed."
+  },
+  "builds": {
+    "status": "PASS_TWO_FRESH_INDEPENDENT_BUILDS",
+    "source_archive_sha256": "0281b17c0979f9db1ae2b41b0b66df697d646e726995756a003c6ffc51a64c10",
+    "go_archive_sha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+    "old_artifacts_used": false,
+    "module_and_build_caches_shared": false,
+    "compilation_and_tests_goproxy": "off",
+    "outputs": [
+      {
+        "candidate": "a",
+        "binary_sha256": "31f83c5cab00cdb17b594085706190106d174a88d49ea6e7edec8e3823183f9d",
+        "manifest_sha256": "4b2eb1c158c25a139f1d1e681a7d9b7992add2b76de91defa789dce7c4475dd0",
+        "upstream_source_files_sha256": "5e5117913ed188274f04e74b18586fe56fc871277ddf517cf34c008ef9eef42b",
+        "dependencies_sha256": "f4c4ec4b53a5304672f08f3b553973c5726b32406ce5d01d49d9fbf303f4253b",
+        "builder_sha256": "d7ecf408f5571d7d44e7773e5e6d3580cbf64aa1bbb5cf95af30b7f53d063f6a",
+        "builder_shared_sources_sha256": "2367ecb591d9357276f15a044e1758a39020e8012a1290c4260db8b04f71853a",
+        "dependency_attempts": [
+          {
+            "attempt": 1,
+            "status": "FAILED",
+            "stderr": "dependencies-attempt-1.stderr.log",
+            "stdout": "dependencies-attempt-1.stdout.log",
+            "transient_network_error": true
+          },
+          {
+            "attempt": 2,
+            "status": "PASS",
+            "stderr": "dependencies-attempt-2.stderr.log",
+            "stdout": "dependencies-attempt-2.stdout.log",
+            "transient_network_error": false
+          }
+        ],
+        "test_dependency_attempts": [
+          {
+            "attempt": 1,
+            "status": "PASS",
+            "stderr": "test-dependencies-attempt-1.stderr.log",
+            "stdout": "test-dependencies-attempt-1.stdout.log",
+            "transient_network_error": false
+          }
+        ],
+        "upstream_tests": "ok  \tgithub.com/openai/tunnel-client/cmd/client-runtime\t0.006s\n?   \tgithub.com/openai/tunnel-client/pkg/runtimeapp\t[no test files]\nok  \tgithub.com/openai/tunnel-client/pkg/runtimehealth\t0.007s\nok  \tgithub.com/openai/tunnel-client/pkg/runtimeconfig\t0.981s\n",
+        "cache_verified_before_and_after": true,
+        "transient_removed": true
+      },
+      {
+        "candidate": "b",
+        "binary_sha256": "31f83c5cab00cdb17b594085706190106d174a88d49ea6e7edec8e3823183f9d",
+        "manifest_sha256": "34b1caa16e6723f2a9fd94e6d4d5aed102d85bf010370be9399830b19da55e3c",
+        "upstream_source_files_sha256": "5e5117913ed188274f04e74b18586fe56fc871277ddf517cf34c008ef9eef42b",
+        "dependencies_sha256": "f4c4ec4b53a5304672f08f3b553973c5726b32406ce5d01d49d9fbf303f4253b",
+        "builder_sha256": "d7ecf408f5571d7d44e7773e5e6d3580cbf64aa1bbb5cf95af30b7f53d063f6a",
+        "builder_shared_sources_sha256": "2367ecb591d9357276f15a044e1758a39020e8012a1290c4260db8b04f71853a",
+        "dependency_attempts": [
+          {
+            "attempt": 1,
+            "status": "PASS",
+            "stderr": "dependencies-attempt-1.stderr.log",
+            "stdout": "dependencies-attempt-1.stdout.log",
+            "transient_network_error": false
+          }
+        ],
+        "test_dependency_attempts": [
+          {
+            "attempt": 1,
+            "status": "PASS",
+            "stderr": "test-dependencies-attempt-1.stderr.log",
+            "stdout": "test-dependencies-attempt-1.stdout.log",
+            "transient_network_error": false
+          }
+        ],
+        "upstream_tests": "ok  \tgithub.com/openai/tunnel-client/cmd/client-runtime\t0.007s\n?   \tgithub.com/openai/tunnel-client/pkg/runtimeapp\t[no test files]\nok  \tgithub.com/openai/tunnel-client/pkg/runtimehealth\t0.006s\nok  \tgithub.com/openai/tunnel-client/pkg/runtimeconfig\t1.021s\n",
+        "cache_verified_before_and_after": true,
+        "transient_removed": true
+      }
+    ]
+  },
+  "packages": {
+    "status": "PASS_NOT_DEPLOYED",
+    "fresh_transport_manifest": "/data/artifacts/clinx-go-rebuild-20261025/candidate-a/manifest.json",
+    "fresh_transport_manifest_sha256": "4b2eb1c158c25a139f1d1e681a7d9b7992add2b76de91defa789dce7c4475dd0",
+    "transport_binary_sha256": "31f83c5cab00cdb17b594085706190106d174a88d49ea6e7edec8e3823183f9d",
+    "old_artifacts_used": false,
+    "commands": [
+      [
+        "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/target/release/clinx-build",
+        "build-tunnel-release",
+        "--source",
+        "/home/pvxlabs/dev/clinx",
+        "--output",
+        "/data/artifacts/clinx-go-rebuild-20261025/package-a",
+        "--home",
+        "/data/artifacts/clinx-go-rebuild-20261025/package-home",
+        "--tunnel",
+        "/data/artifacts/clinx-go-rebuild-20261025/candidate-a/tunnel-client-runtime",
+        "--supervisor-binary",
+        "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/target/release/clinx-tunnel",
+        "--cas-binary",
+        "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/target/release/clinx-build",
+        "--transport-runtime-manifest",
+        "/data/artifacts/clinx-go-rebuild-20261025/candidate-a/manifest.json",
+        "--guard-manifest",
+        "/data/artifacts/clinx-go-rebuild-20261025/inputs/package-guards.json",
+        "--evidence-manifest",
+        "/data/artifacts/clinx-go-rebuild-20261025/inputs/package-evidence.json"
+      ],
+      [
+        "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/target/release/clinx-build",
+        "build-tunnel-release",
+        "--source",
+        "/home/pvxlabs/dev/clinx",
+        "--output",
+        "/data/artifacts/clinx-go-rebuild-20261025/package-b",
+        "--home",
+        "/data/artifacts/clinx-go-rebuild-20261025/package-home",
+        "--tunnel",
+        "/data/artifacts/clinx-go-rebuild-20261025/candidate-a/tunnel-client-runtime",
+        "--supervisor-binary",
+        "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/target/release/clinx-tunnel",
+        "--cas-binary",
+        "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025/target/release/clinx-build",
+        "--transport-runtime-manifest",
+        "/data/artifacts/clinx-go-rebuild-20261025/candidate-a/manifest.json",
+        "--guard-manifest",
+        "/data/artifacts/clinx-go-rebuild-20261025/inputs/package-guards.json",
+        "--evidence-manifest",
+        "/data/artifacts/clinx-go-rebuild-20261025/inputs/package-evidence.json"
+      ]
+    ],
+    "archives": {
+      "release.tar.gz": "e8a39a32c4f5c84e8f9a6c513c7f97e0227b32ba134f655bbd30ff7ed2fb1533",
+      "rollback-capsule.tar.gz": "97b8c883ed63eb45e679e1161e4fb62c2807d882266c42b914be9963b3d91cac"
+    },
+    "archives_equal_across_output_directories": true,
+    "release_manifest_sha256": "70007094089e4cbcb188d00a9fae57ed4dfcf000bcec104b65aa5791ef4714ca",
+    "runtime_files": {
+      "clinx-tunnel": {
+        "mode": 493,
+        "sha256": "b4f141087db26a1d3ba2ef24a8c470f08362043d099d866d8c50e105a9b2d56f"
+      },
+      "policy.json": {
+        "mode": 420,
+        "sha256": "c1fa257f761346947b358a192109205e3ecd94edb2a963474fbde52b94ad1628"
+      },
+      "transport-runtime-dependencies.txt": {
+        "mode": 420,
+        "sha256": "f4c4ec4b53a5304672f08f3b553973c5726b32406ce5d01d49d9fbf303f4253b"
+      },
+      "transport-runtime-manifest.json": {
+        "mode": 420,
+        "sha256": "4b2eb1c158c25a139f1d1e681a7d9b7992add2b76de91defa789dce7c4475dd0"
+      },
+      "tunnel-client-runtime": {
+        "mode": 493,
+        "sha256": "31f83c5cab00cdb17b594085706190106d174a88d49ea6e7edec8e3823183f9d"
+      },
+      "units/99-p1-reliability.conf": {
+        "mode": 420,
+        "sha256": "c1fa088d6f6ba9c4113c735d691bab64b6baf79ba6ef0930347e92504e79c640"
+      },
+      "units/clinx-tunnel-health.service": {
+        "mode": 420,
+        "sha256": "97147270c8705ed05fde47a332c2992b80f37a9439a4f3c7c46715a86ed6c32d"
+      },
+      "units/clinx-tunnel.service": {
+        "mode": 420,
+        "sha256": "ae93fc6b6b0fa41f996dd13c00983597d73e60814b6d3512cf7009273b90262e"
+      }
+    },
+    "runtime_python_files": [],
+    "runtime_devops_tools": [],
+    "packaged_cas_builder_sha256": "142bbfce812db0bf5068333f6217c5c4bae5545b358bf6f35e4dd1fc83a9af02",
+    "native_status": {
+      "currently_healthy": false,
+      "dispatch_verified": false,
+      "status": "UNKNOWN"
+    },
+    "cas": [
+      {
+        "direction": "forward",
+        "scope": "OFFLINE_CONFIG_ONLY",
+        "status": "PASS"
+      },
+      {
+        "direction": "rollback",
+        "scope": "OFFLINE_CONFIG_ONLY",
+        "status": "PASS"
+      }
+    ],
+    "cas_exact_restore": true,
+    "production_mutations": false
+  },
+  "rust_regression": {
+    "status": "PASS",
+    "build": 21,
+    "relay": 4,
+    "monitor": 6,
+    "failed": 0,
+    "ignored": 0,
+    "clippy": "PASS; 10 existing library warnings",
+    "format": "PASS; Rust edition 2024; affected files only"
+  },
+  "built_sources": {
+    "kernel/src/build_release.rs": "bd7578a47166a1cf4431e2e4071e7eb713ac02c45ad4ee4867381a8ca1fef0fb",
+    "kernel/src/build_transport.rs": "d7ecf408f5571d7d44e7773e5e6d3580cbf64aa1bbb5cf95af30b7f53d063f6a",
+    "kernel/tests/build_release_qualification.rs": "07f22b5d50760918772a7ea40f0d9f6ac55918212c4b3999e65a2e8371a48b2c"
+  },
+  "preservation": {
+    "status": "PASS",
+    "local_files_verified": 294,
+    "changed_local_files": [],
+    "built_sources_match": true,
+    "service_snapshots_equal": true,
+    "service_units": [
+      "clinx-rust-authority.service",
+      "clinx-rust-dispatcher.service",
+      "clinx-rust-centre.service"
+    ]
+  },
+  "limits": {
+    "original_terminating_network_hop": "NOT_DETERMINED; no corresponding readable historical proxy journal entries; prior partial cache removed before this task",
+    "direct_module_proxy_without_existing_proxy": "BLOCKED; four bounded TCP connection timeout probes; working existing HTTP CONNECT route used",
+    "historical_failed_build": "Preserved unchanged; superseded by new build evidence, not relabeled",
+    "upstream_tests": "cmd/client-runtime, pkg/runtimehealth, pkg/runtimeconfig PASS; pkg/runtimeapp compiled with no test files; unrelated full-client/embedded tests NOT_RUN",
+    "production_deployment": "NOT_RUN",
+    "physical_mac_cross_device": "NOT_RUN",
+    "macos_xcode_build": "NOT_RUN"
+  },
+  "versions_changed": false,
+  "production_mutations": false,
+  "evidence": [
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/network/diagnosis.json",
+      "sha256": "fb9ed599b89503486d21e738e9d07f2f311744ed721854b9217af119f5810a1a"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/network/download-matrix.json",
+      "sha256": "b9705b6f1a5772379e30fa2b2e79ee49a39ffb1b1d00e36dcfd3d00301d2c863"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/network/go-download-verification.json",
+      "sha256": "1eac27c28fd755d9761adb92a157d4a557ee5d7d3c93f4bcaf5175f183752399"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/network/go-batch-default-result.json",
+      "sha256": "ce3b5a3dbcf96701a192c803f85f79d315c0ab046ae66d802d7e3694a724f93e"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/network/go-batch-http1-result.json",
+      "sha256": "f8574ccbcc19965605d6a219132345d894de56bd652c9e28f51b0e26759d7baf"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/network/historical-proxy-journal.json",
+      "sha256": "5616c0fd580687823aa99e89ecb650ddd0d7de33901aa6539bf028044ab11980"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/receipts/independent-builds.json",
+      "sha256": "294de5eab6122bbd1d8b8f7e3c7038dbe455277e3ba187894f5a6c46f8b555eb"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/receipts/package-validation.json",
+      "sha256": "681988807a3ea201c0b77650f363fe34244aa4896ae618b918aa710bbed19107"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/receipts/built-sources.json",
+      "sha256": "eb399a90b8acab433688727e684fa48c4f872630e2634e315d45e6e9ed2cf1a7"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/receipts/preservation.json",
+      "sha256": "f989d3fec52d7d89a9e6958f0af8c64f72d1c8d0d2991f24ca24d6f65e3098d1"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/rust-regression.log",
+      "sha256": "6275e0e4373581f60eedcc3e2a23d031d679dd4c1e1c6a46eb0272644189f024"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/clippy.log",
+      "sha256": "512230acabe5e17d5d0d27b8962bdde01623e3b924e3316700158d058db8e456"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/candidate-a.log",
+      "sha256": "d29942a346e9cac2fa51eeead0b4daacec9430189541cdc021b11bba9775a3de"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/candidate-b.log",
+      "sha256": "887b199f538fd2f579b5b3a65bdb1844eb22a479640ec64d9b9dc2deb48d3e3a"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/package-a.log",
+      "sha256": "bacef96d1c975e792cefae31f802294126f421066c4fc9df1d6bd9891a3f79cb"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/package-b.log",
+      "sha256": "bacef96d1c975e792cefae31f802294126f421066c4fc9df1d6bd9891a3f79cb"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/cas-forward.log",
+      "sha256": "797117e49f7c7fa3bf1d7231b4f81f1d1dd6cab693e818084ec1e51042832a16"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/cas-rollback.log",
+      "sha256": "e0090c698e337ae3c3db854c90863077216c3e126c5f8f0a1b34e16aa706d9d4"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/services-before.txt",
+      "sha256": "e9e646a78cf96d290130ffa044f326ac96c4eb46d4505f25a393943a523c4430"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/services-after.txt",
+      "sha256": "e9e646a78cf96d290130ffa044f326ac96c4eb46d4505f25a393943a523c4430"
+    },
+    {
+      "path": "/data/artifacts/clinx-go-rebuild-20261025/receipts/cleanup.json",
+      "sha256": "6f2bd9f03fc1351eb84294396a96335b4e2dac202c4408ede63542f5c208158d"
+    }
+  ],
+  "cleanup": {
+    "status": "PASS",
+    "created_utc": "2026-10-25T14:20:18.331545+00:00",
+    "active_owned_path_references_before_cleanup": [],
+    "removed": [
+      "/lab/runtime-worktrees/p620/clinx-go-rebuild-20261025",
+      "/data/artifacts/clinx-go-rebuild-20261025/probe-module",
+      "/data/artifacts/clinx-go-rebuild-20261025/probe-default",
+      "/data/artifacts/clinx-go-rebuild-20261025/probe-http1",
+      "/data/artifacts/clinx-go-rebuild-20261025/package-home",
+      "/data/artifacts/clinx-go-rebuild-20261025/cas-fixture",
+      "/data/artifacts/clinx-go-rebuild-20261025/package-a/release",
+      "/data/artifacts/clinx-go-rebuild-20261025/package-a/rollback-capsule",
+      "/data/artifacts/clinx-go-rebuild-20261025/package-b",
+      "/data/artifacts/cpf25-build",
+      "/data/artifacts/clinx-go-rebuild-20261025/candidate-a/tunnel-client-runtime",
+      "/data/artifacts/clinx-go-rebuild-20261025/candidate-b/tunnel-client-runtime"
+    ],
+    "preserved_unique_artifacts": {
+      "/data/artifacts/clinx-go-rebuild-20261025/package-a/release.tar.gz": "e8a39a32c4f5c84e8f9a6c513c7f97e0227b32ba134f655bbd30ff7ed2fb1533",
+      "/data/artifacts/clinx-go-rebuild-20261025/package-a/rollback-capsule.tar.gz": "97b8c883ed63eb45e679e1161e4fb62c2807d882266c42b914be9963b3d91cac"
+    },
+    "candidate_binary_recovery": "candidate A and B identical binary retained inside package-a/release.tar.gz; original manifests and logs retained",
+    "cleanup_note": "Go module cache directories were read-only; restored owner write permission only inside task-owned disposable roots before deletion",
+    "borrowed_archive_preserved": true,
+    "production_or_historical_paths_removed": false
+  }
+}
