@@ -27,7 +27,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+      "reason": "Public Authority client and operation identity codec; local IPC, endpoint/peer checks, request validation and exact one-send ACK run in Rust"
     },
     {
       "path": "clinx/authority/request_pipe.py",
@@ -54,7 +54,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+      "reason": "Read-only HTTP/Provider IO callbacks and Python object compatibility; desktop evidence, exact identity and projection owned by Rust"
     },
     {
       "path": "clinx/authority/rust_worker_identity.py",
@@ -240,7 +240,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+      "reason": "Public policy dataclass/JSON codec and error API; normalization, scope, permit, route checks and CAS hash delegated to Rust; not a second Authority policy writer"
     },
     {
       "path": "clinx/contracts/execution_semantics.py",
@@ -249,7 +249,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+      "reason": "Public identity DTO/codec including active host normalization; normalization/build/parse/routing validation delegated to Rust"
     },
     {
       "path": "clinx/contracts/runtime_config.py",
@@ -309,7 +309,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+      "reason": "zeroconf/interface IO and Candidate objects; TXT/TTL/capacity/conflict/device projection delegated to Rust"
     },
     {
       "path": "clinx/discovery/identity.py",
@@ -318,7 +318,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+      "reason": "Local key/certificate bootstrap and identity objects/PrivateStore IO; public identity/certificate checks and atomic trust lifecycle delegated to Rust"
     },
     {
       "path": "clinx/discovery/monitor_helper.py",
@@ -336,7 +336,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+      "reason": "Owner-only installed-file reading and URL codec; private Observer connection validation delegated to Rust"
     },
     {
       "path": "clinx/discovery/pairing.py",
@@ -345,7 +345,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+      "reason": "Existing OPAQUE native-wheel codec and explicit DEV_ONLY qualification protocol; pairing window TTL, one-shot consumption and failure/rate state owned by Rust"
     },
     {
       "path": "clinx/discovery/transport.py",
@@ -367,12 +367,9 @@
     },
     {
       "path": "clinx/host/derived_git_targets.py",
-      "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "rust",
-        "monitor"
-      ],
-      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "No current runtime or maintenance caller; current Git target checks owned by Rust business_targets/host_executor; historical local tests of retired Python core preserved"
     },
     {
       "path": "clinx/host/host_contract.py",
@@ -462,7 +459,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+      "reason": "HTTP and existing source/scope callbacks; checkpoint/HMAC/expiry, exact identity, remote cooldown and rejection policy owned by Rust"
     },
     {
       "path": "clinx/monitor/network_observation.py",
@@ -498,7 +495,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+      "reason": "Observer HTTP authentication/routes, error codec and public readonly snapshot IO; ActivityReader and legacy schema query/projection delegated to Rust"
     },
     {
       "path": "clinx/monitor/rust_monitor.py",
@@ -507,7 +504,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+      "reason": "Python public Monitor/observation facade and IO callbacks; managed result/context/recheck and MCP read policy delegated to Rust"
     },
     {
       "path": "clinx/monitor/rust_observation.py",
@@ -515,7 +512,7 @@
       "profiles": [
         "rust"
       ],
-      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+      "reason": "Rust managed inventory/turn projection and canonical sample facade; Authority and base-source IO callbacks only"
     },
     {
       "path": "clinx/nodes/__init__.py",
@@ -541,7 +538,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Typed Rust NodeRegistry/NodeService clients; Python still owns observation routing, native history cursor projection and value types pending observation migration."
+      "reason": "Node/Scope DTOs, local sharing configuration and protocol facade; observation fanout, exact route/ACK/cursor/service projection owned by Rust"
     },
     {
       "path": "clinx/nodes/node_runtime.py",
@@ -550,7 +547,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Rust paired TLS/Centre client bindings plus remaining Python registration/supervision and observation route callbacks; not fully retired runtime."
+      "reason": "Existing paired identity/config objects and opaque IO callbacks; reverse Authority/remote provider scope and exact ACK validation owned by Rust"
     },
     {
       "path": "clinx/nodes/node_service_entrypoint.py",
@@ -558,7 +555,7 @@
       "profiles": [
         "monitor"
       ],
-      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+      "reason": "Helper CLI/configuration, callback IO and signal wait; history selection plus registration/heartbeat/collector scheduling owned by Rust"
     },
     {
       "path": "clinx/nodes/provider_relay.py",
@@ -594,7 +591,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+      "reason": "Public Codex API/parameter/error compatibility plus Process/SSH qualification transports; normal Unix WebSocket/RPC/events/guard/exact-input confirmation owned by Rust"
     },
     {
       "path": "clinx/provider/desktop_socket.py",
@@ -611,7 +608,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+      "reason": "Public dataclass/result codec for Rust evidence liveness classification"
     },
     {
       "path": "clinx/provider/native_history.py",
@@ -629,7 +626,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Python exact Provider evidence and cancellation reads; supports Authority-selected endpoints; still an ACTIVE_RUNTIME dependency"
+      "reason": "Endpoint/readonly Provider and OS IO facade plus exact-turn maintenance read; multi-provider evidence selection and native writer proof owned by Rust"
     },
     {
       "path": "clinx/provider/native_writer_probe.py",
@@ -638,7 +635,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+      "reason": "Existing read-only writer probe API; socket peer identity comes from the same Rust socket, not remote self-report"
     },
     {
       "path": "clinx/provider/rust_workspace_probe.py",
@@ -665,7 +662,7 @@
       "path": "clinx/transport/tunnel_reliability.py",
       "role": "ACTIVE_RUNTIME",
       "profiles": [],
-      "reason": "Current transport and tunnel supervisor implementation; target owner Rust"
+      "reason": "Standalone owned-process/HTTP/signal IO compatibility; budget, intent/restart checks, recovery/current health and durable receipt engine owned by Rust; process drain loop remains Python"
     },
     {
       "path": "fixtures/bridge_migration_codex.py",
@@ -990,7 +987,7 @@
         "rust",
         "monitor"
       ],
-      "reason": "Bounded multiplexed stdio IO and callbacks for Rust Node/network/history/observation; no sockets, SQL or business projection state."
+      "reason": "Bounded multiplexed private stdio and callbacks for Rust clients; request-specific timeout preserved without automatic replay"
     },
     {
       "path": "fixtures/test_rust_node_network.py",
@@ -1009,6 +1006,48 @@
       "role": "QUALIFICATION",
       "profiles": [],
       "reason": "Rust collector real spool, checkpoint/ACK atomicity, worker death/restart, duplicate receipts, scope narrowing and source merge regression"
+    },
+    {
+      "path": "fixtures/test_rust_native_observer.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Rust exact native bridge/checkpoint, managed projection, read-only HTTP/MCP and activity regression with isolated fixtures"
+    },
+    {
+      "path": "fixtures/test_rust_node_router.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Rust fanout, cursor/identity, scoped authority route and packaged Helper cold start/restart regression"
+    },
+    {
+      "path": "fixtures/test_rust_provider_client.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Rust real Unix Provider transport, single-send permission, exact input receipt and writer evidence regression"
+    },
+    {
+      "path": "fixtures/test_rust_authority_client.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Rust Authority IPC exact ACK, no replay, trusted endpoint and request identity regression"
+    },
+    {
+      "path": "fixtures/test_rust_discovery_state.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Rust paired trust transactions, read-only identity access and one-shot pairing window regression"
+    },
+    {
+      "path": "fixtures/test_rust_execution_contracts.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Rust public compatibility contracts, Unicode normalization, scope, parsing and persisted identity parity"
+    },
+    {
+      "path": "fixtures/test_rust_discovery_index.py",
+      "role": "QUALIFICATION",
+      "profiles": [],
+      "reason": "Isolated Rust runtime/compatibility contract regression; no production tasks or deployment"
     }
   ]
 }

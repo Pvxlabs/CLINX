@@ -17,7 +17,6 @@ from clinx.discovery.identity import (
 )
 from clinx.nodes.node_protocol import (
     NODE_PROTOCOL_VERSION,
-    SUPPORTED_PROVIDER,
     NodeAuthorizationStore,
     NodeProtocolError,
     NodeRecord,
@@ -172,32 +171,22 @@ class NodeAuthorityClient:
         self.registration, self.scope = registration, scope
 
     def request(self, operation: str, payload: dict, *, request_id: str) -> dict:
-        import json
-
         from clinx.authority.rust_authority import RustAuthorityError
-        from clinx.nodes.node_protocol import MAX_FRAME_BYTES
-        if not operation.startswith("business."):
-            raise RustAuthorityError("UNSUPPORTED_OPERATION")
-        scope = self.scope() if callable(self.scope) else self.scope
-        if scope is None or not scope.allows("execution.authority"):
-            raise RustAuthorityError("SHARING_SCOPE_DENIED")
+        from clinx.nodes.network_worker import Worker
         registration = self.registration
-        request = dict(operation="authority.request", protocol_version=NODE_PROTOCOL_VERSION,
-            node_id=registration.tls.identity.public["node_id"], sharing_scope=scope.as_dict(),
-            request_id=request_id, command=operation.removeprefix("business."), payload=payload)
-        if len(json.dumps(request, separators=(",", ":")).encode()) + 1 > MAX_FRAME_BYTES:
-            raise RustAuthorityError("REQUEST_TOO_LARGE")
+        def callback(event):
+            if event['operation'] != 'authority.request':
+                raise RustAuthorityError('NODE_CALLBACK_INVALID')
+            return registration.tls.client(registration.centre_id, registration.endpoint,
+                timeout=registration.timeout).call(event['arguments'])
+        scope = self.scope() if callable(self.scope) else self.scope
+        worker = Worker(callback=callback)
         try:
-            result = registration.tls.client(registration.centre_id, registration.endpoint,
-                timeout=registration.timeout).call(request)
-        except (OSError, ValueError):
-            # Includes a partial send or lost reply. Never replay here.
-            raise RustAuthorityError("DELIVERY_UNKNOWN") from None
-        if result.get("error_code"):
-            raise RustAuthorityError(result["error_code"])
-        if result.get("request_id") != request_id or not isinstance(result.get("result"), dict):
-            raise RustAuthorityError("DELIVERY_UNKNOWN")
-        return result["result"]
+            return worker.call('router.authority_request', operation=operation, payload=payload,
+                request_id=request_id, node_id=registration.tls.identity.public['node_id'],
+                scope=scope.as_dict() if scope else None)
+        finally:
+            worker.close()
 
 
 class AuthorizedRemoteClient:
@@ -207,23 +196,42 @@ class AuthorizedRemoteClient:
         self.tls, self.registry, self.approvals, self.node_id = tls, registry, approvals, node_id
 
     def call(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        from clinx.authority.rust_authority import RustAuthorityError
+        from clinx.nodes.network_worker import Worker
         record = self.registry.get(self.node_id)
         scope = self.approvals.get(self.node_id)
-        operation = request.get("operation", "")
+        callback_errors = []
+        def callback(event):
+            method, args = event['operation'], event['arguments']
+            try:
+                if method == 'remote.peer':
+                    return self.tls.peer(args['node_id'])
+                if method == 'remote.scope':
+                    value = self.registry.scope(**args)
+                    return value.as_dict() if value else None
+                if method == 'remote.request':
+                    return self.tls.client(args['node_id'],args['endpoint']).call(args['request'])
+                raise NodeProtocolError('NODE_CALLBACK_INVALID','Unexpected remote route callback')
+            except Exception as exc:
+                callback_errors.append(exc)
+                raise
+        worker = Worker(callback=callback)
         try:
-            self.tls.peer(self.node_id)
-            registered_scope = self.registry.scope(self.node_id, record.user_scope) if record else None
-            effective = intersect_scope(registered_scope, scope)
-            permission = "session.read" if operation in {"execution.context", "execution.status"} else operation
-            if not effective.allows(permission, request.get("provider", SUPPORTED_PROVIDER)):
-                raise NodeProtocolError("SHARING_SCOPE_DENIED", "Current centre approval denies this request")
-            if record is None or not record.endpoint or record.stale or record.state == "OFFLINE":
-                raise NodeProtocolError("NODE_OFFLINE", "Registered node is offline")
-            if request.get("user_scope") != effective.user_scope:
-                raise NodeProtocolError("USER_SCOPE_DENIED", "Request has no approved user mapping")
-            return self.tls.client(self.node_id, record.endpoint).call(dict(request, node_id=self.node_id))
+            try:
+                return worker.call('router.remote_request',node_id=self.node_id,request=dict(request),
+                    record=record.as_dict() if record else None,scope=scope.as_dict() if scope else None)
+            except RustAuthorityError as exc:
+                if callback_errors:
+                    raise callback_errors[-1]
+                reason = {'SHARING_SCOPE_DENIED':'Current centre approval denies this request',
+                    'NODE_OFFLINE':'Registered node is offline',
+                    'USER_SCOPE_DENIED':'Request has no approved user mapping'}.get(str(exc),'Remote route rejected')
+                raise NodeProtocolError(str(exc),reason) from None
         except NodeProtocolError as exc:
-            return exc.as_dict() | {"node_id": self.node_id, "read_only": not operation.startswith("execution.")}
+            return exc.as_dict() | {'node_id':self.node_id,
+                'read_only':not request.get('operation','').startswith('execution.')}
+        finally:
+            worker.close()
 
     def execute(self, operation: str, **request: Any) -> dict[str, Any]:
         return self.call(dict(request, operation=operation, protocol_version=NODE_PROTOCOL_VERSION))

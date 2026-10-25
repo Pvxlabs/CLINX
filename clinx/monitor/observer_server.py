@@ -4,45 +4,25 @@ No TaskRegistry construction, migrations, reconciliation or business writes.
 Optional exact native reads use an existing daemon with a read-only client.
 Run separately from the authority. The HTTP listener is always loopback-only.
 """
+
 from __future__ import annotations
 
-import base64
 import contextlib
 import hashlib
 import hmac
 import json
 import os
-from pathlib import Path
 import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 VERSION = "1"
 TASK_LIMIT, EVENT_LIMIT, OP_LIMIT = 50, 100, 20
 MAX_RESPONSE = 2 * 1024 * 1024
-TERMINAL = {"COMPLETED", "IN_REVIEW", "BLOCKED", "FAILED", "RECOVERY_REQUIRED",
-            "CANCELLED", "STOPPED"}
-RUNNING = {"CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING", "FINALIZING",
-           "CANCEL_REQUESTED", "CANCELLATION_PENDING"}
-BLOCKED = {"BLOCKED", "FAILED", "RECOVERY_REQUIRED", "TRANSPORT_UNCERTAIN"}
-EVENT_TYPES = {
-    "V1SnapshotBaselineImported", "V1TerminalStateObserved",
-    "V1ExecutionProgressObserved", "V1ExecutionResultPersistedObserved",
-    "V1HostExecutionStartedObserved", "V1HostEvidenceObserved",
-    "V1LeaseReleasedObserved", "V1UnattributedLeaseReleasedObserved",
-    "V1ExecutionClaimObserved", "V1UnattributedExecutionClaimObserved",
-}
-OP_COLUMNS = """host_execution_ref,execution_ref,host,surface,operation_class,
-    capability,operation,started_at,completed_at,duration_ms,exit_code,result_state,
-    timed_out"""
-TASK_COLUMNS = """task_id,project_alias,title,host,status,execution_state,current_stage,
-    current_blocker,created_at,updated_at,last_progress_at,codex_running,retry_required,
-    turn_id"""
-EXEC_COLUMNS = """execution_ref,task_id,logical_model,resolved_model,stage,
-    execution_state,turn_id,acquired_at,routing_identity_json,execution_policy_json"""
 
 
 class APIError(Exception):
@@ -54,552 +34,396 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _legacy_command(operation, **arguments):
+    from clinx.monitor.native_observation_bridge import _Client
+    from clinx.nodes.node_protocol import NodeProtocolError
+
+    client = _Client()
+    try:
+        return client._call("legacy_" + operation, **arguments)
+    except NodeProtocolError as exc:
+        raise APIError(400 if exc.code == "INVALID_CURSOR" else 503, exc.code) from None
+    finally:
+        client.close()
+
+
 def safe_text(value, limit=256):
-    if not isinstance(value, str):
-        return None
-    value = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", value[:limit])
-    value = re.sub(r"(?i)bearer\s+[^\s,;]+", "Bearer [REDACTED]", value)
-    return re.sub(r"(?i)\b(password|secret|api[_-]?key|token)\s*[:=]\s*[^\s,;]+",
-                  r"\1=[REDACTED]", value)
+    return _legacy_command("safe_text", value=value, limit=limit)
 
 
 def object_json(value):
-    try:
-        item = json.loads(value or "{}")
-        return item if isinstance(item, dict) else {}
-    except (ValueError, TypeError):
-        return {}
+    return _legacy_command("object", value=value)
 
 
 def timestamp(value):
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed.isoformat() if parsed.tzinfo else None
-    except (ValueError, TypeError, AttributeError):
-        return None
+    return _legacy_command("timestamp", value=value)
 
 
 def elapsed(start, end):
-    try:
-        seconds = int((datetime.fromisoformat(end) -
-                       datetime.fromisoformat(start)).total_seconds())
-        return seconds if seconds >= 0 else None
-    except (ValueError, TypeError):
-        return None
+    return _legacy_command("elapsed", start=start, end=end)
 
 
 def menu_state(state, running, retry, result):
-    if state in BLOCKED or retry or (result and result["status"] == "BLOCKED"):
-        return "BLOCKED"
-    if state in RUNNING or running:
-        return "RUNNING"
-    if state in {"COMPLETED", "IN_REVIEW"} and result and result["status"] == "PASS":
-        return "PASS"
-    if state in {"QUEUED", "STOPPED", "CANCELLED", "COMPLETED", "IN_REVIEW"}:
-        return "IDLE"
-    return "BLOCKED"  # unknown is visible uncertainty, never success
+    return _legacy_command(
+        "menu", state=state, running=running, retry=retry, result=result
+    )
 
 
-# Activity uses the native paginated index, never provider RPC or execution writers.
+# Exact native activity reads, cursor identity and redaction are owned by Rust.
 ACTIVITY_LIMIT, ACTIVITY_TEXT_LIMIT = 40, 16384
-UUID_PATTERN = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
+
+
+def _activity_command(operation, **arguments):
+    from clinx.monitor.native_observation_bridge import _Client
+    from clinx.nodes.node_protocol import NodeProtocolError
+
+    client = _Client()
+    try:
+        return client._call(operation, **arguments)
+    except NodeProtocolError as exc:
+        raise APIError(
+            409 if exc.code == "ACTIVITY_CURSOR_RESET_REQUIRED" else 503, exc.code
+        ) from None
+    finally:
+        client.close()
 
 
 def activity_text(value):
-    if not isinstance(value, str):
-        return ""
-    # Redact before truncating; incomplete PEM blocks must not leak a prefix.
-    value = re.sub(r"-----BEGIN [^-]*PRIVATE KEY-----.*?(?:-----END [^-]*PRIVATE KEY-----|$)",
-                   "[REDACTED]", value, flags=re.S)
-    value = re.sub(r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,})\b", "[REDACTED]", value)
-    value = re.sub(r"(?i)\b(?:access[_-]?token|api[_-]?key|password|secret|token)\b[\"']?\s*[:=]\s*[\"']?[^\s,;\"']+",
-                   "[REDACTED]", value)
-    return safe_text(value, len(value)).encode("utf-8")[:ACTIVITY_TEXT_LIMIT].decode("utf-8", errors="ignore")
-
-
-@contextlib.contextmanager
-def activity_database(path):
-    with contextlib.closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=0.25)) as conn:
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA query_only=ON")
-        steps = [0]
-        def budget():
-            steps[0] += 1000
-            return steps[0] > 250000
-        conn.set_progress_handler(budget, 1000)
-        conn.execute("BEGIN")
-        yield conn
+    return _activity_command("activity_text", value=value)
 
 
 class ActivityReader:
+    """Private process client; native history decisions and reads live in Rust."""
+
     def __init__(self, root):
+        from clinx.monitor.native_observation_bridge import _Client
+
         self.root = Path(root).expanduser().resolve()
-        # Remounting history can recover messages hidden by a stale WAL/SHM pair.
-        # Reject pre-restart cursors so clients reload rather than skip those rows.
-        self.generation = os.urandom(16).hex()
+        self._client = _Client()
+
+    @property
+    def generation(self):
+        return self._client._call("activity_generation")
 
     @staticmethod
     def encode(scope, mode, position):
-        return base64.urlsafe_b64encode(json.dumps([scope, mode, *position]).encode()).decode().rstrip("=")
+        return _activity_command(
+            "activity_encode", scope=scope, mode=mode, position=position
+        )
 
     @staticmethod
     def decode(value, scope, mode):
-        try:
-            if not isinstance(value, str) or len(value) > 1024:
-                raise ValueError()
-            row = json.loads(base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True))
-            if (not isinstance(row, list) or len(row) != 4 or row[:2] != [scope, mode]
-                    or type(row[2]) is not int or not 0 <= row[2] < 2**63
-                    or not isinstance(row[3], str) or len(row[3]) > 256):
-                raise ValueError()
-            return row[2], row[3]
-        except (ValueError, TypeError, UnicodeError):
-            raise APIError(409, "ACTIVITY_CURSOR_RESET_REQUIRED") from None
+        return tuple(
+            _activity_command("activity_decode", value=value, scope=scope, mode=mode)
+        )
 
     def read(self, task_ref, execution, after=None, before=None):
-        eref, turn = execution["execution_ref"], execution.get("turn_id")
-        route = object_json(execution.get("routing_identity_json"))
-        conversation, host, provider = (route.get(k) for k in ("conversation", "host", "provider"))
-        thread = conversation.get("binding") if isinstance(conversation, dict) else None
-        page = dict(schema_version="1", task_ref=task_ref, execution_ref=eref,
-                    observed_at=now(), source="CODEX_NATIVE_HISTORY", availability="UNAVAILABLE",
-                    reason=None, items=[], next_cursor=None, older_cursor=None, has_more=False)
-        if (not isinstance(thread, str) or not re.fullmatch(UUID_PATTERN, thread)
-                or not isinstance(turn, str) or not re.fullmatch(UUID_PATTERN, turn)):
-            return dict(page, reason="EXACT_TURN_UNAVAILABLE")
-        if not isinstance(host, dict) or host.get("stable_identifier") != "p620":
-            return dict(page, reason="NATIVE_HOST_UNAVAILABLE")
-        if not isinstance(provider, dict) or provider.get("stable_identifier") not in {"codex", "codex_app_server"}:
-            return dict(page, reason="PROVIDER_UNSUPPORTED")
+        from clinx.nodes.node_protocol import NodeProtocolError
+
         try:
-            index = self.root / "state_5.sqlite"
-            history = self.root / "thread_history_1.sqlite"
-            with activity_database(index) as conn:
-                metadata = conn.execute("SELECT history_mode FROM threads WHERE id=?", (thread,)).fetchone()
-                if metadata is None:
-                    return dict(page, reason="NATIVE_THREAD_UNAVAILABLE")
-                if metadata[0] != "paginated":
-                    return dict(page, reason="NATIVE_HISTORY_MODE_UNSUPPORTED")
-            # Cursor cannot cross executions, turns or a replaced source database.
-            identity = [task_ref, eref, thread, turn, str(self.root), str(history.stat().st_ino), self.generation]
-            scope = hashlib.sha256(json.dumps(identity).encode()).hexdigest()[:32]
-            position = self.decode(after or before, scope, "after" if after else "before") if after or before else None
-            with activity_database(history) as conn:
-                exists = conn.execute("SELECT 1 FROM thread_turns WHERE thread_id=? AND turn_id=?", (thread, turn)).fetchone()
-                if not exists:
-                    return dict(page, reason="NATIVE_TURN_UNAVAILABLE")
-                high = conn.execute("SELECT updated_at_ordinal,item_id FROM thread_items WHERE thread_id=? AND turn_id=? "
-                                    "ORDER BY updated_at_ordinal DESC,item_id DESC LIMIT 1", (thread, turn)).fetchone()
-                high = tuple(high) if high else (0, "")
-                if after and position > high:
-                    raise APIError(409, "ACTIVITY_CURSOR_RESET_REQUIRED")
-                predicate = "thread_id=? AND turn_id=? AND item_type='agentMessage' AND json_valid(item_json)"
-                args = [thread, turn]
-                predicate += " AND coalesce(json_extract(item_json,'$.phase'),'') IN ('','commentary','final_answer')"
-                predicate += " AND coalesce(json_extract(item_json,'$.channel'),'') IN ('','commentary','final')"
-                if position:
-                    key = "updated_at_ordinal" if after else "rollout_ordinal"
-                    predicate += f" AND ({key},item_id) {'>' if after else '<'} (?,?)"
-                    args.extend(position)
-                order = "updated_at_ordinal ASC,item_id ASC" if after else "rollout_ordinal DESC,item_id DESC"
-                rows = conn.execute("SELECT item_id,rollout_ordinal,updated_at_ordinal,created_at_ms,"
-                    "substr(json_extract(item_json,'$.text'),1,?) AS text,"
-                    "length(CAST(json_extract(item_json,'$.text') AS BLOB)) AS byte_count,"
-                    "json_extract(item_json,'$.phase') AS phase FROM thread_items WHERE " + predicate +
-                    " ORDER BY " + order + " LIMIT ?", [ACTIVITY_TEXT_LIMIT + 1, *args, ACTIVITY_LIMIT + 1]).fetchall()
-            more = len(rows) > ACTIVITY_LIMIT
-            rows = rows[:ACTIVITY_LIMIT]
-            next_position = (rows[-1]["updated_at_ordinal"], rows[-1]["item_id"]) if after and more else high
-            older_position = (rows[-1]["rollout_ordinal"], rows[-1]["item_id"]) if rows and not after else None
-            items = []
-            for row in rows:
-                if not isinstance(row["text"], str) or not row["text"].strip():
-                    continue
-                items.append(dict(id=row["item_id"], ordinal=row["rollout_ordinal"], revision=row["updated_at_ordinal"],
-                                  timestamp_ms=row["created_at_ms"], kind="result" if row["phase"] == "final_answer" else "feedback",
-                                  text=activity_text(row["text"]), truncated=(row["byte_count"] or 0) > ACTIVITY_TEXT_LIMIT))
-            items.sort(key=lambda row: (row["ordinal"], row["id"]))
-            return dict(page, availability="AVAILABLE", items=items, has_more=more,
-                        next_cursor=self.encode(scope, "after", next_position),
-                        older_cursor=self.encode(scope, "before", older_position) if more and older_position else None)
-        except (OSError, sqlite3.Error) as error:
-            reason = "NATIVE_HISTORY_UNAVAILABLE"
-            if isinstance(error, sqlite3.OperationalError) and "interrupted" in str(error):
-                reason = "NATIVE_HISTORY_BUDGET_EXHAUSTED"
-            return dict(page, reason=reason)
+            return self._client._call(
+                "activity_read",
+                root=str(self.root),
+                task_ref=task_ref,
+                execution=execution,
+                after=after,
+                before=before,
+            )
+        except NodeProtocolError as exc:
+            raise APIError(
+                409 if exc.code == "ACTIVITY_CURSOR_RESET_REQUIRED" else 503, exc.code
+            ) from None
+
+    def close(self):
+        self._client.close()
 
 
 class ObserverStore:
-    """Read-only repository adapter; each request gets a coherent SQLite snapshot."""
+    """Rust historical read projection; no Python task-state interpretation."""
+
     def __init__(self, path, native_home=None, *, codex_host_ids=None):
+        from clinx.monitor.native_observation_bridge import _Client
+
         self.path = Path(path).expanduser().resolve()
         self.activity_reader = ActivityReader(native_home or Path.home() / ".codex")
         self.codex_host_ids = dict(codex_host_ids or {})
         self.observation_directory = None
+        self._client = _Client(self._callback)
 
     @contextlib.contextmanager
     def snapshot(self):
-        conn = sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=0.25)
+        # Explicit read-only inspection compatibility. Normal Observer requests
+        # open and query their snapshots inside Rust, without this Python handle.
+        conn = sqlite3.connect(
+            self.path.as_uri() + "?mode=ro",
+            uri=True,
+            timeout=0.25,
+            check_same_thread=False,
+        )
         try:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA query_only=ON")
-            # Bound worst-case legacy scans without changing/indexing the authority DB.
-            budget = [0]
-            def deadline():
-                budget[0] += 1
-                return int(budget[0] > 10000)
-            conn.set_progress_handler(deadline, 1000)
+            steps = [0]
+
+            def budget():
+                steps[0] += 1000
+                return steps[0] > 10_000_000
+
+            conn.set_progress_handler(budget, 1000)
             conn.execute("BEGIN")
             yield conn
         finally:
             conn.close()
 
+    def _callback(self, event, connection=None):
+        from clinx.nodes.node_protocol import NodeProtocolError
+
+        operation, args = event["operation"], event["arguments"]
+        if operation == "legacy.codex_uri":
+            from clinx.contracts.thread_identity import canonical_codex_uri
+
+            return canonical_codex_uri(args["thread_id"], host_id=args["host_id"])
+        if operation == "legacy.grant":
+            directory = self.observation_directory
+            if directory is None:
+                return dict(scope=None, record=None, user_scope=None)
+            scope = directory._scope(args["node_id"])
+            record = directory.registry.get(args["node_id"])
+            return dict(
+                scope=scope.as_dict() if scope else None,
+                record=dict(public_key_fingerprint=record.public_key_fingerprint)
+                if record
+                else None,
+                user_scope=directory.user_scope,
+            )
+        if operation == "legacy.sql" and connection is not None:
+            try:
+                return [
+                    dict(row)
+                    for row in connection.execute(args["sql"], args["arguments"])
+                ]
+            except sqlite3.Error:
+                raise NodeProtocolError(
+                    "LEGACY_SOURCE_UNAVAILABLE", "Read snapshot unavailable"
+                ) from None
+        raise NodeProtocolError(
+            "NATIVE_OBSERVER_CALLBACK_INVALID", "Unexpected historical read callback"
+        )
+
+    def _call(self, operation, connection=None, **arguments):
+        from clinx.monitor.native_observation_bridge import _Client
+        from clinx.nodes.node_protocol import NodeProtocolError
+
+        client = (
+            self._client
+            if connection is None
+            else _Client(lambda event: self._callback(event, connection))
+        )
+        try:
+            return client._call(
+                "legacy_" + operation,
+                path=str(self.path),
+                codex_host_ids=self.codex_host_ids,
+                external_snapshot=connection is not None,
+                **arguments,
+            )
+        except NodeProtocolError as exc:
+            if exc.code in {
+                "LEGACY_SOURCE_UNAVAILABLE",
+                "NATIVE_HISTORY_BUDGET_EXHAUSTED",
+            }:
+                raise sqlite3.OperationalError(exc.code) from None
+            status = {
+                "TASK_NOT_FOUND": 404,
+                "INVALID_CURSOR": 400,
+                "CURSOR_RESET_REQUIRED": 409,
+                "ACTIVITY_EXECUTION_CHANGED": 409,
+            }.get(exc.code)
+            if status:
+                raise APIError(status, exc.code) from None
+            raise
+        finally:
+            if connection is not None:
+                client.close()
+
     def health(self):
-        with self.snapshot() as conn:
-            conn.execute("SELECT task_id FROM tasks LIMIT 1").fetchone()
-        return {"schema_version": VERSION, "status": "OK", "read_only": True,
-                "observed_at": now(), "authority_liveness": "UNKNOWN",
-                "auth_mode": "OBSERVER_BEARER", "events_transport": "POLLING"}
+        return self._call("health")
 
     def native_visible(self, conn, task_ref):
-        if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='native_task_bindings'").fetchone():
-            return True
-        associations = conn.execute("SELECT * FROM native_task_bindings WHERE task_id=? AND origin='CODEX_NATIVE' LIMIT 2", (task_ref,)).fetchall()
-        if not associations or conn.execute("SELECT 1 FROM conversation_bindings WHERE task_id=?", (task_ref,)).fetchone():
-            return True
-        directory = self.observation_directory
-        if directory is None:
-            return False
-        for association in associations:
-            scope = directory._scope(association['node_id'])
-            record = directory.registry.get(association['node_id'])
-            fingerprint = json.loads(association['first_provenance_json']).get('node_fingerprint')
-            if (scope and record and record.public_key_fingerprint == fingerprint
-                    and association['user_scope'] == directory.user_scope
-                    and scope.allows('session.read',association['provider']) and scope.allows_project(association['project'])):
-                return True
-        return False
+        return self._call("visible", conn, task_ref=task_ref)
 
     def task_row(self, conn, task_ref):
-        row = conn.execute(f"SELECT {TASK_COLUMNS} FROM tasks WHERE task_id=?",
-                           (task_ref,)).fetchone()
-        if row is None or not self.native_visible(conn, task_ref):
-            raise APIError(404, "TASK_NOT_FOUND")
-        return dict(row)
+        return self._call("task_row", conn, task_ref=task_ref)
 
     @staticmethod
     def event_cursor(task_ref, cursor):
-        return hashlib.sha256(task_ref.encode()).hexdigest()[:16] + "." + str(cursor)
+        return _legacy_command("event_cursor", task_ref=task_ref, cursor=cursor)
 
     @classmethod
     def parse_cursor(cls, task_ref, after):
-        if after is None:
-            return 0
-        match = re.fullmatch(r"([0-9a-f]{16})\.([0-9]{1,19})", after)
-        if not match or match[1] != cls.event_cursor(task_ref, 0).split(".")[0]:
-            raise APIError(400, "INVALID_CURSOR")
-        value = int(match[2])
-        if value > 9223372036854775807:
-            raise APIError(400, "INVALID_CURSOR")
-        return value
+        return _legacy_command("parse_cursor", task_ref=task_ref, after=after)
 
     def events(self, conn, task_ref, after=None, recent=False):
-        cursor = self.parse_cursor(task_ref, after)
-        table = conn.execute("SELECT 1 FROM sqlite_master WHERE name='v2_events'").fetchone()
-        if not table:
-            if cursor:
-                raise APIError(409, "CURSOR_RESET_REQUIRED")
-            return {"items": [], "next_cursor": self.event_cursor(task_ref, 0),
-                    "has_more": False, "coverage": "UNAVAILABLE"}
-        high = conn.execute("SELECT coalesce(max(cursor),0) FROM v2_events").fetchone()[0]
-        if cursor > high:
-            raise APIError(409, "CURSOR_RESET_REQUIRED")
-        # Read the existing append-only facts only. Never synthesize history from polls.
-        direction = "DESC" if recent else "ASC"
-        limit = 20 if recent else EVENT_LIMIT
-        names = sorted(EVENT_TYPES)
-        rows = conn.execute(
-            "SELECT cursor,event_id,event_type,occurred_at,recorded_at,"
-            "json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,"
-            "'$.source_execution_ref') AS execution_ref "
-            "FROM v2_events WHERE cursor>? AND cursor<=? "
-            "AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,"
-            "'$.source_task_id')=? AND event_type IN (" +
-            ",".join("?" for _ in names) + ") ORDER BY cursor " + direction + " LIMIT ?",
-            (cursor, high, task_ref, *names, limit + 1)).fetchall()
-        more = len(rows) > limit
-        rows = rows[:limit]
-        items = [{"cursor": self.event_cursor(task_ref, r["cursor"]),
-                  "event_ref": safe_text(r["event_id"]), "kind": r["event_type"],
-                  "execution_ref": safe_text(r["execution_ref"]),
-                  "occurred_at": timestamp(r["occurred_at"]),
-                  "recorded_at": timestamp(r["recorded_at"])} for r in rows]
-        next_value = rows[-1]["cursor"] if more and not recent else high
-        return {"items": items, "next_cursor": self.event_cursor(task_ref, next_value),
-                "has_more": more, "coverage": "PARTIAL"}  # shadow history is optional
+        return self._call("events", conn, task_ref=task_ref, after=after, recent=recent)
 
     def project(self, conn, task, observed):
-        ref = task["task_id"]
-        row = conn.execute(f"SELECT {EXEC_COLUMNS},NULL AS released_at FROM executions "
-                           "WHERE task_id=?", (ref,)).fetchone()
-        active = row is not None
-        if row is None:
-            row = conn.execute(f"SELECT {EXEC_COLUMNS},released_at FROM execution_history "
-                               "WHERE task_id=? ORDER BY acquired_at DESC,execution_ref DESC LIMIT 1",
-                               (ref,)).fetchone()
-            # Never attach an old execution to a new queued/continued task projection.
-            if row and (not task["turn_id"] or row["turn_id"] != task["turn_id"]):
-                row = None
-        execution = dict(row) if row else {}
-        eref = execution.get("execution_ref")
-        # Adoption is conversation metadata, never proof of a CLINX execution.
-        binding=conn.execute("SELECT thread_id FROM conversation_bindings WHERE task_id=?",(ref,)).fetchone()
-        native_binding = None
-        if not binding and conn.execute("SELECT 1 FROM sqlite_master WHERE name='native_task_bindings'").fetchone():
-            native_rows = conn.execute("SELECT node_id,thread_id FROM native_task_bindings WHERE task_id=? LIMIT 2", (ref,)).fetchall()
-            if len(native_rows) == 1:
-                native_binding = native_rows[0]
-                binding = (native_binding["thread_id"],)
-        native_conversation={"node_id":safe_text(task["host"]),"provider":"codex_app_server",
-            "thread_id":safe_text(binding[0])} if binding else None
-        if native_binding and native_conversation:
-            native_conversation['node_id'] = safe_text(native_binding['node_id'])
-        # Prefer the exact execution route over a later Task successor binding.
-        captured = object_json(execution.get('routing_identity_json'))
-        thread = captured.get('conversation', {}).get('binding') if execution else binding[0] if binding else None
-        from clinx.contracts.thread_identity import canonical_codex_uri
-        codex_uri = canonical_codex_uri(thread, host_id=self.codex_host_ids.get(task['host']))
-        if native_conversation and execution:
-            if isinstance(thread, str) and thread not in {'UNBOUND', 'UNKNOWN', 'BOUND'}:
-                native_conversation['thread_id'] = thread
-            else:
-                native_conversation = None
-        result = None
-        if eref and execution.get("turn_id") and execution["turn_id"] == task["turn_id"]:
-            row = conn.execute(
-                "SELECT status,summary,validation,blockers,next_state,received_at "
-                "FROM execution_results WHERE task_id=? AND execution_ref=? AND turn_id=?",
-                (ref, eref, execution["turn_id"])).fetchone()
-            if row:
-                result = {k: safe_text(row[k], 4096) for k in
-                          ("status", "summary", "validation", "blockers", "next_state")}
-                result.update(execution_ref=eref, received_at=timestamp(row["received_at"]),
-                              changed_files=None, text_truncated=any(
-                                  len(row[k]) > 4096 for k in ("summary", "validation", "blockers")),
-                              redaction="PATHS_AND_RAW_RESULT_OMITTED")
-        route = object_json(execution.get("routing_identity_json"))
-        routing = {}
-        for key in ("host", "surface", "provider", "transport"):
-            part = route.get(key)
-            part = part if isinstance(part, dict) else {}
-            routing[key] = {"identifier": safe_text(part.get("stable_identifier")),
-                            "status": safe_text(part.get("status")) or "UNKNOWN"}
-        policy = object_json(execution.get("execution_policy_json"))
-        classes = policy.get("operation_classes")
-        classes = [safe_text(x) for x in classes[:16] if isinstance(x, str)] if isinstance(classes, list) else None
-        reasoning = None
-        if eref:
-            prepared = conn.execute(
-                "SELECT reasoning_effort FROM prepared_executions "
-                "WHERE resulting_execution_ref=? AND resulting_task_id=? "
-                "ORDER BY created_at DESC LIMIT 1", (eref, ref)).fetchone()
-            reasoning = safe_text(prepared[0]) if prepared else None
-        ops = []
-        if eref:
-            ops = [dict(r) for r in conn.execute(
-                f"SELECT {OP_COLUMNS} FROM host_executions WHERE task_id=? AND execution_ref=? "
-                "ORDER BY started_at DESC,host_execution_ref DESC LIMIT ?",
-                (ref, eref, OP_LIMIT + 1))]
-        operations_more = len(ops) > OP_LIMIT
-        ops = ops[:OP_LIMIT]
-        for op in ops:
-            for key in op:
-                if isinstance(op[key], str):
-                    op[key] = safe_text(op[key])
-            op["timed_out"] = bool(op["timed_out"])
-            op["started_at"] = timestamp(op["started_at"])
-            op["completed_at"] = timestamp(op["completed_at"])
-        state = safe_text(task["execution_state"]) or "UNKNOWN"
-        stage = safe_text(task["current_stage"]) or "UNKNOWN"
-        end = timestamp(execution.get("released_at"))
-        if end is None and result:
-            end = result["received_at"]
-        if end is None and active and state not in TERMINAL:
-            end = observed
-        started = timestamp(execution.get("acquired_at"))
-        blocker = safe_text(task["current_blocker"], 2048)
-        return {
-            "schema_version": VERSION, "task_ref": ref, "execution_ref": eref,
-            "project": safe_text(task["project_alias"]), "title": safe_text(task["title"], 512),
-            "host": safe_text(task["host"]), "state": state, "stage": stage,
-            "native_conversation":native_conversation,
-            "codex_uri": codex_uri,
-            "execution_state": safe_text(execution.get("execution_state")) or "UNKNOWN",
-            "execution_stage": safe_text(execution.get("stage")) or "UNKNOWN",
-            "model": {"logical": safe_text(execution.get("logical_model")),
-                      "resolved": safe_text(execution.get("resolved_model"))},
-            "reasoning": reasoning,
-            "current_activity": {"kind": "PERSISTED_STAGE", "label": stage,
-                                 "observed_at": timestamp(task["last_progress_at"])},
-            "blocker": {"code": "PERSISTED_BLOCKER", "message": blocker} if blocker else None,
-            "timestamps": {"created_at": timestamp(task["created_at"]),
-                           "updated_at": timestamp(task["updated_at"]),
-                           "last_progress_at": timestamp(task["last_progress_at"]),
-                           "started_at": started, "completed_at": timestamp(end) if state in TERMINAL else None,
-                           "observed_at": observed},
-            "elapsed_seconds": elapsed(started, end),
-            "codex_running": bool(task["codex_running"]),
-            "retry_required": bool(task["retry_required"]),
-            "mutation_boundary": {"observer_read_only": True, "allowed_actions": [],
-                                  "execution_operation_classes": classes,
-                                  "execution_surface": safe_text(policy.get("execution_surface")),
-                                  "authority_status": "PERSISTED" if classes is not None else "UNKNOWN"},
-            "routing": routing, "phases": [], "progress_percent": None,
-            "progress_basis": "NO_PERSISTED_DENOMINATOR",
-            "recent_events": self.events(conn, ref, recent=True),
-            "host_operations": ops, "host_operations_has_more": operations_more,
-            "final_result": result, "artifacts": [],
-            "artifacts_status": "NO_SAFE_ARTIFACT_REGISTRY",
-            "menu_state": menu_state(state, task["codex_running"], task["retry_required"], result),
-        }
+        return self._call("project", conn, task=task, observed=observed)
 
     def task(self, task_ref):
-        with self.snapshot() as conn:
-            return self.project(conn, self.task_row(conn, task_ref), now())
+        return self._call("task", task_ref=task_ref)
 
     def list_tasks(self, state, offset=0):
-        with self.snapshot() as conn:
-            # Active means unresolved task state, not the lifetime status column.
-            terminal = ("COMPLETED", "IN_REVIEW", "CANCELLED", "STOPPED")
-            predicate = "NOT IN" if state == "active" else "IN"
-            rows = conn.execute(
-                f"SELECT {TASK_COLUMNS} FROM tasks WHERE execution_state {predicate} (?,?,?,?) "
-                "ORDER BY updated_at DESC,task_id DESC LIMIT ? OFFSET ?",
-                (*terminal, TASK_LIMIT + 1, offset)).fetchall()
-            observed = now()
-            return {"schema_version": VERSION, "observed_at": observed,
-                    "items": [self.project(conn, dict(r), observed) for r in rows[:TASK_LIMIT] if self.native_visible(conn, r["task_id"])],
-                    "next_offset": offset + TASK_LIMIT if len(rows) > TASK_LIMIT else None,
-                    "has_more": len(rows) > TASK_LIMIT}
+        return self._call("list", state=state, offset=offset)
 
     def task_activity(self, task_ref, execution_ref, after=None, before=None):
-        with self.snapshot() as conn:
-            projection = self.project(conn, self.task_row(conn, task_ref), now())
-            if projection["execution_ref"] != execution_ref:
-                raise APIError(409, "ACTIVITY_EXECUTION_CHANGED")
-            rows = conn.execute(
-                "SELECT execution_ref,turn_id,routing_identity_json FROM executions WHERE task_id=? AND execution_ref=? "
-                "UNION ALL SELECT execution_ref,turn_id,routing_identity_json FROM execution_history WHERE task_id=? AND execution_ref=?",
-                (task_ref, execution_ref, task_ref, execution_ref)).fetchall()
-            if len(rows) != 1:
-                raise APIError(409, "ACTIVITY_EXECUTION_CHANGED")
-            execution = dict(rows[0])
+        execution = self._call(
+            "activity_execution", task_ref=task_ref, execution_ref=execution_ref
+        )
         return self.activity_reader.read(task_ref, execution, after, before)
 
     def task_events(self, task_ref, after):
-        with self.snapshot() as conn:
-            self.task_row(conn, task_ref)
-            return {"schema_version": VERSION, "task_ref": task_ref, "observed_at": now(),
-                    **self.events(conn, task_ref, after)}
+        return self._call("task_events", task_ref=task_ref, after=after)
+
+    def close(self):
+        self._client.close()
+        self.activity_reader.close()
 
 
 class ObserverAPI:
     def __init__(self, store, credential, observations=None, network_observations=None):
         self.store, self.credential = store, credential
         self.observations = observations
-        self.network_observations = network_observations if network_observations is not None else observations
+        self.network_observations = (
+            network_observations if network_observations is not None else observations
+        )
         self.store.observation_directory = observations
         self.native_collector = None
 
     def request(self, method, target, authorization):
         token = self.credential()
-        if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", token):
+        if not isinstance(token, str) or not re.fullmatch(
+            r"[A-Za-z0-9_-]{32,256}", token
+        ):
             raise APIError(503, "AUTH_UNAVAILABLE")
         expected = ("Bearer " + token).encode()
         if not isinstance(authorization, str) or not hmac.compare_digest(
-                hashlib.sha256(authorization.encode()).digest(), hashlib.sha256(expected).digest()):
+            hashlib.sha256(authorization.encode()).digest(),
+            hashlib.sha256(expected).digest(),
+        ):
             raise APIError(401, "UNAUTHORIZED")
         if method != "GET":
             raise APIError(405, "READ_ONLY")
-        if len(target) > (16384 if target.startswith('/v2/native-collector/') else 2048):
+        if len(target) > (
+            16384 if target.startswith("/v2/native-collector/") else 2048
+        ):
             raise APIError(400, "INVALID_REQUEST")
         url = urlsplit(target)
         if url.scheme or url.netloc or url.fragment or "%" in url.path:
             raise APIError(400, "INVALID_REQUEST")
         try:
-            query = parse_qs(url.query, keep_blank_values=True, strict_parsing=True,
-                             max_num_fields=8)
+            query = parse_qs(
+                url.query, keep_blank_values=True, strict_parsing=True, max_num_fields=8
+            )
         except ValueError:
             raise APIError(400, "INVALID_QUERY") from None
         if any(len(v) != 1 for v in query.values()):
             raise APIError(400, "INVALID_QUERY")
-        collector = re.fullmatch(r'/v2/native-collector/(inventory|sample/([0-9a-f-]{36}))', url.path)
+        collector = re.fullmatch(
+            r"/v2/native-collector/(inventory|sample/([0-9a-f-]{36}))", url.path
+        )
         if collector:
+            from clinx.contracts.thread_identity import ThreadLookupError
             from clinx.monitor.native_observation_bridge import NativeCollectorBridge
             from clinx.nodes.node_protocol import NodeProtocolError
-            from clinx.contracts.thread_identity import ThreadLookupError, parse_selector
+
             try:
                 if self.native_collector is None:
                     self.native_collector = NativeCollectorBridge(self.observations)
-                if collector[1] == 'inventory':
-                    if set(query) - {'audit', 'after'} or query.get('audit', ['0'])[0] not in ('0', '1'):
-                        raise ValueError()
-                    return self.native_collector.inventory(
-                        after=json.loads(query['after'][0]) if 'after' in query else None,
-                        audit=query.get('audit', ['0'])[0] == '1')
-                if set(query) - {'checkpoint'}:
-                    raise ValueError()
-                parse_selector(thread_id=collector[2])
-                return self.native_collector.sample(collector[2], query.get('checkpoint', [None])[0])
+                return self.native_collector.request(
+                    collector[1], {k: v[0] for k, v in query.items()}
+                )
             except (NodeProtocolError, ThreadLookupError) as exc:
-                raise APIError(409 if exc.code == 'NATIVE_COLLECTOR_CURSOR_RESET' else 400, exc.code) from None
+                raise APIError(
+                    409 if exc.code == "NATIVE_COLLECTOR_CURSOR_RESET" else 400,
+                    exc.code,
+                ) from None
             except (TypeError, ValueError):
-                raise APIError(400, 'INVALID_QUERY') from None
+                raise APIError(400, "INVALID_QUERY") from None
         native = re.fullmatch(r"/v2/native/([0-9a-f-]{36})", url.path)
         if native:
-            from clinx.authority.rust_reads import observe_desktop
             from clinx.authority.rust_authority import RustAuthorityError
+            from clinx.authority.rust_reads import observe_desktop
             from clinx.contracts.thread_identity import ThreadLookupError
             from clinx.nodes.node_protocol import NodeProtocolError
-            if set(query) - {'context', 'recent_turns', 'max_bytes', 'cursor'}:
-                raise APIError(400, 'INVALID_QUERY')
+
+            if set(query) - {"context", "recent_turns", "max_bytes", "cursor"}:
+                raise APIError(400, "INVALID_QUERY")
             try:
-                context = query.get('context', ['0'])[0]
-                if context not in ('0', '1'):
+                context = query.get("context", ["0"])[0]
+                if context not in ("0", "1"):
                     raise ValueError()
-                return observe_desktop(self.observations, native[1], context=context == '1',
-                    recent_turns=int(query.get('recent_turns', ['8'])[0]),
-                    max_bytes=int(query.get('max_bytes', ['32000'])[0]),
-                    cursor=query.get('cursor', [None])[0])
+                return observe_desktop(
+                    self.observations,
+                    native[1],
+                    context=context == "1",
+                    recent_turns=int(query.get("recent_turns", ["8"])[0]),
+                    max_bytes=int(query.get("max_bytes", ["32000"])[0]),
+                    cursor=query.get("cursor", [None])[0],
+                )
             except (NodeProtocolError, ThreadLookupError) as exc:
                 raise APIError(400, exc.code) from None
             except RustAuthorityError as exc:
                 raise APIError(400, str(exc)) from None
             except (TypeError, ValueError):
-                raise APIError(400, 'INVALID_QUERY') from None
+                raise APIError(400, "INVALID_QUERY") from None
         if url.path.startswith("/v2/observations"):
             from clinx.nodes.node_protocol import NodeProtocolError
+
             if self.network_observations is None:
                 raise APIError(503, "OBSERVATION_NOT_CONFIGURED")
             arguments = {k: v[0] for k, v in query.items()}
             try:
                 if "limit" in arguments:
                     arguments["limit"] = int(arguments["limit"])
-                if url.path == "/v2/observations" and not set(arguments) - {"node", "project", "state", "kind", "native_thread_id", "cursor", "limit"}:
+                if url.path == "/v2/observations" and not set(arguments) - {
+                    "node",
+                    "project",
+                    "state",
+                    "kind",
+                    "native_thread_id",
+                    "cursor",
+                    "limit",
+                }:
                     return self.network_observations.list(**arguments)
-                match = re.fullmatch(r"/v2/observations/(obs_[a-f0-9]{40})(/context|/activity)?", url.path)
-                if match and not set(arguments) - ({"cursor"} if match[2] == "/context" else {"cursor", "limit"}):
-                    operation = self.network_observations.context if match[2] == "/context" else self.network_observations.activity if match[2] == "/activity" else self.network_observations.detail
+                match = re.fullmatch(
+                    r"/v2/observations/(obs_[a-f0-9]{40})(/context|/activity)?",
+                    url.path,
+                )
+                if match and not set(arguments) - (
+                    {"cursor"} if match[2] == "/context" else {"cursor", "limit"}
+                ):
+                    operation = (
+                        self.network_observations.context
+                        if match[2] == "/context"
+                        else self.network_observations.activity
+                        if match[2] == "/activity"
+                        else self.network_observations.detail
+                    )
                     return operation(match[1], **arguments)
                 raise APIError(400, "INVALID_QUERY")
             except NodeProtocolError as exc:
-                raise APIError(404 if exc.code == "OBSERVATION_NOT_FOUND" else 400, exc.code) from None
+                raise APIError(
+                    404 if exc.code == "OBSERVATION_NOT_FOUND" else 400, exc.code
+                ) from None
             except (TypeError, ValueError):
                 raise APIError(400, "INVALID_QUERY") from None
         if url.path == "/v1/health" and not query:
             return self.store.health()
         if url.path == "/v1/tasks":
-            if set(query) - {"state", "offset"} or query.get("state") not in (["active"], ["recent"]):
+            if set(query) - {"state", "offset"} or query.get("state") not in (
+                ["active"],
+                ["recent"],
+            ):
                 raise APIError(400, "INVALID_QUERY")
             raw_offset = query.get("offset", ["0"])[0]
             if not re.fullmatch(r"[0-9]{1,6}", raw_offset) or int(raw_offset) > 100000:
@@ -608,11 +432,19 @@ class ObserverAPI:
         activity = re.fullmatch(r"/v1/tasks/([A-Za-z0-9_-]{1,128})/activity", url.path)
         if activity:
             eref = query.get("execution_ref", [""])[0]
-            if (set(query) - {"execution_ref", "after", "before"} or ("after" in query and "before" in query)
-                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", eref)
-                    or any(not query[k][0] for k in ("after", "before") if k in query)):
+            if (
+                set(query) - {"execution_ref", "after", "before"}
+                or ("after" in query and "before" in query)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", eref)
+                or any(not query[k][0] for k in ("after", "before") if k in query)
+            ):
                 raise APIError(400, "INVALID_QUERY")
-            return self.store.task_activity(activity[1], eref, query.get("after", [None])[0], query.get("before", [None])[0])
+            return self.store.task_activity(
+                activity[1],
+                eref,
+                query.get("after", [None])[0],
+                query.get("before", [None])[0],
+            )
         match = re.fullmatch(r"/v1/tasks/([A-Za-z0-9_-]{1,128})(/events)?", url.path)
         if match:
             if match[2] and not set(query) - {"after"}:
@@ -676,21 +508,36 @@ class ObserverHandler(BaseHTTPRequestHandler):
             auth = self.headers.get_all("Authorization", [])
             if len(auth) != 1:
                 raise APIError(401, "UNAUTHORIZED")
-            if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Length", "0") != "0":
+            if (
+                self.headers.get("Transfer-Encoding")
+                or self.headers.get("Content-Length", "0") != "0"
+            ):
                 raise APIError(400, "BODY_NOT_ALLOWED")
             payload = self.server.api.request(self.command, self.path, auth[0])
         except APIError as error:
-            status, payload = error.status, {"schema_version": VERSION, "error": error.code}
+            status, payload = (
+                error.status,
+                {"schema_version": VERSION, "error": error.code},
+            )
         except (sqlite3.Error, OSError):
-            status, payload = 503, {"schema_version": VERSION, "error": "SOURCE_UNAVAILABLE"}
+            status, payload = (
+                503,
+                {"schema_version": VERSION, "error": "SOURCE_UNAVAILABLE"},
+            )
         except Exception:
-            status, payload = 503, {"schema_version": VERSION, "error": "PROJECTION_UNAVAILABLE"}
+            status, payload = (
+                503,
+                {"schema_version": VERSION, "error": "PROJECTION_UNAVAILABLE"},
+            )
         body = json.dumps(payload, ensure_ascii=True, allow_nan=False).encode()
         token = self.server.api.credential()
         if token:
             body = body.replace(token.encode(), b"[REDACTED]")
         if len(body) > MAX_RESPONSE:
-            status, body = 503, b'{"schema_version":"1","error":"RESPONSE_BOUND_EXCEEDED"}'
+            status, body = (
+                503,
+                b'{"schema_version":"1","error":"RESPONSE_BOUND_EXCEEDED"}',
+            )
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -703,10 +550,16 @@ class ObserverHandler(BaseHTTPRequestHandler):
             self.send_header("Allow", "GET")
         self.end_headers()
         if self.server.audit_methods:
-            method = self.command if self.command in {
-                "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
-            } else "OTHER"
-            print(json.dumps({"observer_http_method": method, "status": status}), flush=True)
+            method = (
+                self.command
+                if self.command
+                in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+                else "OTHER"
+            )
+            print(
+                json.dumps({"observer_http_method": method, "status": status}),
+                flush=True,
+            )
         if self.command != "HEAD":
             self.wfile.write(body)
         self.close_connection = True
@@ -717,28 +570,50 @@ class ObserverHandler(BaseHTTPRequestHandler):
 def main():
     # -I excludes cwd and script directory: add only the installed package.
     import sys
+
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     token = os.environ.get("CLINX_OBSERVER_TOKEN", "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", token):
-        raise SystemExit("CLINX_OBSERVER_TOKEN must be a 32..256 character URL-safe credential")
+        raise SystemExit(
+            "CLINX_OBSERVER_TOKEN must be a 32..256 character URL-safe credential"
+        )
     path = os.environ.get("CLINX_OBSERVER_DB")
     from clinx.monitor.network_observation import directory_from_env
+
     observations = directory_from_env()
-    desktop_routes = json.loads(os.environ.get('CLINX_OBSERVER_CODEX_HOST_IDS', '{}'))
+    desktop_routes = json.loads(os.environ.get("CLINX_OBSERVER_CODEX_HOST_IDS", "{}"))
     if not isinstance(desktop_routes, dict) or any(
-            not isinstance(k, str) or not isinstance(v, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]+', v)
-            for k, v in desktop_routes.items()):
-        raise SystemExit('CLINX_OBSERVER_CODEX_HOST_IDS must map canonical hosts to configured Desktop host IDs')
+        not isinstance(k, str)
+        or not isinstance(v, str)
+        or not re.fullmatch(r"[A-Za-z0-9_.:-]+", v)
+        for k, v in desktop_routes.items()
+    ):
+        raise SystemExit(
+            "CLINX_OBSERVER_CODEX_HOST_IDS must map canonical hosts to configured Desktop host IDs"
+        )
     from clinx.monitor.rust_monitor import from_env as rust_monitor_from_env
+
     rust_monitor = rust_monitor_from_env()
     if not rust_monitor and not path:
-        raise SystemExit("CLINX_OBSERVER_DB must identify the existing canonical registry")
-    store = rust_monitor[0] if rust_monitor else ObserverStore(path, codex_host_ids=desktop_routes)
+        raise SystemExit(
+            "CLINX_OBSERVER_DB must identify the existing canonical registry"
+        )
+    store = (
+        rust_monitor[0]
+        if rust_monitor
+        else ObserverStore(path, codex_host_ids=desktop_routes)
+    )
     store.health()  # Fail closed; never initialize a missing registry.
-    server = ObserverHTTPServer(int(os.environ.get("CLINX_OBSERVER_PORT", "8766")),
-                                ObserverAPI(store, lambda: os.environ.get("CLINX_OBSERVER_TOKEN"), observations,
-                                            network_observations=rust_monitor[1] if rust_monitor else None),
-                                audit_methods=os.environ.get("CLINX_OBSERVER_AUDIT_METHODS") == "1")
+    server = ObserverHTTPServer(
+        int(os.environ.get("CLINX_OBSERVER_PORT", "8766")),
+        ObserverAPI(
+            store,
+            lambda: os.environ.get("CLINX_OBSERVER_TOKEN"),
+            observations,
+            network_observations=rust_monitor[1] if rust_monitor else None,
+        ),
+        audit_methods=os.environ.get("CLINX_OBSERVER_AUDIT_METHODS") == "1",
+    )
     server.serve_forever(poll_interval=0.5)
 
 

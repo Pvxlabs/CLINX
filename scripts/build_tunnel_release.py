@@ -10,6 +10,7 @@ import argparse
 import gzip
 import io
 import json
+import os
 import stat
 import subprocess
 import tarfile
@@ -56,7 +57,7 @@ def archive(directory, destination):
 
 
 def build(source, output, home, python, tunnel, guard_paths, evidence, *, runtime_manifest=None,
-          control_overlay_base=None):
+          control_overlay_base=None, node_binary=None):
     output = Path(output).absolute()
     if not output.is_relative_to("/data/artifacts") or output.exists():
         raise ValueError("NEW_TASK_ARTIFACT_OUTPUT_REQUIRED")
@@ -81,6 +82,15 @@ def build(source, output, home, python, tunnel, guard_paths, evidence, *, runtim
         "home": home,
         "reused_evidence_sha256": evidence,
     }
+    node_value = node_binary or os.environ.get('CLINX_NODE_BINARY')
+    if not node_value:
+        raise ValueError('QUALIFIED_RUST_CLIENT_RUNTIME_REQUIRED')
+    node = Path(node_value).resolve(strict=True)
+    checked = subprocess.run([str(node), '--client-runtime-contract'], input='',
+                             text=True, capture_output=True, timeout=5, check=False)
+    if checked.returncode or checked.stdout.strip() != 'RUST_CLIENT_RUNTIME_V1':
+        raise ValueError('QUALIFIED_RUST_CLIENT_RUNTIME_REQUIRED')
+    inputs['client_runtime'] = {'contract': 'RUST_CLIENT_RUNTIME_V1', 'sha256': sha(node.read_bytes())}
     runtime = None
     if runtime_manifest is not None:
         runtime_manifest = Path(runtime_manifest)
@@ -143,7 +153,8 @@ def build(source, output, home, python, tunnel, guard_paths, evidence, *, runtim
             source / "systemd/clinx-tunnel-reliability-final.conf"
         ).read_bytes(),
     }
-    modes = {}
+    contents["clinx-node"] = node.read_bytes()
+    modes = {"clinx-node": 0o755}
     if overlay:
         contents["control-overlay/manifest.json"] = encoded(overlay)
         for name in CONTROL_OVERLAY_FILES:
@@ -284,6 +295,7 @@ def main():
     parser.add_argument("--guard-manifest", type=Path, required=True)
     parser.add_argument("--evidence-manifest", type=Path, required=True)
     parser.add_argument("--transport-runtime-manifest", type=Path)
+    parser.add_argument("--node-binary", type=Path, help="Qualified Rust supervisor policy binary; never inherited from a prior release")
     parser.add_argument("--control-overlay-base", type=Path,
                         help="Stage parser/operator sources and exact recovery data; does not wire or authorize activation")
     args = parser.parse_args()
@@ -299,7 +311,7 @@ def main():
         json.dumps(
             build(args.source, args.output, args.home, args.python, args.tunnel, guards, evidence,
                   runtime_manifest=args.transport_runtime_manifest,
-                  control_overlay_base=args.control_overlay_base),
+                  control_overlay_base=args.control_overlay_base, node_binary=args.node_binary),
             indent=2,
         )
     )

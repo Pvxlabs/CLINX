@@ -13,12 +13,8 @@ and is never retried by the router.
 
 from __future__ import annotations
 
-import base64
-import concurrent.futures
 import dataclasses
 import datetime as dt
-import hashlib
-import hmac
 import json
 import re
 import socket
@@ -258,125 +254,34 @@ class SessionIdentity:
         return dataclasses.asdict(self)
 
 
-def encode_cursor(
-    *,
-    node_id: str,
-    user_scope: str,
-    provider: str,
-    native_thread_id: str,
-    source: str,
-    source_version: str,
-    offset: int,
-    secret: bytes | str | None = None,
-) -> str:
-    if not isinstance(offset, int) or offset < 0:
-        raise ValueError("cursor offset must be a non-negative integer")
-    body = [1, node_id, user_scope, provider, native_thread_id, source, source_version, offset]
-    raw = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()
-    if secret:
-        key = secret.encode() if isinstance(secret, str) else secret
-        raw += b"." + hmac.new(key, raw, hashlib.sha256).hexdigest().encode()
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-
-
-def decode_cursor(
-    cursor: str,
-    *,
-    node_id: str,
-    user_scope: str,
-    provider: str,
-    native_thread_id: str,
-    source: str,
-    source_version: str,
-    secret: bytes | str | None = None,
-) -> int:
+def _cursor(operation, values):
+    from clinx.nodes.network_worker import read_command
+    from clinx.authority.rust_authority import RustAuthorityError
+    arguments=dict(values)
+    secret=arguments.pop('secret')
+    key=secret.encode() if isinstance(secret,str) else secret
     try:
-        if not isinstance(cursor, str) or len(cursor) > 4096:
-            raise ValueError()
-        raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
-        if secret:
-            payload, signature = raw.rsplit(b".", 1)
-            key = secret.encode() if isinstance(secret, str) else secret
-            expected = hmac.new(key, payload, hashlib.sha256).hexdigest().encode()
-            if not hmac.compare_digest(signature, expected):
-                raise ValueError()
-            raw = payload
-        value = json.loads(raw)
-        expected = [1, node_id, user_scope, provider, native_thread_id, source, source_version]
-        if value[:7] != expected or len(value) != 8 or type(value[7]) is not int or value[7] < 0:
-            raise ValueError()
-        return value[7]
-    except (ValueError, TypeError, IndexError, json.JSONDecodeError):
-        raise NodeProtocolError("INVALID_CONTEXT_CURSOR", "Cursor is bound to another node, user, provider, thread or source") from None
+        return read_command('cursor.'+operation,secret_hex=key.hex() if key else None,**arguments)
+    except RustAuthorityError as exc:
+        if str(exc) in {'INVALID_PROVIDER_CURSOR','INVALID_CURSOR_OFFSET'}:
+            raise ValueError(str(exc)) from None
+        raise NodeProtocolError(str(exc),'Cursor is bound to another node, user, provider, thread or source') from None
 
 
-def _encode_provider_cursor(
-    *,
-    node_id: str,
-    user_scope: str,
-    provider: str,
-    native_thread_id: str,
-    source: str,
-    source_version: str,
-    provider_cursor: str,
-    secret: bytes | str | None = None,
-) -> str:
-    """Bind an opaque provider page token to this node context.
-
-    Native providers are allowed to choose their own cursor format.  The node
-    envelope prevents that token from being replayed for another node/user/
-    provider/thread/source while keeping the provider payload opaque to the
-    centre index.
-    """
-    if not isinstance(provider_cursor, str) or not provider_cursor or len(provider_cursor) > 4096:
-        raise ValueError("provider cursor must be a bounded non-empty string")
-    body = [2, node_id, user_scope, provider, native_thread_id, source, source_version, provider_cursor]
-    raw = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()
-    if secret:
-        key = secret.encode() if isinstance(secret, str) else secret
-        raw += b"." + hmac.new(key, raw, hashlib.sha256).hexdigest().encode()
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+def encode_cursor(*,node_id,user_scope,provider,native_thread_id,source,source_version,offset,secret=None):
+    return _cursor('encode',locals())
 
 
-def _decode_node_cursor(
-    cursor: str,
-    *,
-    node_id: str,
-    user_scope: str,
-    provider: str,
-    native_thread_id: str,
-    source: str,
-    source_version: str,
-    secret: bytes | str | None = None,
-) -> str | None:
-    """Decode a node cursor and return the provider token it carries.
+def decode_cursor(cursor,*,node_id,user_scope,provider,native_thread_id,source,source_version,secret=None):
+    return _cursor('decode',locals())
 
-    Version 1 cursors (the public integer-offset helper) remain accepted for
-    callers that page a node-owned projection.  Version 2 carries the opaque
-    native provider token used by ``NativeHistory``.
-    """
-    try:
-        if not isinstance(cursor, str) or len(cursor) > 8192:
-            raise ValueError()
-        raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
-        if secret:
-            payload, signature = raw.rsplit(b".", 1)
-            key = secret.encode() if isinstance(secret, str) else secret
-            expected = hmac.new(key, payload, hashlib.sha256).hexdigest().encode()
-            if not hmac.compare_digest(signature, expected):
-                raise ValueError()
-            raw = payload
-        value = json.loads(raw)
-        expected = [value[0], node_id, user_scope, provider, native_thread_id, source, source_version]
-        if len(value) != 8 or value[:7] != expected:
-            raise ValueError()
-        if value[0] == 1 and type(value[7]) is int and value[7] >= 0:
-            return None
-        if value[0] == 2 and isinstance(value[7], str) and value[7]:
-            return value[7]
-        raise ValueError()
-    except (ValueError, TypeError, IndexError, json.JSONDecodeError):
-        raise NodeProtocolError("INVALID_CONTEXT_CURSOR", "Cursor is bound to another node, user, provider, thread or source") from None
+
+def _encode_provider_cursor(*,node_id,user_scope,provider,native_thread_id,source,source_version,provider_cursor,secret=None):
+    return _cursor('provider_encode',locals())
+
+
+def _decode_node_cursor(cursor,*,node_id,user_scope,provider,native_thread_id,source,source_version,secret=None):
+    return _cursor('provider_decode',locals())
 
 
 class NodeRegistry:
@@ -527,46 +432,39 @@ class NodeService:
     def _authorize(self, operation, request):
         self._invoke('authorize', request, permission=operation)
 
-    def _identity(self, request: Mapping[str, Any]) -> SessionIdentity:
-        record, scope = self._snapshot()
-        return SessionIdentity(record.node_id, scope.user_scope, request.get("provider", SUPPORTED_PROVIDER), request["thread_id"], request.get("source_version", "1"))
+    def _project(self,operation,request):
+        from clinx.nodes.network_worker import Worker
+        from clinx.authority.rust_authority import RustAuthorityError
+        def callback(event):
+            method,args=event['operation'],event['arguments']
+            if method=='service.snapshot':
+                record,scope=self._snapshot()
+                return dict(record=record.as_dict(),scope=scope.as_dict())
+            if method=='service.read':
+                return dict(self.read_thread(args['thread_id'],**args['kwargs']))
+            if method=='service.status':
+                return dict(self.status_thread(args['thread_id']))
+            if method=='registry.update_thread':
+                self.registry.update_thread(SessionIdentity(**args['identity']),source=args['source'],status=args['status'])
+                return None
+            raise NodeProtocolError('NODE_CALLBACK_INVALID','Unexpected read projection callback')
+        secret=self.registry.cursor_secret
+        key=secret.encode() if isinstance(secret,str) else secret
+        record,scope=self._snapshot()
+        worker=Worker(callback=callback)
+        try:
+            return worker.call('router.service_'+operation,request=dict(request),record=record.as_dict(),
+                scope=scope.as_dict(),secret_hex=key.hex() if key else None)
+        except RustAuthorityError as exc:
+            raise NodeProtocolError(str(exc),'Node read projection rejected') from None
+        finally:
+            worker.close()
 
-    def read(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        self._authorize("session.read", request)
-        thread_id = _text("thread_id", request.get("thread_id"), max_len=256)
-        identity = self._identity(request)
-        source = request.get("source", "native")
-        provider_cursor = None
-        if request.get("cursor"):
-            provider_cursor = _decode_node_cursor(
-                request["cursor"], node_id=identity.node_id, user_scope=identity.user_scope,
-                provider=identity.provider, native_thread_id=thread_id,
-                source=source, source_version=identity.source_version,
-                secret=self.registry.cursor_secret,
-            )
-        kwargs = {key: request[key] for key in ("recent_turns", "max_bytes") if key in request}
-        if provider_cursor is not None:
-            kwargs["cursor"] = provider_cursor
-        result = dict(self.read_thread(thread_id, **kwargs))
-        result.setdefault("queried_thread_id", thread_id)
-        record, scope = self._snapshot()
-        result.update(node_id=record.node_id, user_scope=scope.user_scope, provider=identity.provider, source_node_id=record.node_id, source_observed_at=_now(), read_only=True)
-        if result.get("next_cursor"):
-            result["next_cursor"] = _encode_provider_cursor(
-                node_id=identity.node_id, user_scope=identity.user_scope,
-                provider=identity.provider, native_thread_id=thread_id,
-                source=source, source_version=identity.source_version,
-                provider_cursor=result["next_cursor"], secret=self.registry.cursor_secret,
-            )
-        self.registry.update_thread(identity, source=source, status={"lookup_status": result.get("lookup_status"), "context_status": result.get("context_status")})
-        return result
+    def read(self,request):
+        return self._project('read',request)
 
-    def status(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        self._authorize("session.status", request)
-        result = dict(self.status_thread(request["thread_id"]))
-        record, scope = self._snapshot()
-        result.update(node_id=record.node_id, user_scope=scope.user_scope, provider=request.get("provider", SUPPORTED_PROVIDER), source_node_id=record.node_id, source_observed_at=_now(), read_only=True)
-        return result
+    def status(self,request):
+        return self._project('status',request)
 
     def _invoke(self, operation, request, *, permission=None):
         from clinx.authority.rust_authority import RustAuthorityError
@@ -696,167 +594,64 @@ class NodeRouter:
                 key: value for key, value in request.items() if key != "operation"}))
         return self._readers.get(record.node_id)
 
-    def nodes(self) -> list[dict[str, Any]]:
-        self.registry.refresh_states()
-        return [record.as_dict() | {"scope": (self.registry.scope(record.node_id, self.user_scope).as_dict() if self.registry.scope(record.node_id, self.user_scope) else None)} for record in self.registry.list_nodes(user_scope=self.user_scope)]
+    def _invoke(self,rpc_operation,**arguments):
+        from clinx.nodes.network_worker import Worker
+        from clinx.authority.rust_authority import RustAuthorityError
+        def callback(event):
+            method,args=event['operation'],event['arguments']
+            if method.startswith('registry.'):
+                result=getattr(self.registry,method.removeprefix('registry.'))(**args)
+                if method=='registry.list_nodes':
+                    return [record.as_dict() for record in result]
+                return result.as_dict() if hasattr(result,'as_dict') else result
+            record=NodeRecord(**{k:v for k,v in args.get('record',{}).items() if k not in {'stale','age_seconds'}}) if args.get('record') else None
+            if method=='router.reader':
+                return self._reader_for(record) is not None
+            if method=='router.executor':
+                if record.node_id not in self._executors:
+                    self._reader_for(record)
+                return record.node_id in self._executors
+            try:
+                if method=='router.read':
+                    return dict(result=dict(self._readers[record.node_id](args['request'])))
+                if method=='router.execute':
+                    return dict(result=dict(self._executors[args['node_id']](args['operation'],args['request'])))
+            except (OSError,TimeoutError) as exc:
+                return dict(error_type=type(exc).__name__)
+            raise NodeProtocolError('NODE_CALLBACK_INVALID','Unexpected router callback')
+        worker=Worker(callback=callback)
+        try:
+            return worker.call('router.'+rpc_operation,user_scope=self.user_scope,local_node_id=self.local_node_id,
+                local_readers=[node for node in self._readers if node not in self._remote_clients],
+                executors=list(self._executors),max_workers=self.max_workers,timeout_seconds=self.timeout_seconds,**arguments)
+        except RustAuthorityError as exc:
+            raise NodeProtocolError(str(exc),'Node routing request rejected') from None
+        finally:
+            worker.close()
 
-    def _node_for(self, *, node_id: str | None = None, host: str | None = None) -> NodeRecord:
-        if node_id:
-            record = self.registry.get(node_id)
-            if record is None:
-                raise NodeProtocolError("UNKNOWN_NODE", "node_id is not a trusted registered node")
-            return record
-        if host:
-            matches = [record for record in self.registry.list_nodes(user_scope=self.user_scope, authorized_only=True) if host.casefold() in {record.node_id.casefold(), record.display_name.casefold(), *(route.casefold() for route in record.route_ids)}]
-            if not matches:
-                raise NodeProtocolError("UNKNOWN_THREAD_HOST", "Host is not an authorized node route")
-            if len(matches) > 1:
-                raise NodeProtocolError("THREAD_HOST_CONFLICT", "Host alias maps to multiple nodes")
-            return matches[0]
-        raise NodeProtocolError("NODE_TARGET_REQUIRED", "An explicit node is required for this operation")
+    def nodes(self):
+        return self._invoke('nodes')
+
+    def _node_for(self,*,node_id=None,host=None):
+        record=self._invoke('target',node_id=node_id,host=host)
+        return NodeRecord(**{k:v for k,v in record.items() if k not in {'stale','age_seconds'}})
 
     @staticmethod
-    def _found(result: Mapping[str, Any], thread_id: str) -> bool:
-        return (
-            result.get("queried_thread_id") == thread_id
-            and result.get("lookup_status") in {"RESOLVED", "THREAD_UNBOUND", "AVAILABLE", "FOUND"}
-            and result.get("provider_existence") != "NOT_FOUND"
-            and not result.get("error_code")
-        )
+    def _found(result,thread_id):
+        from clinx.nodes.network_worker import command
+        return command('router.found',result=dict(result),thread_id=thread_id)
 
-    @classmethod
-    def _answered(cls, result: Mapping[str, Any], thread_id: str) -> bool:
-        """Only exact positive or proven negative replies complete a search."""
-        return cls._found(result, thread_id) or (
-            result.get("queried_thread_id") == thread_id
-            and result.get("lookup_status") == "THREAD_NOT_FOUND"
-            and result.get("provider_existence") == "NOT_FOUND"
-            and result.get("error_code") in (None, "THREAD_NOT_FOUND")
-        )
+    @staticmethod
+    def _answered(result,thread_id):
+        from clinx.nodes.network_worker import command
+        return command('router.answered',result=dict(result),thread_id=thread_id)
 
-    def _local_reader_attached(self, record: NodeRecord) -> bool:
-        # An in-process reader has no network heartbeat. Let the real read
-        # establish liveness after idle; remote nodes still need freshness.
-        return (record.node_id == self.local_node_id
-                and record.node_id in self._readers
-                and record.node_id not in self._remote_clients)
+    def read(self,*,thread_id,node_id=None,host=None,provider=SUPPORTED_PROVIDER,cursor=None,recent_turns=8,max_bytes=32000):
+        return self._invoke('read',thread_id=thread_id,node_id=node_id,host=host,provider=provider,
+            cursor=cursor,recent_turns=recent_turns,max_bytes=max_bytes)
 
-    def read(self, *, thread_id: str, node_id: str | None = None, host: str | None = None, provider: str = SUPPORTED_PROVIDER, cursor: str | None = None, recent_turns: int = 8, max_bytes: int = 32000) -> dict[str, Any]:
-        self.registry.refresh_states()
-        request = {"operation": "session.read", "protocol_version": NODE_PROTOCOL_VERSION, "thread_id": thread_id, "user_scope": self.user_scope, "provider": provider, "recent_turns": recent_turns, "max_bytes": max_bytes}
-        if cursor is not None:
-            request["cursor"] = cursor
-        if node_id or host:
-            record = self._node_for(node_id=node_id, host=host)
-            if record.user_scope != self.user_scope or not record.authorized or not record.trusted:
-                return {"error_code": "SHARING_SCOPE_DENIED", "lookup_status": "SHARING_SCOPE_DENIED", "coverage": {"requested_node_id": record.node_id}}
-            reader = self._reader_for(record)
-            if reader is None or ((record.stale or record.state == "OFFLINE")
-                                  and not self._local_reader_attached(record)):
-                return {"error_code": "NODE_OFFLINE", "lookup_status": "NODE_OFFLINE", "coverage": {"requested_node_id": record.node_id, "stale": record.stale}}
-            try:
-                result = dict(reader(request))
-            except (OSError, TimeoutError, socket.timeout):
-                return {"error_code": "NODE_UNAVAILABLE", "lookup_status": "NODE_UNAVAILABLE", "coverage": {"requested_node_id": record.node_id}}
-            complete = self._answered(result, thread_id)
-            if complete:
-                self.registry.touch(record.node_id)
-            return result | {"source_node_id": record.node_id, "coverage": {"requested_node_id": record.node_id, "complete": complete, "nodes_queried": [record.node_id]}}
-
-        records = self.registry.list_nodes(user_scope=self.user_scope, authorized_only=True)
-        if not records:
-            return {"error_code": "THREAD_LOOKUP_UNAVAILABLE", "lookup_status": "THREAD_LOOKUP_UNAVAILABLE", "coverage": {"complete": False, "nodes_queried": [], "reason": "NO_AUTHORIZED_NODES"}}
-        results: list[tuple[NodeRecord, Mapping[str, Any] | None, str]] = []
-        def ask(record: NodeRecord) -> tuple[NodeRecord, Mapping[str, Any] | None, str]:
-            if ((record.stale or record.state == "OFFLINE")
-                    and not self._local_reader_attached(record)):
-                return record, None, "OFFLINE"
-            try:
-                reader = self._reader_for(record)
-                if reader is None:
-                    return record, None, "UNAVAILABLE"
-                result = dict(reader(request))
-                if self._answered(result, thread_id):
-                    self.registry.touch(record.node_id)
-                    return record, result, "OK"
-                return record, result, "UNAVAILABLE"
-            except (OSError, TimeoutError, socket.timeout, concurrent.futures.TimeoutError):
-                return record, None, "TIMEOUT"
-            except Exception:
-                return record, None, "UNAVAILABLE"
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(self.max_workers, len(records))) as pool:
-            futures = [pool.submit(ask, record) for record in records]
-            try:
-                completed = concurrent.futures.as_completed(futures, timeout=self.timeout_seconds)
-                for future in completed:
-                    try:
-                        results.append(future.result())
-                    except Exception:
-                        pass
-            except concurrent.futures.TimeoutError:
-                for future in futures:
-                    future.cancel()
-        found = [(record, result) for record, result, state in results if result is not None and self._found(result, thread_id)]
-        queried_ids = {record.node_id for record, _, _ in results}
-        unavailable = [record.node_id for record, result, state in results if result is None or state != "OK"]
-        unavailable.extend(record.node_id for record in records if record.node_id not in queried_ids)
-        unavailable = sorted(set(unavailable))
-        coverage = {"complete": not unavailable and len(results) == len(records), "nodes_queried": sorted(queried_ids), "nodes_unavailable": unavailable, "nodes_authorized": sorted(record.node_id for record in records)}
-        if len(found) > 1:
-            return {"error_code": "THREAD_IDENTITY_CONFLICT", "lookup_status": "THREAD_IDENTITY_CONFLICT", "unavailable_reason": "Exact thread matched multiple authorized nodes", "coverage": coverage, "matching_nodes": sorted(record.node_id for record, _ in found), "read_only": True}
-        if len(found) == 1:
-            record, result = found[0]
-            return dict(result, source_node_id=record.node_id, coverage=coverage, read_only=True)
-        if unavailable:
-            return {"error_code": "THREAD_SEARCH_INCOMPLETE", "lookup_status": "THREAD_SEARCH_INCOMPLETE", "unavailable_reason": "Some authorized nodes were offline, timed out or unavailable", "coverage": coverage, "read_only": True}
-        return {"error_code": "THREAD_NOT_FOUND", "lookup_status": "THREAD_NOT_FOUND", "absence_scope": "AUTHORIZED_NODE_SET", "coverage": coverage, "read_only": True}
-
-    def execute(self, *, node_id: str, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
-        self.registry.refresh_states()
-        record = self._node_for(node_id=node_id)
-        if record.user_scope != self.user_scope or not record.authorized or not record.trusted:
-            return {"error_code": "SHARING_SCOPE_DENIED", "execution_started": False, "node_id": node_id}
-        scope = self.registry.scope(node_id, self.user_scope)
-        permission = "session.read" if operation in {"execution.context", "execution.status"} else operation
-        if scope is None or not scope.allows(permission):
-            return {"error_code": "SHARING_SCOPE_DENIED", "execution_started": False, "node_id": node_id}
-        # Scoped context reads use this route too. Like session.read, a local
-        # in-process reader has no heartbeat while idle; its successful read
-        # proves liveness. Never extend this exception to writes or remote RPC.
-        local_read = (operation in {"execution.context", "execution.status"}
-                      and self._local_reader_attached(record)
-                      and record.node_id in self._executors)
-        if (record.stale or record.state != "ONLINE") and not local_read:
-            return {"error_code": "NODE_OFFLINE", "execution_started": False, "node_id": node_id}
-        if record.node_id not in self._executors:
-            self._reader_for(record)
-        executor = self._executors.get(record.node_id)
-        if executor is None:
-            return {"error_code": "NODE_EXECUTION_UNAVAILABLE", "execution_started": False, "node_id": node_id}
-        # There is deliberately no failover path.  An acknowledged request is
-        # owned by this node; an unacknowledged request stays UNKNOWN.
-        try:
-            result = dict(executor(operation, dict(request, node_id=node_id, user_scope=self.user_scope)), node_id=record.node_id)
-            expected = request.get('canonical_identity')
-            if expected and not result.get('error_code') and result.get('task_ref') != expected.get('task_id'):
-                return {"error_code": 'CANONICAL_HANDOFF_ACK_CONFLICT', "node_id": record.node_id,
-                            "execution_started": False, "operation_state": 'UNKNOWN', "side_effect": 'UNKNOWN',
-                            "retry": 'RECONCILIATION_REQUIRED'}
-            if not result.get("error_code"):
-                if local_read:
-                    self.registry.touch(record.node_id)
-                for key in ("task_ref", "prepared_execution_ref", "execution_ref"):
-                    if result.get(key):
-                        self.registry.bind_reference(result[key], node_id, self.user_scope)
-            return result
-        except (OSError, TimeoutError, socket.timeout) as exc:
-            if operation in READ_OPERATIONS:
-                return {"error_code": "NODE_READ_UNAVAILABLE", "read_only": True,
-                        "operation_state": "READ_FAILED", "side_effect": "NONE",
-                        "retry": "READ_ONLY_RETRY", "failure_stage": "rpc_transport",
-                        "error_type": type(exc).__name__,
-                        "node_id": record.node_id}
-            return {"error_code": "EXECUTION_OUTCOME_UNKNOWN", "operation_state": "UNKNOWN", "side_effect": "UNKNOWN", "retry": "RECONCILIATION_REQUIRED", "node_id": record.node_id}
+    def execute(self,*,node_id,operation,request):
+        return self._invoke('execute',node_id=node_id,operation=operation,request=dict(request))
 
 
 class NodeRPCServer:

@@ -16,10 +16,10 @@ import json
 import os
 import re
 import select
-import socket
 import struct
 import subprocess
 import time
+import threading
 import uuid
 from typing import Any, Callable, Protocol
 
@@ -530,40 +530,119 @@ class LocalStdioTransport(WebSocketStdioTransport):
     """Run the local app-server proxy command over a stdio byte tunnel."""
 
 
+# A single private Rust worker multiplexes existing-provider connections. It
+# never restarts a failed connection or retries an unknown request.
+_provider_lock = threading.Lock()
+_provider_worker = None
+_provider_callbacks = {}
+
+
+def _provider_callback(event):
+    args = event['arguments']
+    with _provider_lock:
+        client = _provider_callbacks.get(args['token'])
+        if client is None:
+            raise AppServerTransportError('PROVIDER_CALLBACK_UNAVAILABLE')
+    if callable(client):
+        return client(event)
+    with _provider_lock:
+        if args['operation'] == 'consume_creation':
+            expected = args['arguments']['cwd']
+            if getattr(client, 'native_creation_cwd', None) != expected:
+                return {'error': {'kind': 'shared_writer', 'message': 'Native creation permit already consumed'}}
+            # A lost Rust response must not leave a second creation permit.
+            client.native_creation_cwd = None
+            return {'result': None}
+    try:
+        operation, payload = args['operation'], args['arguments']
+        if operation == 'send':
+            value = client.transport.send(payload['message'])
+        elif operation == 'receive':
+            value = client._receive(payload['timeout'])
+        elif operation == 'mark':
+            mark = getattr(client.transport, 'mark_request_result', None)
+            value = mark(payload['id'], payload['outcome']) if callable(mark) else None
+        else:
+            raise AppServerProtocolError('PROVIDER_CALLBACK_INVALID')
+        return {'result': value}
+    except Exception as exc:
+        client._provider_callback_error = exc
+        kind = 'protocol' if isinstance(exc, AppServerProtocolError) else 'transport'
+        return {'error': {'kind': kind, 'message': str(exc)}}
+
+
+def _provider_call(operation, **arguments):
+    global _provider_worker
+    from clinx.authority.rust_authority import RustAuthorityError
+    with _provider_lock:
+        if _provider_worker is None:
+            import atexit
+            from clinx.nodes.network_worker import Worker
+            _provider_worker = Worker(callback=_provider_callback)
+            atexit.register(_provider_worker.close)
+        worker = _provider_worker
+    try:
+        return worker.call('provider.client.' + operation,
+            _wait_timeout=max(125, float(arguments.get('timeout', 0)) + 5), **arguments)
+    except RustAuthorityError as exc:
+        if str(exc) == 'PROVIDER_SOCKET_NOT_PRESENT':
+            raise FileNotFoundError(str(exc)) from exc
+        if str(exc) == 'PROVIDER_SOCKET_PERMISSION_DENIED':
+            raise PermissionError(str(exc)) from exc
+        kind = AppServerProtocolError if str(exc) in {
+            'PROVIDER_HANDSHAKE_INVALID', 'PROVIDER_FRAME_INVALID',
+            'PROVIDER_PROTOCOL_INVALID', 'PROVIDER_MESSAGE_TOO_LARGE',
+        } else AppServerTransportError
+        raise kind(str(exc)) from exc
+    except (OSError, TimeoutError) as exc:
+        raise AppServerTransportError(str(exc)) from exc
+
+
+def _provider_with_callback(operation, callback, **arguments):
+    token = str(uuid.uuid4())
+    with _provider_lock:
+        _provider_callbacks[token] = callback
+    try:
+        return _provider_call(operation, callback_token=token, **arguments)
+    finally:
+        with _provider_lock:
+            _provider_callbacks.pop(token, None)
+
+
+def _provider_value(result, method='transport'):
+    error = result.get('error')
+    if error is not None:
+        if error['kind'] == 'remote':
+            raise AppServerRemoteError(method, error['remote'])
+        cls = {'protocol': AppServerProtocolError, 'shared_writer': AppServerSharedWriterError}.get(
+            error['kind'], AppServerTransportError)
+        raise cls(error['message'])
+    return result['value']
+
+
 class UnixSocketTransport(WebSocketStdioTransport):
-    """Connect to an existing daemon only. No proxy, process or auto-start path."""
+    """Existing daemon socket owned by Rust; no process or fallback endpoint.
 
+    The byte surface only supports injected socket fixtures from the original
+    protocol qualification. Normal connections never construct a Python socket.
+    """
     class Bytes:
-        def __init__(self, path, timeout):
-            self.path, self.timeout, self.sock = str(path), timeout, None
-
-        def connect(self):
-            connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            try:
-                connection.settimeout(self.timeout)
-                connection.connect(self.path)
-            except OSError:
-                connection.close()
-                raise
-            self.sock = connection
-
-        def send_bytes(self, data):
-            self.sock.sendall(data)
+        def __init__(self):
+            self.sock = None
 
         def receive_bytes(self, size, timeout_seconds):
-            data = bytearray()
-            deadline = time.monotonic() + timeout_seconds
+            data, deadline = bytearray(), time.monotonic() + timeout_seconds
             while len(data) < size:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise AppServerTransportError("existing provider receive timed out")
+                    raise AppServerTransportError('existing provider receive timed out')
                 self.sock.settimeout(remaining)
                 try:
                     chunk = self.sock.recv(size - len(data))
                 except TimeoutError as exc:
-                    raise AppServerTransportError("existing provider receive timed out") from exc
+                    raise AppServerTransportError('existing provider receive timed out') from exc
                 if not chunk:
-                    raise AppServerTransportError("existing provider disconnected")
+                    raise AppServerTransportError('existing provider disconnected')
                 data.extend(chunk)
             return bytes(data)
 
@@ -573,18 +652,45 @@ class UnixSocketTransport(WebSocketStdioTransport):
                 self.sock = None
 
     def __init__(self, path, *, timeout_seconds=3):
-        self.command = ()
-        self.timeout_seconds = timeout_seconds
-        self.websocket_path = "/"
-        self._connected = False
-        self._byte_transport = self.Bytes(path, timeout_seconds)
+        self.path, self.timeout_seconds = str(path), timeout_seconds
+        self.command, self._session, self._connected = (), None, False
+        self._byte_transport = self.Bytes()
 
     def connect(self):
-        try:
-            super().connect()
-        except Exception:
-            self.close()
-            raise
+        if self._session is None:
+            self._session = _provider_call('connect', endpoint=self.path, timeout=self.timeout_seconds)['session']
+            self._connected = True
+
+    def send(self, message):
+        if self._session is None:
+            raise AppServerTransportError('app-server transport is not connected')
+        _provider_value(_provider_call('send', session=self._session, message=message, timeout=self.timeout_seconds))
+
+    def receive(self, timeout_seconds):
+        if self._byte_transport.sock is not None:
+            return super().receive(timeout_seconds)
+        if self._session is None:
+            raise AppServerTransportError('app-server transport is not connected')
+        return _provider_value(_provider_call('receive', session=self._session, timeout=timeout_seconds))
+
+    def transport_lifecycle_state(self):
+        if self._session is None:
+            return 'unavailable'
+        return _provider_call('lifecycle', session=self._session)
+
+    def local_peer_uid(self):
+        if self._session is None:
+            raise AppServerTransportError('app-server transport is not connected')
+        return _provider_call('peer_uid', session=self._session)
+
+    def close(self):
+        session, self._session, self._connected = self._session, None, False
+        self._byte_transport.close()
+        if session is not None:
+            try:
+                _provider_call('close', session=session)
+            except AppServerError:
+                pass
 
 
 @dataclasses.dataclass(frozen=True)
@@ -666,25 +772,7 @@ class CodexAppServerClient:
 
 
     def _record_event(self, message: dict[str, Any]) -> None:
-        method = message.get("method")
-        if isinstance(method, str):
-            self.events.append(method)
-            if len(self.events) > self.max_method_history:
-                del self.events[: len(self.events) - self.max_method_history]
-        # Reserve one slot for an explicit overflow marker so the queue stays
-        # bounded while still making loss visible to an adapter.
-        if len(self.received_events) < self.max_received_events - 1 and not self._received_event_overflow:
-            self.received_events.append(dict(message))
-            return
-        if not self._received_event_overflow:
-            self._received_event_overflow = True
-            self.received_events.append(
-                {
-                    "method": "clinx/observation_overflow",
-                    "params": {"dropped": "bounded_event_buffer_exhausted"},
-                }
-            )
-
+        self._protocol('record', message=message)
 
     def _receive(self, timeout_seconds):
         return self.transport.receive(timeout_seconds)
@@ -725,160 +813,46 @@ class CodexAppServerClient:
         self._record_event(request)
 
 
+    def _protocol(self, operation, **arguments):
+        token = str(uuid.uuid4())
+        arguments.update(callback_token=token, state=dict(events=self.events,
+            received_events=self.received_events, overflow=self._received_event_overflow,
+            max_received_events=self.max_received_events, max_method_history=self.max_method_history))
+        if isinstance(self.transport, UnixSocketTransport) and self.transport._session is not None:
+            arguments['session'] = self.transport._session
+        with _provider_lock:
+            _provider_callbacks[token] = self
+        self._provider_callback_error = None
+        try:
+            result = _provider_call(operation, **arguments)
+            state = result['state']
+            self.events[:] = state['events']
+            self.received_events[:] = state['received_events']
+            self._received_event_overflow = state['overflow']
+            try:
+                if result.get('error') is not None and self._provider_callback_error is not None:
+                    raise self._provider_callback_error
+                return _provider_value(result, arguments.get('request', {}).get('method', operation))
+            except Exception as exc:
+                if result.get('drained_events'):
+                    exc.events = tuple(result['drained_events'])
+                raise
+        finally:
+            with _provider_lock:
+                _provider_callbacks.pop(token, None)
+
     def _request(self, method: str, params: dict[str, Any] | None = None) -> Any:
-        # Reject before resume/start can subscribe, claim or create a thread.
-        # A later turn/start refusal cannot undo those earlier mutations.
-        forwarding = (getattr(self, 'native_forwarding_thread_id', None)
-                      == (params or {}).get('threadId')
-                      and getattr(self, 'native_forwarding_thread_id', None) is not None)
-        creating = (method == 'thread/start'
-                    and getattr(self, 'native_creation_cwd', None) is not None
-                    and (params or {}).get('cwd') == self.native_creation_cwd
-                    and (params or {}).get('ephemeral') is False
-                    and (params or {}).get('threadSource') == 'user'
-                    and not (params or {}).get('dynamicTools')
-                    and not (params or {}).get('developerInstructions'))
-        if getattr(self, "shared_native_writer", False) and method in {
-            "thread/start", "thread/resume", "turn/start",
-        } and not (creating or (forwarding and method in {'thread/resume', 'turn/start'})):
-            raise AppServerSharedWriterError(
-                f"Managed {method} on the shared Desktop daemon lacks atomic writer admission"
-            )
-        metadata_probe = (method == 'command/exec' and params is not None
-                          and params == getattr(self, '_workspace_metadata_request', None))
-        if getattr(self, 'read_only_observer', False) and not metadata_probe and method not in {
-            'initialize', 'thread/read', 'thread/turns/list', 'thread/items/list',
-        } and not (method == 'thread/list' and (params or {}).get('useStateDbOnly') is True):
-            raise AppServerProtocolError('Read-only native observer cannot claim or mutate a thread')
-        if creating:
-            # Consume before sending: a lost creation response must never
-            # authorize a second thread/start on this connection.
-            self.native_creation_cwd = None
-        request_id = str(uuid.uuid4())
-        request: dict[str, Any] = {"id": request_id, "method": method}
+        request = {'id': str(uuid.uuid4()), 'method': method}
         if params is not None:
-            request["params"] = params
-        self.transport.send(request)
-
-        deadline = time.monotonic() + self.timeout_seconds
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise AppServerTransportError(f"timed out waiting for {method} response")
-            message = self._receive(remaining)
-
-            # A server-initiated request has both id and method.  Handle it
-            # before matching response ids because both sides share the id space.
-            if "method" in message and "id" in message:
-                self._send_server_response(message)
-                continue
-
-            if message.get("id") != request_id:
-                if "method" in message:
-                    event_method = message["method"]
-                    if isinstance(event_method, str):
-                        self._record_event(message)
-                continue
-
-            if "error" in message:
-                error = message["error"]
-                if not isinstance(error, dict):
-                    error = {"message": str(error)}
-                mark = getattr(self.transport, "mark_request_result", None)
-                if callable(mark):
-                    mark(request_id, "explicit_rejection")
-                raise AppServerRemoteError(method, error)
-            if "result" not in message:
-                mark = getattr(self.transport, "mark_request_result", None)
-                if callable(mark):
-                    mark(request_id, "unknown")
-                raise AppServerProtocolError(f"{method} response has no result or error")
-            mark = getattr(self.transport, "mark_request_result", None)
-            if callable(mark):
-                mark(request_id, "accepted")
-            return message["result"]
+            request['params'] = params
+        policy = {name: getattr(self, name, None) for name in (
+            'native_forwarding_thread_id', 'native_creation_cwd', 'shared_native_writer', 'read_only_observer')}
+        policy['workspace_metadata_request'] = getattr(self, '_workspace_metadata_request', None)
+        return self._protocol('request', request=request, timeout=self.timeout_seconds, policy=policy)
 
     def drain_events(self, *, max_events: int = 32, timeout_seconds: float = 0.0) -> list[dict[str, Any]]:
-        """Drain bounded provider notifications from the current connection.
-
-        A zero timeout is a non-blocking read of already buffered transport
-        data. Server requests are retained for observation; these Python
-        connections never execute Host tools or answer Desktop approvals.
-        No event is silently discarded when the bound is reached.
-        """
-        if not isinstance(max_events, int) or isinstance(max_events, bool) or not 1 <= max_events <= 100:
-            raise AppServerProtocolError("max_events must be an integer from 1 to 100")
-        if timeout_seconds < 0:
-            raise AppServerProtocolError("timeout_seconds must not be negative")
-        result: list[dict[str, Any]] = []
-        if self._received_event_overflow:
-            self.received_events.clear()
-            return [
-                {
-                    "method": "clinx/observation_overflow",
-                    "params": {"dropped": "bounded_event_buffer_exhausted"},
-                }
-            ]
-        if self.received_events:
-            take = min(max_events, len(self.received_events))
-            result.extend(self.received_events[:take])
-            del self.received_events[:take]
-            if len(result) >= max_events or timeout_seconds == 0:
-                return result
-        deadline = time.monotonic() + timeout_seconds
-        while len(result) < max_events:
-            remaining = max(0.0, deadline - time.monotonic())
-            if timeout_seconds == 0 and result:
-                break
-            try:
-                message = self._receive(remaining)
-            except AppServerTransportError as exc:
-                if _is_transport_timeout(exc) and (result or timeout_seconds == 0):
-                    break
-                if result:
-                    setattr(exc, "events", tuple(result))
-                raise
-            if "method" in message and "id" in message:
-                recorded_before = len(self.received_events)
-                self._send_server_response(message)
-                # _send_server_response records the request for callers that
-                # observe later.  This call already returns it in this batch,
-                # so do not expose it a second time on the next drain.
-                del self.received_events[recorded_before:]
-                result.append(dict(message))
-                if self._received_event_overflow:
-                    result.append(
-                        {
-                            "method": "clinx/observation_overflow",
-                            "params": {"dropped": "bounded_event_buffer_exhausted"},
-                        }
-                    )
-                    self.received_events.clear()
-                    break
-                continue
-            if isinstance(message.get("method"), str):
-                recorded_before = len(self.received_events)
-                self._record_event(message)
-                result.append(dict(message))
-                if self._received_event_overflow:
-                    result.append(
-                        {
-                            "method": "clinx/observation_overflow",
-                            "params": {"dropped": "bounded_event_buffer_exhausted"},
-                        }
-                    )
-                    self.received_events.clear()
-                    break
-                # This notification is already part of the returned batch;
-                # avoid replaying it on the next drain.  Notifications that
-                # arrived while an RPC was pending remain buffered because
-                # they were recorded outside this loop.
-                del self.received_events[recorded_before:]
-                if message["method"] == "clinx/observation_overflow":
-                    break
-            else:
-                raise AppServerProtocolError("unexpected non-event message while observing")
-        return result
+        """Rust drains bounded events without answering tools or approvals."""
+        return self._protocol('drain', max_events=max_events, timeout=timeout_seconds)
 
     def initialize(
         self,
@@ -1239,41 +1213,8 @@ class CodexAppServerClient:
         )
 
     def _confirm_native_input(self, thread_id, turn, client_id, prompt):
-        """Confirm this exact message in the returned native Turn; never retry.
-
-        turn/start may append to a Turn started by Desktop during the preflight
-        window. That is a native input delivery, not exclusive execution. Its
-        response alone cannot attribute the Turn to this CLINX request.
-        """
-        deadline = time.monotonic() + self.timeout_seconds
-        while True:
-            candidates = list(turn.get('items', []))
-            for event in self.received_events:
-                params = event.get('params', {})
-                if params.get('threadId') == thread_id and params.get('turnId') == turn['id']:
-                    candidates.append(params.get('item', {}))
-            for item in candidates:
-                content = item.get('content') if isinstance(item, dict) else None
-                if (isinstance(item, dict) and item.get('type') == 'userMessage'
-                        and item.get('clientId') == client_id and isinstance(item.get('id'), str)
-                        and isinstance(content, list) and len(content) == 1
-                        and isinstance(content[0], dict) and content[0].get('type') == 'text'
-                        and content[0].get('text') == prompt):
-                    self.native_forwarding_receipt = {
-                        'mode': 'NATIVE_INPUT_FORWARDING', 'exclusive_writer': False,
-                        'thread_id': thread_id, 'turn_id': turn['id'],
-                        'client_message_id': client_id, 'native_item_id': item['id'],
-                        'input_confirmed': True,
-                    }
-                    return
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise AppServerProtocolError('NATIVE_INPUT_UNCONFIRMED: request may have been accepted; do not replay')
-            message = self._receive(remaining)
-            if 'method' in message and 'id' in message:
-                self._send_server_response(message)
-            elif isinstance(message.get('method'), str):
-                self._record_event(message)
+        self.native_forwarding_receipt = self._protocol('confirm', thread_id=thread_id,
+            turn=turn, client_id=client_id, prompt=prompt, timeout=self.timeout_seconds)
 
     def turn_interrupt(self, thread_id: str, turn_id: str) -> bool:
         """Interrupt only the exact turn owned by a CLINX-managed binding."""

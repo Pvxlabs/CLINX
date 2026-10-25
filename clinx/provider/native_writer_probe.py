@@ -1,9 +1,9 @@
 """Fixed read-only writer evidence through the existing Desktop daemon."""
 import json
 import os
-from pathlib import Path
 import socket
 import struct
+from pathlib import Path
 import sys
 
 
@@ -21,7 +21,7 @@ def inspect(request):
 
 
 def observe(endpoint, root, thread_id, turn_id, project):
-    from clinx.provider.app_server import AppServerError
+    from clinx.provider.app_server import AppServerError, UnixSocketTransport
     from clinx.provider.native_provider import existing_client
     from clinx.authority.rust_worker_identity import worker_account
     request = dict(root=str(root), thread_id=thread_id, turn_id=turn_id, project=project)
@@ -34,8 +34,16 @@ def observe(endpoint, root, thread_id, turn_id, project):
                     and native_home.stat().st_uid == os.getuid())
         expected_uid = os.getuid() if own_home else worker_account().pw_uid
         with existing_client(endpoint, timeout=3) as client:
-            peer = client.transport._byte_transport.sock
-            _, uid, _ = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+            if isinstance(client.transport, UnixSocketTransport):
+                # Normal execution uses evidence from the same Rust-owned socket.
+                # Failure here is UNKNOWN; never switch to another credential source.
+                uid = client.transport.local_peer_uid()
+            else:
+                # Explicitly injected local transports retain the original socket
+                # interface. This is not a remote node's reported UID.
+                peer = client.transport._byte_transport.sock
+                _, uid, _ = struct.unpack('3i', peer.getsockopt(
+                    socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
             if uid != expected_uid:
                 return unknown
             client.initialize(client_name='clinx-native-writer-observer',

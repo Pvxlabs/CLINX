@@ -10,18 +10,18 @@ import base64
 import contextlib
 import datetime as dt
 import fcntl
-import hashlib
 import json
 import os
-import re
 import stat
 import tempfile
+import threading
+import uuid
 from pathlib import Path
 from typing import Any, Iterator
 
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.x509.oid import NameOID
 
 from clinx.contracts.execution_semantics import HostIdentity, normalize_host
@@ -31,6 +31,48 @@ from . import PROTOCOL_VERSION
 
 class DeviceError(ValueError):
     """Safe, fixed error codes only; never echo untrusted wire values or PINs."""
+
+
+_runtime_lock = threading.Lock()
+_runtime_worker = None
+_runtime_callbacks = {}
+
+
+def _state_callback(event):
+    with _runtime_lock:
+        context = _runtime_callbacks.get(event['arguments']['token'])
+    if event['operation'] != 'discovery.commit' or context is None:
+        raise DeviceError('PAIRING_REPLAY')
+    try:
+        context['commit']()
+    except Exception as exc:
+        context['error'] = exc
+        raise
+    return None
+
+
+def _state_call(rpc_method, *, _commit=None, **arguments):
+    from clinx.authority.rust_authority import RustAuthorityError
+    global _runtime_worker
+    token, context = uuid.uuid4().hex, {'commit': _commit, 'error': None}
+    with _runtime_lock:
+        if _runtime_worker is None:
+            import atexit
+            from clinx.nodes.network_worker import Worker
+            _runtime_worker = Worker(callback=_state_callback)
+            atexit.register(_runtime_worker.close)
+        worker = _runtime_worker
+        if _commit is not None:
+            _runtime_callbacks[token] = context
+    try:
+        return worker.call('discovery.' + rpc_method, callback_token=token, **arguments)
+    except RustAuthorityError as exc:
+        if context['error'] is not None:
+            raise context['error']
+        raise DeviceError(str(exc)) from None
+    finally:
+        with _runtime_lock:
+            _runtime_callbacks.pop(token, None)
 
 
 def encoded(data: bytes) -> str:
@@ -45,62 +87,23 @@ def decoded(data: str) -> bytes:
 
 
 def fingerprint(public_key: str) -> str:
-    raw = decoded(public_key)
-    if len(raw) != 32:
-        raise DeviceError("INVALID_PUBLIC_KEY")
-    return hashlib.sha256(raw).hexdigest()
+    return _state_call('fingerprint', value=public_key)
 
 
 def valid_name(name: str) -> str:
-    if not isinstance(name, str) or not 1 <= len(name.encode("utf-8")) <= 120:
-        raise DeviceError("INVALID_DISPLAY_NAME")
-    if any(ord(c) < 32 or ord(c) == 127 for c in name):
-        raise DeviceError("INVALID_DISPLAY_NAME")
-    return name
+    return _state_call('name', value=name)
 
 
 def valid_node(node_id: str) -> str:
-    if not isinstance(node_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,62}", node_id):
-        raise DeviceError("INVALID_NODE_ID")
-    # Preserve the existing routing normalization; don't silently rename peers.
-    if normalize_host(node_id).stable_identifier != node_id:
-        raise DeviceError("NON_CANONICAL_NODE_ID")
-    if node_id.replace(".", "").isdigit():
-        raise DeviceError("ADDRESS_IS_NOT_IDENTITY")
-    return node_id
+    return _state_call('node', value=node_id)
 
 
 def public_record(raw: dict[str, Any]) -> dict[str, Any]:
-    try:
-        node_id = valid_node(raw["node_id"])
-        name = valid_name(raw["display_name"])
-        fp = fingerprint(raw["public_key"])
-        if raw["fingerprint"] != fp or raw["protocol_version"] != PROTOCOL_VERSION:
-            raise DeviceError("IDENTITY_OR_PROTOCOL_MISMATCH")
-        return dict(
-            node_id=node_id,
-            display_name=name,
-            public_key=raw["public_key"],
-            fingerprint=fp,
-            protocol_version=PROTOCOL_VERSION,
-        )
-    except (KeyError, TypeError) as exc:
-        raise DeviceError("INVALID_IDENTITY") from exc
+    return _state_call('public', value=raw)
 
 
 def certificate_public(pem: str) -> str:
-    try:
-        cert = x509.load_pem_x509_certificate(pem.encode("ascii"))
-        now = dt.datetime.now(dt.timezone.utc)
-        if not cert.not_valid_before_utc <= now < cert.not_valid_after_utc:
-            raise DeviceError("CERTIFICATE_EXPIRED_OR_NOT_YET_VALID")
-        key = cert.public_key()
-        if not isinstance(key, Ed25519PublicKey):
-            raise DeviceError("INVALID_CERTIFICATE_KEY")
-        key.verify(cert.signature, cert.tbs_certificate_bytes)
-        return encoded(key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw))
-    except (ValueError, TypeError, UnicodeError) as exc:
-        raise DeviceError("INVALID_CERTIFICATE") from exc
+    return _state_call('certificate', value=pem)
 
 
 class PrivateStore:
@@ -263,105 +266,35 @@ class NodeIdentity:
 
 
 class TrustedPeerStore:
+    """Rust validates and atomically commits the existing peer trust schema."""
     def __init__(self, store: PrivateStore):
         self.store = store
 
     def all(self) -> dict[str, dict[str, Any]]:
-        with self.store.lock():
-            return self._read()
+        # Snapshot read only: even ReadOnlyPrivateStore must not create a lock.
+        return _state_call('peers.all', root=str(self.store.root))
 
     def _read(self) -> dict[str, dict[str, Any]]:
-        raw = self.store.read("peers.json")
-        if raw is None:
-            return {}
-        peers = raw.get("peers")
-        if not isinstance(peers, dict):
-            raise DeviceError("INVALID_PEER_STORE")
-        for node_id, peer in peers.items():
-            pub = public_record(peer)
-            if pub["node_id"] != node_id or peer.get("trust_state") not in {"TRUSTED", "REVOKED"}:
-                raise DeviceError("INVALID_PEER_STORE")
-            if certificate_public(peer["certificate"]) != pub["public_key"]:
-                raise DeviceError("PEER_KEY_MISMATCH")
-            if peer.get("security_status") not in {"DEV_ONLY", "OPAQUE_V1"}:
-                raise DeviceError("INVALID_PEER_SECURITY_STATUS")
-            if peer["security_status"] == "OPAQUE_V1":
-                from .pairing import PRODUCTION_PROTOCOL
+        return _state_call('peers.validate', value=self.store.read('peers.json'))
 
-                if peer.get("pairing_protocol") != PRODUCTION_PROTOCOL:
-                    raise DeviceError("INVALID_PEER_SECURITY_STATUS")
-        return peers
-
-    def trust(
-        self,
-        public: dict[str, Any],
-        certificate: str,
-        *,
-        security_status: str,
-        pairing_protocol: str | None = None,
-        fresh_pairing: bool = False,
-    ) -> None:
-        from .pairing import PRODUCTION_PROTOCOL, PRODUCTION_TRUST
-
-        if security_status == PRODUCTION_TRUST and (
-            pairing_protocol != PRODUCTION_PROTOCOL or not fresh_pairing
-        ):
-            raise DeviceError("FRESH_PRODUCTION_PAIRING_REQUIRED")
-        peer = public_record(public)
-        if security_status not in {"DEV_ONLY", "OPAQUE_V1"}:
-            raise DeviceError("INVALID_PEER_SECURITY_STATUS")
-        if certificate_public(certificate) != peer["public_key"]:
-            raise DeviceError("PEER_KEY_MISMATCH")
-        now = dt.datetime.now(dt.timezone.utc).isoformat()
+    def _transition(self, operation, **arguments):
+        if type(self.store) is PrivateStore:
+            return _state_call('peers.' + operation, root=str(self.store.root), **arguments)
+        # Custom IO stores retain their write refusal/qualification boundary;
+        # the same Rust transition validates the complete locked snapshot.
         with self.store.lock():
-            peers = self._read()
-            old = peers.get(peer["node_id"])
-            if any(
-                n != peer["node_id"] and p["public_key"] == peer["public_key"]
-                for n, p in peers.items()
-            ):
-                raise DeviceError("PUBLIC_KEY_ALREADY_BOUND")
-            if old and (old["public_key"] != peer["public_key"] or old["trust_state"] == "REVOKED"):
-                raise DeviceError("IDENTITY_MISMATCH")
-            if old and old["security_status"] == "OPAQUE_V1" and security_status == "DEV_ONLY":
-                raise DeviceError("TRUST_DOWNGRADE_REJECTED")
-            peers[peer["node_id"]] = dict(
-                peer,
-                certificate=certificate,
-                friendly_name=peer["display_name"],
-                trust_state="TRUSTED",
-                security_status=security_status,
-                pairing_protocol=pairing_protocol,
-                paired_at=old["paired_at"]
-                if old and old["security_status"] == security_status
-                else now,
-                updated_at=now,
-                last_authenticated_at=old.get("last_authenticated_at") if old else None,
-            )
-            self.store.write("peers.json", dict(schema_version=1, peers=peers))
+            reply = _state_call('peers.transition', operation=operation, arguments=arguments,
+                                state=self.store.read('peers.json'))
+            self.store.write('peers.json', reply['state'])
+            return reply['value']
 
-    def authenticate(
-        self, node_id: str, public_key: str, *, allow_dev: bool = False
-    ) -> dict[str, Any]:
-        with self.store.lock():
-            peers = self._read()
-            peer = peers.get(node_id)
-            if not peer or peer["trust_state"] != "TRUSTED":
-                raise DeviceError("UNTRUSTED_DEVICE")
-            if peer["public_key"] != public_key:
-                raise DeviceError("IDENTITY_MISMATCH")
-            if peer["security_status"] == "DEV_ONLY" and not allow_dev:
-                raise DeviceError("SECURITY_BLOCKER_DEV_ONLY")
-            now = dt.datetime.now(dt.timezone.utc).isoformat()
-            peer.update(last_authenticated_at=now, updated_at=now)
-            self.store.write("peers.json", dict(schema_version=1, peers=peers))
-            return peer
+    def trust(self, public: dict[str, Any], certificate: str, *, security_status: str,
+              pairing_protocol: str | None = None, fresh_pairing: bool = False) -> None:
+        return self._transition('trust', public=public, certificate=certificate,
+            security_status=security_status, pairing_protocol=pairing_protocol, fresh_pairing=fresh_pairing)
+
+    def authenticate(self, node_id: str, public_key: str, *, allow_dev: bool = False) -> dict[str, Any]:
+        return self._transition('authenticate', node_id=node_id, public_key=public_key, allow_dev=allow_dev)
 
     def revoke(self, node_id: str) -> None:
-        with self.store.lock():
-            peers = self._read()
-            if node_id not in peers:
-                raise DeviceError("UNKNOWN_DEVICE")
-            peers[node_id]["trust_state"] = "REVOKED"
-            peers[node_id]["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
-            self.store.write("peers.json", dict(schema_version=1, peers=peers))
+        return self._transition('revoke', node_id=node_id)

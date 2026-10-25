@@ -1,0 +1,130 @@
+{
+  "baseline": "68b2cf23abe07e45dc9ae040b5ff23eed8364b86",
+  "artifact_directory": "/data/artifacts/clinx-runtime-convergence-20261025",
+  "scale": {
+    "before": {
+      "Python": {
+        "files": 107,
+        "lines": 21442,
+        "bytes": 983411
+      },
+      "Rust": {
+        "files": 55,
+        "lines": 23911,
+        "bytes": 955374
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      "Go": {
+        "files": 3,
+        "lines": 849,
+        "bytes": 26718
+      },
+      "C": {
+        "files": 1,
+        "lines": 50,
+        "bytes": 2345
+      },
+      "Shell": {
+        "files": 9,
+        "lines": 250,
+        "bytes": 11779
+      },
+      "python_share_percent": 39.25383423124377,
+      "active_runtime_python": {
+        "files": 55,
+        "lines": 11699,
+        "bytes": 532708
+      }
+    },
+    "after": {
+      "Python": {
+        "files": 113,
+        "lines": 22487,
+        "bytes": 976532
+      },
+      "Rust": {
+        "files": 65,
+        "lines": 29872,
+        "bytes": 1188254
+      },
+      "Swift": {
+        "files": 62,
+        "lines": 11355,
+        "bytes": 525634
+      },
+      "Go": {
+        "files": 3,
+        "lines": 849,
+        "bytes": 26718
+      },
+      "C": {
+        "files": 1,
+        "lines": 50,
+        "bytes": 2345
+      },
+      "Shell": {
+        "files": 9,
+        "lines": 251,
+        "bytes": 11884
+      },
+      "python_share_percent": 35.75250048785096,
+      "active_runtime_python": {
+        "files": 54,
+        "lines": 10185,
+        "bytes": 424101
+      }
+    },
+    "deleted_files": [
+      "clinx/host/derived_git_targets.py"
+    ],
+    "deleted_file_lines": 89,
+    "runtime_python_net_lines_removed": 1514,
+    "runtime_python_bytes_removed": 108607
+  },
+  "verification": {
+    "release_binaries": 10,
+    "rust_tests_passed": 90,
+    "tracked_fixtures_passed": 296,
+    "full_suite": {
+      "identities": 432,
+      "same_identities": true,
+      "same_outcomes": true,
+      "before": {
+        "pass": 295,
+        "failure": 31,
+        "error": 104,
+        "skipped": 2
+      },
+      "after": {
+        "pass": 295,
+        "failure": 31,
+        "error": 104,
+        "skipped": 2
+      }
+    },
+    "preservation": {
+      "local_test_files": 124,
+      "all_local_hashes_unchanged": true,
+      "existing_fixture_assertions_unchanged": true,
+      "fixture_count": 14
+    },
+    "clippy": {
+      "status": "BLOCKED_EXISTING",
+      "existing_diagnostics": 10,
+      "new_diagnostics": 0
+    },
+    "python_lint": "PASS",
+    "structure": "PASS",
+    "macos_build_signing": "NOT_VERIFIED",
+    "physical_new_cross_device_loop": "NOT_VERIFIED",
+    "production_services_unchanged": true,
+    "deployed": false,
+    "production_database_or_tasks_accessed": false,
+    "standalone_tunnel_package": "PASS"
+  },
+  "python_under_25_percent": false
+}

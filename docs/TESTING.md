@@ -17,7 +17,18 @@ Install Python 3.12 and the pinned dependencies as described in
 discovery development pins; there is one source of package versions.
 The local `tests/README.md` index maps suites and naming conventions.
 
-## Latest Node network qualification
+## Latest client runtime qualification
+
+[Rust client runtime migration](RUST_CLIENT_RUNTIME_MIGRATION.md) records 10 Linux Release
+binaries, 90 Rust tests and 296 tracked fixtures. The complete retained local suite has
+identical 432 outcomes before/after: 295 pass, 31 fail, 104 errors, 2 pre-existing skips.
+All 124 local test/support hashes and existing tracked fixture assertions are preserved.
+Run with the same qualified `CLINX_NODE_BINARY` (client runtime V1) and other binaries;
+a stale persistent worker is not a valid test of updated Python/Rust contracts.
+Strict Clippy has the same 10 pre-existing diagnostics and no new ones. Mac native
+build/signing and the new physical cross-device loop are not verified on this Linux host.
+
+## Previous Node network qualification
 
 [Rust Node network migration](RUST_NODE_NETWORK_MIGRATION.md) qualifies the paired
 TLS/Centre/Owner, Provider chunk/IPC and Node Registry/request lifecycle migration.

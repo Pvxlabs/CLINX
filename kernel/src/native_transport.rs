@@ -17,6 +17,62 @@ use std::{
     time::Duration,
 };
 
+/// Connect only before transmission, bounded even when an AF_UNIX backlog is full.
+/// No request has been sent here, and no caller may retry after write begins.
+pub fn connect_local(endpoint: &Path, timeout: Duration) -> std::io::Result<UnixStream> {
+    use rustix::{
+        event::{PollFd, PollFlags, Timespec, poll},
+        io::Errno,
+        net::{self, AddressFamily, SocketAddrUnix, SocketFlags, SocketType},
+    };
+    use std::{io, thread, time::Instant};
+    let fd = net::socket_with(
+        AddressFamily::UNIX,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
+        None,
+    )?;
+    let address = SocketAddrUnix::new(endpoint)?;
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .ok_or(io::ErrorKind::InvalidInput)?;
+    loop {
+        if Instant::now() >= deadline {
+            return Err(io::ErrorKind::TimedOut.into());
+        }
+        match net::connect(&fd, &address) {
+            Ok(()) => break,
+            Err(Errno::INTR) => continue,
+            Err(Errno::AGAIN) => thread::sleep(
+                Duration::from_millis(10).min(deadline.saturating_duration_since(Instant::now())),
+            ),
+            Err(Errno::INPROGRESS) => {
+                loop {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        return Err(io::ErrorKind::TimedOut.into());
+                    }
+                    let timeout = Timespec::try_from(remaining).map_err(io::Error::other)?;
+                    match poll(&mut [PollFd::new(&fd, PollFlags::OUT)], Some(&timeout)) {
+                        Ok(0) => return Err(io::ErrorKind::TimedOut.into()),
+                        Err(Errno::INTR) => continue,
+                        result => {
+                            result?;
+                            net::sockopt::socket_error(&fd)??;
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let stream = UnixStream::from(fd);
+    stream.set_nonblocking(false)?;
+    Ok(stream)
+}
+
 pub trait Authority {
     fn call(&mut self, operation: &str, payload: Value, id: &str) -> Result<Value>;
 }
@@ -27,6 +83,23 @@ pub struct UnixAuthority {
 }
 impl Authority for UnixAuthority {
     fn call(&mut self, operation: &str, payload: Value, id: &str) -> Result<Value> {
+        let operation = if operation == "health" {
+            "health".to_owned()
+        } else {
+            format!("business.{operation}")
+        };
+        self.request(&operation, payload, id, Duration::from_secs(10))
+    }
+}
+impl UnixAuthority {
+    /// Exact wire request for the existing Python compatibility client. No retry.
+    pub fn request(
+        &self,
+        operation: &str,
+        payload: Value,
+        id: &str,
+        timeout: Duration,
+    ) -> Result<Value> {
         let info = self
             .endpoint
             .symlink_metadata()
@@ -47,18 +120,13 @@ impl Authority for UnixAuthority {
         {
             return Err("AUTHORITY_ENDPOINT_UNTRUSTED".into());
         }
-        let operation = if operation == "health" {
-            "health".to_owned()
-        } else {
-            format!("business.{operation}")
-        };
         let mut wire = serde_json::to_vec(&json!({"protocol_version":PROTOCOL,"operation":operation,"request_id":id,"payload":payload})).map_err(|_| "INVALID_REQUEST")?;
         wire.push(b'\n');
         if wire.len() > MAX_FRAME_BYTES {
             return Err("REQUEST_TOO_LARGE".into());
         }
         let mut socket =
-            UnixStream::connect(&self.endpoint).map_err(|_| "AUTHORITY_UNAVAILABLE")?;
+            connect_local(&self.endpoint, timeout).map_err(|_| "AUTHORITY_UNAVAILABLE")?;
         #[cfg(target_os = "linux")]
         if rustix::net::sockopt::socket_peercred(&socket)
             .map_err(|_| "AUTHORITY_PEER_UNTRUSTED")?
@@ -75,8 +143,8 @@ impl Authority for UnixAuthority {
             return Err("LINUX_AUTHORITY_IPC_REQUIRED".into());
         }
         socket
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .and_then(|_| socket.set_write_timeout(Some(Duration::from_secs(10))))
+            .set_read_timeout(Some(timeout))
+            .and_then(|_| socket.set_write_timeout(Some(timeout)))
             .map_err(|_| "AUTHORITY_UNAVAILABLE")?;
         socket
             .write_all(&wire)

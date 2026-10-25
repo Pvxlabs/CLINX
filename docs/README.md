@@ -78,3 +78,5 @@ Owner 候选标识为 `owner-shared-07da5fe20c4119dee1b4`；安装/切换证据�
 - [Rust 原生历史与观察目录迁移](RUST_OBSERVATION_MIGRATION.md)：精确 native 历史、增量扫描、持久观察批次、查询授权与旧摘要/游标兼容；Collector 队列仍待迁移。
 
 - [Rust Collector 队列与恢复迁移](RUST_COLLECTOR_MIGRATION.md)：节点 spool、checkpoint/ACK 原子事务、采样合并、丢 ACK 与进程重启资格。
+
+- [Rust 客户端运行时收敛](RUST_CLIENT_RUNTIME_MIGRATION.md)：Provider/Node/Observer/Discovery 与监督策略实际迁移、完整回归、残留和规模；[全部 Python 运行边界](PYTHON_RUNTIME_BOUNDARIES.md)。

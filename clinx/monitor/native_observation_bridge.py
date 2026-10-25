@@ -1,184 +1,188 @@
-"""User-owned native reads for the existing Centre collector, never execution.
+"""Private clients for Rust native read checkpoints and remote observation policy.
 
-The Centre keeps its single durable stream and cannot open the operator's home.
-Checkpoints are signed read cursors, not native or business state mutations.
+Python binds the existing directory/source objects and fixed loopback HTTP codec.
+Checkpoint identity, signatures, scope rechecks, cooldown and remote evidence
+validation are owned by the companion Rust Node process.
 """
-import base64
-import hashlib
-import hmac
-import json
+
 import os
-import time
+import threading
+import weakref
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from clinx.monitor.network_observation import compact
-from clinx.nodes.node_protocol import NodeProtocolError
+from clinx.authority.rust_authority import RustAuthorityError
 from clinx.monitor.observation_source import CodexObservationSource
+from clinx.nodes.network_worker import Worker
+from clinx.nodes.node_protocol import NodeProtocolError, SharingScope
 
 
-class NativeCollectorBridge:
+class _Client:
+    def __init__(self, callback=None):
+        self._worker = None
+        self._lock = threading.Lock()
+        self._handler = callback
+
+    def _callback(self, event):
+        if self._handler is None:
+            raise NodeProtocolError(
+                "NATIVE_OBSERVER_CALLBACK_INVALID", "Unexpected callback"
+            )
+        return self._handler(event)
+
+    def _call(self, operation, **arguments):
+        with self._lock:
+            if self._worker is None:
+                import atexit
+
+                reference = weakref.ref(self)
+
+                def callback(event):
+                    client = reference()
+                    if client is None:
+                        raise NodeProtocolError(
+                            "NATIVE_OBSERVER_UNAVAILABLE", "Client closed"
+                        )
+                    return client._callback(event)
+
+                self._worker = Worker(callback=callback)
+                atexit.register(self._worker.close)
+            worker = self._worker
+        try:
+            return worker.call("native_observer." + operation, **arguments)
+        except RustAuthorityError as exc:
+            if str(exc) == "INVALID_THREAD_ID":
+                from clinx.contracts.thread_identity import ThreadLookupError
+
+                raise ThreadLookupError(str(exc), str(exc)) from None
+            raise NodeProtocolError(str(exc), str(exc)) from None
+
+    def close(self):
+        if self._worker is not None:
+            self._worker.close()
+
+
+class NativeCollectorBridge(_Client):
     def __init__(self, directory):
-        self.directory = directory
-        self.secret = os.urandom(32)
-        self.source = None
+        super().__init__()
+        self.directory, self.source = directory, None
+
+    def _source(self):
+        if self.source is None:
+            self.source = CodexObservationSource(
+                self.directory.native_home,
+                self.directory.local_identity["node_id"],
+                native_writer_observation=True,
+            )
+        return self.source
+
+    def _callback(self, event):
+        operation, args = event["operation"], event["arguments"]
+        if operation == "native_observer.facts":
+            d = self.directory
+            identity = d.local_identity if d else None
+            scope = (
+                d._scope(identity["node_id"]) if identity and d.native_home else None
+            )
+            return dict(
+                local_identity=identity,
+                native_home=str(d.native_home) if d and d.native_home else None,
+                scope=scope.as_dict() if scope else None,
+            )
+        source = self._source()
+        if operation == "native_observer.generation":
+            return source.generation
+        if operation == "native_observer.metadata":
+            return source.history.metadata(args["tid"])
+        if operation == "native_observer.inventory":
+            return source.inventory(
+                SharingScope(**args["scope"]), args["after"], audit=args["audit"]
+            )
+        if operation == "native_observer.sample":
+            return source.sample(args["metadata"], args["state"])
+        raise NodeProtocolError(
+            "NATIVE_OBSERVER_CALLBACK_INVALID", "Unexpected native read callback"
+        )
+
+    @property
+    def secret(self):
+        return bytes.fromhex(self._call("key"))
+
+    @secret.setter
+    def secret(self, value):
+        self._call("key", value=value.hex())
 
     def scope(self):
-        d = self.directory
-        if d is None or not d.local_identity or not d.native_home:
-            raise NodeProtocolError('SHARING_SCOPE_DENIED', 'Local native observation unavailable')
-        node = d.local_identity['node_id']
-        scope = d._scope(node)
-        if scope is None:
-            raise NodeProtocolError('SHARING_SCOPE_DENIED', 'Current native read grant required')
-        if self.source is None:
-            self.source = CodexObservationSource(d.native_home, node, native_writer_observation=True)
+        scope = SharingScope(**self._call("scope"))
+        self._source()
         return scope
 
     def binding(self, tid, scope):
-        # A signed cursor crosses JSON; normalize tuples before comparison so
-        # an unchanged grant remains equal after decoding its checkpoint.
-        return json.loads(compact([tid, self.source.generation, scope.as_dict()]))
+        return self._call("binding", tid=tid, scope=scope.as_dict())
 
     def inventory(self, *, after=None, audit=False):
-        scope = self.scope()
-        if type(audit) is not bool:
-            raise NodeProtocolError('INVALID_QUERY', 'Invalid audit mode')
-        if after is not None:
-            valid = (isinstance(after, str) and len(after) <= 128) if audit else (
-                isinstance(after, list) and len(after) == 2 and type(after[0]) is int
-                and after[0] >= 0 and isinstance(after[1], str) and len(after[1]) <= 128)
-            if not valid:
-                raise NodeProtocolError('INVALID_QUERY', 'Invalid native read position')
-        rows, last, coverage = self.source.inventory(scope, after, audit=audit)
-        if self.scope().as_dict() != scope.as_dict():
-            raise NodeProtocolError('SHARING_SCOPE_DENIED', 'Native grants changed during read')
-        return dict(read_only=True, rows=rows, after=last, coverage=coverage,
-                    generation=self.source.generation)
+        return self._call("inventory", after=after, audit=audit)
 
     def sample(self, tid, checkpoint=None):
-        scope = self.scope()
-        metadata = self.source.history.metadata(tid)
-        if not metadata:
-            raise NodeProtocolError('NATIVE_THREAD_NOT_FOUND', 'Exact native thread absent')
-        if not scope.allows_project(metadata['cwd']):
-            raise NodeProtocolError('PROJECT_SCOPE_DENIED', 'Native project outside read grants')
-        state = {}
-        binding = self.binding(tid, scope)
-        if checkpoint is not None:
-            try:
-                if not isinstance(checkpoint, str) or len(checkpoint) > 12000:
-                    raise ValueError()
-                wire, signature = checkpoint.split('.')
-                raw = base64.urlsafe_b64decode(wire + '=' * (-len(wire) % 4))
-                if not hmac.compare_digest(hmac.new(self.secret, raw, hashlib.sha256).hexdigest(), signature):
-                    raise ValueError()
-                saved = json.loads(raw)
-                if saved['binding'] != binding or saved['expires'] < time.time():
-                    raise ValueError()
-                state = saved['state']
-                if not isinstance(state, dict):
-                    raise ValueError()
-            except (ValueError, KeyError, TypeError):
-                raise NodeProtocolError('NATIVE_COLLECTOR_CURSOR_RESET', 'Native checkpoint must be reread') from None
-        events, state = self.source.sample(metadata, state)
-        if self.scope().as_dict() != scope.as_dict() or self.binding(tid, scope) != binding:
-            raise NodeProtocolError('SHARING_SCOPE_DENIED', 'Native source or grants changed during read')
-        for event in events:
-            event['title'] = event['title'][:256]
-        raw = compact(dict(binding=binding, state=state, expires=time.time() + 3600)).encode()
-        checkpoint = base64.urlsafe_b64encode(raw).decode().rstrip('=') + '.' + hmac.new(
-            self.secret, raw, hashlib.sha256).hexdigest()
-        if len(checkpoint) > 12000:
-            raise NodeProtocolError('NATIVE_HISTORY_BUDGET_EXHAUSTED', 'Native checkpoint budget exceeded')
-        return dict(read_only=True, thread_id=tid, project=metadata['cwd'], events=events,
-                    checkpoint=checkpoint, user_message_observed=bool(state.get('user_message_observed')))
+        return self._call("sample", tid=tid, checkpoint=checkpoint)
+
+    def request(self, route, query):
+        return self._call("route", route=route, query=query)
 
 
-class RemoteNativeSource:
-    """Fixed loopback read endpoint; no caller-controlled URL, path or native root."""
+class RemoteNativeSource(_Client):
     def __init__(self, credential_file):
+        super().__init__()
         self.credential_file = Path(credential_file)
-        self.unavailable_until = 0
 
     @classmethod
     def from_env(cls):
-        value = os.environ.get('CLINX_NATIVE_OBSERVER_TOKEN_FILE')
+        value = os.environ.get("CLINX_NATIVE_OBSERVER_TOKEN_FILE")
         return cls(value) if value else None
 
-    def read(self, path, params=None):
-        # One failed source must not multiply its timeout by the number of
-        # sessions in a collector tick and starve the managed projection.
-        if time.monotonic() < self.unavailable_until:
-            raise NodeProtocolError('NATIVE_OBSERVER_UNAVAILABLE', 'Native read unavailable')
+    def _callback(self, event):
+        operation, args = event["operation"], event["arguments"]
+        if operation == "native_observer.read":
+            return self.read(args["path"], args["params"])
+        if operation != "native_observer.http":
+            raise NodeProtocolError(
+                "NATIVE_OBSERVER_CALLBACK_INVALID", "Unexpected HTTP callback"
+            )
         try:
             token = self.credential_file.read_text().strip()
-            request = Request('http://127.0.0.1:8766/v2/native-collector/' + path + '?' +
-                              urlencode(params or {}), headers={'Authorization': 'Bearer ' + token})
+            request = Request(
+                "http://127.0.0.1:8766/v2/native-collector/"
+                + args["path"]
+                + "?"
+                + urlencode(args["params"] or {}),
+                headers={"Authorization": "Bearer " + token},
+            )
             with urlopen(request, timeout=8) as response:
-                data = response.read(1024 * 1024 + 1)
-            if len(data) > 1024 * 1024:
-                raise ValueError()
-            result = json.loads(data)
-            if not isinstance(result, dict) or result.get('read_only') is not True:
-                raise ValueError()
-            return result
+                return dict(
+                    status=200, body=response.read(1024 * 1024 + 1).decode("utf-8")
+                )
         except HTTPError as exc:
-            code = 'NATIVE_OBSERVER_UNAVAILABLE'
             try:
-                payload = json.loads(exc.read(4096))
-                value = payload.get('error') if isinstance(payload, dict) else None
-                if value in {'NATIVE_COLLECTOR_CURSOR_RESET', 'SHARING_SCOPE_DENIED',
-                             'PROJECT_SCOPE_DENIED', 'NATIVE_THREAD_NOT_FOUND'}:
-                    code = value
+                return dict(status=exc.code, body=exc.read(4096).decode("utf-8"))
             except (ValueError, OSError):
-                pass
-            if code == 'NATIVE_OBSERVER_UNAVAILABLE':
-                self.unavailable_until = time.monotonic() + 10
-            raise NodeProtocolError(code, 'Native read refused') from None
+                return dict(transport_error=True)
         except (OSError, URLError, ValueError):
-            self.unavailable_until = time.monotonic() + 10
-            raise NodeProtocolError('NATIVE_OBSERVER_UNAVAILABLE', 'Native read unavailable') from None
+            return dict(transport_error=True)
+
+    def read(self, path, params=None):
+        return self._call("remote_read", path=path, params=params or {})
 
     def inventory(self, scope, after=None, *, audit=False):
-        params = dict(audit=int(audit))
-        if after is None and not audit:
-            # New work is discovered immediately; the independent rotating
-            # audit backfills all older indexed sessions in bounded pages.
-            after = [max(0, int(time.time()) - 300), '']
-        if after is not None:
-            params['after'] = compact(after)
-        result = self.read('inventory', params)
-        rows = result['rows']
-        if not isinstance(rows, list) or len(rows) > 16:
-            raise NodeProtocolError('INVALID_OBSERVATION', 'Native inventory budget exceeded')
-        # Both the source user's grant and the Centre's current grant apply.
-        return [r for r in rows if scope.allows_project(r['cwd'])], result['after'], result['coverage']
+        return self._call(
+            "remote_inventory", scope=scope.as_dict(), after=after, audit=audit
+        )
 
     def native_turns(self, metadata, state):
-        tid = metadata['id']
-        from clinx.contracts.thread_identity import parse_selector
-        parse_selector(thread_id=tid)
-        params = {'checkpoint': state['native_checkpoint']} if state.get('native_checkpoint') else {}
-        try:
-            result = self.read('sample/' + tid, params)
-        except NodeProtocolError as exc:
-            if exc.code != 'NATIVE_COLLECTOR_CURSOR_RESET' or not params:
-                raise
-            # A restarted read service has a new cursor key. Re-read only; never
-            # infer a completion, resend input, or reconstruct native history.
-            result = self.read('sample/' + tid)
-        if result.get('thread_id') != tid or result.get('project') != metadata['cwd']:
-            raise NodeProtocolError('NATIVE_OBSERVATION_IDENTITY_CONFLICT', 'Native read identity differs')
-        events = result['events']
-        if not isinstance(events, list) or not 1 <= len(events) <= 72:
-            raise NodeProtocolError('INVALID_OBSERVATION', 'Native turn budget exceeded')
-        if any(e.get('native_thread_id') != tid or e.get('project') != metadata['cwd']
-               or e.get('task_ref') is not None or e.get('binding_evidence') != 'THREAD_UNBOUND'
-               or e.get('turn', {}).get('execution_ref') is not None for e in events):
-            raise NodeProtocolError('NATIVE_OBSERVATION_IDENTITY_CONFLICT', 'Native observation cannot assert authority')
-        state['native_checkpoint'] = result['checkpoint']
-        state['user_message_observed'] = result.get('user_message_observed') is True
-        return [e['turn'] for e in events], events[-1]['coverage']
+        turns, coverage, updated = self._call(
+            "remote_turns", metadata=metadata, state=state
+        )
+        state.clear()
+        state.update(updated)
+        return turns, coverage

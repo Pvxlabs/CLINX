@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hmac
 import json
-import secrets
+import queue
 import threading
 import time
 from typing import Any, Callable, Protocol
@@ -95,93 +95,82 @@ def verify_confirmation(key: bytes, role: str, received: bytes) -> None:
         raise DeviceError("PAIRING_FAILED")
 
 
+_window_disposals = queue.SimpleQueue()
+_window_cleanup_lock = threading.Lock()
+_window_cleanup_started = False
+
+
+def _drain_window_disposals():
+    from .identity import _state_call
+    while True:
+        window = _window_disposals.get()
+        try:
+            _state_call('window.delete', window=window)
+        except Exception:
+            # Best-effort disposal only; an unknown delete is never replayed.
+            pass
+
+
+def _start_window_cleanup():
+    global _window_cleanup_started
+    with _window_cleanup_lock:
+        if not _window_cleanup_started:
+            threading.Thread(target=_drain_window_disposals,
+                             name='clinx-pairing-cleanup', daemon=True).start()
+            _window_cleanup_started = True
+
+
 class PairingWindow:
+    """Private Rust-owned window; PAKE stays in the existing backend."""
     lifetime = 60.0
     max_failures = 3
 
     def __init__(self, clock: Callable[[], float] = time.monotonic):
+        from .identity import _state_call
+        import weakref
         self.clock = clock
-        self._lock = threading.Lock()
-        self._code: str | None = None
-        self._id: str | None = None
-        self._expires = 0.0
-        self._next_attempt = 0.0
-        self._next_open = 0.0
-        self._busy: str | None = None
-        self.failures = 0
-        self._timer: threading.Timer | None = None
+        _start_window_cleanup()
+        self._window = _state_call('window.create')
+        # GC may run while Worker.call holds its non-reentrant lock. The
+        # finalizer only uses CPython's reentrant queue put; RPC happens on the
+        # cleanup thread after the interrupted call can release its locks.
+        self._finalizer = weakref.finalize(self, _window_disposals.put, self._window)
+
+    def _call(self, operation, **arguments):
+        from .identity import _state_call
+        now = None if self.clock is time.monotonic else self.clock()
+        return _state_call('window.' + operation, window=self._window, now=now, **arguments)
+
+    @property
+    def failures(self):
+        return self._call('snapshot')['failures']
+
+    @property
+    def _code(self):
+        return self._call('snapshot')['code']
+
+    @property
+    def _id(self):
+        return self._call('snapshot')['id']
 
     def close(self) -> None:
-        with self._lock:
-            self._code = None
-            self._id = None
-            if self._timer:
-                self._timer.cancel()
-                self._timer = None
+        self._call('close')
 
     def _expire(self, window_id: str | None) -> None:
-        with self._lock:
-            if self._id == window_id:
-                self._code = None
-                self._id = None
+        self._call('expire', id=window_id)
 
     def open(self) -> str:
-        with self._lock:
-            now = self.clock()
-            if now < self._next_open or self._busy:
-                raise DeviceError("PAIRING_RATE_LIMITED")
-            self._code = f"{secrets.randbelow(10000):04d}"
-            self._id = secrets.token_hex(16)
-            self._expires = now + self.lifetime
-            self._next_open = self._expires
-            self._next_attempt = now
-            self.failures = 0
-            if self._timer:
-                self._timer.cancel()
-            self._timer = threading.Timer(self.lifetime, self._expire, (self._id,))
-            self._timer.daemon = True
-            self._timer.start()
-            return self._code
+        return self._call('open', lifetime=self.lifetime)
 
     def _active(self) -> None:
-        if self.clock() >= self._expires:
-            self._code = None
-            self._id = None
-        if self._code is None:
-            raise DeviceError("PAIRING_CLOSED")
+        self._call('active')
 
     def reserve(self) -> tuple[str, str, str]:
-        with self._lock:
-            self._active()
-            if self._busy:
-                raise DeviceError("PAIRING_BUSY")
-            if self.clock() < self._next_attempt:
-                raise DeviceError("PAIRING_RATE_LIMITED")
-            self._busy = secrets.token_hex(16)
-            self._next_attempt = self.clock() + 1.0
-            assert self._id is not None and self._code is not None
-            return self._busy, self._id, self._code
+        return tuple(self._call('reserve'))
 
-    def complete(
-        self, reservation: str, *, success: bool, commit: Callable[[], None] | None = None
-    ) -> None:
-        with self._lock:
-            if self._busy != reservation:
-                raise DeviceError("PAIRING_REPLAY")
-            self._busy = None
-            self._active()
-            if success:
-                # Consume before durable trust write. I/O failure cannot reopen
-                # a consumed secret. Restart never restores any pairing window.
-                self._code = None
-                self._id = None
-                if commit:
-                    commit()
-            else:
-                self.failures += 1
-                if self.failures >= self.max_failures:
-                    self._code = None
-                    self._id = None
+    def complete(self, reservation: str, *, success: bool, commit: Callable[[], None] | None = None) -> None:
+        self._call('complete', reservation=reservation, success=success,
+                   commit=commit is not None, _commit=commit, max_failures=self.max_failures)
 
 
 # Exact protocol selection, never negotiation or implicit fallback.

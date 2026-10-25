@@ -9,16 +9,15 @@ import os
 import signal
 import sys
 import threading
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from clinx.discovery.identity import DeviceError, NodeIdentity, PrivateStore, TrustedPeerStore  # noqa: E402
-from clinx.provider.native_history import NativeHistory, ThreadLookupError  # noqa: E402
+from clinx.provider.native_history import NativeHistory  # noqa: E402
 from clinx.nodes.rust_node_adapter import RustNodeExecutionAdapter  # noqa: E402
-from clinx.nodes.node_protocol import NodeAuthorizationStore, NodeRecord, NodeRegistry, NodeRPCServer, NodeService, SharingScope  # noqa: E402
+from clinx.nodes.node_protocol import NodeProtocolError, NodeAuthorizationStore, NodeRecord, NodeRegistry, NodeRPCServer, NodeService, SharingScope  # noqa: E402
 from clinx.nodes.node_runtime import NodeRegistrationClient, PairedTLS, endpoint_address, node_request_handler  # noqa: E402
 
 
@@ -100,35 +99,30 @@ def main() -> int:
         native_history = NativeHistory(Path(os.environ.get("CLINX_NATIVE_HOME", str(Path.home() / ".codex"))))
 
         def read_thread(thread_id: str, **kwargs: object) -> dict[str, object]:
+            from clinx.nodes.network_worker import Worker
+            from clinx.authority.rust_authority import RustAuthorityError
+            failures=[]
+            def callback(event):
+                try:
+                    if event['operation']=='helper.scopes':
+                        current=approvals.get(centre_id)
+                        return dict(local=current.as_dict() if current else None,
+                            active=active_scope[0].as_dict() if active_scope[0] else None)
+                    if event['operation']=='helper.context':
+                        return execution.context(**event['arguments'])
+                    raise RustAuthorityError('NODE_CALLBACK_INVALID')
+                except Exception as exc:
+                    failures.append(exc)
+                    raise
+            worker=Worker(callback=callback)
             try:
-                metadata = native_history.metadata(thread_id)
-                if metadata is None:
-                    return {"queried_thread_id": thread_id, "lookup_status": "THREAD_NOT_FOUND",
-                            "provider_existence": "NOT_FOUND", "absence_scope": "CURRENT_USER_NATIVE_INDEX",
-                            "context_status": "CONTEXT_UNAVAILABLE"}
-                from clinx.nodes.node_runtime import intersect_scope
-                current_scope = intersect_scope(approvals.get(centre_id), active_scope[0])
-                if current_scope is None or not current_scope.allows_project(metadata.get("cwd", "")):
-                    return {"error_code": "PROJECT_SCOPE_DENIED", "read_only": True}
-                if execution is not None:
-                    return execution.context(thread_id=thread_id, host=record.node_id, **kwargs)
-                context = native_history.context(
-                    thread_id, record.node_id, metadata, int(kwargs.get("recent_turns", 8)),
-                    int(kwargs.get("max_bytes", 32000)), cursor=kwargs.get("cursor"),
-                )
-                return {"queried_thread_id": thread_id, "lookup_status": "THREAD_UNBOUND",
-                        "binding_status": "NOT_FOUND", "provider_existence": "CONFIRMED", "host": record.node_id,
-                        "native_thread": {"thread_id": thread_id, "cwd": metadata.get("cwd"),
-                            "history_mode": metadata.get("history_mode"), "archived": metadata.get("archived"),
-                            "created_at": metadata.get("created_at"), "updated_at": metadata.get("updated_at"),
-                            "name": metadata.get("name") or metadata.get("title") or ""},
-                        "native_status": native_history.status(thread_id, metadata),
-                        "provider_observation": {"state": "UNKNOWN", "reason": "Live provider observation is separate from read-only history"},
-                        **context}
-            except ThreadLookupError as exc:
-                return {"queried_thread_id": thread_id, "lookup_status": exc.code, "error_code": exc.code,
-                        "unavailable_reason": exc.reason, "provider_existence": "UNKNOWN",
-                        "context_status": "CONTEXT_UNAVAILABLE"}
+                return worker.call('router.helper_read',native_home=str(native_history.root),
+                    node_id=record.node_id,thread_id=thread_id,kwargs=kwargs,execution=execution is not None)
+            except RustAuthorityError as exc:
+                if failures: raise failures[-1]
+                raise NodeProtocolError(str(exc),'Helper native read rejected') from None
+            finally:
+                worker.close()
 
         active_scope: list[SharingScope | None] = [None]
         registration = NodeRegistrationClient(tls, centre_id, centre_endpoint)
@@ -180,58 +174,45 @@ def main() -> int:
             configured_observation_source(native_history.root, record.node_id, config),
             identity, registration, lambda: approvals.get(centre_id), actual_port, capabilities,
             previous_stream_id=config.get("observation_previous_stream"))
-        next_collection = 0.0
+        from clinx.nodes.network_worker import Worker
+        def supervise(event):
+            operation,args=event['operation'],event['arguments']
+            try:
+                if operation=='helper.approval':
+                    current=approvals.get(centre_id)
+                    result=current.as_dict() if current else None
+                elif operation=='helper.active':
+                    active_scope[0]=SharingScope(**args) if args else None
+                    result=None
+                elif operation=='helper.register':
+                    method=registration.heartbeat if args['heartbeat'] else registration.register
+                    result=method(identity,SharingScope(**args['scope']),port=actual_port,capabilities=tuple(capabilities))
+                elif operation=='helper.state':
+                    service.set_state(**args)
+                    result=None
+                elif operation=='helper.health':
+                    write_health(**args)
+                    result=None
+                elif operation=='helper.collect':
+                    result=dict(delay=collector.tick(),status=collector.status,sampled=collector.sampled)
+                else:
+                    raise ValueError('NODE_CALLBACK_INVALID')
+                return dict(result=result)
+            except Exception as exc:
+                return dict(error_type=type(exc).__name__)
+        supervisor=Worker(callback=supervise)
         stop_event = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: stop_event.set())
         signal.signal(signal.SIGINT, lambda *_: stop_event.set())
-        heartbeat_seconds = 15
-        next_attempt = 0.0
         try:
             while not stop_event.is_set():
-                now = time.monotonic()
-                if now >= next_attempt:
-                    try:
-                        current = approvals.get(centre_id)
-                        if current is None or current.revoked or not (current.read_sessions or current.execute_tasks):
-                            active_scope[0] = None
-                            if current is not None:
-                                registration.heartbeat(identity, current, port=actual_port, capabilities=tuple(capabilities))
-                            write_health("blocked", "SHARING_AUTHORIZATION_REVOKED")
-                        else:
-                            reply = (registration.register(identity, current, port=actual_port, capabilities=tuple(capabilities))
-                                     if active_scope[0] is None else
-                                     registration.heartbeat(identity, current, port=actual_port, capabilities=tuple(capabilities)))
-                            if not reply.get("registered"):
-                                active_scope[0] = None
-                                service.set_state("OFFLINE")
-                                write_health("offline", reply.get("error_code", "REGISTRATION_REJECTED"))
-                            else:
-                                raw_scope = reply.get("scope")
-                                if not isinstance(raw_scope, dict):
-                                    raise DeviceError("INVALID_CENTRE_SCOPE")
-                                active_scope[0] = SharingScope(**{key: value for key, value in raw_scope.items() if key in SharingScope.__dataclass_fields__})
-                                service.set_state("ONLINE", last_seen=reply.get("observed_at"))
-                                heartbeat_seconds = max(3, int(reply.get("heartbeat_seconds", 15)))
-                                write_health("running", centre_id=centre_id, node_id=identity.public["node_id"],
-                                             endpoint=f"tls://{server.address[0]}:{actual_port}", capabilities=capabilities)
-                    except Exception as exc:
-                        active_scope[0] = None
-                        service.set_state("OFFLINE")
-                        write_health("offline", type(exc).__name__)
-                    next_attempt = time.monotonic() + min(60, heartbeat_seconds)
-                if now >= next_collection:
-                    try:
-                        delay = collector.tick()
-                        write_health("running" if collector.status in {"INDEXED", "HISTORY_BACKFILL"} else "degraded",
-                                     collector.status, node_id=record.node_id, sampled=collector.sampled)
-                    except Exception as exc:
-                        delay = 2
-                        write_health("degraded", "OBSERVATION_READ_FAILED", error_type=type(exc).__name__)
-                    next_collection = time.monotonic() + delay
+                supervisor.call('router.helper_tick',centre_id=centre_id,node_id=record.node_id,
+                    endpoint=f'tls://{server.address[0]}:{actual_port}',capabilities=capabilities)
                 stop_event.wait(0.25)
         finally:
             active_scope[0] = None
             write_health("stopped")
+            supervisor.close()
             collector.close()
             server.close()
             registry.close()

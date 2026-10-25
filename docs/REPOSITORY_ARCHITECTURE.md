@@ -11,9 +11,11 @@ Node 的精确 Provider 请求校验、协议调用和 workspace probe 也已迁
 Node 的目标校验、canonical handoff、prepare/start/cancel/context 请求映射已由 Rust `clinx-node` 接管；
 Node 的 TCP/mTLS、现有配对身份校验、Centre/Owner 授权交集、反向 Authority 路由、
 Provider 分块/IPC、Node Registry 持久化及请求去重/恢复也已由 Rust 接管。
-原生历史、观察目录存储/查询/去重与游标，以及 Collector 队列/checkpoint/ACK 恢复已迁 Rust；观察 HTTP/codec、
-Discovery 配对建立与 mDNS 及入口 supervision 仍有 Python 运行时。
-本轮边界和验证见 [Rust 历史与观察目录迁移](RUST_OBSERVATION_MIGRATION.md)。
+原生历史、观察目录与 Collector 队列/checkpoint/ACK 恢复已迁 Rust；Provider Unix RPC/事件/证据判定、
+Node 观察路由、Helper 心跳调度、Observer 查询投影、信任记录事务与配对窗口也由 Rust 承担。
+Python 仍承载平台与配置装配、HTTP/mDNS/初次 enrollment IO、公开对象兼容和部分进程监督 IO。
+当前边界和验证见 [客户端运行时迁移](RUST_CLIENT_RUNTIME_MIGRATION.md)；
+每组 Python 的实际用途见 [Python 运行边界](PYTHON_RUNTIME_BOUNDARIES.md)。
 
 ## 布局
 
@@ -22,15 +24,15 @@ Discovery 配对建立与 mDNS 及入口 supervision 仍有 Python 运行时。
 | `kernel/` | Rust Authority、原生与 Host 执行/Provider worker、状态/持久化/幂等/恢复、MCP stdio/API 与精确上下文读取、stdio byte relay、Node Provider exchange/workspace probe、Node execution API、paired Node TLS/Centre/Owner、Provider gateway/chunks、Node routing registry/ledger | ACTIVE_RUNTIME；长期核心 |
 | `native/opaque_pairing/` | Rust OPAQUE 原生配对依赖 | ACTIVE_RUNTIME |
 | `MonitorApp/` | Swift macOS UI、App 构建入口、Helper shell launcher | ACTIVE_RUNTIME；UI 留在 Swift |
-| `clinx/contracts/` | 公共配置、身份选择、策略与响应契约 | ACTIVE_RUNTIME；运行职责待迁 Rust |
+| `clinx/contracts/` | TOML 配置、Python DTO/错误类型；身份/策略规范化与兼容校验委托 Rust | ACTIVE_RUNTIME；配置与公开对象兼容 |
 | `clinx/authority/` | 当前 Python IPC/配对请求转发、兼容 API 与只读 Provider 协议客户端 | ACTIVE_RUNTIME；业务请求选择与投影已迁 Rust |
 | `clinx/mcp/` | 观察/显式维护用兼容 codec、Rust CLI launcher、共享公开 schema 数据 | 观察 codec 仍 ACTIVE_RUNTIME；正常业务入口已迁 Rust |
-| `clinx/provider/` | Codex 协议客户端、live-writer 观察；原生历史接口委托 Rust | ACTIVE_RUNTIME；剩余协议客户端与 live-writer 判断待迁 Rust |
+| `clinx/provider/` | Codex 公开协议 API 与平台 IO；Unix RPC、事件、live-writer/精确证据判断由 Rust 实现 | ACTIVE_RUNTIME；仍含资格/维护用旧传输公开 API |
 | `clinx/host/` | 安装配置的 workflow schema；冻结的操作目录参考仅用于资格验证 | 配置解析仍 ACTIVE_RUNTIME；执行、投递、恢复已迁 Rust |
-| `clinx/transport/` | Tunnel supervisor | ACTIVE_RUNTIME；待迁 Rust；Python Dispatcher 已删除 |
-| `clinx/nodes/` | Rust Node/Registry/Provider 的私有协议客户端；观察路由、cursor 投影和 Helper/注册 supervision 仍在 Python | ACTIVE_RUNTIME；剩余观察与入口运行职责待迁 Rust |
-| `clinx/discovery/` | 身份建立、OPAQUE enrollment、mDNS/LAN discovery 与 Helper 设置 | ACTIVE_RUNTIME；配对建立/discovery 待迁 Rust；已配对 Node 的传输校验由 Rust 读取同一状态 |
-| `clinx/monitor/` | Observer HTTP/codec、live-writer 观察及身份/协议装配；Collector、采样合并、目录和 association 委托 Rust | ACTIVE_RUNTIME；剩余 HTTP/观察协议职责待迁 Rust |
+| `clinx/transport/` | Tunnel 进程/HTTP IO；恢复判定和持久回执由 Rust 实现 | ACTIVE_RUNTIME；owned-process drain/信号 IO 仍为 Python |
+| `clinx/nodes/` | Rust Node/Registry/Provider 客户端、配置与 IO 装配 | ACTIVE_RUNTIME；路由/cursor/read 投影/Helper 注册心跳调度由 Rust 实现 |
+| `clinx/discovery/` | 本机密钥与证书建立、OPAQUE enrollment/mDNS IO 与 Helper 设置 | ACTIVE_RUNTIME；信任事务/窗口/候选索引规则由 Rust 实现 |
+| `clinx/monitor/` | Observer HTTP/codec 与身份/协议装配；历史/查询/精确证据/checkpoint/投影委托 Rust | ACTIVE_RUNTIME；HTTP 路由和采样探针/cache 装配仍为 Python |
 | `clinx/compat/`（已删除） | 旧 Mac Bridge/Registry/M9 及 completion/recovery/outbox | DEAD；由 Rust Authority 事务与 native Transport 替代 |
 | `tools/build/` | 共用运行源码清单处理与增量 App 拷贝 | DEVOPS |
 | `tools/maintenance/` | 显式维护工具 | DEVOPS；不进入运行包 |
@@ -67,7 +69,9 @@ Monitor profile 同样禁止 COMPAT；新增文件不会通过目录 glob 自动
 `node_network=RUST_NODE_NETWORK_V1`，并包含 `clinx-node`。打包时实际执行
 `clinx-node --network-contract` 和 `--observation-contract` 校验二进制；新清单必须有
 `observation_runtime=RUST_OBSERVATION_V1`，不能将新客户端与旧 Node binary 混用。
-Monitor 源码 manifest 同样声明该契约和所需的两个 Rust Helper。`architecture/runtime-data.json`
+客户端进一步要求 `client_runtime=RUST_CLIENT_RUNTIME_V1` 和实测
+`clinx-node --client-runtime-contract`；同一 marker 覆盖 Provider、Observer、Discovery、
+Node router、身份兼容契约及 Tunnel policy。Monitor 源码 manifest 同样声明这些契约和所需的两个 Rust Helper。`architecture/runtime-data.json`
 显式声明共享 schema 数据，Rust 在编译时嵌入，Python 观察/维护 codec 从包内读取。
 新清单还须声明 `provider_exchange=RUST_PROVIDER_V1`、`workspace_observer=RUST_PROVIDER_V1`，
 Authority 从 release 同级的 `clinx-provider` 执行观察。Mac 构建用本机 Rust toolchain 编译
@@ -83,7 +87,7 @@ Authority 从 release 同级的 `clinx-provider` 执行观察。Mac 构建用本
 
 ```sh
 # 从源码根目录运行；配置和 socket 必须属于指定的开发/资格环境。
-python -m tools.build.mcp_runtime_config --config <toml> --output <new-mcp-json>
+python -m tools.build.mcp_runtime_config --node-binary <tested-clinx-node> --config <toml> --output <new-mcp-json>
 clinx-mcp --config <new-mcp-json> --stdio
 # 安装/构建时编译配置，运行时直接启动 Rust；以下均使用独立开发环境。
 python -m tools.build.host_runtime_config --config <config> --output <new-host-json>
@@ -151,10 +155,13 @@ Python `NativeHistory`、`ObservationWriter` 和 `ObservationDirectory` 使用�
 Collector 的 spool/outbox、调度决策、checkpoint/ACK 事务、采样合并及历史 canonical SQL
 已迁 Rust，见 [Collector 迁移](RUST_COLLECTOR_MIGRATION.md)。
 
-**仍是 Python 运行时**：Provider live-writer probe/cache；Discovery/mDNS、OPAQUE enrollment 与身份文件装配；
-Observer HTTP/MCP 观察 codec、Provider 子进程/协议客户端、tunnel 监督及配置/IPC 装配。
-Collector 队列与 Task Authority 的 metadata outbox 分属观察与任务权威；两者均由 Rust 持久化，
-Python 仅转发现有协议。外层进程监督与 tick 定时唤醒仍待随入口迁移。
+**仍是 Python 运行时**：公开客户端 DTO/API 与错误编解码；TOML 和已安装配置读取；
+Observer HTTP 路由、mDNS IO、初次 OPAQUE enrollment 的 Python TLS/协议编排；
+本机密钥/证书 bootstrap、Collector live probe/cache 装配、Centre 外层 tick 及 Tunnel
+owned-process/信号 IO。Provider 子进程/SSH 资格 API 仍有 Python 兼容实现，未以新名称隐藏。
+Discovery 密码算法继续用既有 Rust OPAQUE 原生库；这不等于 enrollment 网络 IO 已全迁 Rust。
+具体逐文件职责、发布范围和剩余收敛项见 [Python 运行边界](PYTHON_RUNTIME_BOUNDARIES.md)。
+Collector 队列和 Task Authority metadata outbox 分别由 Rust 持久化；Python 没有第二套任务状态。
 `rust_integration.py` 已删除重复业务判断，保留原接口委托 Rust、对象视图和只读 Provider 协议回调；
 正常 Helper 不调用该兼容接口，直接使用 Rust NativeReads。它与配对转发客户端仍为 ACTIVE_RUNTIME，不能标为开发工具。
 本轮协议、原 Python 行为向量、完整套件前后对照和 Mac 验证边界见
@@ -163,7 +170,7 @@ Python 仅转发现有协议。外层进程监督与 tick 定时唤醒仍待随�
 Python 的 `host_contract.py` 仅作为冻结资格参考保留，不进入 Rust release 或 Helper 包。
 
 `clinx-provider` 已接管 Node 对精确 thread/turn/execution/prompt/cwd 的请求校验与
-Provider RPC；配对 mTLS 和 chunk 去重仍在 Python `NodeProviderRelay`，不是纯构建工具。
+Provider RPC；配对 mTLS 和 chunk 去重已由 Rust 接管，Python `NodeProviderRelay` 保留既有协议对象接口。
 `clinx/provider/rust_workspace_probe.py` 已删除，固定 Git 元数据命令及 UID 证据校验在
 `kernel/src/workspace_probe.rs`。隔离回归、发布包验证及 Mac 未验证边界见
 [Rust Provider/workspace 迁移报告](RUST_PROVIDER_RUNTIME_MIGRATION.md)。

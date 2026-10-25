@@ -76,6 +76,8 @@ def main():
         raise RuntimeError('QUALIFIED_RUST_PROVIDER_REQUIRED')
     if manifest.get('observation_runtime') != 'RUST_OBSERVATION_V1':
         raise RuntimeError('QUALIFIED_RUST_OBSERVATION_REQUIRED')
+    if manifest.get('client_runtime') != 'RUST_CLIENT_RUNTIME_V1':
+        raise RuntimeError('QUALIFIED_RUST_CLIENT_RUNTIME_REQUIRED')
     if manifest.get('collector_runtime') != 'RUST_COLLECTOR_V1':
         raise RuntimeError('QUALIFIED_RUST_COLLECTOR_REQUIRED')
     if manifest.get('node_network') != 'RUST_NODE_NETWORK_V1':
@@ -98,6 +100,8 @@ def main():
             or hashlib.sha256(path.read_bytes()).hexdigest() != digest
         ):
             raise RuntimeError("RELEASE_CONTENT_MISMATCH:" + file)
+    # Config identity codecs now use the exact verified Rust release.
+    os.environ["CLINX_NODE_BINARY"] = str(release / "clinx-node")
     cfgdir = ROOT / "config"
     cfgdir.mkdir(mode=0o755, exist_ok=True)
     worker = pwd.getpwuid(args.operator_home.stat().st_uid)

@@ -1,5 +1,4 @@
 """Real paired mTLS reverse route; gateway supplies identity, Rust owns state."""
-import json
 from types import SimpleNamespace
 
 import pytest

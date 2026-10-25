@@ -1,5 +1,9 @@
 //! Helper request API and paired Node network process. Never a task-state writer.
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--client-runtime-contract") {
+        println!("RUST_CLIENT_RUNTIME_V1");
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("--collector-contract") {
         println!("RUST_COLLECTOR_V1");
         return;

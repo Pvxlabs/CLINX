@@ -23,7 +23,7 @@ pub fn now() -> String {
         .format("%Y-%m-%dT%H:%M:%S%.6f+00:00")
         .to_string()
 }
-fn check(path: &Path, directory: bool) -> Result<()> {
+pub(crate) fn check(path: &Path, directory: bool) -> Result<()> {
     let m = path.symlink_metadata().map_err(|_| "STATE_UNAVAILABLE")?;
     if m.uid() != rustix::process::getuid().as_raw()
         || m.mode() & 0o077 != 0
@@ -33,7 +33,7 @@ fn check(path: &Path, directory: bool) -> Result<()> {
     }
     Ok(())
 }
-fn lock(root: &Path) -> Result<File> {
+pub(crate) fn lock(root: &Path) -> Result<File> {
     if !root.is_absolute() {
         return Err("UNSAFE_STATE_DIRECTORY".into());
     }
@@ -56,7 +56,7 @@ fn lock(root: &Path) -> Result<File> {
         .map_err(|_| "STATE_LOCK_UNAVAILABLE")?;
     Ok(file)
 }
-fn read_unlocked(root: &Path, name: &str) -> Result<Option<Value>> {
+pub(crate) fn read_unlocked(root: &Path, name: &str) -> Result<Option<Value>> {
     let path = root.join(name);
     if !path.try_exists().map_err(|_| "STATE_UNAVAILABLE")? && path.symlink_metadata().is_err() {
         return Ok(None);
@@ -96,7 +96,7 @@ pub fn read_state(root: &Path, name: &str) -> Result<Option<Value>> {
     let _lock = lock(root)?;
     read_unlocked(root, name)
 }
-fn cert(pem: &str) -> Result<CertificateDer<'static>> {
+pub(crate) fn cert(pem: &str) -> Result<CertificateDer<'static>> {
     let all = rustls_pemfile::certs(&mut pem.as_bytes())
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|_| "INVALID_CERTIFICATE")?;
@@ -105,7 +105,7 @@ fn cert(pem: &str) -> Result<CertificateDer<'static>> {
     }
     Ok(all[0].clone())
 }
-fn public(der: &[u8]) -> Result<(String, String)> {
+pub(crate) fn public(der: &[u8]) -> Result<(String, String)> {
     let (rest, c) = X509Certificate::from_der(der).map_err(|_| "INVALID_CERTIFICATE")?;
     if !rest.is_empty()
         || c.public_key().algorithm.algorithm.to_id_string() != "1.3.101.112"
@@ -121,7 +121,7 @@ fn public(der: &[u8]) -> Result<(String, String)> {
     let key = &c.public_key().subject_public_key.data;
     Ok((STANDARD.encode(key), format!("{:x}", Sha256::digest(key))))
 }
-fn validate_identity(p: &Value) -> Result<()> {
+pub(crate) fn validate_identity(p: &Value) -> Result<()> {
     let id = p["node_id"].as_str().ok_or("INVALID_NODE_ID")?;
     if id.is_empty()
         || id.len() > 63

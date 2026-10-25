@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from clinx.contracts.execution_semantics import normalize_host
@@ -32,7 +33,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--node-binary', type=Path, help='Qualified Rust client-runtime binary for identity codecs')
     args = parser.parse_args()
+    if args.node_binary is not None:
+        os.environ["CLINX_NODE_BINARY"] = str(args.node_binary.resolve(strict=True))
     with args.output.open('x') as stream:
         json.dump(compile_config(args.config), stream, indent=2)
         stream.write('\n')

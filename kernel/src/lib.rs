@@ -1636,21 +1636,35 @@ pub mod workspace_probe;
 pub mod node_api;
 pub mod request_pipe;
 
-pub mod node_tls;
 pub mod node_network;
+pub mod node_tls;
 
-pub mod node_scope;
 pub mod node_centre;
-pub mod node_relay;
-pub mod node_paired;
 pub mod node_gateway;
-pub mod node_registry;
-pub mod node_service;
 pub mod node_owner;
+pub mod node_paired;
+pub mod node_registry;
+pub mod node_relay;
+pub mod node_scope;
+pub mod node_service;
 
-pub mod read_projection;
 pub mod native_history;
 pub mod observation;
+pub mod read_projection;
 
 pub mod observation_collector;
 pub mod observation_source;
+
+pub mod native_observer_bridge;
+pub mod node_observation_router;
+pub mod provider_client;
+
+pub mod tunnel_supervisor;
+
+pub mod authority_client;
+
+pub mod execution_contracts;
+
+pub mod discovery_state;
+
+pub mod discovery_index;

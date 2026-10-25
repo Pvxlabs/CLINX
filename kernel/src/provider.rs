@@ -158,23 +158,51 @@ impl Client {
         self.rpc(method, params, Some(events))
     }
     pub fn connect(endpoint: &Path, timeout: Duration) -> Result<Self> {
-        Self::connect_inner(endpoint, timeout, None)
+        Self::connect_inner(endpoint, timeout, None, true)
     }
     /// Metadata observers and the Node relay authenticate the local Provider
     /// before initialize or any application request. This is a local identity,
     /// never a UID asserted by a remote node.
     pub fn connect_checked(endpoint: &Path, timeout: Duration, uid: u32) -> Result<Self> {
-        Self::connect_inner(endpoint, timeout, Some(uid))
+        Self::connect_inner(endpoint, timeout, Some(uid), true)
+    }
+    /// Compatibility client transport. The caller sends its existing initialize
+    /// identity exactly once; connection setup must not invent another client.
+    pub fn connect_uninitialized(endpoint: &Path, timeout: Duration) -> Result<Self> {
+        Self::connect_inner(endpoint, timeout, None, false)
+    }
+    /// Evidence from this exact local socket, never a UID supplied by a node.
+    pub fn local_peer_uid(&self) -> Result<u32> {
+        #[cfg(target_os = "linux")]
+        {
+            Ok(rustix::net::sockopt::socket_peercred(&self.stream)
+                .map_err(|_| "PROVIDER_PEER_IDENTITY_CONFLICT")?
+                .uid
+                .as_raw())
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Err("PROVIDER_PEER_CREDENTIALS_UNAVAILABLE".into())
+        }
     }
     fn connect_inner(
         endpoint: &Path,
         timeout: Duration,
         expected_uid: Option<u32>,
+        initialize: bool,
     ) -> Result<Self> {
         if !endpoint.is_absolute() || timeout.is_zero() {
             return Err("PROVIDER_ENDPOINT_INVALID".into());
         }
-        let stream = UnixStream::connect(endpoint).map_err(|_| "PROVIDER_UNAVAILABLE")?;
+        let stream = crate::native_transport::connect_local(endpoint, timeout).map_err(|e| {
+            if !initialize && e.kind() == std::io::ErrorKind::NotFound {
+                "PROVIDER_SOCKET_NOT_PRESENT"
+            } else if !initialize && e.kind() == std::io::ErrorKind::PermissionDenied {
+                "PROVIDER_SOCKET_PERMISSION_DENIED"
+            } else {
+                "PROVIDER_UNAVAILABLE"
+            }
+        })?;
         if let Some(uid) = expected_uid {
             #[cfg(target_os = "linux")]
             if rustix::net::sockopt::socket_peercred(&stream)
@@ -253,8 +281,10 @@ impl Client {
         if accept != Some(expected.as_str()) || !upgrade || !connection {
             return Err("PROVIDER_HANDSHAKE_INVALID".into());
         }
-        client.request("initialize", json!({"clientInfo":{"name":"clinx-rust-transport","title":"CLINX Rust Transport","version":"1"},"capabilities":{"experimentalApi":true}}))?;
-        client.send(&json!({"method":"initialized"}), Instant::now() + timeout)?;
+        if initialize {
+            client.request("initialize", json!({"clientInfo":{"name":"clinx-rust-transport","title":"CLINX Rust Transport","version":"1"},"capabilities":{"experimentalApi":true}}))?;
+            client.send(&json!({"method":"initialized"}), Instant::now() + timeout)?;
+        }
         Ok(client)
     }
     fn remaining(deadline: Instant) -> Result<Duration> {

@@ -56,7 +56,7 @@ class Worker:
                     raise BrokenPipeError('NODE_WORKER_UNAVAILABLE')
                 view = view[n:]
 
-    def call(self, rpc_method, **arguments):
+    def call(self, rpc_method, *, _wait_timeout=125, **arguments):
         with self.lock:
             self.sequence += 1
             ident = self.sequence
@@ -64,7 +64,7 @@ class Worker:
             self.pending[ident] = future
         try:
             self._send(dict(id=ident, operation=rpc_method, arguments=arguments))
-            return future.result(timeout=125)
+            return future.result(timeout=_wait_timeout)
         finally:
             with self.lock:
                 self.pending.pop(ident, None)

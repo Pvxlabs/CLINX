@@ -23,6 +23,10 @@ struct Worker {
     relay: crate::node_relay::Relay,
     registry: crate::node_registry::Registry,
     collector: crate::observation_collector::Runtime,
+    helper_supervisor: Mutex<crate::node_observation_router::HelperSupervisor>,
+    provider_client: crate::provider_client::Runtime,
+    discovery: crate::discovery_state::Runtime,
+    native_observer: crate::native_observer_bridge::Runtime,
     gateways: Mutex<Vec<crate::node_gateway::Gateway>>,
     replies: Mutex<BTreeMap<u64, mpsc::SyncSender<Value>>>,
 }
@@ -238,10 +242,29 @@ impl Worker {
     }
 }
 pub fn command(operation: &str, a: &Value) -> Result<Value> {
+    if operation.starts_with("discovery_index.") {
+        return crate::discovery_index::invoke(operation, a);
+    }
+    if operation.starts_with("execution_contract.") {
+        return crate::execution_contracts::command(operation, a);
+    }
+    if operation == "authority.request" {
+        return crate::authority_client::request(a);
+    }
+    if operation.starts_with("tunnel.") {
+        return crate::tunnel_supervisor::invoke(operation, a);
+    }
+    if operation.starts_with("cursor.") || matches!(operation, "router.found" | "router.answered") {
+        return crate::node_observation_router::command(operation, a);
+    }
     if operation == "registry.read" {
         return crate::node_registry::Registry::read(a);
     }
-    if operation.starts_with("source.") { return crate::observation_source::invoke(operation,a,|_,_| Err("OBSERVATION_CALLBACK_REQUIRED".into())); }
+    if operation.starts_with("source.") {
+        return crate::observation_source::invoke(operation, a, |_, _| {
+            Err("OBSERVATION_CALLBACK_REQUIRED".into())
+        });
+    }
     if operation.starts_with("history.") {
         return crate::native_history::invoke(operation, a);
     }
@@ -335,8 +358,43 @@ pub fn serve() -> Result<()> {
                 "relay.handle" => worker.relay.handle(&v["arguments"], |context, body| {
                     worker.callback("relay.exchange", json!({"context":context,"body":body}))
                 }),
-                op if op.starts_with("collector.") => worker.collector.invoke(op, &v["arguments"], |op, args| worker.callback(op, args)),
-                op if op.starts_with("source.") => crate::observation_source::invoke(op, &v["arguments"], |op, args| worker.callback(op, args)),
+                op if op.starts_with("collector.") => {
+                    worker
+                        .collector
+                        .invoke(op, &v["arguments"], |op, args| worker.callback(op, args))
+                }
+                op if op.starts_with("source.") => {
+                    crate::observation_source::invoke(op, &v["arguments"], |op, args| {
+                        worker.callback(op, args)
+                    })
+                }
+                "router.helper_tick" => worker
+                    .helper_supervisor
+                    .lock()
+                    .map_err(|_| "HELPER_SUPERVISOR_UNAVAILABLE".to_string())
+                    .and_then(|mut helper| {
+                        helper.tick(&v["arguments"], |op, args| worker.callback(op, args))
+                    }),
+                op if op.starts_with("router.") => {
+                    crate::node_observation_router::handle(op, &v["arguments"], |op, args| {
+                        worker.callback(op, args)
+                    })
+                }
+                op if op.starts_with("native_observer.") => {
+                    worker
+                        .native_observer
+                        .invoke(op, &v["arguments"], |op, args| worker.callback(op, args))
+                }
+                op if op.starts_with("discovery.") => {
+                    worker
+                        .discovery
+                        .invoke(op, &v["arguments"], |op, args| worker.callback(op, args))
+                }
+                op if op.starts_with("provider.client.") => {
+                    worker
+                        .provider_client
+                        .invoke(op, &v["arguments"], |op, args| worker.callback(op, args))
+                }
                 "registry.read" => crate::node_registry::Registry::read(&v["arguments"]),
                 op if op.starts_with("registry.") => worker.registry.invoke(op, &v["arguments"]),
                 op if op.starts_with("observation.") => {

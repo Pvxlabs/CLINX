@@ -59,3 +59,5 @@ MCP 源码启动器只执行 Rust `clinx-mcp-relay`，连接现有 Rust MCP Unix
 部署包、manifest、数据库、回退和证据按各自运行契约保留。
 
 Collector 调用端还要求 `collector_runtime=RUST_COLLECTOR_V1`；构建时实际探测 `clinx-node --collector-contract`，拒绝旧 Node binary。
+
+客户端/Observer/Discovery/监督策略调用端要求 `client_runtime=RUST_CLIENT_RUNTIME_V1`。构建必须实测 `clinx-node --client-runtime-contract`；Tunnel builder 使用 `--node-binary`（或显式 CLINX_NODE_BINARY）打包同一已验证二进制。MCP 配置编译 CLI 同样接受 `--node-binary`，安装工具固定使用已校验 release 的二进制。

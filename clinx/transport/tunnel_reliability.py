@@ -1,4 +1,4 @@
-"""Bounded supervision of an owned Tunnel process, independent of execution authority.
+"""Process/HTTP compatibility IO for the Rust Tunnel recovery policy and receipts.
 
 No task DB, Provider connection, systemctl call, RPC retry or payload journal lives here.
 This is an opt-in launcher; importing it or running the existing health check is read-only.
@@ -12,11 +12,10 @@ import hashlib
 import json
 import math
 import os
-import re
 import signal
 import subprocess
 import sys
-import tempfile
+import shutil
 import threading
 import time
 import urllib.parse
@@ -25,39 +24,31 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
+# A standalone release contains the exact qualified Node binary beside this file.
+# Capture process IO before compatibility tests inject an owned-child factory.
+_rust_run = subprocess.run
+
+
+def _command(operation, **arguments):
+    local = Path(__file__).resolve().with_name('clinx-node')
+    binary = os.environ.get('CLINX_NODE_BINARY') or (str(local) if local.is_file() else shutil.which('clinx-node'))
+    if not binary or not Path(binary).is_absolute():
+        raise ValueError('RUST_TUNNEL_BINARY_REQUIRED')
+    request = dict(protocol='CLINX_REQUEST_PIPE_V1', mode='network', operation='tunnel.' + operation, arguments=arguments)
+    result = _rust_run([binary], input=json.dumps(request, allow_nan=False) + '\n',
+                       capture_output=True, text=True, timeout=10)
+    if result.returncode:
+        raise ValueError('RUST_TUNNEL_UNAVAILABLE')
+    reply = json.loads(result.stdout)
+    if reply.get('kind') != 'result':
+        raise ValueError('RUST_TUNNEL_INVALID_RESPONSE')
+    if 'error' in reply:
+        raise ValueError(reply['error']['code'])
+    return reply['result']
+
+
 def poll_sample(metrics, *, now, max_age):
-    """Missing, duplicate, future and non-finite samples never prove readiness."""
-    matches = re.findall(
-        r"^commands_poll_last_successful_timestamp_seconds(?:\{[^}\n]*\})?\s+(\S+)$",
-        metrics,
-        re.MULTILINE,
-    )
-    try:
-        stamp = float(matches[0]) if len(matches) == 1 else None
-    except ValueError:
-        stamp = None
-    valid = stamp is not None and math.isfinite(stamp) and stamp > 0
-    age = now - stamp if valid else None
-    errors = {}
-    for kind, value in re.findall(
-        r'^commands_poll_errors_total\{[^\n]*error_kind="([^"\n]+)"[^\n]*\}\s+(\S+)$',
-        metrics,
-        re.MULTILINE,
-    ):
-        if kind in ("timeout", "other"):
-            try:
-                count = float(value)
-                if math.isfinite(count) and count >= 0:
-                    errors[kind] = count
-            except ValueError:
-                pass
-    return dict(
-        last_poll=stamp if valid else None,
-        poll_age=age,
-        fresh=valid and 0 <= age <= max_age,
-        poll_errors=errors,
-        probe_error=None if valid else "INVALID_POLL_SAMPLE",
-    )
+    return _command('poll', metrics=metrics, now=now, max_age=max_age)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -66,47 +57,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def process_start(pid):
-    """Linux process identity; zombie, reused or missing PIDs cannot prove liveness."""
-    try:
-        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
-        return fields[19] if fields[0] != "Z" else None
-    except (OSError, IndexError):
-        return None
+    return _command('process_start', pid=pid)
 
 
 def process_group_live(pgid):
-    """A dead leader does not prove its owned transport group has drained.
-
-    Ignore zombies (they cannot poll); unreadable process state fails closed.
-    This observes the original group and never adopts or signals prior children.
-    """
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdecimal():
-            continue
-        try:
-            fields = (entry / "stat").read_text().rsplit(")", 1)[1].split()
-        except (FileNotFoundError, ProcessLookupError):
-            continue
-        if int(fields[2]) == pgid and fields[0] != "Z":
-            return True
-    return False
+    return _command('group_live', pgid=pgid)
 
 
 def read_status(state_dir):
-    state = json.loads((Path(state_dir) / "state.json").read_text())
-    policy = Policy(**state["policy"])
-    now = time.time()
-    proven = (
-        state.get("status") == "HEALTHY"
-        and state.get("supervisor_start") is not None
-        and process_start(state.get("supervisor_pid")) == state["supervisor_start"]
-        and state.get("child_start") is not None
-        and process_start(state.get("child_pid")) == state["child_start"]
-        and 0 <= now - state["updated_at"] <= policy.interval + policy.probe_timeout + 2
-        and state.get("last_poll") is not None
-        and 0 <= now - state["last_poll"] <= policy.stale_after
-    )
-    return dict(state, currently_healthy=bool(proven), dispatch_verified=False)
+    return _command('status', directory=str(state_dir), now=time.time())
 
 
 def probe(url_file, max_age):
@@ -189,73 +148,18 @@ class Supervisor:
             0o600,
         )
         fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        state_file = self.directory / "state.json"
-        if state_file.exists():
-            self.state = json.loads(state_file.read_text())
-            if (
-                self.state.get("identity") != self.identity
-                or type(self.state.get("launches")) is not int
-                or self.state["launches"] < 0
-            ):
-                raise ValueError("STATE_IDENTITY_OR_BUDGET_INVALID")
-            if self.state.get("reason") == "LAUNCH_INTENT":
-                raise ValueError("SPAWN_OUTCOME_UNKNOWN_NO_DUPLICATE_CONSUMER")
-            # A supervisor crash must never leave a second live consumer behind.
-            old_pid = self.state.get("child_pid")
-            if old_pid:
-                if type(old_pid) is not int or old_pid <= 0:
-                    raise ValueError("PRIOR_CHILD_IDENTITY_INVALID")
-                try:
-                    os.kill(old_pid, 0)
-                except ProcessLookupError:
-                    if process_group_live(old_pid):
-                        raise ValueError("PRIOR_GROUP_MAY_BE_LIVE_NO_DUPLICATE_CONSUMER")
-                else:
-                    raise ValueError(
-                        "PRIOR_CHILD_MAY_BE_LIVE_NO_ADOPTION_OR_DUPLICATION"
-                    )
-        else:
-            self.state = dict(identity=self.identity, launches=0)
+        self.state = _command('acquire', directory=str(self.directory), identity=self.identity)
 
     def record(self, status, reason, **fields):
-        changed = (status, reason) != (
-            self.state.get("status"),
-            self.state.get("reason"),
-        )
-        self.state.update(
-            status=status,
-            reason=reason,
-            updated_at=time.time(),
-            supervisor_pid=os.getpid(),
-            supervisor_start=self.process_start,
-            policy=asdict(self.policy),
-            **fields,
-        )
-        fd, name = tempfile.mkstemp(dir=self.directory, prefix=".state-")
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(self.state, f, allow_nan=False)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(name, self.directory / "state.json")
-            directory_fd = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        finally:
-            if os.path.exists(name):
-                os.unlink(name)
-        if changed:
-            # Do not log command arguments, credentials, HTTP payloads or raw exceptions.
-            event = dict(
-                self.state,
-                event="TUNNEL_RELIABILITY",
-                task_replay=False,
-                execution_authority_changed=False,
-                dispatch_verified=False,
-            )
-            print(json.dumps(event, allow_nan=False), flush=True)
+        result = _command('record', directory=str(self.directory), state=self.state,
+                          status=status, reason=reason, updated_at=time.time(),
+                          supervisor_pid=os.getpid(), supervisor_start=self.process_start,
+                          policy=asdict(self.policy), fields=fields)
+        self.state = result['state']
+        if result['changed']:
+            print(json.dumps(dict(self.state, event='TUNNEL_RELIABILITY', task_replay=False,
+                                  execution_authority_changed=False, dispatch_verified=False),
+                             allow_nan=False), flush=True)
 
     def terminate_child(self):
         if self.child is None:
@@ -291,11 +195,11 @@ class Supervisor:
         raise ChildStopUnconfirmed()
 
     def launch(self):
-        if self.state["launches"] >= self.policy.max_restarts + 1:
-            self.record("HOLD", "RECOVERY_BUDGET_EXHAUSTED", child_pid=None)
+        result = _command('launch', state=self.state, policy=asdict(self.policy))
+        self.state = result['state']
+        if not result['allowed']:
+            self.record('HOLD', 'RECOVERY_BUDGET_EXHAUSTED', child_pid=None)
             return False
-        self.state["launches"] += 1
-        self.state["launch_sequence"] = self.state.get("launch_sequence", 0) + 1
         # Consume budget durably BEFORE spawn. External supervisor restarts do not reset it.
         self.record(
             "STARTING",
@@ -385,47 +289,22 @@ class Supervisor:
                 )
                 now = time.monotonic()
                 sample["probe_seconds"] = now - probe_started
-                fresh = sample["fresh"] and sample["last_poll"] >= self.launched_wall
-                if fresh and not exited:
-                    self.healthy_since = self.healthy_since or now
-                    self.healthy_start_poll = (
-                        self.healthy_start_poll or sample["last_poll"]
-                    )
-                    recovered = (
-                        now - failure_started if failure_started is not None else None
-                    )
-                    if (
-                        now - self.healthy_since >= self.policy.stable_for
-                        and sample["last_poll"] > self.healthy_start_poll
-                    ):
-                        self.state["launches"] = 1
-                    self.record(
-                        "HEALTHY",
-                        "FRESH_CONTROL_POLL",
-                        **sample,
-                        recovery_seconds=recovered
-                        if recovered is not None
-                        else self.state.get("recovery_seconds"),
-                    )
-                    failure_started = None
-                else:
-                    self.healthy_since = None
-                    self.healthy_start_poll = None
-                    failure_started = (
-                        failure_started if failure_started is not None else now
-                    )
-                    reason = "CHILD_EXITED" if exited else "POLL_STALE_OR_UNAVAILABLE"
-                    self.record("DEGRADED", reason, **sample)
-                    if exited or (
-                        now - self.launched_mono >= self.policy.startup_grace
-                        and now - failure_started >= self.policy.failure_grace
-                    ):
-                        self.record("BACKOFF", reason, **sample)
-                        self.terminate_child()
-                        self.record("BACKOFF", reason, child_pid=None)
-                        if self.stop.wait(self.policy.cooldown):
-                            break
-                        continue
+                decision = _command('step', policy=asdict(self.policy), state=self.state,
+                    timing=dict(healthy_since=self.healthy_since,
+                                healthy_start_poll=self.healthy_start_poll,
+                                failure_started=failure_started), sample=sample, now=now,
+                    launched_wall=self.launched_wall, launched_mono=self.launched_mono, exited=exited)
+                self.state = decision['state']
+                self.healthy_since = decision['timing']['healthy_since']
+                self.healthy_start_poll = decision['timing']['healthy_start_poll']
+                failure_started = decision['timing']['failure_started']
+                self.record(decision['status'], decision['reason'], **sample)
+                if decision['action'] == 'recover':
+                    self.terminate_child()
+                    self.record('BACKOFF', decision['reason'], child_pid=None)
+                    if self.stop.wait(self.policy.cooldown):
+                        break
+                    continue
                 self.stop.wait(self.policy.interval)
             self.record("STOPPED", "SUPERVISOR_STOP_REQUESTED")
             return 0
