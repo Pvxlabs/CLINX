@@ -11,7 +11,7 @@
 | Task / Execution / Attempt / lease | [冻结状态契约](architecture/EXECUTION_CORE_STATE_CONTRACT_V1.md)、[golden fixture](../fixtures/execution_core_v1.json)、[execution_core](../kernel/src/execution_core.rs)、[business](../kernel/src/business.rs) | [执行核心](../kernel/tests/execution_core_qualification.rs)、[业务事务](../kernel/tests/business.rs) |
 | Authority / 持久化 / IPC | [存储边界](AUTHORITY_STORAGE.md)、[authority_store](../kernel/src/authority_store.rs)、[runtime](../kernel/src/bin/clinx-runtime.rs)、[UnixAuthority](../kernel/src/native_transport.rs) | [Authority](../kernel/tests/authority_store.rs)、[Native Transport](../kernel/tests/native_transport_qualification.rs) |
 | MCP | [嵌入目录](../clinx/mcp/registry.json)、[frame/profile](../kernel/src/mcp.rs)、[API 映射](../kernel/src/mcp_api.rs) | [MCP](../kernel/tests/mcp_retirement_qualification.rs)、[分页/上下文](../kernel/tests/workspace_routes.rs) |
-| Provider / Codex | [协议](../kernel/src/provider.rs)、[客户端](../kernel/src/provider_client.rs)、[精确历史](../kernel/src/native_history.rs) | [Provider](../kernel/tests/provider_runtime_qualification.rs)、[客户端](../kernel/tests/provider_client_qualification.rs) |
+| Provider / Codex | [模型选择与诊断](CODEX_MODEL_SELECTION.md)、[协议](../kernel/src/provider.rs)、[客户端](../kernel/src/provider_client.rs)、[精确历史](../kernel/src/native_history.rs) | [Provider](../kernel/tests/provider_runtime_qualification.rs)、[客户端](../kernel/tests/provider_client_qualification.rs) |
 | Host / 工具调用 | [host_executor](../kernel/src/host_executor.rs)、[host_transport](../kernel/src/host_transport.rs)、[兼容 fixture](../fixtures/host_execution_contract_v2.json) | [Host](../kernel/tests/host_runtime_qualification.rs) |
 | Node / Centre / Helper | [API](../kernel/src/node_api.rs)、[网络](../kernel/src/node_network.rs)、[scope](../kernel/src/node_scope.rs)、[gateway](../kernel/src/node_gateway.rs) | [Node 网络](../kernel/tests/node_network_qualification.rs)、[请求](../kernel/tests/node_requests.rs) |
 | Discovery / 设备认证 | [enrollment](../kernel/src/discovery_enrollment.rs)、[TLS](../kernel/src/node_tls.rs)、[OPAQUE](../native/opaque_pairing/src/lib.rs) | [Discovery](../kernel/tests/discovery_qualification.rs)、[设备](../kernel/tests/device_python_retirement_qualification.rs) |
@@ -48,6 +48,7 @@ Provider completed、Host exit 0、网络 ACK、Execution terminal 和业务验�
 | `THREAD_UNBOUND` | 可能已确认原生会话存在但未纳管；只读查询不得自动 adopt/start |
 | `INVALID_TASK_CURSOR` / `INVALID_CURSOR` | 分页参数不合法，不以空页伪装成功 |
 | `RESPONSE_CAPACITY_EXCEEDED` | 响应容量边界，不能截断终态证据后宣称完整；使用现有分页/精确读取 |
+| `NATIVE_WRITER_UNPROVEN` | 原生 writer 身份无法证明（包括平台设备号不可表示），不得截断身份或绕过 fence |
 | `OBSERVATION_READ_ONLY` | 观察入口不授予业务 mutation，不能回退到本地写库 |
 
 取消先记录意图；interrupt ACK 不直接证明终态或允许释放未知副作用。

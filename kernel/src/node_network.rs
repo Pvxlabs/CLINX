@@ -164,17 +164,17 @@ impl Worker {
             .to_socket_addrs()
             .map_err(|_| "NODE_LISTEN_UNAVAILABLE")?
         {
-            use rustix::net::{AddressFamily, SocketFlags, SocketType};
+            use rustix::net::{AddressFamily, SocketType};
             let attempt = (|| -> Result<TcpListener> {
-                let fd = rustix::net::socket_with(
+                let fd = crate::platform::socket(
                     if address.is_ipv4() {
                         AddressFamily::INET
                     } else {
                         AddressFamily::INET6
                     },
                     SocketType::STREAM,
-                    SocketFlags::CLOEXEC,
                     Some(rustix::net::ipproto::TCP),
+                    false,
                 )
                 .map_err(|_| "NODE_LISTEN_UNAVAILABLE")?;
                 rustix::net::sockopt::set_socket_reuseaddr(&fd, true)

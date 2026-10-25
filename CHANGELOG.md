@@ -5,6 +5,10 @@
 
 ## Unreleased — 2026-10-25
 
+- 修复 macOS Rust Helper 编译：以平台适配保持 socket FD/阻塞标志、时钟和设备号类型正确，
+  新增六种 socket 模式回归；Linux 原有 socket/lease 语义保持。验证入口见
+  [macOS 编译回归](docs/TESTING.md#macos-编译兼容回归)，不代表客户端安装或设备执行验收。
+
 - 修复 Codex 显式模型选择：原生/Host/API 发送前读取目标 Provider 的有界模型清单，
   校验原生 ID 与各模型 effort，统一 `extra_high` → `xhigh`；禁止静默降级。
   失败回执保留脱敏 Provider 类别、底层码和阶段，发送未知继续精确读回原执行。

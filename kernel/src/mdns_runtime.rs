@@ -511,12 +511,12 @@ impl Browser {
         }
         let mut sockets = Vec::new();
         for ip in &interfaces {
-            use rustix::net::{self, AddressFamily, SocketFlags, SocketType};
-            let fd = net::socket_with(
+            use rustix::net::{self, AddressFamily, SocketType};
+            let fd = crate::platform::socket(
                 AddressFamily::INET,
                 SocketType::DGRAM,
-                SocketFlags::CLOEXEC,
                 Some(net::ipproto::UDP),
+                false,
             )
             .map_err(|_| "MDNS_IO_UNAVAILABLE")?;
             net::sockopt::set_socket_reuseaddr(&fd, true).map_err(|_| "MDNS_IO_UNAVAILABLE")?;

@@ -435,16 +435,16 @@ fn listener(host: &str, port: u16) -> Result<TcpListener> {
         .map_err(|_| "NODE_LISTEN_UNAVAILABLE")?
     {
         let attempt = (|| -> Result<TcpListener> {
-            use rustix::net::{AddressFamily, SocketFlags, SocketType};
-            let fd = rustix::net::socket_with(
+            use rustix::net::{AddressFamily, SocketType};
+            let fd = crate::platform::socket(
                 if address.is_ipv4() {
                     AddressFamily::INET
                 } else {
                     AddressFamily::INET6
                 },
                 SocketType::STREAM,
-                SocketFlags::CLOEXEC,
                 Some(rustix::net::ipproto::TCP),
+                false,
             )
             .map_err(|_| "NODE_LISTEN_UNAVAILABLE")?;
             rustix::net::sockopt::set_socket_reuseaddr(&fd, true)

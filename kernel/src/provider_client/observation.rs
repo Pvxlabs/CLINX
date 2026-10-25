@@ -158,6 +158,10 @@ fn identity(path: &Path) -> Result<(u64, u64)> {
 fn owners(root: &Path, lock: &Path) -> Result<BTreeSet<u32>> {
     let data = bounded(&root.join("locks"), 1024 * 1024)?;
     let (dev, inode) = identity(lock)?;
+    // MetadataExt widens dev_t to u64; Darwin rustix expects signed dev_t.
+    // Reject an unrepresentable identity rather than truncate or alias it.
+    #[cfg(target_vendor = "apple")]
+    let dev = i32::try_from(dev).map_err(|_| "NATIVE_WRITER_UNPROVEN")?;
     let mut owners = BTreeSet::new();
     for line in std::str::from_utf8(&data)
         .map_err(|_| "NATIVE_WRITER_UNPROVEN")?

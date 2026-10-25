@@ -640,12 +640,12 @@ impl Runtime {
                     .as_u64()
                     .filter(|n| *n <= 65535)
                     .ok_or("OBSERVER_HTTP_BIND_FAILED")? as u16;
-                use rustix::net::{self, AddressFamily, SocketFlags, SocketType};
-                let fd = net::socket_with(
+                use rustix::net::{self, AddressFamily, SocketType};
+                let fd = crate::platform::socket(
                     AddressFamily::INET,
                     SocketType::STREAM,
-                    SocketFlags::CLOEXEC,
                     Some(net::ipproto::TCP),
+                    false,
                 )
                 .map_err(|_| "OBSERVER_HTTP_BIND_FAILED")?;
                 net::sockopt::set_socket_reuseaddr(&fd, true)

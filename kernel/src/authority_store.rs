@@ -36,7 +36,13 @@ pub(crate) fn random_id() -> Result<String> {
     Ok(b.iter().map(|b| format!("{b:02x}")).collect())
 }
 pub(crate) fn clock() -> i64 {
-    let t = rustix::time::clock_gettime(rustix::time::ClockId::Boottime);
+    // Darwin exposes its boot-relative clock as CLOCK_MONOTONIC. Linux
+    // Authority lease expiry retains CLOCK_BOOTTIME, including suspend time.
+    #[cfg(target_vendor = "apple")]
+    let clock = rustix::time::ClockId::Monotonic;
+    #[cfg(not(target_vendor = "apple"))]
+    let clock = rustix::time::ClockId::Boottime;
+    let t = rustix::time::clock_gettime(clock);
     t.tv_sec * 1000 + t.tv_nsec / 1_000_000
 }
 

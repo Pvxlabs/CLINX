@@ -64,6 +64,22 @@ Rust/Swift 归属、直接模块依赖、Cargo targets 与发布名单一致性�
 CI 运行同一 Cargo/audit 入口，不依赖新的文档框架。workflow 与本地执行通过并不证明远端
 分支保护、真实设备、生产部署或业务验收。
 
+## macOS 编译兼容回归
+
+在每台目标 Mac 的任务私有源码目录使用 Rust 1.98+ 和现有签名身份执行：
+
+```sh
+cargo test --locked --manifest-path kernel/Cargo.toml --lib platform::tests
+sh MonitorApp/Scripts/build-app.sh
+codesign --verify --deep --strict MonitorApp/.build/CLINX.app
+```
+
+`platform::tests` 检查 Unix/TCP/UDP socket 的 close-on-exec 和两种阻塞模式。
+App 构建入口同时验证三个 Rust Helper 的原生契约与签名；不要复制 Linux binary。
+保留源码 SHA/patch hash、工具链、构建退出码及 App/Helper hash；签名验证通过不等于
+Developer ID 公证、客户端安装、配对或真实任务验收。缺少原生工具链或证书记录 BLOCKED，
+不得通过恢复 Python Helper 绕过。仅构建无需启动 App、替换已安装客户端或修改权限。
+
 ## 未验证与既有失败
 
 Linux wire/loopback 不代替物理 LAN multicast、Mac→P620 或真实 Codex/ChatGPT connector。

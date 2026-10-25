@@ -621,6 +621,7 @@
         "kernel/src/observation_source.rs",
         "kernel/src/observer_http.rs",
         "kernel/src/observer_runtime.rs",
+        "kernel/src/platform.rs",
         "kernel/src/provider.rs",
         "kernel/src/provider_client.rs",
         "kernel/src/python_numeric.rs",
@@ -663,6 +664,7 @@
       "dependencies": [
         "kernel/src/discovery_index.rs",
         "kernel/src/node_tls.rs",
+        "kernel/src/platform.rs",
         "kernel/src/read_projection.rs"
       ]
     },
@@ -690,6 +692,7 @@
       "dependencies": [
         "kernel/src/authority_store.rs",
         "kernel/src/business.rs",
+        "kernel/src/platform.rs",
         "kernel/src/provider.rs"
       ]
     },
@@ -731,6 +734,7 @@
         "kernel/src/observation.rs",
         "kernel/src/observation_collector.rs",
         "kernel/src/observation_runtime.rs",
+        "kernel/src/platform.rs",
         "kernel/src/python_numeric.rs",
         "kernel/src/read_projection.rs",
         "kernel/src/runtime_config.rs"
@@ -769,6 +773,7 @@
         "kernel/src/observation_runtime.rs",
         "kernel/src/observation_source.rs",
         "kernel/src/observer_http.rs",
+        "kernel/src/platform.rs",
         "kernel/src/provider_client.rs",
         "kernel/src/tunnel_supervisor.rs"
       ]
@@ -905,6 +910,7 @@
       "role": "runtime",
       "dependencies": [
         "kernel/src/node_tls.rs",
+        "kernel/src/platform.rs",
         "kernel/src/python_numeric.rs",
         "kernel/src/read_projection.rs"
       ]
@@ -939,6 +945,10 @@
         "kernel/src/node_tls.rs",
         "kernel/src/runtime_config.rs"
       ]
+    },
+    "kernel/src/platform.rs": {
+      "role": "runtime",
+      "dependencies": []
     },
     "kernel/src/provider.rs": {
       "role": "runtime",

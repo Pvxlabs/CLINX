@@ -23,15 +23,10 @@ pub fn connect_local(endpoint: &Path, timeout: Duration) -> std::io::Result<Unix
     use rustix::{
         event::{PollFd, PollFlags, Timespec, poll},
         io::Errno,
-        net::{self, AddressFamily, SocketAddrUnix, SocketFlags, SocketType},
+        net::{self, AddressFamily, SocketAddrUnix, SocketType},
     };
     use std::{io, thread, time::Instant};
-    let fd = net::socket_with(
-        AddressFamily::UNIX,
-        SocketType::STREAM,
-        SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
-        None,
-    )?;
+    let fd = crate::platform::socket(AddressFamily::UNIX, SocketType::STREAM, None, true)?;
     let address = SocketAddrUnix::new(endpoint)?;
     let deadline = Instant::now()
         .checked_add(timeout)

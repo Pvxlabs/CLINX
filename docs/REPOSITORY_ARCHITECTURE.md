@@ -37,6 +37,12 @@ prepare/start/cancel、完成/恢复和 metadata outbox 仍由 Authority 原子�
 未知输入、创建 ACK 或进程结果不盲目重放；恢复读取精确 Provider 历史。
 设备注册和观察投影不承担任务 writer fence。任务身份、并行执行、投递、ACK、幂等和恢复契约保持。
 
+`kernel/src/platform.rs` 仅封装 Unix socket 的平台差异，不承担业务状态。Linux 保持原子
+`CLOEXEC` / `NONBLOCK`；Darwin 在 socket 返回调用方前设置 `FD_CLOEXEC` / `O_NONBLOCK`。
+Authority 时钟在 Linux 保留 `CLOCK_BOOTTIME`，Darwin 使用 `CLOCK_MONOTONIC`；
+Mac Provider 的设备号转换必须可表示，否则以 `NATIVE_WRITER_UNPROVEN` 拒绝证明身份。
+这些编译适配不改变远端认证、Task writer 或 Air 的执行权限。
+
 `kernel/src/runtime_lab.rs` 的 State 仍由现役 Authority 复用，不能凭名称删除。
 旧 Python Bridge/Registry/M9/Owner、completion/recovery/outbox、Monitor factory 和公开兼容包均已删除。
 
