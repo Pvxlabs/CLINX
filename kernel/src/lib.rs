@@ -1667,6 +1667,7 @@ pub mod execution_contracts;
 
 pub mod discovery_state;
 
+pub mod desktop_socket;
 pub mod discovery_bootstrap;
 pub mod discovery_cli;
 pub mod discovery_enrollment;

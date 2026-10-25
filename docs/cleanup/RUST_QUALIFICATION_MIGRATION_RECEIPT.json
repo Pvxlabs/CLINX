@@ -1,0 +1,350 @@
+{
+  "baseline": "2db6553851f88fb6ce85a9df03bcff3eb0c69ee5",
+  "status": "PASS_IMPLEMENTED_SCOPE_NOT_DEPLOYED",
+  "source_size_before": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 911158,
+        "files": 120,
+        "lines": 21216
+      },
+      "Rust": {
+        "bytes": 1613226,
+        "files": 86,
+        "lines": 40939
+      },
+      "Shell": {
+        "bytes": 10399,
+        "files": 9,
+        "lines": 230
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 29.495580314741932,
+    "python_line_percent": 28.42557980626231,
+    "python_roles": {
+      "ACTIVE_RUNTIME": {
+        "bytes": 302912,
+        "files": 49,
+        "lines": 7523
+      },
+      "COMPAT": {
+        "bytes": 45809,
+        "files": 6,
+        "lines": 1093
+      },
+      "DEVOPS": {
+        "bytes": 102293,
+        "files": 18,
+        "lines": 2240
+      },
+      "QUALIFICATION": {
+        "bytes": 460144,
+        "files": 47,
+        "lines": 10360
+      }
+    },
+    "revision": "2db6553851f88fb6ce85a9df03bcff3eb0c69ee5",
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "source_size_after": {
+    "languages": {
+      "C": {
+        "bytes": 2345,
+        "files": 1,
+        "lines": 50
+      },
+      "Go": {
+        "bytes": 26718,
+        "files": 3,
+        "lines": 849
+      },
+      "Python": {
+        "bytes": 828724,
+        "files": 119,
+        "lines": 19013
+      },
+      "Rust": {
+        "bytes": 1810134,
+        "files": 97,
+        "lines": 46442
+      },
+      "Shell": {
+        "bytes": 10399,
+        "files": 9,
+        "lines": 230
+      },
+      "Swift": {
+        "bytes": 525288,
+        "files": 62,
+        "lines": 11353
+      }
+    },
+    "maximum_python_byte_percent": 5.0,
+    "python_byte_percent": 25.868458313251807,
+    "python_line_percent": 24.395344958107188,
+    "python_roles": {
+      "COMPAT": {
+        "bytes": 344469,
+        "files": 54,
+        "lines": 8525
+      },
+      "DEVOPS": {
+        "bytes": 101711,
+        "files": 18,
+        "lines": 2230
+      },
+      "QUALIFICATION": {
+        "bytes": 382544,
+        "files": 47,
+        "lines": 8258
+      }
+    },
+    "revision": null,
+    "root_python": [],
+    "schema": "CLINX_SOURCE_SIZE_V1",
+    "scope": "all tracked and nonignored source; includes qualification and build tools; six-language physical bytes",
+    "target_pass": false
+  },
+  "python_under_five_percent": "NOT_MET",
+  "qualification_mapping": {
+    "original_python_cases": 216,
+    "rust_test_functions": 172,
+    "retained_python_cases": 29,
+    "removed_python_cases_with_rust_equivalents": 187,
+    "maps": [
+      "architecture/qualification-migrations.json"
+    ],
+    "normalized_mapping_sha256": "d6850a822d938477154f5462b312225daabbdbc53c90b3862a8e16fa2e078a92",
+    "original_test_functions_mapped": 91,
+    "oracle_note": "Detailed agent maps preserve their original snapshots; normalized map pins final Rust hashes including equivalent lint fixes."
+  },
+  "validation": {
+    "rust_tests": 298,
+    "tracked_python_fixtures": 244,
+    "local_suite_before": {
+      "pass": 294,
+      "failure": 32,
+      "error": 104,
+      "skipped": 2
+    },
+    "local_suite_after": {
+      "pass": 294,
+      "failure": 32,
+      "error": 104,
+      "skipped": 2
+    },
+    "local_suite_changed_cases": [],
+    "original_local_files_unchanged": 129,
+    "linux_release_binaries": 14,
+    "native_maintenance_tests": 6,
+    "source_import_profiles": "PASS",
+    "python_lint": "PASS",
+    "rust_format": "PASS",
+    "shell_syntax": "PASS",
+    "strict_clippy": "BLOCKED_EXISTING_10_DIAGNOSTICS",
+    "rust_tests_observed": 298,
+    "local_suite_comparison": {
+      "case_count": 432,
+      "before": {
+        "error": 104,
+        "pass": 294,
+        "failure": 32,
+        "skipped": 2
+      },
+      "after": {
+        "error": 104,
+        "pass": 294,
+        "failure": 32,
+        "skipped": 2
+      },
+      "changed_cases": []
+    },
+    "baseline_tracked_fixture_environment": {
+      "first_run": {
+        "pass": 429,
+        "fail": 2
+      },
+      "cause": "Disposable baseline archive lacked Git metadata required by packaging tests",
+      "correction": "Restored exact baseline main/index in disposable checkout only",
+      "affected_rerun": {
+        "pass": 5,
+        "fail": 0
+      },
+      "baseline_unique_cases_verified": 431
+    },
+    "new_unresolved_failures": [],
+    "native_macos": "NOT_VERIFIED",
+    "real_acl_or_install": "NOT_EXECUTED"
+  },
+  "release": {
+    "python_sources": [],
+    "python_dependencies": [],
+    "desktop_socket_maintenance": "RUST_DESKTOP_SOCKET_V1",
+    "monitor_python_sources": [],
+    "qualification_example_packaged": false,
+    "built_binary_sha256": {
+      "clinx-device": "2b675b27690cd8bbf6c0704111e9160f16daaa8dc258de0ffca043cd53893428",
+      "clinx-kernel-bench": "1d9d9420f2019b2781722660a3a816c19b303d1ed6d56ef1049997f7e57a4356",
+      "clinx-kernel-eval": "211d4e0131fc723da6b6056c9c8ea4c851c5e2d9d82c126b2fb1f7629943f959",
+      "clinx-mcp-relay": "a6356ed0ececf6d16f96a8b5da8415b313aff25342eeb5ce9b4b05a84461b744",
+      "clinx-mcp": "526de6f2934503d0857a3f4fd81d2bd30e9b64f373315248553adb1a49cd83c2",
+      "clinx-native-transport": "fdcf4fd1b61589ce8a03e7a7bcd8c0cc20ecc81fb9869ce0b427f7d10927c95c",
+      "clinx-node-daemon": "6293a54cc6f30dd718d4c9db05098a1aa805b0274e1862dfddbb734fc684ee47",
+      "clinx-node": "aa2fffc4969e696a487cf057da94a196a15dc89ff968148e7c11dd79f86b40d8",
+      "clinx-observer": "55ba0d8d135a5397b2e9a27ac2dd776d0d20ec8a95429beaf988eb056456d431",
+      "clinx-owner-client": "bdf6a2c20b3795633b582d8c06d8216da90a02698e1568b5736eab192fb634ea",
+      "clinx-provider": "d4ab0c82485a26071bf37c9aa91c7cb588fcf65a9ecd91ce9259a584e365ff7e",
+      "clinx-runtime": "22d058e0733d9164b3974441d6aaa92e075ee7731b044915fa5a9f24958b2b90",
+      "clinx-source-audit": "6f23dd445815215f1267b5afd0b92a20266b01179e67770f100b672c8ad8ef28",
+      "clinx-tunnel": "41af221d2d4dcb1adcda1df6b3ebcee0231ce9612122678347258558c263863f"
+    },
+    "libpython_linkage": "ABSENT",
+    "staging_validation": "SYNTHETIC_BINARY_CONTRACT_FIXTURE; actual Linux Release binaries built and checked independently"
+  },
+  "retired_source_files": {
+    "clinx/provider/desktop_socket.py": {
+      "lines": 91,
+      "replacement": "kernel/src/desktop_socket.rs; clinx-provider --desktop-socket"
+    }
+  },
+  "artifact_directory": "/data/artifacts/clinx-qualification-runtime-20261025",
+  "not_verified": [
+    "native macOS build/signing and physical device loop",
+    "real system ACL and installed alias publication; no production maintenance executed"
+  ],
+  "deployment": false,
+  "schema": "CLINX_QUALIFICATION_MIGRATION_RECEIPT_V1",
+  "verified_at_utc": "2026-10-25T09:29:49.737287+00:00",
+  "scope": "Qualification equivalence migration and native Desktop socket maintenance; no deployment",
+  "production": {
+    "service_evidence_unchanged": true,
+    "authority_pid": 1023787,
+    "dispatcher_pid": 1024186,
+    "centre_pid": 1024191,
+    "installed_dispatcher_and_centre": "Existing Python releases unchanged",
+    "database_or_business_task_mutations": false
+  },
+  "source_size_gate": "NOT_MET_5_PERCENT",
+  "python_diff": {
+    "deleted_files": 1,
+    "deleted_lines": 2301,
+    "added_lines": 98,
+    "net_removed_lines": 2203,
+    "net_removed_bytes": 82434
+  },
+  "reviewed_changed_files_sha256": {
+    "README.md": "52908d88ae25cde8389bb8ff9ba07c750ce30dd3dec3bd534ab333a9915efea1",
+    "architecture/native-runtime.json": "6e9ab7141aedfc82b38c5543229c92b11deefd7cb1674a180e2db104d4666799",
+    "architecture/python-sources.json": "065f4fe1018e2c52bb47c6955c9ddd837fc7a9eac608223547bcaf082a21968b",
+    "architecture/qualification-migrations.json": "d6850a822d938477154f5462b312225daabbdbc53c90b3862a8e16fa2e078a92",
+    "clinx/provider/desktop_socket.py": null,
+    "docs/DESKTOP_NATIVE_EXECUTION.md": "3761a9659197de45134fe1ace46315ba1c5884df4a291cf18cb29a676ad58011",
+    "docs/PYTHON_RUNTIME_BOUNDARIES.md": "aaa8ebdcfa6580a6d0891331338bc65d63e348d7b25484b314458b2f5397b09a",
+    "docs/REPOSITORY_ARCHITECTURE.md": "5050582d5d6052c9bcf829f4d65e79aca62aabdbf422f6cf1ebe01318eceeff9",
+    "docs/RUST_QUALIFICATION_MIGRATION.md": "c746d4ab92ac3e95353b4e42ed0694cce51501fa83d1e2e1880a9af80484025e",
+    "fixtures/test_runtime_packages.py": "2df38d831dda4c25df02ad1326da0d16db5aab753c6a6dfada1043b5ca07c18e",
+    "fixtures/test_rust_collector.py": "5e9c0d2de5f6ffe864a39a547ab0c1a0748a519d71948a6b04255b914b08d3f0",
+    "fixtures/test_rust_discovery_index.py": "e75369b3b9775e185192198f8deeb170fca61c71d7a50c3ca252189c87776c0c",
+    "fixtures/test_rust_discovery_state.py": "400dd959d73bebfe2b80535d92e727fd6801d6642f9237d2b9441358fc38c7fb",
+    "fixtures/test_rust_execution_contracts.py": "2d419ec0b8504e363b142ab406ae347afcfa54c3cd9c454c9f4646dca21ccf20",
+    "fixtures/test_rust_native_observer.py": "d4bc4bf023e64a57e062dec237b5addad4ccdb5ed3c9e9ee0c08df75901a2c6c",
+    "fixtures/test_rust_observation.py": "d6092c810311799e949fa85288101e4bc9cdfaa676ca37e2094112de9f1f18e4",
+    "fixtures/test_rust_observer_http.py": "551de2e2c3a724307919d22aab52bb2d55eff0ea4a1e3ed0b4a66018451b1e7e",
+    "fixtures/test_rust_provider_api.py": "d43b6dd483b1c2d471ad0dc2471a83063497e39fd1df3d2787ef488d9d90cb32",
+    "fixtures/test_rust_runtime_config.py": "77c7213ae43d4b645f40fd6de9a92680a2624b7eb61bf88c8b0566bc53ffcbc2",
+    "kernel/examples/qualification_provider.rs": "112e366d4f67a8ff98420473b399ec7fa8f50109440b2553f4bface896f96df7",
+    "kernel/src/bin/clinx-provider.rs": "dbd9d926547a33bc82ca5ac506101e9447012e3883b03de7d8c64591f2cfa23b",
+    "kernel/src/desktop_socket.rs": "f87fe2c90c19de9210bcb61a5c79aec3b65568903e4d27196a8d5d14e0f55dfe",
+    "kernel/src/lib.rs": "419c2afb8c2073cd1e8812c9e800a1c43e5756655b3eaba7f8d2678929cf9886",
+    "kernel/tests/collector_qualification.rs": "315b87f2388e06208383b5caf90718fb8ad670a2e7db15a8d0062e76c355699e",
+    "kernel/tests/contract_qualification.rs": "0a51c8854bacb0e64856f5e05d524c69a08348377f14965371667b13802f17ee",
+    "kernel/tests/discovery_qualification.rs": "2161cab389f22ba87ffb20fbb9638adcdeec34d17709af674fe0d9f1a49678b6",
+    "kernel/tests/native_observer_qualification.rs": "e0109f53d8a54ce8087d2f9876d79b5bba1abdcce091923d12252a0a7ed3166d",
+    "kernel/tests/observation_qualification.rs": "28d16f7e3b4c3fa9c66d37db498d29214bfa79c0fd5cb2b96b11707f1da9efe2",
+    "kernel/tests/observer_http_qualification.rs": "e0f730d33d023eeadf342f401faa84c43fa85a0596a0f6ea8d71d07789fb783d",
+    "kernel/tests/provider_api_qualification.rs": "e3353ae75144f23b13af0ab383eac0cca4e62b7a9786bb1f55bd42925ff24439",
+    "kernel/tests/support/observation.rs": "7f8087acc2ac933dd7548394c9a61743a3cea3054a0d06fe65ef618f88405fcf",
+    "kernel/tests/support/observer_fixture.rs": "9cfb5b0434679684ecbafcaa74ad9585e0150b7f219e4d975d92e31649e648e9",
+    "kernel/tests/support/policy_hash.txt": "11afa16688187bd0b7f8f3fb860beebcbc2fe0ccdb2145966ec28c9f5e1a6414",
+    "scripts/install_rust_services.py": "4498f100e75b63ceb6072aa78e1d79375e887c7e7bbe47b1c98175921a5d09eb",
+    "scripts/stage_rust_release.py": "4081b91b7b6a66a981ae80690bbdabd004d417a2cb120d1f77201b3818223dca"
+  },
+  "hash_scope_note": "Changed files before commit, excluding this self-referential receipt; post-push Git and cleanup receipts retained in artifact_directory.",
+  "evidence_sha256": {
+    "native-binaries.json": "6bac711e7f9537e543b72f560981fbae1181309dafcf8d2c26472ce5b9bee7b6",
+    "build-after.log": "7bc8d7d24396e0ffe574b0a5b80aaaa98399f6a43112d94145e8d2ee4961e61a",
+    "examples.log": "c92508a29848820f033cd2ea015c85dde0953c88b07cc967ce34b7c08f610549",
+    "rust-tests-final.log": "1dad25a5b493f3228874e174c15d83ef2d9ff7986d6d63671fd6a19ecf7f6903",
+    "fixtures.log": "36594e46f276938b7b7b243c0aa0054e44baead76d07493dde490ecc21ed345b",
+    "fixtures.xml": "5dbd6cf6f1e3825615f3dee2b969c9ed03cc8e5025272a585ac351a2ef1f76ea",
+    "fixtures-before.log": "040e77a3f149a730bceb419648e839d11a95c0ae179c9dac2fc27d19f5772cad",
+    "fixtures-before.xml": "7276942ea63fce429045b6b6f509af646d72b54c1a5805cd3f9736025f99a09b",
+    "affected.log": "d3cac3dbe894f005cff631bc2778c071b785bbaeafc2d2cc098a49c774c44ce5",
+    "affected.xml": "dfc2999207d5a16471a52981c7ecfe63ba0b0f983d93a168e4311e7811e4fb98",
+    "full-local-before-pytest.log": "6c3dd444a2e0596b2b23127685e393bc641f24af3cc2e623c06fdaa5896c8aa3",
+    "full-local-before-result.xml": "d3e2cbe7d1becda52c2b47bfb706734282adf9e0323adbb493bb0047b850b422",
+    "full-local-after-pytest.log": "8d55f5a352ba60ece88dbc14e0295512b4098057709c053082af0d50878d6bab",
+    "full-local-after-result.xml": "dfdb02a9e976006001b33aa86757fd879c488b926a0980681c676edd62620854",
+    "full-local-comparison.json": "174d91b68a5cc95b5cec7a1ee4e5bda1cc27b3a2261651e15316b6f5c43c2e69",
+    "structure-final.json": "7bdf93995eb2f33a9769a6fd02375e274b57e4cd366ec009b54e6ca322619796",
+    "python-lint-final.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "rustfmt-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "clippy-before.log": "7671425108332aca7307279eecc5c44c51745beae2a2bc60502bb72bae7e1098",
+    "clippy-final.log": "76b3f3b6e36b71b3899260d42c77abd160657c44af53d4cedbe12fc9830b350f",
+    "clippy-strict-final.log": "ad2fd018c1ccd7de37c128e016c1be4a00010a83a6f5942f188e0858cc407b6e",
+    "services-before.txt": "ca3437d048a06eb8899a39a6e79f6ce9a37c3ed5ea2575235349b9cde9d0f51d",
+    "services-final.txt": "ca3437d048a06eb8899a39a6e79f6ce9a37c3ed5ea2575235349b9cde9d0f51d",
+    "desktop-review.json": "a0e6c1d9cebc778aa42450dc470fa021ee1646f26765de0f1a0a3c9f0cf8cde9",
+    "ownership.json": "9f3ce857d9d3611ff914bec61774d2e9b7cde53f57907d37f72d60c47a65628b",
+    "source-before.bundle": "3ddfa0731c953334f63512fed69ab7f62e0b5bfc44f4ce4f8187a6326e888472",
+    "original-tests.tar.gz": "bf2d134ddb3c0d5b8119640d4a1f2e5b0a7461a599f34326fe804fac1bf57633",
+    "packaging-final-review.json": "397c9cfbe4d0590684efeac3faf2ae9a2223743024aacdf164e1059328d4858e",
+    "packaging-fixture-receipt.json": "7bd3a5bda2a0671b00cd86ac1f4957fcfc320e74a8156874200df207746b2c53"
+  },
+  "remaining_python": {
+    "compat": {
+      "files": 54,
+      "lines": 8525,
+      "uses": [
+        "public Python clients and DTOs",
+        "Python object and injected IO qualification interfaces",
+        "explicit DEV_ONLY pairing backend"
+      ]
+    },
+    "devops": {
+      "files": 18,
+      "lines": 2230,
+      "uses": [
+        "build, packaging, install and maintenance tools"
+      ]
+    },
+    "qualification": {
+      "files": 47,
+      "lines": 8258,
+      "uses": [
+        "remaining Host/Node/Provider/process tests",
+        "Python binding-specific checks",
+        "qualification helpers"
+      ]
+    }
+  }
+}

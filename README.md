@@ -196,7 +196,7 @@ acceptance.
 The normal Observer service is `clinx-observer`; the standalone read-only MCP
 entry is `clinx-mcp --observations-only --stdio`. Neither starts Python. Current
 source boundaries, verification limits and the remaining Python work are recorded
-in [Observer runtime migration](docs/RUST_OBSERVER_RUNTIME_MIGRATION.md).
+in [qualification and maintenance migration](docs/RUST_QUALIFICATION_MIGRATION.md).
 
 ## Development and tests
 

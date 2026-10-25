@@ -4,63 +4,59 @@
   "modules": [
     {
       "path": "clinx/__init__.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Package namespace; no startup side effects"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Package namespace; no startup side effects"
     },
     {
       "path": "clinx/authority/__init__.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Python Rust IPC client and read/request mapping; target owner Rust"
     },
     {
       "path": "clinx/authority/rust_authority.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Public Authority client and operation identity codec; local IPC, endpoint/peer checks, request validation and exact one-send ACK run in Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public Authority client and operation identity codec; local IPC, endpoint/peer checks, request validation and exact one-send ACK run in Rust"
     },
     {
       "path": "clinx/authority/request_pipe.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Bounded private child protocol forwarding existing authenticated Authority calls; no business selection, state, worker or retry"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Bounded private child protocol forwarding existing authenticated Authority calls; no business selection, state, worker or retry"
     },
     {
       "path": "clinx/authority/rust_integration.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Compatibility API client delegating business mapping, selection and projection to Rust; read-only Provider protocol callback retained for existing clients; normal Helper bypasses this class"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Compatibility API client delegating business mapping, selection and projection to Rust; read-only Provider protocol callback retained for existing clients; normal Helper bypasses this class"
     },
     {
       "path": "clinx/authority/rust_reads.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Read-only HTTP/Provider IO callbacks and Python object compatibility; desktop evidence, exact identity and projection owned by Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Read-only HTTP/Provider IO callbacks and Python object compatibility; desktop evidence, exact identity and projection owned by Rust"
     },
     {
       "path": "clinx/authority/rust_worker_identity.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Current Python Rust IPC client and read/request mapping; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Python Rust IPC client and read/request mapping; target owner Rust"
     },
     {
       "path": "clinx/compat/__init__.py",
@@ -214,77 +210,75 @@
     },
     {
       "path": "clinx/contracts/__init__.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust"
     },
     {
       "path": "clinx/contracts/dispatch_errors.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust"
     },
     {
       "path": "clinx/contracts/execution_policy.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Public policy dataclass/JSON codec and error API; normalization, scope, permit, route checks and CAS hash delegated to Rust; not a second Authority policy writer"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public policy dataclass/JSON codec and error API; normalization, scope, permit, route checks and CAS hash delegated to Rust; not a second Authority policy writer"
     },
     {
       "path": "clinx/contracts/execution_semantics.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Public identity DTO/codec including active host normalization; normalization/build/parse/routing validation delegated to Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public identity DTO/codec including active host normalization; normalization/build/parse/routing validation delegated to Rust"
     },
     {
       "path": "clinx/contracts/runtime_config.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Public configuration DTO and TOML/platform Path codec. Defaults, binding, host selection and executor/workflow validation execute in Rust runtime_config."
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public configuration DTO and TOML/platform Path codec. Defaults, binding, host selection and executor/workflow validation execute in Rust runtime_config."
     },
     {
       "path": "clinx/contracts/runtime_contracts.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust"
     },
     {
       "path": "clinx/contracts/thread_identity.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust"
     },
     {
       "path": "clinx/contracts/workspace_contract.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Shared Python contract/config validation still used at runtime; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Shared Python contract/config validation still used at runtime; target owner Rust"
     },
     {
       "path": "clinx/discovery/__init__.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Current mDNS/pairing/device discovery; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current mDNS/pairing/device discovery; target owner Rust"
     },
     {
       "path": "clinx/discovery/cli.py",
@@ -294,27 +288,27 @@
     },
     {
       "path": "clinx/discovery/discovery.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Public candidate DTO and explicit injected test index; normal DNS-SD UDP, interface IO, advertisement, TTL cache and discovery run in Rust mdns_runtime"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public candidate DTO and explicit injected test index; normal DNS-SD UDP, interface IO, advertisement, TTL cache and discovery run in Rust mdns_runtime"
     },
     {
       "path": "clinx/discovery/identity.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Python identity/store DTO and private worker binding; key/certificate creation, validation, locking and durable store IO run in Rust discovery_identity/enrollment"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Python identity/store DTO and private worker binding; key/certificate creation, validation, locking and durable store IO run in Rust discovery_identity/enrollment"
     },
     {
       "path": "clinx/discovery/monitor_helper.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Historical executable alias that execs clinx-node --discovery-gui; current Swift invokes the bundled Rust binary directly"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Historical executable alias that execs clinx-node --discovery-gui; current Swift invokes the bundled Rust binary directly"
     },
     {
       "path": "clinx/discovery/observer_bootstrap.py",
@@ -326,27 +320,27 @@
     },
     {
       "path": "clinx/discovery/pairing.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Public pairing API and explicit DEV_ONLY SPAKE2 qualification; normal OPAQUE transcript and protocol state run in the shared Rust core without Python wheel"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public pairing API and explicit DEV_ONLY SPAKE2 qualification; normal OPAQUE transcript and protocol state run in the shared Rust core without Python wheel"
     },
     {
       "path": "clinx/discovery/transport.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Python public transport DTO and explicit DEV_ONLY TLS/SPAKE2 qualification; production first pairing/mTLS enrollment and reconnect run in Rust discovery_enrollment"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Python public transport DTO and explicit DEV_ONLY TLS/SPAKE2 qualification; production first pairing/mTLS enrollment and reconnect run in Rust discovery_enrollment"
     },
     {
       "path": "clinx/host/__init__.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Current Host subprocess, operation and delivery implementation; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Host subprocess, operation and delivery implementation; target owner Rust"
     },
     {
       "path": "clinx/host/derived_git_targets.py",
@@ -368,11 +362,11 @@
     },
     {
       "path": "clinx/host/production_workflows.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Public workflow DTO only; schema, validation and rendering call Rust runtime_config and the existing Host workflow contract."
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public workflow DTO only; schema, validation and rendering call Rust runtime_config and the existing Host workflow contract."
     },
     {
       "path": "clinx/host/rust_host.py",
@@ -388,11 +382,11 @@
     },
     {
       "path": "clinx/mcp/__init__.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Observation/explicit maintenance codec namespace; normal business MCP server is Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Observation/explicit maintenance codec namespace; normal business MCP server is Rust"
     },
     {
       "path": "clinx/mcp/consultation_schema.py",
@@ -402,11 +396,11 @@
     },
     {
       "path": "clinx/mcp/mcp_server.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Observation/explicit maintenance injectable codec and retired CLI launcher; normal business MCP is clinx-mcp Rust executable"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Observation/explicit maintenance injectable codec and retired CLI launcher; normal business MCP is clinx-mcp Rust executable"
     },
     {
       "path": "clinx/mcp/rust_mcp.py",
@@ -416,35 +410,35 @@
     },
     {
       "path": "clinx/monitor/__init__.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Current monitoring projection and native observation implementation; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current monitoring projection and native observation implementation; target owner Rust"
     },
     {
       "path": "clinx/monitor/native_associations.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Typed private client for Rust read-only exact native association lookup; no Python SQL."
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Typed private client for Rust read-only exact native association lookup; no Python SQL."
     },
     {
       "path": "clinx/monitor/native_observation_bridge.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "HTTP and existing source/scope callbacks; checkpoint/HMAC/expiry, exact identity, remote cooldown and rejection policy owned by Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. HTTP and existing source/scope callbacks; checkpoint/HMAC/expiry, exact identity, remote cooldown and rejection policy owned by Rust"
     },
     {
       "path": "clinx/monitor/network_observation.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Public DTO/private Rust directory calls for compatibility qualification; native observation_directory owns production environment, identity, scope, remote mTLS and managed reads."
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public DTO/private Rust directory calls for compatibility qualification; native observation_directory owns production environment, identity, scope, remote mTLS and managed reads."
     },
     {
       "path": "clinx/monitor/observation_mcp.py",
@@ -456,11 +450,11 @@
     },
     {
       "path": "clinx/monitor/observation_source.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Public Collector facade and explicitly injected qualification callbacks; normal native/Provider/remote probes, live cache and decisions run in Rust observation_runtime"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public Collector facade and explicitly injected qualification callbacks; normal native/Provider/remote probes, live cache and decisions run in Rust observation_runtime"
     },
     {
       "path": "clinx/monitor/observer_server.py",
@@ -472,133 +466,127 @@
     },
     {
       "path": "clinx/monitor/rust_monitor.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Python public Monitor/observation facade and IO callbacks; managed result/context/recheck and MCP read policy delegated to Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Python public Monitor/observation facade and IO callbacks; managed result/context/recheck and MCP read policy delegated to Rust"
     },
     {
       "path": "clinx/monitor/rust_observation.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [],
-      "reason": "Rust managed inventory/turn projection and canonical sample facade; Authority and base-source IO callbacks only"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Rust managed inventory/turn projection and canonical sample facade; Authority and base-source IO callbacks only"
     },
     {
       "path": "clinx/nodes/__init__.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Current node protocol/registration/routing and Helper entry; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current node protocol/registration/routing and Helper entry; target owner Rust"
     },
     {
       "path": "clinx/nodes/node_centre_entrypoint.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Historical CLI alias that execs Rust clinx-node-daemon; Rust assembles Centre, paired Authority route and Collector lifecycle"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Historical CLI alias that execs Rust clinx-node-daemon; Rust assembles Centre, paired Authority route and Collector lifecycle"
     },
     {
       "path": "clinx/nodes/node_protocol.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Node/Scope DTOs, local sharing configuration and protocol facade; observation fanout, exact route/ACK/cursor/service projection owned by Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Node/Scope DTOs, local sharing configuration and protocol facade; observation fanout, exact route/ACK/cursor/service projection owned by Rust"
     },
     {
       "path": "clinx/nodes/node_runtime.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Existing paired identity/config objects and opaque IO callbacks; reverse Authority/remote provider scope and exact ACK validation owned by Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Existing paired identity/config objects and opaque IO callbacks; reverse Authority/remote provider scope and exact ACK validation owned by Rust"
     },
     {
       "path": "clinx/nodes/node_service_entrypoint.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Historical CLI alias that execs Rust clinx-node-daemon helper; normal Helper loads TOML, assembles Node/Provider/Collector and schedules entirely in Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Historical CLI alias that execs Rust clinx-node-daemon helper; normal Helper loads TOML, assembles Node/Provider/Collector and schedules entirely in Rust"
     },
     {
       "path": "clinx/nodes/provider_relay.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Private Rust Node relay/gateway bindings and installed endpoint configuration; no Python socket, buffer state or submission decisions."
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Private Rust Node relay/gateway bindings and installed endpoint configuration; no Python socket, buffer state or submission decisions."
     },
     {
       "path": "clinx/nodes/rust_node_adapter.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Thin Rust Node request client; target, canonical handoff, start/cancel/context checks live in Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Thin Rust Node request client; target, canonical handoff, start/cancel/context checks live in Rust"
     },
     {
       "path": "clinx/provider/__init__.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current Codex Provider protocol/native history/evidence reads; target owner Rust"
     },
     {
       "path": "clinx/provider/app_server.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Public Provider API/DTO/exception mapping and explicit injected test IO. Rust owns normal Process/SSH/Unix transports, framing, client request contracts, models and RPC lifecycle."
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public Provider API/DTO/exception mapping and explicit injected test IO. Rust owns normal Process/SSH/Unix transports, framing, client request contracts, models and RPC lifecycle."
     },
     {
       "path": "clinx/provider/desktop_socket.py",
-      "role": "ACTIVE_RUNTIME",
-      "profiles": [
-        "rust"
-      ],
-      "reason": "Current Codex Provider protocol/native history/evidence reads; target owner Rust"
+      "role": "DEAD",
+      "profiles": [],
+      "reason": "Replaced by clinx-provider --desktop-socket: exact existing path/peer/witness/inode validation and fixed alias maintenance in Rust; no remaining import or installer caller"
     },
     {
       "path": "clinx/provider/liveness.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Public dataclass/result codec for Rust evidence liveness classification"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public dataclass/result codec for Rust evidence liveness classification"
     },
     {
       "path": "clinx/provider/native_history.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Typed private Rust native-history client and historical protocol constants; no Python SQL/parser/state machine. Unused historical SQL budget helper retired."
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Typed private Rust native-history client and historical protocol constants; no Python SQL/parser/state machine. Unused historical SQL budget helper retired."
     },
     {
       "path": "clinx/provider/native_provider.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Endpoint/readonly Provider and OS IO facade plus exact-turn maintenance read; multi-provider evidence selection and native writer proof owned by Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Endpoint/readonly Provider and OS IO facade plus exact-turn maintenance read; multi-provider evidence selection and native writer proof owned by Rust"
     },
     {
       "path": "clinx/provider/native_writer_probe.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Public writer probe binding and explicit injected qualification callback; normal exact OS/process/FD evidence and read-only probe execution run solely in Rust observation_runtime"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Public writer probe binding and explicit injected qualification callback; normal exact OS/process/FD evidence and read-only probe execution run solely in Rust observation_runtime"
     },
     {
       "path": "clinx/provider/rust_workspace_probe.py",
@@ -608,11 +596,11 @@
     },
     {
       "path": "clinx/transport/__init__.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Current transport and tunnel supervisor implementation; target owner Rust"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Current transport and tunnel supervisor implementation; target owner Rust"
     },
     {
       "path": "clinx/transport/rust_transport.py",
@@ -905,11 +893,11 @@
     },
     {
       "path": "clinx/contracts/host_config.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
         "monitor"
       ],
-      "reason": "Host configuration values required by remaining Python TOML readers; no process or state implementation."
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Host configuration values required by remaining Python TOML readers; no process or state implementation."
     },
     {
       "path": "tools/build/host_runtime_config.py",
@@ -943,12 +931,11 @@
     },
     {
       "path": "clinx/nodes/network_worker.py",
-      "role": "ACTIVE_RUNTIME",
+      "role": "COMPAT",
       "profiles": [
-        "rust",
         "monitor"
       ],
-      "reason": "Bounded multiplexed private stdio and callbacks for Rust clients; request-specific timeout preserved without automatic replay"
+      "reason": "Public compatibility or qualification API; not shipped in the native runtime. Bounded multiplexed private stdio and callbacks for Rust clients; request-specific timeout preserved without automatic replay"
     },
     {
       "path": "fixtures/test_rust_node_network.py",
@@ -1085,7 +1072,7 @@
   ],
   "python_byte_percent_target": 5,
   "profile_notes": {
-    "rust": "Install-time Desktop socket verification maintenance closure only; normal Authority/Transport/Provider/MCP/Observer/Node/device CLI execute Rust directly",
+    "rust": "Empty: native Desktop socket maintenance retires the last published Python source closure. Install/build tools remain outside the release.",
     "monitor": "Historical Python API/layout qualification closure only. Current App uses architecture/native-runtime.json with zero Python sources/dependencies."
   }
 }

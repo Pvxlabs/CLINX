@@ -2,7 +2,6 @@
 """Stage an immutable runtime release. Does not select or stop production."""
 
 import argparse
-import fnmatch
 import hashlib
 import json
 import os
@@ -12,32 +11,17 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.build.runtime_sources import data_paths, inventory, source_paths
+from tools.build.runtime_sources import data_paths, source_paths
 
 
 def inherited_native_files(files, source):
-    """Dependency overlays cannot carry a second copy of CLINX runtime code."""
-    dead_paths = {row['path'] for row in inventory(source) if row['role'] == 'DEAD'}
-    moves = json.loads((source / 'architecture/module-moves.json').read_text())['modules']
-    # Only historical flat import names identify retired top-level modules.
-    # A nested dead __init__/model file must never prune a third-party package.
-    retired = {old for old, target in moves.items()
-               if '.' not in old and target.replace('.', '/') + '.py' in dead_paths}
-    retired_dependencies = json.loads((source / 'architecture/native-runtime.json').read_text())[
-        'retired_release_dependency_patterns']
-    result = {}
-    for name, digest in files.items():
-        path = Path(name)
-        if name == 'host-worker':
-            result[name] = digest
-        elif (name.startswith('deps/') and 'clinx' not in path.parts
-              and not any(fnmatch.fnmatchcase('/'.join(path.parts[1:]), pattern)
-                          or fnmatch.fnmatchcase(path.parts[1], pattern)
-                          for pattern in retired_dependencies)
-              and not (path.suffix in {'.py', '.pyc'}
-                       and path.name.split('.')[0] in retired)):
-            result[name] = digest
-    return result
+    """Only the existing privileged native launcher survives the old release.
+
+    All runtime binaries/data are supplied explicitly. Native Desktop socket
+    maintenance removes the final Python dependency, so deps overlays have no
+    current consumer and must not carry retired modules or wheels forward.
+    """
+    return {name: digest for name, digest in files.items() if name == 'host-worker'}
 
 
 def stage_desktop(args, source):
@@ -57,6 +41,8 @@ def stage_desktop(args, source):
         if path.stat().st_uid != 0 or path.stat().st_mode & 0o022 or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise SystemExit('BASE_RELEASE_CONTENT_MISMATCH:' + name)
     # No private Codex daemon/home is introduced; Provider uses the existing Desktop.
+    if source_paths(source, 'rust'):
+        raise SystemExit('PYTHON_FREE_RUST_RELEASE_REQUIRED')
     allowed = {'control/' + str(path.relative_to(source)): path
                for path in source_paths(source, 'rust') + data_paths(source, 'rust')}
     # Preserve only native dependencies from the old artifact. Python sources
@@ -128,6 +114,7 @@ def stage_desktop(args, source):
             if result.returncode or result.stdout.strip() != marker:
                 raise SystemExit('QUALIFIED_RUST_DEVICE_RUNTIME_REQUIRED')
         native_contracts = {
+            'clinx-provider': ('--desktop-socket-contract', 'RUST_DESKTOP_SOCKET_V1'),
             'clinx-mcp': ('--observation-runtime-contract', 'RUST_OBSERVATION_DIRECTORY_V1'),
             'clinx-observer': ('--observer-contract', 'RUST_OBSERVER_V1'),
             'clinx-device': ('--device-cli-contract', 'RUST_DEVICE_CLI_V1'),
@@ -162,7 +149,7 @@ def stage_desktop(args, source):
                   head=subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip(),
                   base_release=str(base), execution_daemon='EXISTING_DESKTOP_ONLY', native_transport='RUST_NATIVE_V1', host_transport='RUST_HOST_V1', mcp_runtime='RUST_MCP_V1', node_api='RUST_NODE_API_V1', node_network='RUST_NODE_NETWORK_V1', observation_runtime='RUST_OBSERVATION_V1', collector_runtime='RUST_COLLECTOR_V1', client_runtime='RUST_CLIENT_RUNTIME_V1', thin_runtime='RUST_THIN_RUNTIME_V1', device_runtime='RUST_DEVICE_RUNTIME_V1', node_daemon='RUST_NODE_DAEMON_V1', provider_exchange='RUST_PROVIDER_V1', workspace_observer='RUST_PROVIDER_V1',
                   observation_directory='RUST_OBSERVATION_DIRECTORY_V1', observer_runtime='RUST_OBSERVER_V1', device_cli='RUST_DEVICE_CLI_V1',
-                  python_source_purpose='INSTALL_TIME_DESKTOP_SOCKET_MAINTENANCE',
+                  desktop_socket_maintenance='RUST_DESKTOP_SOCKET_V1', python_sources=[], python_dependencies=[],
                   source_replacements=replacements, runtime_source_profile='rust', source_layout='qualified-clinx-v1',
                   retired_files=sorted(set(manifest['files']) - set(files)),
                   files=files, status='STAGED_NOT_SELECTED')

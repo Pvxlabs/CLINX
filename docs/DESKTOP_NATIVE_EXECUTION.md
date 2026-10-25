@@ -13,7 +13,8 @@ Rust 继续保存唯一任务权威、发送许可、输入去重、Host 调用�
 任务策略，新任务使用原生默认策略。显式 `HOST_EXECUTOR` 及省略 surface 时由
 `requested_operations` 选择的 Host 路径，继续校验准确的 capability、class 和 scope。
 
-`desktop_socket.py` 通过现有聊天的精确 thread ID、socket inode 和内核 peer UID
+`clinx-provider --desktop-socket --socket <exact-path> --witness-thread-id <exact-id>`
+通过现有聊天的精确 thread ID、socket inode 和内核 peer UID
 验证 Desktop 端点。`/run/clinx-rust-provider/provider.sock` 仅保留为历史账本使用的
 逻辑 socket 别名，直接指向 Desktop socket，不运行中间 daemon 或执行代理。
 Socket 消失时明确失败；重新发布前必须再次验证准确身份，不扫描并选择其他 daemon。

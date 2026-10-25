@@ -52,6 +52,7 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
         if command == [str(binaries['node_daemon_binary']), '--daemon-contract']:
             return stage.subprocess.CompletedProcess(command, 0, stdout='RUST_NODE_DAEMON_V1\n', stderr='')
         for key, option, marker in (
+            ('provider', '--desktop-socket-contract', 'RUST_DESKTOP_SOCKET_V1'),
             ('mcp', '--observation-runtime-contract', 'RUST_OBSERVATION_DIRECTORY_V1'),
             ('observer', '--observer-contract', 'RUST_OBSERVER_V1'),
             ('device', '--device-cli-contract', 'RUST_DEVICE_CLI_V1'),
@@ -73,8 +74,12 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     stage.stage_desktop(args, SOURCE_ROOT)
     receipt = json.loads(args.output.read_text())
     release = Path(receipt['release'])
-    assert receipt['python_source_purpose'] == 'INSTALL_TIME_DESKTOP_SOCKET_MAINTENANCE'
-    assert (release/'control/clinx/provider/desktop_socket.py').is_file()
+    # Installation now uses the native maintenance contract. This replaces
+    # the old source-presence requirement with absence of all Python payload.
+    assert receipt['desktop_socket_maintenance'] == 'RUST_DESKTOP_SOCKET_V1'
+    assert receipt['python_sources'] == receipt['python_dependencies'] == []
+    assert not list(release.rglob('*.py')) and not (release/'deps').exists()
+    assert not (release/'control/clinx/provider/desktop_socket.py').exists()
     assert not (release/'control/clinx/monitor').exists()
     assert not (release/'control/clinx/discovery').exists()
     assert (release/'clinx-observer').read_bytes() == b'observer'
@@ -85,7 +90,7 @@ def test_release_cannot_inherit_retired_python_from_any_old_root(tmp_path, monke
     assert (release/'clinx-mcp').read_bytes() == b'mcp'
     assert (release/'control/clinx/mcp/registry.json').is_file()
     assert receipt['native_transport'] == 'RUST_NATIVE_V1'
-    assert set(receipt['retired_files']) == set(previous)-{'host-worker', 'deps/keep.dat'}
+    assert set(receipt['retired_files']) == set(previous)-{'host-worker'}
     assert not (release/'clinx').exists() and not (release/'bridge.py').exists()
     assert not (release/'control/clinx/compat').exists()
     for name, digest in receipt['files'].items():
@@ -125,6 +130,4 @@ def test_dependency_overlay_cannot_smuggle_retired_host_or_second_clinx_package(
         'deps/httpx/_model.py',
         'deps/clinx/host/host_executor.py', 'deps/site-packages/clinx/transport/rust_transport.py',
         'deps/site-packages/task_registry.py', 'deps/__pycache__/bridge.cpython-313.pyc', 'deps/rust_workspace_probe.py')}
-    assert set(stage.inherited_native_files(files, SOURCE_ROOT)) == {
-        'host-worker', 'deps/keep.dat', 'deps/httpx/client.py', 'deps/httpx/__init__.py',
-        'deps/httpx/_model.py'}
+    assert set(stage.inherited_native_files(files, SOURCE_ROOT)) == {'host-worker'}

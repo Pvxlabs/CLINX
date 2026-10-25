@@ -72,6 +72,20 @@ fn run() -> Result<Value> {
     )
 }
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--desktop-socket-contract") {
+        println!("RUST_DESKTOP_SOCKET_V1");
+        return;
+    }
+    if std::env::args().nth(1).as_deref() == Some("--desktop-socket") {
+        match clinx_decision_kernel::desktop_socket::cli(std::env::args().skip(2)) {
+            Ok(value) => println!("{value}"),
+            Err(error) => {
+                eprintln!("DESKTOP_SOCKET=BLOCKED: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     let value = match run() {
         Ok(v) => json!({"result":v}),
         Err(e) => json!({"error":e}),

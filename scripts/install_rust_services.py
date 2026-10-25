@@ -74,6 +74,9 @@ def main():
             or manifest.get('workspace_observer') != 'RUST_PROVIDER_V1'
             or 'clinx-provider' not in manifest['files']):
         raise RuntimeError('QUALIFIED_RUST_PROVIDER_REQUIRED')
+    if (manifest.get('desktop_socket_maintenance') != 'RUST_DESKTOP_SOCKET_V1'
+            or manifest.get('python_sources') != [] or manifest.get('python_dependencies') != []):
+        raise RuntimeError('QUALIFIED_RUST_DESKTOP_SOCKET_REQUIRED')
     if manifest.get('observation_runtime') != 'RUST_OBSERVATION_V1':
         raise RuntimeError('QUALIFIED_RUST_OBSERVATION_REQUIRED')
     if (manifest.get('observation_directory') != 'RUST_OBSERVATION_DIRECTORY_V1'
@@ -129,8 +132,8 @@ def main():
         owned_dir(ROOT / name, user)
     owned_dir("/run/clinx-rust-provider", worker.pw_name, 0o2750, "clinx-ipc")
     desktop_socket = args.desktop_socket.resolve(strict=True)
-    subprocess.run(['runuser', '-u', worker.pw_name, '--', '/usr/bin/python3',
-                    str(release / 'control/clinx/provider/desktop_socket.py'), '--socket', str(desktop_socket),
+    subprocess.run(['runuser', '-u', worker.pw_name, '--', str(release / 'clinx-provider'),
+                    '--desktop-socket', '--socket', str(desktop_socket),
                     '--witness-thread-id', args.desktop_thread_id, '--apply'], check=True)
     config = tomllib.loads(args.bridge_config.read_text())
     config["app_server"]["local_socket"] = "/run/clinx-rust-provider/provider.sock"
@@ -183,7 +186,7 @@ Restart=on-failure
 RestartSec=3
 """
     execution_common = common.replace("ProtectSystem=strict", "ProtectSystem=no").replace("ProtectHome=read-only", "ProtectHome=no")
-    env = f"Environment=PYTHONPATH={release}/control:{release}/deps\nEnvironment=PYTHONDONTWRITEBYTECODE=1\nEnvironment=CLINX_AUTHORITY=rust\nEnvironment=CLINX_RUST_SOCKET=/run/clinx-rust/authority.sock\nEnvironment=CLINX_RUST_UID={a.pw_uid}\n"
+    env = f"Environment=CLINX_AUTHORITY=rust\nEnvironment=CLINX_RUST_SOCKET=/run/clinx-rust/authority.sock\nEnvironment=CLINX_RUST_UID={a.pw_uid}\n"
     command = f"{release}/clinx-runtime --state-dir {ROOT}/authority --socket /run/clinx-rust/authority.sock --policy {cfgdir}/policy.json --caller-uid {api.pw_uid} --transport-uid {transport.pw_uid}"
     units = {
         "clinx-rust-authority.service": f"""[Unit]

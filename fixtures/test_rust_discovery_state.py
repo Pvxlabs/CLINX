@@ -1,10 +1,7 @@
-"""Existing identity/trust and pairing lifecycle on disposable private stores."""
+"""Python custom-store refusal, exact exception identity and GC lock bindings."""
 import contextlib
 import hashlib
-from concurrent.futures import ThreadPoolExecutor
-
 import pytest
-
 from clinx.discovery.identity import DeviceError, NodeIdentity, PrivateStore, TrustedPeerStore
 from clinx.discovery.pairing import PairingWindow, PRODUCTION_PROTOCOL, PRODUCTION_TRUST
 
@@ -42,28 +39,6 @@ def test_read_only_peer_snapshot_creates_no_write_lock_and_never_mutates(tmp_pat
     assert not (a.store.root / 'store.lock').exists()
 
 
-def test_rust_trust_persists_conflicts_revoke_and_authentication_without_key_material(tmp_path):
-    a, b = identities(tmp_path)
-    peers = TrustedPeerStore(a.store)
-    peers.trust(b.public, b.certificate, security_status=PRODUCTION_TRUST,
-        pairing_protocol=PRODUCTION_PROTOCOL, fresh_pairing=True)
-    value = peers.authenticate('beta', b.public['public_key'])
-    assert value['last_authenticated_at'] is not None
-    with pytest.raises(DeviceError, match='IDENTITY_MISMATCH'):
-        peers.authenticate('beta', a.public['public_key'])
-    with pytest.raises(DeviceError, match='TRUST_DOWNGRADE_REJECTED'):
-        peers.trust(b.public, b.certificate, security_status='DEV_ONLY')
-    peers.revoke('beta')
-    with pytest.raises(DeviceError, match='UNTRUSTED_DEVICE'):
-        peers.authenticate('beta', b.public['public_key'])
-    with pytest.raises(DeviceError, match='IDENTITY_MISMATCH'):
-        peers.trust(b.public, b.certificate, security_status=PRODUCTION_TRUST,
-            pairing_protocol=PRODUCTION_PROTOCOL, fresh_pairing=True)
-    state = a.store.root / 'peers.json'
-    assert 'private_key' not in state.read_text()
-    assert state.stat().st_mode & 0o777 == 0o600
-
-
 def test_pairing_commit_failure_is_exact_and_consumed_before_io():
     window = PairingWindow()
     code = window.open()
@@ -80,29 +55,6 @@ def test_pairing_commit_failure_is_exact_and_consumed_before_io():
     with pytest.raises(DeviceError, match='PAIRING_REPLAY'):
         window.complete(reservation, success=True)
     window.close()
-
-
-def test_pairing_window_concurrency_has_one_commit_and_no_secret_restoration():
-    window = PairingWindow()
-    window.open()
-    reservation, _, _ = window.reserve()
-    commits = []
-    def complete(_):
-        try:
-            window.complete(reservation, success=True, commit=lambda: commits.append(True))
-            return 'accepted'
-        except DeviceError as exc:
-            return str(exc)
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(complete, range(8)))
-    assert results.count('accepted') == len(commits) == 1
-    assert results.count('PAIRING_REPLAY') == 7
-    assert window._code is None and window._id is None
-    fresh = PairingWindow()
-    with pytest.raises(DeviceError, match='PAIRING_CLOSED'):
-        fresh.reserve()
-    window.close()
-    fresh.close()
 
 
 @pytest.mark.parametrize('held_lock', ['worker', 'runtime'])

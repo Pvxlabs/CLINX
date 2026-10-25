@@ -22,7 +22,7 @@
 | `provider/app_server.py` | 公开 Codex API/请求参数与错误兼容；仍含 Process/SSH 资格传输接口 | 默认 Process/SSH/Unix/WebSocket/JSONL、request/notification、模型与thread/turn契约、响应关联、只发一次、writer guard、精确输入确认在 Rust；Python 保留签名/DTO/异常及显式测试 IO 注入 |
 | `provider/native_provider.py`、`native_writer_probe.py`、`liveness.py` | Provider/OS 只读 IO、平台异常与既有接口 | 多 Provider 证据选择、Linux writer PID/FD、Mac lsof/ps 证据判定、活性分类在 Rust |
 | `provider/native_history.py`、`monitor/native_associations.py` | Rust 历史客户端 | 无 Python SQL/JSONL 业务实现 |
-| `provider/desktop_socket.py` | 显式维护已安装 Desktop socket 别名 | 保持已有 endpoint/receipt 身份，不作为第二执行器 |
+| `provider/desktop_socket.py`（已删除） | Rust `clinx-provider --desktop-socket` 替代 | 原 socket/peer/witness/inode/alias 契约保持，安装器直接执行原生工具 |
 | `monitor/network_observation.py`、`native_observation_bridge.py` | 私有协议客户端、HTTP callback、授权对象装配 | 查询/目录/去重、HMAC checkpoint、scope 复检、远端冷却和身份决策在 Rust |
 | `monitor/observation_source.py` | Collector 公开 facade、显式测试注入 | spool/checkpoint/ACK、正常 Provider/native/HTTP 探针、live cache 及外层调度在 Rust |
 | `monitor/observer_server.py` | 对象回调、返回 codec、显式只读 snapshot API | HTTP listener/并发限制/auth/路由/脱敏和ActivityReader、旧 ObserverStore 查询/分页/事件/状态投影已迁 Rust；正常 CLI/环境/IO 装配现为 Rust；此 facade 只保留显式注入资格 API |
@@ -46,7 +46,8 @@
 新产物未部署；原生 Mac 构建/签名和新产物物理跨设备闭环需相应环境，
 Linux 的私有进程/mTLS/DNS wire fixture 不替代这些验收。
 
-Rust release 的 `rust` Python profile 现只含 `desktop_socket.py` 的 12 文件安装维护闭包，
-不再发布 Monitor/Discovery/MCP Python 模块；公开兼容 API 的旧包布局测试继续使用 `monitor` profile。
-`observer_server`/`observation_mcp`/`observer_bootstrap` 标为 COMPAT，其 Python 主运行实现已移除。
-详见 [本轮迁移记录](RUST_OBSERVER_RUNTIME_MIGRATION.md)。
+Rust release 的 `rust` Python profile 现为空；安装维护由 `clinx-provider --desktop-socket`
+执行，依赖 overlay 不再继承。Python 公开客户端/DTO 和显式测试注入仍在仓库中，统一标为 COMPAT，
+旧 monitor profile 仅供兼容资格，不是当前 App 资源。构建/维护工具本身仍需继续迁移。
+本轮将一组现役 Python 核心资格迁入 Rust，并保留依赖 Python 对象行为的最小smoke，
+逐用例映射与删除量见 [资格与维护迁移](RUST_QUALIFICATION_MIGRATION.md)。
