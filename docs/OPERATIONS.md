@@ -105,3 +105,19 @@ Observer/health 成功不证明真实任务成功；缺少权限或数据为 UNK
 监控源码见 [diagnostics](../kernel/src/diagnostics.rs)、[Tunnel](../kernel/src/tunnel_runtime.rs)、
 [Observer](../kernel/src/observer_runtime.rs)。quiet 不允许自行 recycle，断连不允许重放。
 历史运维证据统一见[文档地图](README.md)，其中绝对现场路径本次未作生产可达性验收。
+
+## 离线追加设备执行路由
+
+仅在明确授权、无活动执行且旧 writer 已退出时，由原 Authority 用户执行：
+
+```sh
+clinx-maintenance extend-business-policy --state /absolute/canonical/authority \
+  --policy /absolute/new-policy.json --authority-id EXACT_ID \
+  --expected-policy-hash OLD_CANONICAL_DIGEST --operation-id UNIQUE_ID --approved
+```
+
+占位值必须替换为本次读取的精确身份；旧哈希是 Rust canonical policy JSON 的摘要，
+不是带空白的配置文件字节哈希。工具只追加路由并持久化回执，不激活配置或服务。
+接下来选择回执 `after_hash` 对应的新 root 控制策略文件，使用同一 release 启动并读回。
+原数据库、配置备份仅供取证/恢复依赖，不得覆盖已经提交的业务事实。
+完整约束见 [ADR-008](architecture/ADR-008-additive-device-routes.md)。

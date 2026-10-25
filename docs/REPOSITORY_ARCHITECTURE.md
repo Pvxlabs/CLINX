@@ -120,3 +120,6 @@ Swift 只能通过原生 Helper/HTTP/IPC 适配读取或提交请求。SQL 是�
 固定源码百分比只保留历史比较用途，准入要求是零 Python 源码/依赖，而不是低于 5% 即可。
 
 当前配置与服务入口见[配置与运维](OPERATIONS.md)，不从历史报告推断已部署版本。
+
+离线设备路由维护复用原 Store writer 与业务回执链，不创建第二套状态权威。
+公开 MCP 不获得全局配置写权；边界见 [ADR-008](architecture/ADR-008-additive-device-routes.md)。

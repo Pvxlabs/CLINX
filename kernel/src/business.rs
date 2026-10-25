@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, os::unix::fs::MetadataExt, path::Path, process::Command};
 
+#[path = "business_policy.rs"]
+mod policy_maintenance;
+
 #[path = "business_handoff.rs"]
 mod handoff;
 #[path = "business_node.rs"]
@@ -65,6 +68,51 @@ pub struct Policy {
     pub derived_git_roots: Vec<String>,
 }
 impl Policy {
+    fn validate(&self) -> Result<()> {
+        if self.projects.is_empty()
+            || self.endpoints.is_empty()
+            || self.endpoints.iter().any(|p| !Path::new(p).is_absolute())
+            || !(1..=120_000).contains(&self.lease_ms)
+        {
+            return Err("INVALID_AUTHORITY_POLICY".into());
+        }
+        let mut aliases = std::collections::BTreeSet::new();
+        let mut routed = std::collections::BTreeSet::new();
+        for (host, endpoints) in &self.provider_routes {
+            if host.is_empty()
+                || host == "*"
+                || endpoints.is_empty()
+                || endpoints
+                    .iter()
+                    .any(|e| !self.endpoints.contains(e) || !routed.insert(e))
+            {
+                return Err("INVALID_PROVIDER_ROUTE".into());
+            }
+        }
+        for p in &self.projects {
+            self.endpoints_for(&p.host)?;
+            if p.alias.is_empty()
+                || p.host.is_empty()
+                || !Path::new(&p.cwd).is_absolute()
+                || !aliases.insert((&p.host, &p.alias))
+            {
+                return Err("INVALID_PROJECT_POLICY".into());
+            }
+        }
+        let mut hosts = std::collections::BTreeSet::new();
+        for w in &self.workspaces {
+            self.endpoints_for(&w.host)?;
+            if w.host.is_empty()
+                || !hosts.insert(&w.host)
+                || !Path::new(&w.root).is_absolute()
+                || Path::new(&w.root).canonicalize().ok().as_deref() != Some(Path::new(&w.root))
+                || !Path::new(&w.root).is_dir()
+            {
+                return Err("INVALID_WORKSPACE_POLICY".into());
+            }
+        }
+        Ok(())
+    }
     fn endpoints_for(&self, host: &str) -> Result<&[String]> {
         if self.provider_routes.is_empty() {
             Ok(&self.endpoints)
@@ -540,48 +588,7 @@ struct Start {
 
 impl Store {
     pub fn configure_business(&self, policy: &Policy, initialize: bool) -> Result<()> {
-        if policy.projects.is_empty()
-            || policy.endpoints.is_empty()
-            || policy.endpoints.iter().any(|p| !Path::new(p).is_absolute())
-            || !(1..=120_000).contains(&policy.lease_ms)
-        {
-            return Err("INVALID_AUTHORITY_POLICY".into());
-        }
-        let mut aliases = std::collections::BTreeSet::new();
-        let mut routed = std::collections::BTreeSet::new();
-        for (host, endpoints) in &policy.provider_routes {
-            if host.is_empty()
-                || host == "*"
-                || endpoints.is_empty()
-                || endpoints
-                    .iter()
-                    .any(|e| !policy.endpoints.contains(e) || !routed.insert(e))
-            {
-                return Err("INVALID_PROVIDER_ROUTE".into());
-            }
-        }
-        for p in &policy.projects {
-            policy.endpoints_for(&p.host)?;
-            if p.alias.is_empty()
-                || p.host.is_empty()
-                || !Path::new(&p.cwd).is_absolute()
-                || !aliases.insert((&p.host, &p.alias))
-            {
-                return Err("INVALID_PROJECT_POLICY".into());
-            }
-        }
-        let mut hosts = std::collections::BTreeSet::new();
-        for w in &policy.workspaces {
-            policy.endpoints_for(&w.host)?;
-            if w.host.is_empty()
-                || !hosts.insert(&w.host)
-                || !Path::new(&w.root).is_absolute()
-                || Path::new(&w.root).canonicalize().ok().as_deref() != Some(Path::new(&w.root))
-                || !Path::new(&w.root).is_dir()
-            {
-                return Err("INVALID_WORKSPACE_POLICY".into());
-            }
-        }
+        policy.validate()?;
         let data = core::canonical(&serde_json::to_value(policy).map_err(|_| "INVALID_POLICY")?);
         if initialize {
             self.conn

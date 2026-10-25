@@ -64,6 +64,13 @@ Rust/Swift 归属、直接模块依赖、Cargo targets 与发布名单一致性�
 CI 运行同一 Cargo/audit 入口，不依赖新的文档框架。workflow 与本地执行通过并不证明远端
 分支保护、真实设备、生产部署或业务验收。
 
+CI 设置 `RUST_TEST_THREADS=1`，避免多个独立未优化 OPAQUE/Argon2i fixture 争用共享
+runner CPU，耗尽生产的 5 秒 frame deadline。测试内部的并发请求、锁竞争和跨进程断言
+仍照常执行，没有 skip、重试或延长协议期限。2026-10-26 的两核/13 fixture 并发实验
+复现了 10 个 `FRAME_TIMEOUT`，同一套测试两核/2 与 4 fixture 并发均为 13 PASS；
+这证明资源争用可以造成握手失败，但不能反推 GitHub 单次 `REMOTE_REQUEST_REJECTED`
+的唯一原因。保留该次失败日志；远端 CI 仍须对最终提交重新通过。
+
 ## macOS 编译兼容回归
 
 在每台目标 Mac 的任务私有源码目录使用 Rust 1.98+ 和现有签名身份执行：
@@ -95,3 +102,10 @@ ignored Python `tests/` 是历史归档，保留原字节、失败、skip 和独
 当前 Rust 功能测试失败不能因迁移已完成而被豁免。
 writer-lock 回归显式使用 `0700` 的 canonical 临时目录，不依赖开发机的 `umask 077`；
 CI 首次在 `umask 022` 暴露的目录权限失败保留记录，修复不得放宽生产路径校验。
+
+## 设备路由维护回归
+
+`cargo test --locked --manifest-path kernel/Cargo.toml --test policy_extension`
+验证 writer 排他、身份/CAS/旧路由保护、活动执行拒绝、取消后增配、原 Task 保留、
+提交前故障回滚、提交后未知 ACK 原回执、重启和 CLI 显式授权。使用私有 Store，
+不操作生产配置；设备配对及跨设备执行仍须另外验收。

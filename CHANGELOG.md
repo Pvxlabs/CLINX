@@ -8,8 +8,12 @@
 macOS 版本号从现装 `0.3.1 (289)` 前进到 `0.3.2 (290)`；P620 release 仍按内容哈希编号。
 以下源码已进入本次候选；安装与生产验收须以当次部署回执为准。
 
+- 增加受限 Rust 离线设备路由增配：精确身份/CAS、零活动执行、仅追加、原子审计回执；
+  不改变公开 MCP、任务状态机或现有路由。见 [ADR-008](docs/architecture/ADR-008-additive-device-routes.md)。
 - 修正 writer-lock 回归的临时目录前提：显式私有权限与 canonical 路径，
   在 CI 的 `umask 022` 下保持原有 writer 排他、子进程继承和关闭释放断言。
+- 限制 CI 独立测试 fixture 并发，避免未优化 OPAQUE 计算争用共享 CPU；保留生产超时、
+  原有并发测试和全部断言，资源实验与历史失败边界见[测试指南](docs/TESTING.md)。
 
 - 修复 macOS Rust Helper 编译：以平台适配保持 socket FD/阻塞标志、时钟和设备号类型正确，
   新增六种 socket 模式回归；Linux 原有 socket/lease 语义保持。验证入口见

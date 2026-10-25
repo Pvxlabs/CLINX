@@ -22,3 +22,9 @@ Node Registry、设备 trust、Collector 与观察库只拥有各自领域数据
 的旧进程必须在单独授权的部署中实际撤权并证明；本次源码检查不声明已完成生产撤权。
 回退不能用旧数据库或快照覆盖新的已提交事实。历史部署和容量修复记录保留在
 [Rust Authority 报告](RUST_AUTHORITY.md)，不从其中推导当前进程状态。
+
+## 全局路由增配
+
+`business_config` 的受控扩展由 Rust Store 离线 writer 完成，策略与回执原子提交到原
+业务哈希链，不能使用第二 writer 或手工 SQL。只追加既有主机语义不变的新路由，
+要求精确身份/CAS、零活动执行和零 ACTIVE lease。见 [ADR-008](architecture/ADR-008-additive-device-routes.md)。

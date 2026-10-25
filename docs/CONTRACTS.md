@@ -66,3 +66,11 @@ IPC 本地 Unix socket 检查 path/peer UID，frame 有界；远程身份走配�
 修改接口时保留 version/schema、错误码、幂等 scope、ACK 不确定和原子提交语义；
 不兼容变更先补 golden cases、消费者验证及 ADR。旧文档的生产/迁移计数属于历史，
 当前命令和安装前提以[配置与运维](OPERATIONS.md)为准。
+
+## 离线策略维护契约
+
+`CLINX_ADDITIVE_POLICY_V1` 只通过显式维护 CLI 使用，未加入公开 MCP 或运行 IPC。
+`POLICY_EXTENDED_NOT_ACTIVATED` 表示策略及回执已持久化，不表示服务已选择它。
+`POLICY_CAS_CONFLICT`、`POLICY_AUTHORITY_CONFLICT`、`POLICY_EXISTING_ROUTE_CHANGED`
+和 `POLICY_ACTIVE_EXECUTIONS_OR_LEASES` 都拒绝变更；未知 ACK 按原 operation ID 读取。
+限制、幂等及后续激活责任见 [ADR-008](architecture/ADR-008-additive-device-routes.md)。

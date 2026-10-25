@@ -315,7 +315,20 @@ fn run(args: Vec<String>) -> Result<Value> {
 }
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args.first().is_some_and(|a| a == "extend-business-policy") {
+        match extend_policy(&args[1..]) {
+            Ok(value) => println!("{value}"),
+            Err(error) => {
+                eprintln!("MAINTENANCE=BLOCKED: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if args == ["--help"] {
+        println!(
+            "clinx-maintenance extend-business-policy --state CANONICAL_DIR --policy NEW_JSON --authority-id ID --expected-policy-hash HASH --operation-id ID --approved\nOffline additive device routes only. Run as the existing Authority owner after all writers stop; no active executions or leases. Persists an idempotent receipt, never activates services or replaces policy files."
+        );
         println!(
             "clinx-maintenance transfer-native-session --source-receipt FILE --source-endpoint SOCKET --release DIR --output UNIQUE_RECEIPT --destination-home CURRENT_PROVIDER_HOME [--source-user USER] [--source-home CODEX_HOME] [--runtime-config MCP_RUNTIME_JSON] [--worker-user-file FILE] [--project ALIAS]\nExplicit terminal-session maintenance only. No automatic retry, deployment, service lifecycle or task/lease migration.\nDefaults: source user pvxlabs; source home is that account's .codex; project clinx.\nRuntime config: /var/lib/clinx-rust/config/mcp-runtime.json; worker identity: /var/lib/clinx-rust/config/worker-user.\nDestination home is required, never inferred from retired codex160 paths.\nLinux root orchestration retains runuser identities clinx-transport/clinx-api and the existing clinx-rust-dispatcher.service mount namespace. Authority socket: /run/clinx-rust/authority.sock; peer UID is resolved from clinx-authority, never hard-coded."
         );
@@ -342,6 +355,61 @@ fn main() {
             std::process::exit(1)
         }
     }
+}
+
+fn extend_policy(args: &[String]) -> Result<Value> {
+    let mut values = BTreeMap::new();
+    let mut approved = false;
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--approved" && !approved {
+            approved = true;
+            i += 1;
+            continue;
+        }
+        if ![
+            "--state",
+            "--policy",
+            "--authority-id",
+            "--expected-policy-hash",
+            "--operation-id",
+        ]
+        .contains(&args[i].as_str())
+        {
+            return Err("POLICY_ARGUMENT_INVALID".into());
+        }
+        let value = args
+            .get(i + 1)
+            .filter(|v| !v.starts_with("--"))
+            .ok_or("POLICY_ARGUMENT_REQUIRED")?;
+        if values.insert(args[i].as_str(), value.as_str()).is_some() {
+            return Err("POLICY_ARGUMENT_DUPLICATE".into());
+        }
+        i += 2;
+    }
+    if !approved || values.len() != 5 {
+        return Err("APPROVED_EXACT_POLICY_ARGUMENTS_REQUIRED".into());
+    }
+    let state = Path::new(values["--state"]);
+    let policy = Path::new(values["--policy"]);
+    if !state.is_absolute()
+        || !policy.is_absolute()
+        || !policy
+            .symlink_metadata()
+            .is_ok_and(|m| m.is_file() && m.len() <= 1024 * 1024)
+    {
+        return Err("POLICY_PATH_INVALID".into());
+    }
+    let next: clinx_decision_kernel::business::Policy =
+        serde_json::from_slice(&fs::read(policy).map_err(|_| "POLICY_READ_FAILED")?)
+            .map_err(|_| "INVALID_POLICY")?;
+    let mut store = clinx_decision_kernel::authority_store::Store::open(state, false)?;
+    store.extend_business_policy(
+        &next,
+        values["--authority-id"],
+        values["--expected-policy-hash"],
+        values["--operation-id"],
+    )
 }
 
 #[cfg(test)]

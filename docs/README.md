@@ -93,6 +93,7 @@ REFERENCE 中的历史 implementation mapping 也不是当前路径定义，使�
 | [docs/architecture/ADR-004-provider-adapter-contract.md](architecture/ADR-004-provider-adapter-contract.md) | SUPERSEDED | ADR-004: Provider Adapter Contract and Codex Conformance；旧定义已被当前 Rust 入口替代；保留取证/决策背景 |
 | [docs/architecture/ADR-006-monitor-read-only-observer.md](architecture/ADR-006-monitor-read-only-observer.md) | REFERENCE | ADR-006: CLINX Monitor reads canonical persisted facts through a separate observer；专项语义/历史实现参考；现行实现以契约地图为准 |
 | [docs/architecture/ADR-007-rust-source-policy.md](architecture/ADR-007-rust-source-policy.md) | CURRENT | ADR-007：Rust 后端唯一实现与文档权威；现行入口；按用途维护 |
+| [docs/architecture/ADR-008-additive-device-routes.md](architecture/ADR-008-additive-device-routes.md) | REFERENCE | 设备执行路由的离线增配；当前命令见运维指南，部署另行验收 |
 | [docs/architecture/EXECUTION_CORE_STATE_CONTRACT_V1.md](architecture/EXECUTION_CORE_STATE_CONTRACT_V1.md) | REFERENCE | 第二阶段：执行核心状态契约 v1；专项语义/历史实现参考；现行实现以契约地图为准 |
 | [docs/architecture/RUST_RUNTIME_PROTOTYPE_STAGE3.md](architecture/RUST_RUNTIME_PROTOTYPE_STAGE3.md) | SUPERSEDED | 第三阶段：隔离 Rust Runtime 原型；旧定义已被当前 Rust 入口替代；保留取证/决策背景 |
 | [docs/architecture/v2-review.md](architecture/v2-review.md) | SUPERSEDED | CLINX V2 Architecture Review；旧定义已被当前 Rust 入口替代；保留取证/决策背景 |

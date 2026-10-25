@@ -321,6 +321,8 @@
     "kernel/src/bin/clinx-maintenance.rs": {
       "role": "tool",
       "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs",
         "kernel/src/maintenance_transfer.rs",
         "kernel/src/mcp.rs",
         "kernel/src/provider.rs"
@@ -438,6 +440,7 @@
         "kernel/src/authority_store.rs",
         "kernel/src/business_handoff.rs",
         "kernel/src/business_node.rs",
+        "kernel/src/business_policy.rs",
         "kernel/src/business_targets.rs",
         "kernel/src/business_workspace.rs",
         "kernel/src/execution_core.rs",
@@ -449,6 +452,10 @@
       "dependencies": []
     },
     "kernel/src/business_node.rs": {
+      "role": "runtime",
+      "dependencies": []
+    },
+    "kernel/src/business_policy.rs": {
       "role": "runtime",
       "dependencies": []
     },
@@ -1316,6 +1323,14 @@
         "kernel/tests/support/observation.rs",
         "kernel/tests/support/observer_fixture.rs",
         "kernel/tests/support/provider.rs"
+      ]
+    },
+    "kernel/tests/policy_extension.rs": {
+      "role": "qualification",
+      "dependencies": [
+        "kernel/src/authority_store.rs",
+        "kernel/src/business.rs",
+        "kernel/src/execution_core.rs"
       ]
     },
     "kernel/tests/policy_maintenance.rs": {
