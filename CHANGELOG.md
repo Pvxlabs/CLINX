@@ -3,7 +3,10 @@
 用途：追踪源码与兼容边界变化。适用范围：Git 主线；不是已部署版本清单。
 状态：CURRENT。验证：Git diff/log、[测试指南](docs/TESTING.md)与候选 manifest。
 
-## Unreleased — 2026-10-25
+## 0.3.2 (290) — 发布候选 2026-10-26
+
+macOS 版本号从现装 `0.3.1 (289)` 前进到 `0.3.2 (290)`；P620 release 仍按内容哈希编号。
+以下源码已进入本次候选；安装与生产验收须以当次部署回执为准。
 
 - 修复 macOS Rust Helper 编译：以平台适配保持 socket FD/阻塞标志、时钟和设备号类型正确，
   新增六种 socket 模式回归；Linux 原有 socket/lease 语义保持。验证入口见
