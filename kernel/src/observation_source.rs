@@ -159,21 +159,37 @@ fn sample(a: &Value, mut call: impl FnMut(&str, Value) -> Result<Value>) -> Resu
     });
     if a["live_enabled"] == true
         && truth(&turns[latest]["turn_id"])
-        && turns[latest]["native_state"] == "RUNNING"
+        && (turns[latest]["native_state"] == "RUNNING"
+            || (turns[latest]["native_state"] == "UNKNOWN"
+                && matches!(
+                    text(&turns[latest]["execution_state"]),
+                    "ADMITTED" | "RUNNING" | "FINALIZING"
+                )))
         && turns[latest].get("live_observation").is_none()
     {
         turns[latest]["live_observation"] = call(
             "source.observe_live",
             json!({"tid":tid,"project":m["cwd"],"turn_id":turns[latest]["turn_id"]}),
         )?;
+        let proof = &turns[latest]["live_observation"];
+        if proof["thread_id"] == *tid
+            && proof["turn_id"] == turns[latest]["turn_id"]
+            && matches!(
+                text(&proof["native_state"]),
+                "RUNNING" | "COMPLETED" | "INTERRUPTED" | "FAILED"
+            )
+        {
+            turns[latest]["native_state"] = proof["native_state"].clone();
+        }
     }
     // Old unfinished history must not occupy the collector's live priority
     // queue after a newer turn has completed. Keep the old evidence in events.
+    let execution_state = text(&turns[latest]["execution_state"]);
     state["active"] = json!(
         turns[latest]["native_state"] == "RUNNING"
             || matches!(
-                text(&turns[latest]["execution_state"]),
-                "CODEX_RUNNING" | "FINALIZING" | "TURN_STARTED"
+                execution_state,
+                "ADMITTED" | "RUNNING" | "CODEX_RUNNING" | "FINALIZING" | "TURN_STARTED"
             )
     );
     if tasks.len() > 1 {

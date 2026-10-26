@@ -5,6 +5,18 @@ macOS 与生产另行验收。状态：CURRENT。验证方法：执行以下命�
 
 ## 隔离 Linux 验证
 
+状态语义回归：`collector_qualification` 验证 260 条积压 FIFO/ACK、未知 ACK、
+慢采样让出上传和历史/实时轮换、托管状态优先级；`observation_qualification` 验证
+收到新快照但源证明过期仍 NOT_PROVEN、Codex 状态不变，以及 clock skew、identity conflict 和 Running 过滤。
+macOS 执行 `cd MonitorApp && swift test`：`NetworkObservationTests` 验证实际源证明期限、
+原 lifecycle 保存、观测过期不改变 Codex 状态或 Active、断连不取消和缺少进度时间不显示刚刚更新。
+实机验收需同时记录 native turn、Codex status、proof timestamp、received_at 和界面；
+不能把上述私有回归或短观察窗口当作长时间生产稳定性证明。
+
+adoption 撤销回归位于 `native_routing` 与 `mcp_retirement_qualification`：验证精确目标、
+批准/API 身份、幂等回执、迟到 nonce 提交拒绝、已登记请求拒绝、其他任务/lease 不变，
+以及 MCP 不调用 Provider。沿用下述私有状态执行两套测试和完整 Rust 回归。
+
 需要 Rust 1.98+、Git、C linker、OpenSSL CLI。先创建属于本任务的目录，P620 构建放 `/lab`，
 状态和临时资格仓库放 `/data/artifacts`；Unix socket 路径应短。以下路径为占位值，替换后执行。
 保留原工具链/cache 的显式 `CARGO_HOME`、`RUSTUP_HOME`；不要继承生产 CLINX 环境变量。

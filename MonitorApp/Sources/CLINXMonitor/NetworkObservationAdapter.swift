@@ -23,11 +23,7 @@ enum NetworkObservationAdapter {
             }
             byThread[key] = item
         }
-        return byThread.sorted { $0.key < $1.key }.compactMap { key, item in
-            if let ref = item.taskRef, let execution = item.turn.executionRef,
-               canonical.contains(where: { $0.taskRef == ref && $0.executionRef == execution }) { return nil }
-            return row(item, key: key)
-        }
+        return byThread.sorted { $0.key < $1.key }.map { row($0.value, key: $0.key) }
     }
 
     static func supersedesAdoption(_ task: ObservedTask, observations: [NetworkObservation]) -> Bool {
@@ -38,8 +34,11 @@ enum NetworkObservationAdapter {
             guard item.nodeId == identity.nodeId && item.provider == identity.provider &&
                 item.nativeThreadId == identity.threadId else { return false }
             if item.turn.nativeState == "RUNNING" {
+                // Superseding an unbound adoption is an identity decision, not
+                // the status display. Keep its original evidence requirement.
                 return item.liveness == "PROVEN" && item.freshness == "RECENT" &&
-                    (0..<30).contains(Date().timeIntervalSince1970 - item.receivedAt)
+                    (0..<30).contains(Date().timeIntervalSince1970 - item.receivedAt) &&
+                    Date().timeIntervalSince1970 < (item.livenessValidUntil ?? 0)
             }
             // Durable terminal evidence may supersede an older adoption, never a
             // newer queued intent or any task with a canonical execution.
@@ -58,31 +57,11 @@ enum NetworkObservationAdapter {
     private static func row(_ item: NetworkObservation, key: String) -> ObservedTask {
         let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         let ref = item.taskRef ?? ("native_observation_" + digest)
-        let state: String
+        let state = item.turn.nativeState
         let canonicalState = item.bindingEvidence == "CANONICAL_ROUTE" && item.turn.executionRef != nil
             ? item.turn.executionState : nil
-        let terminalState: String?
-        switch canonicalState {
-        case "SUCCEEDED": terminalState = "COMPLETED"
-        case "FAILED": terminalState = "FAILED"
-        case "CANCELLED", "FENCED": terminalState = "CANCELLED"
-        default: terminalState = nil
-        }
-        switch terminalState ?? item.turn.nativeState {
-        case "RUNNING":
-            // Persisted native indexes are historical evidence, not proof that a
-            // runtime is still executing. Only an explicit liveness proof may
-            // enter the Monitor Active projection.
-            state = item.liveness == "PROVEN" && item.freshness == "RECENT" &&
-                (0..<30).contains(Date().timeIntervalSince1970 - item.receivedAt) ? "CODEX_RUNNING" : "UNKNOWN"
-        case "FAILED": state = "FAILED"
-        case "COMPLETED": state = "COMPLETED"
-        case "CANCELLED", "INTERRUPTED", "TIMED_OUT", "DISCONNECTED": state = "CANCELLED"
-        default: state = "UNKNOWN"
-        }
-        let observed = item.sourceUpdatedAt.isEmpty
-            ? ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: item.receivedAt))
-            : item.sourceUpdatedAt
+        let observed = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: item.receivedAt))
+        let sourceUpdated = item.sourceUpdatedAt.isEmpty ? nil : item.sourceUpdatedAt
         let started = item.turn.startedAt?.isEmpty == false ? item.turn.startedAt : nil
         let completed = item.turn.completedAt?.isEmpty == false ? item.turn.completedAt : nil
         let host = item.nodeId
@@ -91,15 +70,15 @@ enum NetworkObservationAdapter {
             schemaVersion: "presentation-native-v2", taskRef: ref,
             executionRef: item.bindingEvidence == "CANONICAL_ROUTE" ? item.turn.executionRef : nil,
             project: item.project, title: item.shortTitle, host: host,
-            state: state, stage: item.turn.nativeState, executionState: state,
+            state: state, stage: item.turn.nativeState, executionState: canonicalState ?? "UNKNOWN",
             executionStage: item.turn.nativeState,
             model: ModelIdentity(logical: nil, resolved: item.turn.model), reasoning: nil,
             currentActivity: CurrentActivity(kind: "NATIVE_OBSERVATION", label: activity, observedAt: observed),
             blocker: nil,
-            timestamps: TaskTimestamps(createdAt: started, updatedAt: observed,
-                                       lastProgressAt: observed, startedAt: started,
+            timestamps: TaskTimestamps(createdAt: started, updatedAt: sourceUpdated,
+                                       lastProgressAt: nil, startedAt: started,
                                        completedAt: completed, observedAt: observed),
-            elapsedSeconds: nil, codexRunning: state == "CODEX_RUNNING", retryRequired: false,
+            elapsedSeconds: nil, codexRunning: item.isRunning, retryRequired: false,
             mutationBoundary: MutationBoundary(observerReadOnly: true, allowedActions: [],
                                                executionOperationClasses: nil, executionSurface: nil,
                                                authorityStatus: "NATIVE_OBSERVATION_ONLY"),
@@ -114,6 +93,9 @@ enum NetworkObservationAdapter {
             artifacts: [], artifactsStatus: "UNAVAILABLE", menuState: "READ_ONLY",
             observationId: item.observationId,
             nativeConversation: NativeConversation(nodeId: item.nodeId, provider: item.provider, threadId: item.nativeThreadId),
-            codexUri: item.codexUri)
+            codexUri: item.codexUri,
+            observationFreshness: item.freshness,
+            observationLivenessReason: item.livenessReason,
+            observationLivenessValidUntil: item.livenessValidUntil)
     }
 }

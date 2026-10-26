@@ -59,6 +59,9 @@ public struct ObservedTask: Codable, Identifiable, Sendable {
     public var observationId: String? = nil
     public var nativeConversation: NativeConversation? = nil
     public var codexUri: String? = nil
+    public var observationFreshness: String? = nil
+    public var observationLivenessReason: String? = nil
+    public var observationLivenessValidUntil: Double? = nil
 }
 
 public struct NativeConversation: Codable, Sendable {

@@ -240,7 +240,8 @@ struct ExecutionRowView: View {
                         .layoutPriority(1)
 
                     Spacer(minLength: 4)
-                    Text(task.rowTail(status: status))
+                    Text(task.nativeUpdateNotice == nil ? task.rowTail(status: status) : "显示上次状态")
+                        .help(task.nativeUpdateNotice ?? task.statusLabel)
                         .font(DS.Font.rowTrailing)
                         .monospacedDigit()
                         .lineLimit(1)
@@ -293,7 +294,7 @@ struct ExecutionRowView: View {
     }
 
     private var statusExplanation: String {
-        "Last reported execution state: \(status.label)"
+        "Last reported execution state: \(task.statusLabel)" + (task.nativeUpdateNotice.map { " · " + $0 } ?? "")
     }
 
     private func tailColor(_ status: MonitorStatus) -> Color {

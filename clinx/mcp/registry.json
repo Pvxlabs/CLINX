@@ -6,6 +6,32 @@
   "instructions": "CLINX forwards messages to native Codex conversations without a reply format contract. Return execution_result.response_text as the original Markdown; do not rewrite it into summary fields. Native COMPLETED records turn completion only; business_outcome=NOT_EVALUATED is not a business PASS. There is one execution backend: native Codex, using its own runtime configuration. When the user supplies codex://threads/... preserve the complete URI including hostId and pass it directly as codex_uri to clinx_prepare_execution. Do not search first, read status first, or call adopt separately. Reuse a known task_ref when no URI is supplied. Only search if the destination is genuinely unknown. The user's request to send or continue work supplies approval; use approved=true without asking for the same approval again. Prepare once, then call clinx_start_execution with the returned prepared_execution_ref and approved=true. Execution stays native Codex. On the Rust connector, an exact thread uses its live native cwd; workspace_contract can otherwise supply an absolute cwd in the target repository. Branch and HEAD snapshots do not gate native forwarding. Independent tasks may share a cwd. Do not put routing requirements only in prompt. Native tasks use full access with no CLINX network gate or filesystem sandbox; legacy network_access flags do not restrict execution. Do not routinely call clinx_get_prepared_request between prepare and start. After a lost response, inspect the ORIGINAL prepared request or exact execution before retrying; never submit another preparation blindly. QUEUED is not Provider running: report execution_started and the returned state accurately. Query status only for progress, results or a concrete conflict. CLINX coordinates task identity and active execution ownership, not operation permissions. Linear is optional audit history. Cancellation uses a managed execution_ref, or a canonical native task_ref with its observed native_turn_id and approved=true. Native cancellation requires the owning node execution scope and remains pending until the native terminal event. For read requests use exact thread_id/codex_uri selectors; do not search the ID as query.",
   "tools": [
     {
+      "name": "clinx_cancel_adoption",
+      "description": "Cancel one exact pending adoption through the local Authority API. Preserves its audit record and native conversation; never cancels an execution or deletes a task. Already adopted requests are rejected.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "adoption_ref": { "type": "string", "pattern": "^adopt_[a-f0-9]{64}$" },
+          "approved": { "type": "boolean", "const": true }
+        },
+        "required": ["adoption_ref", "approved"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "adoption_ref": { "type": "string" },
+          "adoption_status": { "type": "string", "const": "CANCELLED" },
+          "status": { "type": "string", "const": "CANCELLED" },
+          "thread_id": { "type": "string" },
+          "cancel_operation_id": { "type": "string" }
+        },
+        "required": ["adoption_ref", "adoption_status", "status", "thread_id", "cancel_operation_id"],
+        "additionalProperties": true
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false }
+    },
+    {
       "name": "clinx_find_task",
       "description": "Find active or historical CLINX tasks by human query.",
       "inputSchema": {

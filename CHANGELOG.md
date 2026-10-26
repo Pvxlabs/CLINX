@@ -3,6 +3,18 @@
 用途：追踪源码与兼容边界变化。适用范围：Git 主线；不是已部署版本清单。
 状态：CURRENT。验证：Git diff/log、[测试指南](docs/TESTING.md)与候选 manifest。
 
+## 0.3.2 (294) — 发布候选 2026-10-26
+
+- 新增精确撤销待处理 adoption 的 Authority/MCP 操作，保留原记录和事务回执；
+  从工作队列移出并拒绝迟到的登记提交，不取消原生会话、不修改 Task/Execution/lease。
+  已完成登记的请求不能通过此操作撤销。
+- Monitor 直接映射 Codex TurnStatus，不再因采集过期把 Running 改为 Unknown 并移出 Active。
+  更新延迟/连接中断另行标注并保留上次状态；Interrupted 不改写为 Cancelled，CLINX 账本不覆盖原生状态。
+  原 Execution 生命周期单独保留，无进度时间证据不显示刚刚更新。
+- Collector 优先排空有界 FIFO、按原 seq/ACK 恢复，采样按软预算分片并保留未采样 metadata；
+  轮换实时与历史优先级，托管运行任务在 native 历史缺失时仍继续精确探测，不凭账本状态假定 LIVE。
+  服务端增加 `liveness_reason`、`liveness_valid_until` 供观测质量诊断，均不作为任务状态。
+
 ## 0.3.2 (293) — 发布候选 2026-10-26
 
 - 完整历史输入恢复从固定 5 页改为 1024 页及原 16 MiB 容量边界，覆盖超过 500 条记录的长任务；

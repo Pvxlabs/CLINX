@@ -45,6 +45,9 @@ impl Authority for IO {
             "adopt" => {
                 json!({"adoption_status":"PENDING","thread_id":p["thread_id"],"task_ref":"task_adopted"})
             }
+            "cancel_adoption" => {
+                json!({"adoption_ref":p["adoption_ref"],"adoption_status":"CANCELLED","status":"CANCELLED","thread_id":THREAD,"cancel_operation_id":"cancel-fixture"})
+            }
             "get_status" => {
                 json!({"execution_ref":"exec_old","task_ref":"task_existing","thread_id":THREAD,"native_turn_id":"historical-turn","status":"SUCCEEDED","execution_result":{"response_text":"Original historical reply"}})
             }
@@ -101,6 +104,24 @@ fn call(s: &mut Server<IO, IO, NoObservations>, name: &str, a: Value) -> Value {
 fn success(v: Value) -> Value {
     assert_eq!(v["isError"], false, "{v}");
     v["structuredContent"].clone()
+}
+#[test]
+fn pending_adoption_cancellation_uses_exact_authority_request_without_provider_io() {
+    let (mut server, state) = fixture();
+    let reference = format!("adopt_{}", "a".repeat(64));
+    let args = json!({"adoption_ref":reference,"approved":true});
+    let result = success(call(&mut server, "clinx_cancel_adoption", args.clone()));
+    assert_eq!(result["adoption_ref"], reference);
+    assert_eq!(result["adoption_status"], "CANCELLED");
+    assert_eq!(state.borrow().calls, vec![("cancel_adoption".into(), args)]);
+    assert!(state.borrow().reads.is_empty());
+    let denied = call(
+        &mut server,
+        "clinx_cancel_adoption",
+        json!({"adoption_ref":reference,"approved":true,"execution_ref":"unrelated"}),
+    );
+    assert_eq!(denied["isError"], true);
+    assert_eq!(state.borrow().calls.len(), 1);
 }
 fn create() -> Value {
     json!({"approved":true,"task_action":"create","project":"orion","prompt":"Unchanged user input","workspace_contract":{"cwd":"/new/native/worktree"}})

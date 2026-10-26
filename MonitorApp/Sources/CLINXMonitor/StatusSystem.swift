@@ -62,12 +62,15 @@ enum StatusGlyph {
 // MARK: - Observer → UI status mapping
 
 extension ObservedTask {
-    /// Native history may say RUNNING while current liveness is unproven.
-    /// Preserve raw stage in the snapshot, but never badge it as live work.
-    var displayStage: String {
-        observationId != nil && stage == "RUNNING" && monitorStatus != .running
-            ? monitorStatus.rawValue.uppercased() : stage
+    var displayStage: String { stage }
+    var nativeUpdateNotice: String? {
+        guard observationId != nil else { return nil }
+        if observationFreshness == "OFFLINE" { return "连接中断 · 显示上次状态" }
+        if stage == "RUNNING" && (observationFreshness != "RECENT" ||
+            Date().timeIntervalSince1970 >= (observationLivenessValidUntil ?? 0)) { return "更新延迟 · 显示上次状态" }
+        return nil
     }
+    var statusLabel: String { observationId == nil ? monitorStatus.label : stage.capitalized }
     var hasCanonicalTerminalState: Bool {
         ["COMPLETED", "IN_REVIEW", "FAILED", "CANCELLED", "STOPPED"].contains(state)
     }
@@ -82,7 +85,7 @@ extension ObservedTask {
     var resultPassed: Bool { monitorStatus == .completed && exactResult?.status == "PASS" }
 
     private var claimsRunning: Bool {
-        ["CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING", "FINALIZING",
+        return ["CLAIMED", "DISPATCHING", "TURN_STARTED", "CODEX_RUNNING", "FINALIZING",
          "CANCEL_REQUESTED", "CANCELLATION_PENDING"].contains(state) || codexRunning
     }
 
@@ -97,6 +100,17 @@ extension ObservedTask {
     /// Developer-handoff mapping. Never infers success, never conflates states, and keeps a
     /// historical PASS from overriding a current BLOCKED/FAILED.
     var monitorStatus: MonitorStatus {
+        // Codex turn state is the primary status of a native row. Authority
+        // delivery/lease/result state and collection freshness are independent.
+        if observationId != nil {
+            switch state {
+            case "RUNNING": return .running
+            case "COMPLETED": return .completed
+            case "FAILED": return .failed
+            case "CANCELLED", "INTERRUPTED": return .cancelled
+            default: return .unknown
+            }
+        }
         if [state, executionState].contains(where: {
             ["BLOCKED", "RECOVERY_REQUIRED", "TRANSPORT_UNCERTAIN"].contains($0)
         })

@@ -27,25 +27,12 @@ struct NetworkObservation: Codable, Identifiable, Sendable, Equatable {
     let control: ObservationControl
     var codexUri: String? = nil
     var displayState: String? = nil
+    var livenessReason: String? = nil
+    var livenessValidUntil: Double? = nil
 
     var shortTitle: String { String(title.split(separator: "\n").first.map(String.init)?.prefix(100) ?? title.prefix(100)) }
-    var isRunning: Bool {
-        // Native terminal evidence and missing result markers stop the spinner.
-        if turn.isTerminal || turn.resultProcessing == "RESULT_MARKER_MISSING" { return false }
-        return freshness == "RECENT" && liveness == "PROVEN" &&
-            (0..<30).contains(Date().timeIntervalSince1970 - receivedAt) && turn.nativeState == "RUNNING"
-    }
-    var statusLabel: String {
-        if turn.resultProcessing == "RESULT_MARKER_MISSING" { return "执行结束 · 结果待处理" }
-        if freshness == "OFFLINE" { return "离线 · " + (turn.isTerminal ? turn.nativeState : "UNKNOWN") }
-        if let result = turn.businessResult { return result }
-        if bindingEvidence == "CANONICAL_ROUTE", turn.executionRef != nil,
-           let state = turn.executionState, ["SUCCEEDED", "FAILED", "CANCELLED", "FENCED"].contains(state) {
-            return state
-        }
-        if turn.isTerminal { return "执行结束 · \(turn.nativeState)" }
-        return displayState ?? (turn.nativeState == "RUNNING" && !isRunning ? "UNKNOWN" : turn.executionState ?? turn.nativeState)
-    }
+    var isRunning: Bool { turn.nativeState == "RUNNING" }
+    var statusLabel: String { turn.nativeState }
 }
 
 struct ObservationTurn: Codable, Identifiable, Sendable, Equatable {
@@ -66,8 +53,7 @@ struct ObservationTurn: Codable, Identifiable, Sendable, Equatable {
     /// Exact native turn_context evidence, absent on older Observer versions.
     var model: String? = nil
     var isTerminal: Bool {
-        ["COMPLETED", "FAILED", "CANCELLED", "INTERRUPTED", "TIMED_OUT", "DISCONNECTED"].contains(nativeState)
-        || ["COMPLETED", "IN_REVIEW", "SUCCEEDED", "FAILED", "CANCELLED", "FENCED"].contains(executionState ?? "")
+        ["COMPLETED", "FAILED", "CANCELLED", "INTERRUPTED"].contains(nativeState)
     }
 }
 struct ObservationControl: Codable, Sendable, Equatable {

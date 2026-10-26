@@ -163,6 +163,7 @@ extension ObservedTask {
 
     /// Row trailing text: attention rows lead with Blocked/Failed, completed rows with Done.
     func rowTail(status: MonitorStatus) -> String {
+        if observationId != nil && stage == "INTERRUPTED" { return "Interrupted" }
         switch status {
         case .blocked: return "Blocked \(lastProgressText)"
         case .failed: return "Failed \(lastProgressText)"

@@ -256,6 +256,10 @@ impl<A: Authority, R: Reads> Api<A, R> {
                 self.call("cancel",json!({"execution_ref":a["execution_ref"],"approved":default(a,"approved",json!(false))}))
             }
             "clinx_adopt_conversation" => self.adopt(a),
+            "clinx_cancel_adoption" => self.call(
+                "cancel_adoption",
+                json!({"adoption_ref":a["adoption_ref"],"approved":default(a,"approved",json!(false))}),
+            ),
             "clinx_find_task" => {
                 let rows = self
                     .tasks()?

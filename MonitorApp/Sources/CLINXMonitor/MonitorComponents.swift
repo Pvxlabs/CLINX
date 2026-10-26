@@ -58,11 +58,12 @@ struct StatusIcon: View {
 struct StatusPill: View {
     let status: MonitorStatus
     var compact = false
+    var label: String? = nil
 
     var body: some View {
         HStack(spacing: 6) {
             StatusIcon(status: status, size: compact ? 10 : 12)
-            Text(status.label)
+            Text(label ?? status.label)
                 .interfaceFont(size: compact ? 11 : 12, weight: .medium)
                 .foregroundStyle(DS.Palette.textPrimary)
         }

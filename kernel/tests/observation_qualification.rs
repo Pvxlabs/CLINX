@@ -453,7 +453,66 @@ fn copied_node_identity_never_proves_running_or_enables_control() {
     {
         assert_eq!(p["coverage"], "MULTI_SOURCE_THREAD_IDENTITY");
         assert_eq!(p["liveness"], "NOT_PROVEN");
+        assert_eq!(p["liveness_reason"], "THREAD_IDENTITY_CONFLICT");
         assert_eq!(p["control"]["enabled"], false);
+    }
+}
+
+#[test]
+fn receipt_freshness_never_extends_source_liveness_or_implies_completion() {
+    for (age, live, reason) in [
+        (5.0, true, "LIVE_PROVEN"),
+        (31.0, false, "LIVE_PROOF_EXPIRED"),
+        (-10.0, false, "LIVE_PROOF_CLOCK_SKEW"),
+    ] {
+        let d = Directory::new();
+        let mut e = event(1, TID, "turn-1", 1);
+        e["turn"]["native_state"] = json!("RUNNING");
+        let at = clinx_decision_kernel::read_projection::now() - age;
+        e["turn"]["live_observation"] =
+            json!({"thread_id":TID,"turn_id":"turn-1","observed_at":at,"liveness":"LIVE"});
+        d.accept("air", "stream", json!([e])).unwrap();
+        let p = d.read("list", json!({})).unwrap()["items"][0].clone();
+        assert_eq!(p["freshness"], "RECENT");
+        assert_eq!(p["liveness"], if live { "PROVEN" } else { "NOT_PROVEN" });
+        assert_eq!(p["liveness_reason"], reason);
+        assert_eq!(p["display_state"], "RUNNING");
+        assert_eq!(
+            p["liveness_valid_until"],
+            if live { json!(at + 30.0) } else { Value::Null }
+        );
+        assert_eq!(p["turn"]["native_state"], "RUNNING");
+        assert_eq!(
+            d.read("list", json!({"state":"RUNNING"})).unwrap()["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+    for state in ["DISCONNECTED", "TIMED_OUT"] {
+        assert!(!clinx_decision_kernel::native_history::terminal(state));
+    }
+}
+
+#[test]
+fn canonical_terminal_is_independent_of_the_reported_codex_state() {
+    for state in ["SUCCEEDED", "BLOCKED", "FAILED", "CANCELLED"] {
+        let d = Directory::new();
+        let mut e = event(1, TID, "turn-1", 1);
+        e["task_ref"] = json!("task-one");
+        e["binding_evidence"] = json!("CANONICAL_ROUTE");
+        e["turn"]["execution_ref"] = json!("exec-one");
+        e["turn"]["execution_state"] = json!(state);
+        e["turn"]["native_state"] = json!("RUNNING");
+        e["turn"]["live_observation"] = json!({"thread_id":TID,"turn_id":"turn-1","observed_at":clinx_decision_kernel::read_projection::now(),"liveness":"LIVE"});
+        d.accept("air", "stream", json!([e])).unwrap();
+        let p = d.read("list", json!({})).unwrap()["items"][0].clone();
+        assert_eq!(p["turn"]["execution_state"], state);
+        assert_eq!(p["turn"]["native_state"], "RUNNING");
+        assert_eq!(p["liveness_reason"], "LIVE_PROVEN");
+        assert_eq!(p["liveness"], "PROVEN");
+        assert_eq!(p["display_state"], "RUNNING");
     }
 }
 #[test]

@@ -6,6 +6,13 @@
 
 ## 契约地图
 
+`clinx_cancel_adoption(adoption_ref, approved=true)` 由本地 Authority API 撤销精确的
+PENDING 登记，保存 CANCELLED 原记录和 `cancel_operation_id` 事务回执；不调用 Provider，
+不取消会话或修改 Task/Execution/lease。重复撤销返回同一终态；已 ADOPTED 的请求拒绝。
+撤销后的 begin/commit（包括已取 nonce 的迟到提交）返回 `ADOPTION_NOT_PENDING`，
+原登记重放也保持 CANCELLED，不隐式恢复。Node scoped API 当前不开放此维护操作。
+实现见 [Authority](../kernel/src/business.rs)，回归见 [native routing](../kernel/tests/native_routing.rs)。
+
 运维权限契约见[固定免密入口](OPERATIONS.md#p620-固定免密运维入口)，实现是
 [admin_tools](../kernel/src/admin_tools.rs)，回归是[admin_tools tests](../kernel/tests/admin_tools.rs)。
 它不接受业务 SQL，不成为 Task writer；策略变更仍使用既有 Rust CAS 与原 operation receipt。
@@ -20,7 +27,7 @@ Provider IO 的绝对 deadline 保持不变；非阻塞读写配合 poll，对�
 1024 页、累计 16 MiB，重复/无效 cursor 或未读到末页均拒绝确认；不能找到第一个匹配后
 提前承认 ACK。原 Authority nonce/boot/deadline 校验保持不变，未知发送不得重放。
 Collector 的实时采样优先级只取最新 turn，旧未完成记录继续保留为历史证据。Monitor 的
-Active 仍要求精确实时证据及未过期的新鲜度；历史 `RUNNING` 不得被直接展示为当前运行徽标。
+状态直接映射 Codex 原生 TurnStatus；观测过期只标注更新延迟，不改写任务状态。
 
 | 边界 | 权威定义与实现 | 可重复回归 |
 | --- | --- | --- |
@@ -33,6 +40,50 @@ Active 仍要求精确实时证据及未过期的新鲜度；历史 `RUNNING` �
 | Discovery / 设备认证 | [enrollment](../kernel/src/discovery_enrollment.rs)、[TLS](../kernel/src/node_tls.rs)、[OPAQUE](../native/opaque_pairing/src/lib.rs) | [Discovery](../kernel/tests/discovery_qualification.rs)、[设备](../kernel/tests/device_python_retirement_qualification.rs) |
 | Transport / relay / Tunnel | [native_transport](../kernel/src/native_transport.rs)、[relay](../kernel/src/bin/clinx-mcp-relay.rs)、[supervisor](../kernel/src/tunnel_supervisor.rs) | [relay](../kernel/tests/mcp_relay_retirement.rs)、[Tunnel](../kernel/tests/tunnel_runtime.rs) |
 | Collector / Observer / UI | [Collector](../kernel/src/observation_collector.rs)、[HTTP](../kernel/src/observer_http.rs)、[Observer schema](monitor/observer-v1.schema.json)、[Activity](monitor/ACTIVITY_V1_SPEC.md) | [Collector](../kernel/tests/collector_qualification.rs)、[Observer](../kernel/tests/observer_http_qualification.rs) |
+
+## 状态的来源与直接映射
+
+Codex 原生任务以 exact thread/turn 的 Codex 状态为唯一展示来源；CLINX 不另定义任务状态机。
+当前 Codex TurnStatus 为 `inProgress / completed / interrupted / failed`，
+显示为 Running / Completed / Interrupted / Failed，仅作名称映射。原始原生状态保存在
+`turn.native_state`；interrupted 不改写成 CANCELLED。当前 UI 的颜色/图标分类可复用，
+原生名称、阶段和快照保持原值。
+
+ThreadStatus 的 `active / idle / notLoaded / systemError` 以及 activeFlags 的
+`waitingOnApproval / waitingOnUserInput` 是聊天及等待信息，不是 TurnStatus；
+不能把 idle/notLoaded 当作 completed，不能把等待授权推导为 CLINX BLOCKED。
+当前观察目录尚未完整导出 activeFlags，不声称已经具备该细分展示。
+协议读取实现见 [Provider observation](../kernel/src/provider_client/observation.rs)，
+历史读取见 [native history](../kernel/src/native_history.rs)。
+
+采集失败或证据过期时保留上次 Codex 状态，另显示“更新延迟 / 连接中断 · 显示上次状态”；
+不能改为 Unknown、Cancelled、Completed 或从 Active 移出。Unknown 仅用于尚无可读原生状态，
+不是 TTL 推导的任务状态。原生 RUNNING 的列表筛选、计数、详情一致；最新 turn 的状态不能
+借用上一轮身份。真实 Codex completed/interrupted/failed 到达后才改变原生任务主状态。
+`DISCONNECTED/TIMED_OUT` 等旧来源值保留为观察信息，不证明用户取消或任务完成。
+
+`liveness`、`liveness_reason`、`liveness_valid_until` 只用于观测质量诊断：
+LIVE 要求在线节点、无身份冲突、精确 thread/turn、源证明年龄在 `[0,30)` 秒。
+期限取源时间加 30 秒，不从 `received_at` 重新计时。HTTP Connected 仅代表 Observer 可达。
+NOT_PROVEN 不改变 Codex 状态，也不授予重发、取消或释放 lease 的权限。
+`last_progress_at` 无独立进度时间证据时为空；源元数据更新和接收快照均不算执行进展。
+
+CLINX Authority 的 Task/Execution、dispatch/ACK、delivery、ResourceAllocation 继续按原契约
+保存和恢复，不能覆盖 Codex 状态；UI 原生行单独保留 `executionState` 供诊断。
+Authority SUCCEEDED、原生 completed、业务 PASS、资源 RELEASED 是不同事实。
+v1 canonical-only 行保留兼容展示；存在同一执行的原生观察时原生状态优先，身份不变。
+
+Collector 在原 durable FIFO 内按 seq/ACK 排空最多 64 批或软预算 2 秒，未知 ACK 重送原
+receipt，不生成新执行；采样软预算 2 秒，单次源调用可能更长。未采样 metadata 与 discovery
+cursor 一起持久化，轮换实时/历史优先级，防止历史积压拖延状态更新。这不是延迟 SLA。
+managed 原生历史暂缺时继续精确读取，只有 Codex 返回的匹配 turn 状态才补全原生状态，
+不能从 canonical RUNNING 或 writer LIVE 推导 Codex TurnStatus。源码见
+[source](../kernel/src/observation_source.rs)、[collector](../kernel/src/observation_collector.rs)、
+[projection](../kernel/src/observation.rs)、[Swift adapter](../MonitorApp/Sources/CLINXMonitor/NetworkObservationAdapter.swift)。
+
+验证需覆盖 Codex 原生状态直接映射、观察过期不改变主状态/Active、断连不取消、
+原生与 CLINX 账本状态不同、精确身份与迟到回执，以及真实运行到终态转换。
+本地回归与短观察窗口不等于长期生产稳定性验收。
 
 ## 身份、执行流与 ACK
 

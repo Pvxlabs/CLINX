@@ -38,6 +38,7 @@ pub fn request(a: &Value) -> Result<Value, String> {
                 | "observation_inventory"
                 | "observation_turns"
                 | "adopt"
+                | "cancel_adoption"
                 | "adoption_begin"
                 | "adoption_commit"
                 | "prepare_policy"

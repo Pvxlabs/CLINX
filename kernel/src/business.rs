@@ -730,6 +730,9 @@ impl Store {
             return Err("INVALID_OPERATION_ID".into());
         }
         let transport = transport_operation(operation);
+        if operation == "cancel_adoption" && role != Role::Api {
+            return Err("API_PEER_REQUIRED".into());
+        }
         if transport && role != Role::Transport {
             return Err("TRANSPORT_PEER_REQUIRED".into());
         }
@@ -903,18 +906,17 @@ impl Store {
             "register_git_target" | "revoke_git_target" | "resolve_git_target" => {
                 targets::command(&tx, policy, operation, p, &mut changes)?
             }
-            "adopt" | "adoption_begin" | "adoption_commit" | "prepare_policy" | "apply_policy" => {
-                control(
-                    &tx,
-                    policy,
-                    operation,
-                    p,
-                    id,
-                    &self.boot,
-                    &hash,
-                    &mut changes,
-                )?
-            }
+            "adopt" | "cancel_adoption" | "adoption_begin" | "adoption_commit"
+            | "prepare_policy" | "apply_policy" => control(
+                &tx,
+                policy,
+                operation,
+                p,
+                id,
+                &self.boot,
+                &hash,
+                &mut changes,
+            )?,
             "prepare" => {
                 let mut r: Prepare = decode(p)?;
                 r.reasoning_effort = crate::provider::normalize_effort(&json!(r.reasoning_effort))?
@@ -2236,6 +2238,30 @@ fn control(
             put(c, "prepared", &ref_id, &result, changes)?;
             Ok(result)
         }
+        "cancel_adoption" => {
+            if !core::keys(p, "adoption_ref approved") || p["approved"] != true {
+                return Err("APPROVED_EXACT_ADOPTION_REQUIRED".into());
+            }
+            let ref_id = string(p, "adoption_ref")?;
+            let mut a = row(c, "prepared", ref_id)?;
+            if a["kind"] != "ADOPTION" {
+                return Err("INVALID_ADOPTION".into());
+            }
+            if a["status"] == "CANCELLED" {
+                return Ok(a);
+            }
+            if a["status"] != "PENDING" {
+                return Err("ADOPTION_NOT_PENDING".into());
+            }
+            // Preserve the request and its identity in the existing Authority
+            // transaction/receipt. No Provider call, task deletion or lease write.
+            a["status"] = json!("CANCELLED");
+            a["adoption_status"] = json!("CANCELLED");
+            a["cancel_operation_id"] = json!(id);
+            a["observation"] = Value::Null;
+            put(c, "prepared", ref_id, &a, changes)?;
+            Ok(a)
+        }
         "adoption_begin" | "adoption_commit" => {
             let ref_id = string(p, "adoption_ref")?;
             let mut a = row(c, "prepared", ref_id)?;
@@ -2245,6 +2271,9 @@ fn control(
             }
             if a["status"] == "ADOPTED" {
                 return Ok(a);
+            }
+            if a["status"] != "PENDING" {
+                return Err("ADOPTION_NOT_PENDING".into());
             }
             if op == "adoption_begin" {
                 if !core::keys(p, "adoption_ref") {

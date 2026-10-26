@@ -359,10 +359,7 @@ final class MonitorStore: ObservableObject {
         let rest = tasks.filter { !status(of: $0).isAttention }
         var groups: [TaskGroup] = []
         if !attention.isEmpty { groups.append(TaskGroup(id: "attention", title: "Needs attention", tasks: attention)) }
-        if !rest.isEmpty {
-            let title = "Running"
-            groups.append(TaskGroup(id: "running", title: title, tasks: rest))
-        }
+        if !rest.isEmpty { groups.append(TaskGroup(id: "running", title: "Running", tasks: rest)) }
         return groups
     }
 
@@ -739,6 +736,8 @@ final class MonitorStore: ObservableObject {
                     // A failed read is not an authoritative empty session list.
                     // Retain the last snapshot and report it as last known below.
                     observationFailure = error
+                    observationRows = NetworkObservationAdapter.project(networkObservations,
+                        canonical: Self.merge(canonicalActive + canonicalRecent))
                 }
             } else { networkObservations = []; observationRows = [] }
             health = newHealth
@@ -763,6 +762,7 @@ final class MonitorStore: ObservableObject {
             failureCount += 1
             if case MonitorError.server(401) = error { authFailed = true }
             errorCategory = Self.category(error)
+            reprojectObservations()
         }
     }
 
@@ -899,7 +899,7 @@ final class MonitorStore: ObservableObject {
         for node in nodes {
             var nodeItems: [NetworkObservation] = []
             // Read running candidates first so a hash-ordered history page cannot
-            // starve current native work. Liveness still gates the Active mapping.
+            // starve native running tasks. Freshness never changes Codex status.
             for state in ["RUNNING", ""] {
               var cursor: String?
               for _ in 0..<20 {
@@ -950,7 +950,7 @@ final class MonitorStore: ObservableObject {
         guard candidate.executionIdentity == current.executionIdentity else { return false }
         // A registered native row and its empty canonical snapshot share one Task ID.
         // Keep the native history route rather than losing it to registry receipt time.
-        if candidate.executionRef == nil, (candidate.observationId != nil) != (current.observationId != nil) {
+        if (candidate.observationId != nil) != (current.observationId != nil) {
             return candidate.observationId != nil
         }
         // Request observation time is not execution progress. A later GET can still

@@ -12,7 +12,12 @@ P620 的特权运维由开发工具 [clinx-admin](../kernel/src/bin/clinx-admin.
 它独立安装在 root 控制目录，不进入运行 release 或 macOS App；权限入口见
 [固定免密运维入口](OPERATIONS.md#p620-固定免密运维入口)。
 精确恢复通过同一入口调用单个 Execution 的原 Transport/Authority 契约，不借用普通派发循环。
+待登记 adoption 的撤销由现有 Authority 事务保存终态及回执，Dispatcher 只读取 PENDING；
+取消登记不执行 Provider 操作，不建立额外状态 writer，详见[契约](CONTRACTS.md)。
 独立 user Observer 服务与 system Authority/Centre 是不同发布单元，必须分别验证有效入口。
+执行账本、native 历史、LIVE 证明、传输时效和 UI 活动集合的定义统一见
+[状态映射契约](CONTRACTS.md#状态的来源与直接映射)。Collector 在原 durable FIFO 内排空 ACK，
+采样分片持久保存 discovery 与 checkpoint；Swift 直接展示 Codex 状态，采集延迟单独标注。
 Provider 本机身份以已连接 Unix socket 的内核凭据为准，平台适配使用 Linux
 `SO_PEERCRED` / macOS `getpeereid`；稳定路径 alias 与跨设备 mTLS 是不同边界，见[契约](CONTRACTS.md)。
 原先低于 5% 的固定源码字节目标继续由 `clinx-source-audit` 验证，不更改统计口径。

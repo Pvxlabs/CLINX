@@ -5,6 +5,11 @@
 
 ## 前提与配置来源
 
+清理遗留待登记请求时，使用本地 MCP `clinx_cancel_adoption`，传精确 `adoption_ref` 和
+`approved=true`。仅在用户授权撤销后调用；保留返回的 `cancel_operation_id`、终态及历史
+记录，不删除原生会话或直接修改数据库。未知发送按原操作回执核对；重复调用不会复活登记。
+操作后的原生会话不受管理状态变更影响；已 ADOPTED 的请求应拒绝，不能借此解除现有任务绑定。
+
 Rust 1.98+、Git、C linker 为 Rust 构建前提；OpenSSL CLI 用于独立 wire tests。
 macOS App 需 macOS 13+、Xcode/Swift 与原生 Mac Rust 工具链；普通 Rust 构建无 Python 或 Go 前提。
 固定外部 Transport 的重建另外需要 builder 指定 SHA 的 Go/source 归档，见[ADR-007](architecture/ADR-007-rust-source-policy.md)。

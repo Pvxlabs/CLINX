@@ -582,10 +582,153 @@ fn native_adoption_uses_observed_worktree_and_keeps_exact_thread_evidence() {
         .call(Role::Transport, "adoption_commit", evidence)
         .unwrap();
     assert_eq!(adopted["adoption_status"], "ADOPTED");
+    assert_eq!(
+        f.call(
+            Role::Api,
+            "cancel_adoption",
+            json!({"adoption_ref":adoption["adoption_ref"],"approved":true})
+        )
+        .unwrap_err(),
+        "ADOPTION_NOT_PENDING"
+    );
     let next = f.call(Role::Api, "prepare", json!({"approved":true,"project":"orion","host":"p620","title":"Continue","prompt":"Continue existing native thread","task_ref":adopted["task_ref"]})).unwrap();
     assert_eq!(next["task_ref"], adopted["task_ref"]);
     assert_eq!(next["workspace_contract"]["cwd"], json!(cwd));
     assert_eq!(next["workspace_contract"]["branch"], "native");
+    f.store.verify_business().unwrap();
+}
+
+#[test]
+fn cancel_pending_adoption_preserves_execution_and_receipt_and_fences_inflight_commit() {
+    let mut f = Fixture::new();
+    let prepared = f.prepare(Value::Null).unwrap();
+    let execution = f.start(&prepared);
+    let before = f
+        .call(
+            Role::Api,
+            "get_status",
+            json!({"execution_ref":execution["execution_ref"]}),
+        )
+        .unwrap();
+    let request = json!({"host":"p620","project":"orion","thread_id":"pending-native","title":"Pending native thread","workspace_contract":null});
+    let adoption = f.call(Role::Api, "adopt", request.clone()).unwrap();
+    let other = f.call(Role::Api, "adopt", json!({"host":"p620","project":"orion","thread_id":"other-pending","title":"Other","workspace_contract":null})).unwrap();
+    let challenge = f
+        .call(
+            Role::Transport,
+            "adoption_begin",
+            json!({"adoption_ref":adoption["adoption_ref"]}),
+        )
+        .unwrap();
+    let args = json!({"adoption_ref":adoption["adoption_ref"],"approved":true});
+    assert_eq!(
+        f.call(
+            Role::Api,
+            "cancel_adoption",
+            json!({"adoption_ref":adoption["adoption_ref"],"approved":false})
+        )
+        .unwrap_err(),
+        "APPROVED_EXACT_ADOPTION_REQUIRED"
+    );
+    assert_eq!(
+        f.call(Role::Transport, "cancel_adoption", args.clone())
+            .unwrap_err(),
+        "API_PEER_REQUIRED"
+    );
+    assert_eq!(
+        f.call(
+            Role::Api,
+            "cancel_adoption",
+            json!({"adoption_ref":prepared["prepared_execution_ref"],"approved":true})
+        )
+        .unwrap_err(),
+        "INVALID_ADOPTION"
+    );
+    let cancelled = f
+        .store
+        .business(
+            Role::Api,
+            &f.policy,
+            "cancel_adoption",
+            "cancel-one-adoption",
+            &args,
+        )
+        .unwrap();
+    assert_eq!(cancelled["status"], "CANCELLED");
+    assert_eq!(cancelled["adoption_status"], "CANCELLED");
+    for key in [
+        "adoption_ref",
+        "thread_id",
+        "task_ref",
+        "workspace_contract",
+        "request_hash",
+    ] {
+        assert_eq!(cancelled[key], adoption[key]);
+    }
+    assert!(cancelled["observation"].is_null());
+    assert_eq!(
+        f.store
+            .business(
+                Role::Api,
+                &f.policy,
+                "cancel_adoption",
+                "cancel-one-adoption",
+                &args
+            )
+            .unwrap(),
+        cancelled
+    );
+    assert_eq!(
+        f.call(Role::Api, "cancel_adoption", args).unwrap(),
+        cancelled
+    );
+    let receipt = f
+        .call(
+            Role::Api,
+            "read_receipt",
+            json!({"operation_id":"cancel-one-adoption"}),
+        )
+        .unwrap();
+    assert_eq!(receipt["result"], cancelled);
+    assert_eq!(
+        f.call(
+            Role::Api,
+            "get_prepared",
+            json!({"prepared_execution_ref":adoption["adoption_ref"]})
+        )
+        .unwrap(),
+        cancelled
+    );
+    assert_eq!(f.call(Role::Api, "adopt", request).unwrap(), cancelled);
+    assert_eq!(
+        f.call(
+            Role::Transport,
+            "adoption_begin",
+            json!({"adoption_ref":adoption["adoption_ref"]})
+        )
+        .unwrap_err(),
+        "ADOPTION_NOT_PENDING"
+    );
+    let late = json!({"adoption_ref":adoption["adoption_ref"],"nonce":challenge["nonce"],"observations":[{"endpoint":"/fixture/provider.sock","thread":{"id":"pending-native","cwd":f.policy.projects[0].cwd,"status":{"type":"idle"}}}]});
+    assert_eq!(
+        f.call(Role::Transport, "adoption_commit", late)
+            .unwrap_err(),
+        "ADOPTION_NOT_PENDING"
+    );
+    let work = f.call(Role::Transport, "work", json!({})).unwrap();
+    assert_eq!(work["adoptions"].as_array().unwrap().len(), 1);
+    assert_eq!(work["adoptions"][0]["adoption_ref"], other["adoption_ref"]);
+    assert_eq!(
+        f.call(
+            Role::Api,
+            "get_status",
+            json!({"execution_ref":execution["execution_ref"]})
+        )
+        .unwrap(),
+        before
+    );
+    let tasks = f.call(Role::Api, "list_tasks", json!({})).unwrap();
+    assert_eq!(tasks["tasks"].as_array().unwrap().len(), 1);
     f.store.verify_business().unwrap();
 }
 

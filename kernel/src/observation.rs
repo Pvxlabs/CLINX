@@ -714,11 +714,9 @@ impl<F: FnMut(&str, Value) -> Result<Value>> Directory<'_, F> {
         };
         p["display_state"] = if truth(&p["native_admission"]["archived"]) {
             json!("ARCHIVED")
-        } else if proven {
-            json!("RUNNING")
-        } else if t["native_state"] == "RUNNING" {
-            json!("UNKNOWN")
         } else {
+            // Codex owns the turn state. Expired collection evidence is a
+            // freshness diagnostic, never a task transition.
             t["native_state"].clone()
         };
         let route = r["route_ids"]
@@ -739,7 +737,7 @@ impl<F: FnMut(&str, Value) -> Result<Value>> Directory<'_, F> {
         } else {
             r["display_name"].clone()
         };
-        p["freshness"] = json!(if available && now() - received < 30.0 {
+        p["freshness"] = json!(if available && (0.0..30.0).contains(&(now() - received)) {
             "RECENT"
         } else if available {
             "STALE"
@@ -747,6 +745,33 @@ impl<F: FnMut(&str, Value) -> Result<Value>> Directory<'_, F> {
             "OFFLINE"
         });
         p["liveness"] = json!(if proven { "PROVEN" } else { "NOT_PROVEN" });
+        p["liveness_valid_until"] = if proven {
+            json!(proof["observed_at"].as_f64().unwrap() + 30.0)
+        } else {
+            Value::Null
+        };
+        p["liveness_reason"] = json!(if !available {
+            "NODE_OFFLINE"
+        } else if conflict {
+            "THREAD_IDENTITY_CONFLICT"
+        } else if t["native_state"] != "RUNNING" {
+            "NATIVE_NOT_RUNNING"
+        } else if proof.is_null() {
+            "LIVE_PROOF_UNAVAILABLE"
+        } else if proof["thread_id"] != p["native_thread_id"]
+            || proof["turn_id"] != t["turn_id"]
+            || !truth(&t["turn_id"])
+        {
+            "LIVE_IDENTITY_UNPROVEN"
+        } else if proof["liveness"] != "LIVE" {
+            "LIVE_PROOF_UNAVAILABLE"
+        } else if age < 0.0 {
+            "LIVE_PROOF_CLOCK_SKEW"
+        } else if age >= 30.0 {
+            "LIVE_PROOF_EXPIRED"
+        } else {
+            "LIVE_PROVEN"
+        });
         p["progress_percent"] = Value::Null;
         p["control"] = json!({"node_id":p["node_id"],"native_thread_id":p["native_thread_id"],"task_ref":p["task_ref"],"execution_ref":t["execution_ref"],"entrypoint":if truth(&p["task_ref"]){"clinx_prepare_execution"}else{"clinx_adopt_conversation"},"enabled":enabled,"reason":reason,"allowed_actions":[]});
         Ok(p)

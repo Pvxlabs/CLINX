@@ -172,7 +172,10 @@ struct ExecutionHeaderView: View {
             }
 
             HStack(spacing: 8) {
-                StatusPill(status: task.monitorStatus)
+                StatusPill(status: task.monitorStatus, label: task.statusLabel)
+                if let notice = task.nativeUpdateNotice {
+                    Text(notice).font(DS.Font.meta).foregroundStyle(DS.Palette.textSecondary)
+                }
                 Spacer(minLength: 0)
             }
             .padding(.top, 8)

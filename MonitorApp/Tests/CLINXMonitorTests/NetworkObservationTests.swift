@@ -86,7 +86,7 @@ final class NetworkObservationModelTests: XCTestCase {
     func testMissingResultMarkerStopsSpinnerAndKeepsBusinessUncertainty() throws {
         let item = try networkFixture("missing_result").item
         XCTAssertFalse(item.isRunning)
-        XCTAssertEqual(item.statusLabel, "执行结束 · 结果待处理")
+        XCTAssertEqual(item.statusLabel, item.turn.nativeState)
         XCTAssertNil(item.turn.businessResult)
     }
 }
@@ -106,6 +106,7 @@ private func projectedObservation(node: String, host: String, thread: String, st
     raw["received_at"] = Date().timeIntervalSince1970
     raw["source_updated_at"] = ISO8601DateFormatter().string(from: Date())
     raw["liveness"] = liveness
+    raw["liveness_valid_until"] = liveness == "PROVEN" ? Date().timeIntervalSince1970 + 25 : NSNull()
     var turn = try XCTUnwrap(raw["turn"] as? [String: Any])
     turn["native_state"] = state
     turn["execution_ref"] = executionRef.map { $0 as Any } ?? NSNull()
@@ -241,10 +242,11 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         let item = try decoder.decode(NetworkObservation.self, from: JSONSerialization.data(withJSONObject: raw))
         let row = try XCTUnwrap(NetworkObservationAdapter.project([item], canonical: []).first)
         XCTAssertEqual(row.executionRef, "exec_rust")
-        XCTAssertEqual(row.state, "COMPLETED")
+        XCTAssertEqual(row.state, "UNKNOWN", "A CLINX result must not invent a Codex terminal state")
+        XCTAssertEqual(row.executionState, "SUCCEEDED")
         XCTAssertFalse(row.resultPassed)
-        XCTAssertTrue(item.turn.isTerminal)
-        XCTAssertEqual(item.statusLabel, "SUCCEEDED")
+        XCTAssertFalse(item.turn.isTerminal)
+        XCTAssertEqual(item.statusLabel, "UNKNOWN")
     }
 
     func testNativeProjectionAndOriginalHostCounts() async throws {
@@ -287,7 +289,7 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         XCTAssertEqual(nativeEventCalls, 0)
     }
 
-    func testCanonicalBindingAndNativeThreadDeduplicateWithCanonicalPriority() async throws {
+    func testCanonicalBindingDeduplicatesButCodexOwnsTheDisplayedTurnState() async throws {
         let canonical = try canonicalFixture()
         let bound = try projectedObservation(node: "air", host: "Air", thread: "same", state: "RUNNING",
                                              taskRef: canonical.taskRef, executionRef: canonical.executionRef)
@@ -300,9 +302,10 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         XCTAssertEqual(store.allTasks.first?.taskRef, canonical.taskRef)
         XCTAssertFalse(store.allTasks.contains { NetworkObservationAdapter.isPresentationRef($0.taskRef) })
         await store.select(canonical.taskRef)
-        XCTAssertNil(store.selected?.observationId)
+        XCTAssertEqual(store.selected?.observationId, bound.observationId)
+        XCTAssertEqual(store.selected?.monitorStatus, .running)
         let canonicalTaskCalls = await service.taskCalls
-        XCTAssertEqual(canonicalTaskCalls, 1)
+        XCTAssertEqual(canonicalTaskCalls, 0)
     }
 
     func testRegisteredNativeUsesCanonicalTaskIDAndObservationHistory() async throws {
@@ -320,14 +323,15 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         XCTAssertEqual(calls, 0, "Native history stays on the observation route after canonical registration")
     }
 
-    func testPersistedRunningWithoutLivenessProofDoesNotEnterActive() throws {
+    func testCodexRunningStaysRunningWhenCollectionProofIsUnavailable() throws {
         let stale = try projectedObservation(node: "p620", host: "P620", thread: "stale-running",
                                              state: "RUNNING", liveness: "NOT_PROVEN")
         let row = try XCTUnwrap(NetworkObservationAdapter.project([stale], canonical: []).first)
-        XCTAssertEqual(row.monitorStatus, .unknown)
-        XCTAssertFalse(row.codexRunning)
+        XCTAssertEqual(row.monitorStatus, .running)
+        XCTAssertTrue(row.codexRunning)
         XCTAssertEqual(row.stage, "RUNNING")
-        XCTAssertEqual(row.displayStage, "UNKNOWN")
+        XCTAssertEqual(row.displayStage, "RUNNING")
+        XCTAssertEqual(row.nativeUpdateNotice, "更新延迟 · 显示上次状态")
     }
 
     func testRunningWithExplicitLivenessProofCanEnterActive() throws {
@@ -337,6 +341,10 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         XCTAssertEqual(row.monitorStatus, .running)
         XCTAssertTrue(row.codexRunning)
         XCTAssertEqual(row.displayStage, "RUNNING")
+        var expiredCache = row
+        expiredCache.observationLivenessValidUntil = Date().timeIntervalSince1970 - 1
+        XCTAssertEqual(expiredCache.monitorStatus, .running, "A collection timeout must not change Codex state")
+        XCTAssertNotNil(expiredCache.nativeUpdateNotice)
     }
 
     func testRunningNativeTasksBeyondHistoryWindowAreFetchedFirst() async throws {
@@ -392,14 +400,60 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
 
     }
 
-    func testTerminalNativeStatesDoNotEnterActive() throws {
+    func testNativeTerminalAndTransportUncertaintyRemainDistinct() throws {
         for state in ["COMPLETED", "CANCELLED", "INTERRUPTED", "TIMED_OUT", "DISCONNECTED", "UNKNOWN"] {
             let observation = try projectedObservation(node: "air", host: "Air", thread: state, state: state)
             let row = try XCTUnwrap(NetworkObservationAdapter.project([observation], canonical: []).first)
             XCTAssertNotEqual(row.monitorStatus, .running)
             XCTAssertEqual(row.monitorStatus == .completed || row.monitorStatus == .cancelled,
-                           state != "UNKNOWN")
+                           ["COMPLETED", "CANCELLED", "INTERRUPTED"].contains(state))
+            if ["TIMED_OUT", "DISCONNECTED"].contains(state) {
+                XCTAssertFalse(observation.turn.isTerminal)
+                XCTAssertEqual(row.monitorStatus, .unknown)
+            }
+            if state == "INTERRUPTED" {
+                XCTAssertEqual(row.state, "INTERRUPTED")
+                XCTAssertEqual(row.statusLabel, "Interrupted")
+                XCTAssertEqual(row.rowTail(status: row.monitorStatus), "Interrupted")
+            }
         }
+    }
+
+    func testExpiredLiveProofPreservesLifecycleAndActiveMembershipWithoutFalseProgress() async throws {
+        let fixture = try projectedObservation(node: "air", host: "Air", thread: "pending", state: "RUNNING",
+            taskRef: "task-managed", liveness: "PROVEN", executionRef: "exec-managed")
+        let encoder = JSONEncoder(); encoder.keyEncodingStrategy = .convertToSnakeCase
+        var raw = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(fixture)) as? [String: Any])
+        var turn = try XCTUnwrap(raw["turn"] as? [String: Any])
+        turn["execution_state"] = "RUNNING"; raw["turn"] = turn
+        raw["source_updated_at"] = ""
+        raw["liveness_valid_until"] = Date().timeIntervalSince1970 - 1
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let expired = try decoder.decode(NetworkObservation.self, from: JSONSerialization.data(withJSONObject: raw))
+        XCTAssertTrue(expired.isRunning, "Expired proof must not rewrite Codex inProgress")
+        let row = try XCTUnwrap(NetworkObservationAdapter.project([expired], canonical: []).first)
+        XCTAssertEqual(row.executionState, "RUNNING")
+        XCTAssertEqual(row.monitorStatus, .running)
+        XCTAssertEqual(row.nativeUpdateNotice, "更新延迟 · 显示上次状态")
+        XCTAssertEqual(row.displayStage, "RUNNING")
+        XCTAssertNil(row.timestamps.lastProgressAt)
+        let service = UnifiedProjectionService(native: [expired])
+        let store = MonitorStore(service: service, defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        await store.refresh()
+        XCTAssertEqual(store.active.map(\.taskRef), ["task-managed"])
+        XCTAssertTrue(store.recent.isEmpty)
+        store.view = .active
+        XCTAssertEqual(store.visibleTasks.map(\.taskRef), ["task-managed"])
+        XCTAssertEqual(store.counts[.active], 1)
+        XCTAssertEqual(store.groupedTasks.first?.title, "Running")
+        turn["execution_state"] = "SUCCEEDED"; raw["turn"] = turn
+        let terminal = try decoder.decode(NetworkObservation.self, from: JSONSerialization.data(withJSONObject: raw))
+        let completed = try XCTUnwrap(NetworkObservationAdapter.project([terminal], canonical: []).first)
+        XCTAssertEqual(completed.executionState, "SUCCEEDED")
+        XCTAssertEqual(completed.monitorStatus, .running, "CLINX finalization must not overwrite the Codex turn status")
+        turn["native_state"] = "COMPLETED"; raw["turn"] = turn
+        let nativeTerminal = try decoder.decode(NetworkObservation.self, from: JSONSerialization.data(withJSONObject: raw))
+        XCTAssertEqual(NetworkObservationAdapter.project([nativeTerminal], canonical: []).first?.monitorStatus, .completed)
     }
 }
 

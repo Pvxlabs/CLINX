@@ -47,10 +47,7 @@ pub fn normalize(v: &Value) -> &'static str {
     }
 }
 pub fn terminal(s: &str) -> bool {
-    matches!(
-        s,
-        "COMPLETED" | "FAILED" | "TIMED_OUT" | "CANCELLED" | "INTERRUPTED" | "DISCONNECTED"
-    )
+    matches!(s, "COMPLETED" | "FAILED" | "CANCELLED" | "INTERRUPTED")
 }
 pub fn model(v: &Value) -> Value {
     static R: LazyLock<Regex> =

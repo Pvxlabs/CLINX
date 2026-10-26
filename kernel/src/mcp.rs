@@ -463,7 +463,16 @@ mod tests {
         let tools = server
             .handle(json!({"id":2,"method":"tools/list"}))
             .unwrap();
-        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 19);
+        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 20);
+        assert_eq!(
+            tools["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|t| t["name"] == "clinx_cancel_adoption")
+                .count(),
+            1
+        );
         let mut expected = registry()["tools"].as_array().unwrap().clone();
         expected.extend(
             registry()["observations"]
@@ -514,7 +523,7 @@ mod tests {
         let tools = server
             .handle(json!({"id":2,"method":"tools/list"}))
             .unwrap();
-        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 15);
+        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 16);
     }
     #[test]
     fn public_scrub_preserves_exact_native_and_workspace_seals() {

@@ -15,7 +15,7 @@ use std::{
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::Path,
     sync::Mutex,
-    time::Duration,
+    time::{Duration, Instant},
 };
 const PAGE: usize = 16;
 const MAX_BATCH: usize = 32;
@@ -166,62 +166,87 @@ CREATE TABLE IF NOT EXISTS outbox(seq INTEGER PRIMARY KEY,payload TEXT NOT NULL)
             self.status = "SHARING_SCOPE_DENIED".into();
             return Ok(12);
         }
-        let candidates = query(
-            c,
-            "SELECT * FROM outbox ORDER BY seq LIMIT ?",
-            &[(MAX_BATCH as i64).into()],
-        )?;
-        let mut queued = Vec::new();
-        let mut batch_bytes = 0;
-        for row in candidates {
-            let size = text(&row["payload"]).len() + 64;
-            if !queued.is_empty() && batch_bytes + size > 150_000 {
+        // Drain durable FIFO receipts before producing another history batch.
+        // One upload per sampling cycle lets history bury fresh live evidence.
+        let mut online = online;
+        let mut had_queued = false;
+        let drain_started = Instant::now();
+        for _ in 0..64 {
+            let candidates = query(
+                c,
+                "SELECT * FROM outbox ORDER BY seq LIMIT ?",
+                &[(MAX_BATCH as i64).into()],
+            )?;
+            let mut queued = Vec::new();
+            let mut batch_bytes = 0;
+            for row in candidates {
+                let size = text(&row["payload"]).len() + 64;
+                if !queued.is_empty() && batch_bytes + size > 150_000 {
+                    break;
+                }
+                batch_bytes += size;
+                queued.push(row);
+            }
+            had_queued |= !queued.is_empty();
+            if queued.is_empty() || !online {
                 break;
             }
-            batch_bytes += size;
-            queued.push(row);
-        }
-        let mut online = online;
-        if !queued.is_empty() && online {
-            let stream = get(c, "stream", Value::Null)?;
-            let events = queued
-                .iter()
-                .map(|r| -> Result<Value> {
-                    let mut p: Value = serde_json::from_str(text(&r["payload"]))
-                        .map_err(|_| "COLLECTOR_STORE_UNAVAILABLE")?;
-                    if scope.project(&p["project"]) {
-                        p["seq"] = r["seq"].clone();
-                        Ok(p)
-                    } else {
-                        Ok(json!({"seq":r["seq"],"scope_redacted":true}))
+            if !queued.is_empty() && online {
+                let stream = get(c, "stream", Value::Null)?;
+                let events = queued
+                    .iter()
+                    .map(|r| -> Result<Value> {
+                        let mut p: Value = serde_json::from_str(text(&r["payload"]))
+                            .map_err(|_| "COLLECTOR_STORE_UNAVAILABLE")?;
+                        if scope.project(&p["project"]) {
+                            p["seq"] = r["seq"].clone();
+                            Ok(p)
+                        } else {
+                            Ok(json!({"seq":r["seq"],"scope_redacted":true}))
+                        }
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let response = call(
+                    "collector.upload",
+                    json!({"scope":scope.value(),"batch":{"stream_id":stream,"events":events,"previous_stream_id":a["previous_stream_id"]}}),
+                )?;
+                if response["offline"] == true {
+                    online = false;
+                } else {
+                    if response["accepted"] != true {
+                        self.status = response["error_code"]
+                            .as_str()
+                            .unwrap_or("UPLOAD_UNAVAILABLE")
+                            .into();
+                        return Ok(2);
                     }
-                })
-                .collect::<Result<Vec<_>>>()?;
-            let response = call(
-                "collector.upload",
-                json!({"scope":scope.value(),"batch":{"stream_id":stream,"events":events,"previous_stream_id":a["previous_stream_id"]}}),
-            )?;
-            if response["offline"] == true {
-                online = false;
-            } else {
-                if response["accepted"] != true {
-                    self.status = response["error_code"]
-                        .as_str()
-                        .unwrap_or("UPLOAD_UNAVAILABLE")
-                        .into();
-                    return Ok(2);
+                    let ack = response["ack_seq"]
+                        .as_u64()
+                        .ok_or("OBSERVATION_ACK_CONFLICT")?;
+                    let last = queued.last().unwrap()["seq"]
+                        .as_u64()
+                        .ok_or("COLLECTOR_STORE_UNAVAILABLE")?;
+                    if ack > last || response.get("stream_id").is_some_and(|s| s != &stream) {
+                        return Err("OBSERVATION_ACK_CONFLICT".into());
+                    }
+                    db(c.execute("DELETE FROM outbox WHERE seq<=?", [ack]))?;
+                    if ack
+                        < queued[0]["seq"]
+                            .as_u64()
+                            .ok_or("COLLECTOR_STORE_UNAVAILABLE")?
+                    {
+                        self.status = "OBSERVATION_ACK_PENDING".into();
+                        return Ok(2);
+                    }
                 }
-                let ack = response["ack_seq"]
-                    .as_u64()
-                    .ok_or("OBSERVATION_ACK_CONFLICT")?;
-                let last = queued.last().unwrap()["seq"]
-                    .as_u64()
-                    .ok_or("COLLECTOR_STORE_UNAVAILABLE")?;
-                if ack > last || response.get("stream_id").is_some_and(|s| s != &stream) {
-                    return Err("OBSERVATION_ACK_CONFLICT".into());
-                }
-                db(c.execute("DELETE FROM outbox WHERE seq<=?", [ack]))?;
             }
+            if online && drain_started.elapsed() >= Duration::from_secs(2) {
+                break;
+            }
+        }
+        if online && count(c, "outbox")? > 0 {
+            self.status = "OBSERVATION_DRAINING".into();
+            return Ok(0);
         }
         let limit = a["outbox_limit"].as_u64().unwrap_or(OUTBOX as u64) as usize;
         if count(c, "outbox")? >= limit.saturating_sub(128) {
@@ -291,6 +316,7 @@ CREATE TABLE IF NOT EXISTS outbox(seq INTEGER PRIMARY KEY,payload TEXT NOT NULL)
             for q in [
                 "SELECT metadata FROM sessions WHERE json_extract(state,'$.native_observation_error') IS NOT NULL OR (json_extract(state,'$.reported_coverage') IS NULL AND json_extract(state,'$.hashes.metadata') IS NOT NULL) ORDER BY checked LIMIT 8",
                 "SELECT metadata FROM sessions ORDER BY coalesce(json_extract(state,'$.active'),0) DESC,checked LIMIT 8",
+                "SELECT metadata FROM sessions WHERE coalesce(json_extract(state,'$.active'),0)=0 ORDER BY checked LIMIT 8",
             ] {
                 for r in query(c, q, &[])? {
                     let m: Value = serde_json::from_str(text(&r["metadata"]))
@@ -300,6 +326,44 @@ CREATE TABLE IF NOT EXISTS outbox(seq INTEGER PRIMARY KEY,payload TEXT NOT NULL)
                     }
                 }
             }
+            // Save discovery before advancing its cursors. A bounded sampling
+            // slice can then yield to upload without losing unvisited sessions.
+            for m in &candidates {
+                if !scope.project(&m["cwd"]) {
+                    continue;
+                }
+                let tid = m["id"].as_str().ok_or("INVALID_OBSERVATION")?;
+                if count(c, "sessions")? >= SESSIONS
+                    && query(
+                        c,
+                        "SELECT id FROM sessions WHERE id=?",
+                        &[tid.to_owned().into()],
+                    )?
+                    .is_empty()
+                {
+                    return Err("SESSION_RETENTION_LIMIT".into());
+                }
+                db(c.execute("INSERT INTO sessions VALUES (?,?,'{}',0) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata",
+                    params![tid, compact(m)]))?;
+            }
+            let round = get(c, "sample_round", json!(0))?.as_u64().unwrap_or(0);
+            put(c, "sample_round", &json!(round + 1))?;
+            let priority = query(
+                c,
+                if round % 2 == 0 {
+                    "SELECT id FROM sessions WHERE json_extract(state,'$.active')=1 ORDER BY checked,id LIMIT 8"
+                } else {
+                    "SELECT id FROM sessions WHERE coalesce(json_extract(state,'$.active'),0)=0 ORDER BY checked,id LIMIT 8"
+                },
+                &[],
+            )?;
+            candidates.sort_by_key(|m| {
+                priority
+                    .iter()
+                    .position(|r| r["id"] == m["id"])
+                    .unwrap_or(8)
+            });
+            let sample_started = Instant::now();
             for m in candidates.iter().take(PAGE * 3 + 16) {
                 if count(c, "outbox")? >= limit.saturating_sub(128) {
                     self.status = "OBSERVATION_BACKPRESSURE".into();
@@ -397,6 +461,11 @@ CREATE TABLE IF NOT EXISTS outbox(seq INTEGER PRIMARY KEY,payload TEXT NOT NULL)
                     params![tid, compact(m), compact(&state), now()],
                 ))?;
                 self.sampled += 1;
+                // Soft budget: one source read may itself exceed it. Yield
+                // after that read; keep its checkpoint and outbox atomic.
+                if sample_started.elapsed() >= Duration::from_secs(2) {
+                    break;
+                }
             }
             Ok((json!(metadata), coverage, None))
         })();
@@ -439,7 +508,7 @@ CREATE TABLE IF NOT EXISTS outbox(seq INTEGER PRIMARY KEY,payload TEXT NOT NULL)
         });
         Ok(
             if changed
-                || !queued.is_empty()
+                || had_queued
                 || running
                 || metadata.as_array().is_some_and(|v| v.len() == PAGE)
             {

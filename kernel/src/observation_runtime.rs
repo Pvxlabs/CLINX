@@ -216,9 +216,10 @@ impl Source {
                 .iter()
                 .find(|r| r["endpoint"] == evidence["owner_endpoint"]);
             let same = owner.is_some_and(|r| r["cwd"] == project);
-            json!({"liveness":if evidence["provider_liveness"]=="LIVE"&&same{"LIVE"}else{"UNKNOWN"},"reason":if same||owner.is_none(){evidence["liveness_reason"].clone()}else{json!("WORKSPACE_MISMATCH")}})
+            json!({"liveness":if evidence["provider_liveness"]=="LIVE"&&same{"LIVE"}else{"UNKNOWN"},"reason":if same||owner.is_none(){evidence["liveness_reason"].clone()}else{json!("WORKSPACE_MISMATCH")},
+                "native_state":if same { owner.map(|r| json!(crate::native_history::normalize(&r["turn_status"]))).unwrap_or(Value::Null) } else { Value::Null }})
         };
-        let proof = json!({"thread_id":tid,"turn_id":turn,"observed_at":stamp,"liveness":evidence["liveness"],"reason":evidence["reason"]});
+        let proof = json!({"thread_id":tid,"turn_id":turn,"observed_at":stamp,"liveness":evidence["liveness"],"reason":evidence["reason"],"native_state":evidence["native_state"]});
         if let Some(i) = cache.iter().position(|(t, p, _)| t == tid && p == project) {
             cache.remove(i);
         }
@@ -709,6 +710,7 @@ mod tests {
         let a = json!({"tid":"exact","turn_id":"turn","project":"/approved"});
         let first = source.observe_live_with(&a, &mut read).unwrap();
         assert_eq!(first["liveness"], "LIVE");
+        assert_eq!(first["native_state"], "RUNNING");
         assert_eq!(source.observe_live_with(&a, &mut read).unwrap(), first);
         source.cache.lock().unwrap()[0].2["observed_at"] = json!(now() - 11.);
         source.observe_live_with(&a, &mut read).unwrap();
@@ -716,6 +718,7 @@ mod tests {
         let changed=source.observe_live_with(&json!({"tid":"exact","turn_id":"turn","project":"/other"}),|_,args|Ok(json!({"observations":[{"endpoint":"fixture","state":"active","thread_id":args["tid"],"turn_id":"turn","turn_status":"inProgress","cwd":"/approved"}]}))).unwrap();
         assert_eq!(changed["liveness"], "UNKNOWN");
         assert_eq!(changed["reason"], "WORKSPACE_MISMATCH");
+        assert!(changed["native_state"].is_null());
         for n in 0..140 {
             source
                 .observe_live_with(

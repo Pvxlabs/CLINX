@@ -26,6 +26,8 @@ struct Harness {
     sampled: Vec<String>,
     hold_readers: bool,
     readers: Vec<Connection>,
+    require_empty_before_sample: bool,
+    slow_sample: bool,
 }
 impl Harness {
     fn new() -> Self {
@@ -52,6 +54,8 @@ impl Harness {
             sampled: vec![],
             hold_readers: false,
             readers: vec![],
+            require_empty_before_sample: false,
+            slow_sample: false,
         }
     }
     fn open(&self) -> Runtime {
@@ -115,6 +119,16 @@ impl Harness {
             }
             "collector.canonical_inventory" => self.source.invoke("canonical_inventory", &a)?,
             "collector.sample" => {
+                if self.slow_sample {
+                    std::thread::sleep(std::time::Duration::from_millis(2050));
+                }
+                if self.require_empty_before_sample {
+                    assert_eq!(
+                        self.counts().1,
+                        0,
+                        "history must not overtake pending receipts"
+                    );
+                }
                 self.sampled
                     .push(a["metadata"]["id"].as_str().unwrap().into());
                 if self.no_inventory {
@@ -231,6 +245,54 @@ fn unknown_upload_ack_replays_only_identical_observation_receipts() {
     assert_eq!(h.counts().1, 0);
     assert_eq!(get(&r, "seq"), seq);
     assert_eq!(h.events(), 3);
+}
+
+#[test]
+fn history_backlog_drains_in_order_before_resampling_live_evidence() {
+    let mut h = Harness::new();
+    let r = h.open();
+    h.tick(&r).unwrap();
+    let payloads = h.payloads();
+    let c = Connection::open(&h.path).unwrap();
+    for seq in 4..=260 {
+        c.execute(
+            "INSERT INTO outbox VALUES (?,?)",
+            params![
+                seq,
+                serde_json::to_string(&payloads[(seq as usize - 1) % 3]).unwrap()
+            ],
+        )
+        .unwrap();
+    }
+    c.execute("UPDATE meta SET value='260' WHERE key='seq'", [])
+        .unwrap();
+    drop(c);
+    h.require_empty_before_sample = true;
+    h.tick(&r).unwrap();
+    assert_eq!(h.counts().1, 0);
+    let seqs: Vec<u64> = h
+        .uploads
+        .iter()
+        .flat_map(|b| b["events"].as_array().unwrap())
+        .map(|v| v["seq"].as_u64().unwrap())
+        .collect();
+    assert_eq!(seqs, (1..=260).collect::<Vec<_>>());
+    assert_eq!(h.uploads.len(), 9);
+    assert_eq!(get(&r, "seq"), 260);
+}
+
+#[test]
+fn stalled_ack_retains_spool_and_does_not_generate_more_history() {
+    let mut h = Harness::new();
+    let r = h.open();
+    h.tick(&r).unwrap();
+    let sampled = h.sampled.len();
+    let original = h.payloads();
+    h.ack = Some(json!(0));
+    assert_eq!(h.tick(&r).unwrap()["status"], "OBSERVATION_ACK_PENDING");
+    assert_eq!(h.uploads.len(), 1);
+    assert_eq!(h.sampled.len(), sampled);
+    assert_eq!(h.payloads(), original);
 }
 fn invalid_ack(ack: Value) {
     let mut h = Harness::new();
@@ -458,6 +520,94 @@ fn completed_latest_turn_retires_historical_running_from_live_priority_only() {
         assert_eq!(value[0].as_array().unwrap().len(), 2);
         assert_eq!(value[0][0]["turn"]["native_state"], "RUNNING");
     }
+}
+#[test]
+fn managed_lifecycle_prioritizes_observation_without_inventing_live_evidence() {
+    for state in [
+        "ADMITTED",
+        "RUNNING",
+        "FINALIZING",
+        "SUCCEEDED",
+        "BLOCKED",
+        "FAILED",
+        "CANCELLED",
+    ] {
+        for native in ["UNKNOWN", "RUNNING"] {
+            let value = observation_source::invoke("source.sample",
+                &json!({"metadata":{"id":"t","cwd":"/approved"},"state":{},"live_enabled":true}), |op, args| {
+                Ok(match op {
+                    "source.native_turns" => json!([[{"turn_id":"turn","ordinal":2,"native_state":native}],"INDEXED",args["state"]]),
+                    "source.canonical_turns" => json!([[{"task_ref":"task","execution_ref":"exec","turn_id":"turn","ordinal":1,"execution_state":state,"native_state":"UNKNOWN"}],args["state"]]),
+                    "source.observe_live" => json!({"thread_id":"t","turn_id":"turn","liveness":"UNKNOWN"}),
+                    "source.generation" => json!("generation"),
+                    _ => panic!("unexpected {op}"),
+                })
+            }).unwrap();
+            assert_eq!(
+                value[1]["active"],
+                native == "RUNNING" || matches!(state, "ADMITTED" | "RUNNING" | "FINALIZING")
+            );
+            assert_eq!(value[0][0]["turn"]["native_state"], native);
+        }
+    }
+}
+
+#[test]
+fn missing_managed_history_can_only_use_an_exact_codex_turn_status() {
+    for (identity, status) in [
+        ("turn", json!("RUNNING")),
+        ("different-turn", json!("RUNNING")),
+        ("turn", Value::Null),
+    ] {
+        let value = observation_source::invoke("source.sample",
+            &json!({"metadata":{"id":"t","cwd":"/approved"},"state":{},"live_enabled":true}), |op, args| {
+            Ok(match op {
+                "source.native_turns" => json!([[],"INDEXED",args["state"]]),
+                "source.canonical_turns" => json!([[{"task_ref":"task","execution_ref":"exec","turn_id":"turn","ordinal":1,"execution_state":"RUNNING","native_state":"UNKNOWN"}],args["state"]]),
+                "source.observe_live" => json!({"thread_id":"t","turn_id":identity,"liveness":"LIVE","native_state":status}),
+                "source.generation" => json!("generation"),
+                _ => panic!("unexpected {op}"),
+            })
+        }).unwrap();
+        assert_eq!(
+            value[0][0]["turn"]["native_state"],
+            if identity == "turn" && status == "RUNNING" {
+                "RUNNING"
+            } else {
+                "UNKNOWN"
+            }
+        );
+        assert_eq!(value[1]["active"], true);
+    }
+}
+
+#[test]
+fn slow_sample_yields_for_delivery_without_losing_discovered_sessions() {
+    let mut h = Harness::new();
+    let r = h.open();
+    let generation = h.source.invoke("generation", &json!({})).unwrap();
+    h.call(&r, "put", json!({"key":"generation","value":generation}))
+        .unwrap();
+    h.no_inventory = true;
+    h.slow_sample = true;
+    let c = Connection::open(&h.path).unwrap();
+    for (id, active, checked) in [("live", true, 2), ("history", false, 1)] {
+        c.execute(
+            "INSERT INTO sessions VALUES (?,?,?,?)",
+            params![
+                id,
+                json!({"id":id,"cwd":"/approved"}).to_string(),
+                json!({"active":active}).to_string(),
+                checked
+            ],
+        )
+        .unwrap();
+    }
+    h.tick(&r).unwrap();
+    assert_eq!(h.sampled, vec!["live"]);
+    h.tick(&r).unwrap();
+    assert_eq!(h.sampled, vec!["live", "history"]);
+    assert_eq!(h.counts().0, 2);
 }
 #[test]
 fn commit_busy_rolls_back_before_the_next_tick() {
