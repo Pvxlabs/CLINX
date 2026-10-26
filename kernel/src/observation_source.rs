@@ -167,11 +167,15 @@ fn sample(a: &Value, mut call: impl FnMut(&str, Value) -> Result<Value>) -> Resu
             json!({"tid":tid,"project":m["cwd"],"turn_id":turns[latest]["turn_id"]}),
         )?;
     }
-    state["active"] = json!(turns.iter().any(|t| t["native_state"] == "RUNNING"
-        || matches!(
-            text(&t["execution_state"]),
-            "CODEX_RUNNING" | "FINALIZING" | "TURN_STARTED"
-        )));
+    // Old unfinished history must not occupy the collector's live priority
+    // queue after a newer turn has completed. Keep the old evidence in events.
+    state["active"] = json!(
+        turns[latest]["native_state"] == "RUNNING"
+            || matches!(
+                text(&turns[latest]["execution_state"]),
+                "CODEX_RUNNING" | "FINALIZING" | "TURN_STARTED"
+            )
+    );
     if tasks.len() > 1 {
         return Err("OBSERVATION_IDENTITY_CONFLICT".into());
     }

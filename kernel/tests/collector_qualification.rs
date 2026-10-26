@@ -442,6 +442,24 @@ fn native_canonical_merge_has_exact_evidence_and_no_multiple_task_owner() {
     assert_eq!(sample(true).unwrap_err(), "OBSERVATION_IDENTITY_CONFLICT");
 }
 #[test]
+fn completed_latest_turn_retires_historical_running_from_live_priority_only() {
+    for latest in ["COMPLETED", "RUNNING"] {
+        let value = observation_source::invoke("source.sample",
+            &json!({"metadata":{"id":"t","cwd":"/approved"},"state":{}}), |op, args| {
+            Ok(match op {
+                "source.native_turns" => json!([[{"turn_id":"old","ordinal":1,"native_state":"RUNNING"},
+                    {"turn_id":"latest","ordinal":2,"native_state":latest}],"INDEXED",args["state"]]),
+                "source.canonical_turns" => json!([[],args["state"]]),
+                "source.generation" => json!("generation"),
+                _ => panic!("unexpected callback {op}"),
+            })
+        }).unwrap();
+        assert_eq!(value[1]["active"], latest == "RUNNING");
+        assert_eq!(value[0].as_array().unwrap().len(), 2);
+        assert_eq!(value[0][0]["turn"]["native_state"], "RUNNING");
+    }
+}
+#[test]
 fn commit_busy_rolls_back_before_the_next_tick() {
     let mut h = Harness::new();
     let r = h.open();

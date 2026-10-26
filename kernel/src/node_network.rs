@@ -367,7 +367,11 @@ pub fn serve() -> Result<()> {
                         .collector
                         .invoke(op, &v["arguments"], |op, args| worker.callback(op, args))
                 }
-                op if op.starts_with("source_runtime.") => worker.source_runtime.invoke(op, &v["arguments"], |op,args| worker.callback(op,args)),
+                op if op.starts_with("source_runtime.") => {
+                    worker
+                        .source_runtime
+                        .invoke(op, &v["arguments"], |op, args| worker.callback(op, args))
+                }
                 op if op.starts_with("mdns.") => worker.mdns.invoke(op, &v["arguments"]),
                 op if op.starts_with("source.") => {
                     crate::observation_source::invoke(op, &v["arguments"], |op, args| {
@@ -391,9 +395,22 @@ pub fn serve() -> Result<()> {
                         .native_observer
                         .invoke(op, &v["arguments"], |op, args| worker.callback(op, args))
                 }
-                op if ["discovery.enrollment.", "discovery.opaque.", "discovery.identity.", "discovery.store."].iter().any(|p| op.starts_with(p)) => {
+                op if [
+                    "discovery.enrollment.",
+                    "discovery.opaque.",
+                    "discovery.identity.",
+                    "discovery.store.",
+                ]
+                .iter()
+                .any(|p| op.starts_with(p)) =>
+                {
                     let w = worker.clone();
-                    worker.enrollment.invoke(op, &v["arguments"], worker.discovery.clone(), move |op,args| w.callback(op,args))
+                    worker.enrollment.invoke(
+                        op,
+                        &v["arguments"],
+                        worker.discovery.clone(),
+                        move |op, args| w.callback(op, args),
+                    )
                 }
                 op if op.starts_with("discovery.") => {
                     worker
@@ -402,7 +419,9 @@ pub fn serve() -> Result<()> {
                 }
                 op if op.starts_with("observer_http.") => {
                     let w = worker.clone();
-                    worker.observer_http.invoke(op, &v["arguments"], move |op, args| w.callback(op, args))
+                    worker
+                        .observer_http
+                        .invoke(op, &v["arguments"], move |op, args| w.callback(op, args))
                 }
                 op if op.starts_with("provider.client.") => {
                     worker

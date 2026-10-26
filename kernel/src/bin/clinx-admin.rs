@@ -11,7 +11,7 @@ fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
         println!(
-            "clinx-admin status | nodes | journal SERVICE [LINES] | service start|stop|restart SERVICE | pair-listen | share PEER USER_SCOPE read|execute|revoke | probe HOST PROJECT | stage CANDIDATE_DIR SOURCE_HEAD | select RELEASE_ID --approved | policy EXPECTED_HASH OPERATION_ID --approved < POLICY_JSON\nRoot-owned, fixed CLINX paths/roles. Sudo permission never replaces task-specific user authorization. No arbitrary shell, SQL, service or output path."
+            "clinx-admin status | nodes | journal SERVICE [LINES] | service start|stop|restart SERVICE | pair-listen | share PEER USER_SCOPE read|execute|revoke | probe HOST PROJECT | stage CANDIDATE_DIR SOURCE_HEAD | select RELEASE_ID --approved | recover RELEASE_ID EXECUTION_REF --approved | policy EXPECTED_HASH OPERATION_ID --approved < POLICY_JSON\nRoot-owned, fixed CLINX paths/roles. Sudo permission never replaces task-specific user authorization. No arbitrary shell, SQL, service or output path."
         );
         return;
     }

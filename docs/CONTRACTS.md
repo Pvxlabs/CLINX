@@ -16,6 +16,11 @@ blocking 后使用原超时；Darwin 的标志继承差异不改变 mTLS/OPAQUE�
 不接受远程 Node 自报 UID。预期 UID 不匹配时在 WebSocket initialize 前拒绝。
 Provider IO 的绝对 deadline 保持不变；非阻塞读写配合 poll，对端 HUP 后仍读取缓冲数据，
 只有实际 EOF/IO 错误或耗尽期限才报告发送结果未知，不因此重发请求。
+输入恢复必须完整读取分页并唯一匹配原 `clientId`、prompt、thread 和 turn。历史扫描最多
+1024 页、累计 16 MiB，重复/无效 cursor 或未读到末页均拒绝确认；不能找到第一个匹配后
+提前承认 ACK。原 Authority nonce/boot/deadline 校验保持不变，未知发送不得重放。
+Collector 的实时采样优先级只取最新 turn，旧未完成记录继续保留为历史证据。Monitor 的
+Active 仍要求精确实时证据及未过期的新鲜度；历史 `RUNNING` 不得被直接展示为当前运行徽标。
 
 | 边界 | 权威定义与实现 | 可重复回归 |
 | --- | --- | --- |

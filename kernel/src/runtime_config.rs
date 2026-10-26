@@ -865,8 +865,12 @@ pub fn invoke<F: FnMut(&str, Value) -> Result<Value>>(
 ) -> Result<Value> {
     let mut source = Source { a, io };
     match operation {
-        "native_load" => native_load(std::path::Path::new(a["path"].as_str().ok_or("CONFIG_PATH_INVALID")?)),
-        "api_config" => serde_json::to_value(api_config(&a["config"])?).map_err(|_| "API_CONFIG_INVALID".into()),
+        "native_load" => native_load(std::path::Path::new(
+            a["path"].as_str().ok_or("CONFIG_PATH_INVALID")?,
+        )),
+        "api_config" => {
+            serde_json::to_value(api_config(&a["config"])?).map_err(|_| "API_CONFIG_INVALID".into())
+        }
         "load" => source.load(),
         "workflows" => source.workflows(&a["rows"]).map(|v| json!(v)),
         "canonical_host" => {

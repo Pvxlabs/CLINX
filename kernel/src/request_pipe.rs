@@ -125,8 +125,11 @@ fn execute<I: BufRead, O: Write>(pipe: Rc<RefCell<Pipe<I, O>>>, r: Value) -> Api
     let op = r["operation"].as_str().ok_or("REQUEST_PIPE_INVALID")?;
     if r["mode"] == "config" {
         return crate::runtime_config::invoke(op, &r["arguments"], |op, args| {
-            pipe.borrow_mut().callback("config", op, args, None).map_err(|e| e.code)
-        }).map_err(Error::from);
+            pipe.borrow_mut()
+                .callback("config", op, args, None)
+                .map_err(|e| e.code)
+        })
+        .map_err(Error::from);
     }
     if r["mode"] == "node_owner" {
         return crate::node_owner::handle(&r["arguments"], |op, args| {

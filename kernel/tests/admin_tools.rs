@@ -31,6 +31,23 @@ fn privileged_surface_rejects_other_services_shell_paths_and_unapproved_switches
         ],
         vec!["select", "rust-01234567890123456789"],
         vec!["select", "../../etc", "--approved"],
+        vec![
+            "recover",
+            "rust-01234567890123456789",
+            "exec_01234567890123456789012345678901",
+        ],
+        vec![
+            "recover",
+            "../../etc",
+            "exec_01234567890123456789012345678901",
+            "--approved",
+        ],
+        vec![
+            "recover",
+            "rust-01234567890123456789",
+            "--once",
+            "--approved",
+        ],
         vec!["share", "--state", "user", "execute"],
         vec!["pair-listen", "--state", "/elsewhere"],
         vec!["probe", "p620", "clinx", "--command", "/bin/sh"],
@@ -49,8 +66,35 @@ fn privileged_surface_rejects_other_services_shell_paths_and_unapproved_switches
         vec!["share", "air.local", "tinzleung", "execute"],
         vec!["service", "restart", "clinx-rust-mcp@0-127.0.0.1.service"],
         vec!["select", "rust-01234567890123456789", "--approved"],
+        vec![
+            "recover",
+            "rust-01234567890123456789",
+            "exec_01234567890123456789012345678901",
+            "--approved",
+        ],
     ] {
         admin::validate(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>()).unwrap();
+    }
+}
+#[test]
+fn recovery_reuses_only_trusted_provider_routes_never_host_execution() {
+    let args = admin::recovery_routes("ExecStart=/release/clinx-native-transport --socket /fixed --authority-uid 993 --host-config /host.json --provider-route air.local /run/air.sock --provider-gateway-uid 990").unwrap();
+    assert_eq!(
+        args,
+        [
+            "--provider-route",
+            "air.local",
+            "/run/air.sock",
+            "--provider-gateway-uid",
+            "990"
+        ]
+    );
+    for text in [
+        "ExecStart=/bin/sh -c anything",
+        "ExecStart=/release/bin --provider-route air.local",
+        "ExecStart=/release/bin --once",
+    ] {
+        assert!(admin::recovery_routes(text).is_err());
     }
 }
 #[test]

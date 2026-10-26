@@ -62,6 +62,12 @@ enum StatusGlyph {
 // MARK: - Observer → UI status mapping
 
 extension ObservedTask {
+    /// Native history may say RUNNING while current liveness is unproven.
+    /// Preserve raw stage in the snapshot, but never badge it as live work.
+    var displayStage: String {
+        observationId != nil && stage == "RUNNING" && monitorStatus != .running
+            ? monitorStatus.rawValue.uppercased() : stage
+    }
     var hasCanonicalTerminalState: Bool {
         ["COMPLETED", "IN_REVIEW", "FAILED", "CANCELLED", "STOPPED"].contains(state)
     }

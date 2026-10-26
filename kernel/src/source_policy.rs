@@ -408,7 +408,10 @@ fn sources(root: &Path, files: &BTreeSet<String>, policy: &Value) -> Result<usiz
             {
                 return Err(format!("SWIFT_BACKEND_FORBIDDEN:{p}"));
             }
-        } else if role != "glue" || !(p.starts_with("bin/") || p.starts_with("MonitorApp/Scripts/") || p == "scripts/install-clinx-admin.sh")
+        } else if role != "glue"
+            || !(p.starts_with("bin/")
+                || p.starts_with("MonitorApp/Scripts/")
+                || p == "scripts/install-clinx-admin.sh")
         {
             return Err(format!("IMPLEMENTATION_LANGUAGE_FORBIDDEN:{p}"));
         }

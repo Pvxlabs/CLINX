@@ -152,6 +152,7 @@ clinx-maintenance extend-business-policy --state /absolute/canonical/authority \
 | `probe HOST PROJECT` | 仅当前 policy 已配置项目，通过同 release Provider 的只读 repository probe |
 | `stage CANDIDATE_DIR SOURCE_HEAD` | 候选仅从 `/data/artifacts` 或 `/lab/runtime-worktrees/p620` 读，Git 操作以 pvxlabs 执行；clean canonical HEAD 与参数一致，root metadata/ELF 快照；marker 以 nobody + no-new-privs 执行 |
 | `select RELEASE_ID --approved` | 校验所有文件/祖先权限与 hash；停止准入和服务后再查活动状态，备份，替换 unit release 路径；等待 Authority socket 后启动调用端 |
+| `recover RELEASE_ID EXECUTION_REF --approved` | 用已封存且校验通过的 Transport，以专用身份恢复一个既有 Execution；完整扫描原 Provider 输入，再走原 Authority ACK/终态事务；不发送、取消任务，不停服、不改 SQL 或清 lease |
 | `policy EXPECTED_HASH OPERATION_ID --approved` 加 stdin JSON | 最多 1 MiB；复用 root 安装的 Rust additive-policy CAS 工具；无任意 SQL、路由删除或数据库回退 |
 
 所有调用通过同一 root 控制锁串行。`ADMIN_ARGUMENT_DENIED` 表示越界参数，
@@ -164,3 +165,16 @@ stage 只复制现有三份受控 metadata；新增运行数据成员须同步�
 停服后的失败保留备份与现场，不自动恢复旧数据库。策略事务未知结果只读原 operation receipt，
 不得重复发送猜测性变更。普通 release 不包含 admin/maintenance，不会改写此特权入口；
 将来更新特权程序及其 sudo 摘要仍须管理员安装，而日常诊断、配对和授权发布无需逐条认证。
+恢复操作不要求全局 idle，否则无法处理阻塞发布的残留 lease；仍须保留原 Execution 身份和
+完整唯一输入证据，`INPUT_OBSERVATION_FENCED` 等错误不得通过删除状态绕过。它不会调用
+普通 `tick`，因此不接管或派发其他任务。新版入口安装完成后，此固定恢复操作同样免密。
+
+### 独立 Observer 服务的发布检查
+
+P620 的 `clinx-observer.service` 和 `clinx-observer-history-guard.service` 是 **user units**，
+不在 system `clinx-admin select` 的三项服务集合中。发布必须分别读回它们的最终 `ExecStart`、
+全部 drop-in 排序、PID/exe 和 Mac 实际配置的 HTTP endpoint。只更新 Authority/Centre 不能
+证明 Monitor 已使用新 Observer。使用同一封存 release 的 `clinx-observer` 和
+`clinx-observer --history-mount-guard`，保留 token、原 scope、只读挂载和 native socket 配置；
+废弃的 Python 环境变量应从有效环境移除。无需恢复任何 Python 依赖。
+健康检查通过后仍须核对精确 thread/turn 的 `live_observation`、30 秒新鲜度与 Active 投影。

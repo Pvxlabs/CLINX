@@ -326,6 +326,8 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         let row = try XCTUnwrap(NetworkObservationAdapter.project([stale], canonical: []).first)
         XCTAssertEqual(row.monitorStatus, .unknown)
         XCTAssertFalse(row.codexRunning)
+        XCTAssertEqual(row.stage, "RUNNING")
+        XCTAssertEqual(row.displayStage, "UNKNOWN")
     }
 
     func testRunningWithExplicitLivenessProofCanEnterActive() throws {
@@ -334,6 +336,7 @@ final class UnifiedMonitorProjectionTests: XCTestCase {
         let row = try XCTUnwrap(NetworkObservationAdapter.project([live], canonical: []).first)
         XCTAssertEqual(row.monitorStatus, .running)
         XCTAssertTrue(row.codexRunning)
+        XCTAssertEqual(row.displayStage, "RUNNING")
     }
 
     func testRunningNativeTasksBeyondHistoryWindowAreFetchedFirst() async throws {

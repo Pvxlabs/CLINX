@@ -236,7 +236,7 @@ struct ExecutionRowView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                    StageBadge(stage: task.stage, tone: StageBadge.Tone.forStatus(status))
+                    StageBadge(stage: task.displayStage, tone: StageBadge.Tone.forStatus(status))
                         .layoutPriority(1)
 
                     Spacer(minLength: 4)
@@ -304,7 +304,7 @@ struct ExecutionRowView: View {
     private func summaryText(task: ObservedTask, status: MonitorStatus) -> String {
         var lines = ["\(status.label) · \(task.titleText)",
                      "\(task.projectText) · \(task.hostText) · \(task.executionText)",
-                     "stage \(task.stage) · last progress \(task.lastProgressText)"]
+                     "stage \(task.displayStage) · last progress \(task.lastProgressText)"]
         if let blocker = task.blocker { lines.append("\(blocker.code): \(blocker.message)") }
         return lines.joined(separator: "\n")
     }

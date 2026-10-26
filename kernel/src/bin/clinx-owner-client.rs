@@ -1,7 +1,7 @@
 //! Bounded stdio-to-existing-Owner transport. No DB or journal handles.
 #![forbid(unsafe_code)]
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
     os::unix::{fs::MetadataExt, net::UnixStream},

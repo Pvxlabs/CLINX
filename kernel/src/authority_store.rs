@@ -95,7 +95,6 @@ pub struct Store {
     pub identity: String,
 }
 
-
 impl Store {
     /// Explicit fresh-state initialization only. No import or fallback to a legacy DB.
     pub fn open(directory: &Path, initialize: bool) -> Result<Self> {

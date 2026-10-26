@@ -14,6 +14,9 @@ use std::{
 pub type Result<T> = std::result::Result<T, String>;
 pub const MAX_MESSAGE: usize = 16 * 1024 * 1024;
 const MAX_HEADER: usize = 65536;
+// Long native turns can contain thousands of tool items. Bound a complete scan
+// by bytes and cursor count, not by five pages (only 500 items).
+const MAX_HISTORY_PAGES: usize = 1024;
 
 /// Presentation spelling is not a wire value. Unknown native values remain
 /// unchanged and must be advertised by this exact Provider before use.
@@ -312,7 +315,7 @@ pub trait Provider {
         // A complete bounded scan, including its final cursor, is required.
         // Missing a requested turn or duplicate input cannot justify replay.
         let mut bytes = 0;
-        for _ in 0..5 {
+        for _ in 0..MAX_HISTORY_PAGES {
             let page = self.request(method, params.clone())?;
             bytes += serde_json::to_vec(&page)
                 .map_err(|_| "PROVIDER_PROTOCOL_INVALID")?
@@ -892,5 +895,34 @@ mod tests {
             )),
             "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
         );
+    }
+}
+#[test]
+fn history_scan_rejects_cursor_cycles_exhaustion_and_capacity() {
+    struct History {
+        calls: usize,
+        mode: u8,
+    }
+    impl Provider for History {
+        fn request(&mut self, _: &str, _: Value) -> Result<Value> {
+            self.calls += 1;
+            Ok(match self.mode {
+                0 => json!({"data":[],"nextCursor":"same"}),
+                1 => json!({"data":[],"nextCursor":self.calls.to_string()}),
+                _ => json!({"data":["x".repeat(MAX_MESSAGE)],"nextCursor":null}),
+            })
+        }
+    }
+    for (mode, error) in [
+        (0, "NATIVE_HISTORY_SCAN_INCOMPLETE"),
+        (1, "NATIVE_HISTORY_SCAN_INCOMPLETE"),
+        (2, "NATIVE_HISTORY_CAPACITY_EXCEEDED"),
+    ] {
+        let mut source = History { calls: 0, mode };
+        assert_eq!(
+            source.pages("thread/items/list", json!({})).unwrap_err(),
+            error
+        );
+        assert!(source.calls <= MAX_HISTORY_PAGES);
     }
 }

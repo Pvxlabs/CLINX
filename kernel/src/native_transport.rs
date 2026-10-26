@@ -306,6 +306,16 @@ impl<A: Authority, P: Providers> NativeTransport<A, P> {
         let (turn_id, item) = matches.pop().unwrap();
         self.call("input_commit",json!({"execution_ref":eid,"nonce":challenge["nonce"],"endpoint":challenge["endpoint"],"thread_id":tid,"turn_id":turn_id,"item":item}))
     }
+    /// Recover one existing execution through the original evidence/transaction
+    /// contracts. Never dispatch, create a turn, cancel, or touch another task.
+    pub fn recover_execution(&mut self, eid: &str) -> Result<Value> {
+        match self.recover_input(eid) {
+            Ok(_) => (),
+            Err(e) if e == "INPUT_RECOVERY_NOT_AVAILABLE" => (),
+            Err(e) => return Err(e),
+        }
+        self.observe(eid)
+    }
     pub fn observe(&mut self, eid: &str) -> Result<Value> {
         self.observe_inner(eid, false)
     }

@@ -8,6 +8,7 @@ fn main() -> Result<(), String> {
     let mut socket = None;
     let mut uid = None;
     let mut once = false;
+    let mut recover = None;
     let mut timeout = 30;
     let mut routes = std::collections::BTreeMap::new();
     let mut gateway = None;
@@ -33,6 +34,13 @@ fn main() -> Result<(), String> {
     }
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--recover-execution" => {
+                let id = args.next().ok_or("EXECUTION_REF_REQUIRED")?;
+                if !id.strip_prefix("exec_").is_some_and(|s| s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit())) {
+                    return Err("EXECUTION_REF_INVALID".into());
+                }
+                recover = Some(id);
+            }
             "--host-config"=>host_config=args.next().map(PathBuf::from),
             "--host-catalog"=>catalog=true,
             "--socket"=>socket=args.next().map(PathBuf::from),
@@ -45,6 +53,9 @@ fn main() -> Result<(), String> {
             "--timeout-seconds"=>timeout=args.next().ok_or("TIMEOUT_REQUIRED")?.parse::<u64>().map_err(|_|"TIMEOUT_INVALID")?,
             _=>return Err("usage: clinx-native-transport --socket PATH --authority-uid UID [--once] [--timeout-seconds 1..90]".into()),
         }
+    }
+    if recover.is_some() && (once || host_config.is_some() || catalog) {
+        return Err("RECOVERY_ONLY_ARGUMENT_CONFLICT".into());
     }
     let host_config = host_config
         .map(|p| clinx_decision_kernel::host_executor::Config::load(&p))
@@ -87,6 +98,10 @@ fn main() -> Result<(), String> {
             routes,
         },
     );
+    if let Some(eid) = recover {
+        println!("{}", worker.recover_execution(&eid)?);
+        return Ok(());
+    }
     loop {
         println!("{}", worker.tick()?);
         if let Some(host) = &mut host {

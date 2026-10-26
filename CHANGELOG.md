@@ -3,6 +3,14 @@
 用途：追踪源码与兼容边界变化。适用范围：Git 主线；不是已部署版本清单。
 状态：CURRENT。验证：Git diff/log、[测试指南](docs/TESTING.md)与候选 manifest。
 
+## 0.3.2 (293) — 发布候选 2026-10-26
+
+- 完整历史输入恢复从固定 5 页改为 1024 页及原 16 MiB 容量边界，覆盖超过 500 条记录的长任务；
+  保留唯一输入、重复 cursor、nonce 和不重发语义。增加固定免密精确恢复入口。
+- Collector 只让最新 turn 决定实时采样优先级；保留历史未完成记录，避免历史记录持续占据活跃队列。
+- Monitor 的历史 RUNNING 在实时证据未确认时显示 UNKNOWN，与详情及 Active 筛选一致。
+- 补充独立 Observer/user service 发布检查，并修复既有全仓 Rust 格式差异。
+
 ## 0.3.2 (292) — 发布候选 2026-10-26
 
 - macOS Provider 使用 `getpeereid` 校验已连接 Unix socket 的真实对端 UID，支持 Codex

@@ -35,6 +35,7 @@ struct State {
     catalog_unavailable: bool,
     input_params: Vec<Value>,
     turn_error: Option<Value>,
+    item_page_size: usize,
 }
 #[derive(Clone)]
 struct Factory(Rc<RefCell<State>>);
@@ -103,9 +104,25 @@ impl Provider for Connection {
                 }
             }
             "thread/turns/list" => Ok(json!({"data":s.turns,"nextCursor":null})),
-            "thread/items/list" => Ok(
-                json!({"data":s.turns.iter().find(|t|t["id"]==p["turnId"]).unwrap()["items"].as_array().unwrap().iter().map(|i|json!({"turnId":p["turnId"],"item":i})).collect::<Vec<_>>(),"nextCursor":null}),
-            ),
+            "thread/items/list" => {
+                let items = s.turns.iter().find(|t| t["id"] == p["turnId"]).unwrap()["items"]
+                    .as_array()
+                    .unwrap();
+                let start = p["cursor"]
+                    .as_str()
+                    .map(|c| c.parse::<usize>().unwrap())
+                    .unwrap_or(0);
+                let size = if s.item_page_size == 0 {
+                    items.len()
+                } else {
+                    s.item_page_size
+                };
+                let end = (start + size).min(items.len());
+                Ok(
+                    json!({"data":items[start..end].iter().map(|i|json!({"turnId":p["turnId"],"item":i})).collect::<Vec<_>>(),
+                    "nextCursor":if end < items.len() {json!(end.to_string())}else{Value::Null}}),
+                )
+            }
             "turn/interrupt" => {
                 s.interrupted += 1;
                 let turn = s.turns.iter_mut().find(|t| t["id"] == p["turnId"]).unwrap();
@@ -162,6 +179,49 @@ fn start(api: &mut Api, key: &str, task: Option<&str>) -> Value {
         &format!("start-{key}"),
     )
     .unwrap()
+}
+#[test]
+fn long_native_turn_recovery_scans_six_pages_and_rejects_late_duplicate_without_resend() {
+    for duplicate in [false, true] {
+        let (_dir, mut api, factory) = environment(if duplicate {
+            "long-duplicate"
+        } else {
+            "long-recovery"
+        });
+        let e = start(&mut api, "long", None);
+        let eid = e["execution_ref"].as_str().unwrap();
+        factory.0.borrow_mut().lose_input = true;
+        let mut worker = NativeTransport::new(api, factory.clone());
+        assert_eq!(
+            worker.dispatch(eid, false).unwrap_err(),
+            "PROVIDER_DELIVERY_UNKNOWN"
+        );
+        {
+            let mut s = factory.0.borrow_mut();
+            s.item_page_size = 100;
+            let items = s.turns[0]["items"].as_array_mut().unwrap();
+            let input = items[0].clone();
+            for i in 2..552 {
+                items.push(json!({"type":"commandExecution","id":format!("tool-{i}")}));
+            }
+            if duplicate {
+                items[551] = input;
+            }
+        }
+        let result = worker.recover_execution(eid);
+        if duplicate {
+            assert_eq!(result.unwrap_err(), "NATIVE_INPUT_IDENTITY_UNPROVEN");
+        } else {
+            let value = result.unwrap();
+            assert_eq!(value["status"], "SUCCEEDED");
+            assert_eq!(value["resource_state"], "RELEASED");
+            assert_eq!(value["dispatch_state"], "ACKED");
+        }
+        let s = factory.0.borrow();
+        assert_eq!(s.sent, 1);
+        assert_eq!(s.created, 1);
+        assert_eq!(s.interrupted, 0);
+    }
 }
 #[test]
 fn native_completion_metadata_lost_input_restart_and_conflicts() {

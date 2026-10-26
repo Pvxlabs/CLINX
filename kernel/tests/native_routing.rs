@@ -290,7 +290,13 @@ fn large_native_terminal_receipt_preserves_evidence_and_allows_continuation() {
     let prepared = f.prepare(Value::Null).unwrap();
     let execution = f.start(&prepared);
     let e = f.send(&execution, &prepared["workspace_contract"]["cwd"], true);
-    let challenge = f.call(Role::Transport, "observe_begin", json!({"execution_ref":e["execution_ref"]})).unwrap();
+    let challenge = f
+        .call(
+            Role::Transport,
+            "observe_begin",
+            json!({"execution_ref":e["execution_ref"]}),
+        )
+        .unwrap();
     // A real audit turn was 586996 bytes. Its command output is retained both
     // in the execution terminal evidence and the task continuation checkpoint.
     let turn = json!({"id":e["native_turn_id"],"status":"completed","items":[
@@ -300,11 +306,34 @@ fn large_native_terminal_receipt_preserves_evidence_and_allows_continuation() {
         "observations":[{"endpoint":"/fixture/provider.sock","state":"idle","thread_id":e["thread_id"],
         "turn_id":e["native_turn_id"],"turn_status":"completed"}],"turn":turn});
     assert!(serde_json::to_vec(&request).unwrap().len() < clinx_decision_kernel::MAX_FRAME_BYTES);
-    let done = f.store.business(Role::Transport, &f.policy, "observe_commit", "large-terminal", &request).unwrap();
+    let done = f
+        .store
+        .business(
+            Role::Transport,
+            &f.policy,
+            "observe_commit",
+            "large-terminal",
+            &request,
+        )
+        .unwrap();
     assert_eq!(done["status"], "SUCCEEDED");
     assert_eq!(done["resource_state"], "RELEASED");
-    assert_eq!(done["execution_result"]["response_text"], "Exact original audit result");
-    assert_eq!(f.store.business(Role::Transport, &f.policy, "observe_commit", "large-terminal", &request).unwrap(), done);
+    assert_eq!(
+        done["execution_result"]["response_text"],
+        "Exact original audit result"
+    );
+    assert_eq!(
+        f.store
+            .business(
+                Role::Transport,
+                &f.policy,
+                "observe_commit",
+                "large-terminal",
+                &request
+            )
+            .unwrap(),
+        done
+    );
     f.store.verify_business().unwrap();
     let tasks = f.call(Role::Api, "list_tasks", json!({})).unwrap();
     assert_eq!(tasks["tasks"][0]["native_checkpoint"]["turn"], turn);
@@ -980,9 +1009,15 @@ fn repository_rename_follows_actual_cwd_but_replacement_at_old_path_is_rejected(
 
 fn legacy_prespawn_failure(f: &mut Fixture, mutating: i32) -> (Value, Value) {
     let scope = f.policy.host_operations[0].clone();
-    let p = f.call(Role::Api, "prepare", json!({"approved":true,"project":"orion","host":"p620",
+    let p = f
+        .call(
+            Role::Api,
+            "prepare",
+            json!({"approved":true,"project":"orion","host":"p620",
         "title":"Legacy pre-spawn rejection","prompt":"Read-only fixture","execution_policy":{
-        "execution_surface":"HOST_EXECUTOR","operation_scopes":[scope]}})).unwrap();
+        "execution_surface":"HOST_EXECUTOR","operation_scopes":[scope]}}),
+        )
+        .unwrap();
     let e = f.start(&p);
     let e = f.send(&e, &json!(f.policy.projects[0].cwd), true);
     f.call(Role::Transport,"host_receive",json!({"execution_ref":e["execution_ref"],"call_id":"legacy-call",
@@ -990,12 +1025,22 @@ fn legacy_prespawn_failure(f: &mut Fixture, mutating: i32) -> (Value, Value) {
         "callId":"legacy-call","namespace":"clinx","tool":"clinx_host_operation","arguments":{
         "capability":"HOST_FILESYSTEM","operation":"path_read","operation_class":"READ_ONLY_HOST","arguments":{}}}},
         "identity":{"thread_id":e["thread_id"],"turn_id":e["native_turn_id"],"provider_endpoint":{"path":"/fixture/provider.sock"}}})).unwrap();
-    f.call(Role::Transport,"host_take",json!({"execution_ref":e["execution_ref"],"call_id":"legacy-call"})).unwrap();
+    f.call(
+        Role::Transport,
+        "host_take",
+        json!({"execution_ref":e["execution_ref"],"call_id":"legacy-call"}),
+    )
+    .unwrap();
     f.call(Role::Transport,"host_begin",json!({"execution_ref":e["execution_ref"],"call_id":"legacy-call","host_ref":"legacy-host",
         "evidence":{"task_id":e["task_ref"],"execution_ref":e["execution_ref"],"host":"p620","capability":"HOST_FILESYSTEM",
         "operation":"path_read","operation_class":"READ_ONLY_HOST","tool_call_id":"legacy-call","mutating":mutating}})).unwrap();
     f.call(Role::Transport,"host_failed",json!({"execution_ref":e["execution_ref"],"call_id":"legacy-call","failure_code":"INVALID_ARGUMENTS"})).unwrap();
-    f.call(Role::Transport,"host_sent",json!({"execution_ref":e["execution_ref"],"call_id":"legacy-call","response_id":9})).unwrap();
+    f.call(
+        Role::Transport,
+        "host_sent",
+        json!({"execution_ref":e["execution_ref"],"call_id":"legacy-call","response_id":9}),
+    )
+    .unwrap();
     let body = json!({"error":"ROOT_CONTROLLED_WORKER_LAUNCHER_REQUIRED","result_state":"RESULT_DELIVERY_UNCONFIRMED_AFTER_DISPATCH",
         "execution_state":"COMMAND_DISPATCHED","reconciliation_required":true});
     let turn = json!({"id":e["native_turn_id"],"status":"completed","items":[
@@ -1010,37 +1055,83 @@ fn legacy_guard_reconciliation_releases_as_failed_without_host_replay() {
     let mut f = Fixture::new();
     let (e, turn) = legacy_prespawn_failure(&mut f, 0);
     let request = json!({"execution_ref":e["execution_ref"],"call_id":"legacy-call","endpoint":"/fixture/provider.sock","turn":turn});
-    let r = f.store.business(Role::Transport,&f.policy,"host_reconcile_rejected","exact-reconciliation",&request).unwrap();
+    let r = f
+        .store
+        .business(
+            Role::Transport,
+            &f.policy,
+            "host_reconcile_rejected",
+            "exact-reconciliation",
+            &request,
+        )
+        .unwrap();
     assert_eq!(r["host_completion"], "NOT_EXECUTED");
-    assert_eq!(r["reconciliation"]["prior_execution_state"], "COMMAND_DISPATCHED");
+    assert_eq!(
+        r["reconciliation"]["prior_execution_state"],
+        "COMMAND_DISPATCHED"
+    );
     assert!(r["host_exit_code"].is_null());
-    assert_eq!(f.store.business(Role::Transport,&f.policy,"host_reconcile_rejected","exact-reconciliation",&request).unwrap(),r);
-    let challenge=f.call(Role::Transport,"observe_begin",json!({"execution_ref":e["execution_ref"]})).unwrap();
+    assert_eq!(
+        f.store
+            .business(
+                Role::Transport,
+                &f.policy,
+                "host_reconcile_rejected",
+                "exact-reconciliation",
+                &request
+            )
+            .unwrap(),
+        r
+    );
+    let challenge = f
+        .call(
+            Role::Transport,
+            "observe_begin",
+            json!({"execution_ref":e["execution_ref"]}),
+        )
+        .unwrap();
     let done=f.call(Role::Transport,"observe_commit",json!({"execution_ref":e["execution_ref"],"nonce":challenge["nonce"],
         "observations":[{"endpoint":"/fixture/provider.sock","state":"idle","thread_id":e["thread_id"],
         "turn_id":e["native_turn_id"],"turn_status":"completed"}],"turn":turn})).unwrap();
-    assert_eq!(done["status"],"FAILED");
-    assert_eq!(done["resource_state"],"RELEASED");
-    assert_eq!(done["execution_result"]["response_text"],"Launcher rejected before process creation");
+    assert_eq!(done["status"], "FAILED");
+    assert_eq!(done["resource_state"], "RELEASED");
+    assert_eq!(
+        done["execution_result"]["response_text"],
+        "Launcher rejected before process creation"
+    );
     f.store.verify_business().unwrap();
 }
 
 #[test]
 fn legacy_guard_reconciliation_rejects_ambiguous_or_mutating_evidence() {
     for variant in 0..6 {
-        let mut f=Fixture::new();let(e,turn)=legacy_prespawn_failure(&mut f,if variant==0 {1} else {0});
-        let mut p=json!({"execution_ref":e["execution_ref"],"call_id":"legacy-call","endpoint":"/fixture/provider.sock","turn":turn});
+        let mut f = Fixture::new();
+        let (e, turn) = legacy_prespawn_failure(&mut f, if variant == 0 { 1 } else { 0 });
+        let mut p = json!({"execution_ref":e["execution_ref"],"call_id":"legacy-call","endpoint":"/fixture/provider.sock","turn":turn});
         match variant {
-            1=>p["endpoint"]=json!("/other/socket"),
-            2=>p["turn"]["status"]=json!("inProgress"),
-            3=>p["turn"]["items"][0]["success"]=json!(true),
-            4=>p["turn"]["items"][0]["contentItems"][0]["text"]=json!("{\"error\":\"GENERIC_TRANSPORT_ERROR\"}"),
-            5=>p["turn"]["id"]=json!("another-turn"),_=>{}
+            1 => p["endpoint"] = json!("/other/socket"),
+            2 => p["turn"]["status"] = json!("inProgress"),
+            3 => p["turn"]["items"][0]["success"] = json!(true),
+            4 => {
+                p["turn"]["items"][0]["contentItems"][0]["text"] =
+                    json!("{\"error\":\"GENERIC_TRANSPORT_ERROR\"}")
+            }
+            5 => p["turn"]["id"] = json!("another-turn"),
+            _ => {}
         }
-        assert!(f.call(Role::Transport,"host_reconcile_rejected",p.clone()).is_err());
-        assert!(f.call(Role::Api,"host_reconcile_rejected",p).is_err());
-        let r=f.call(Role::Transport,"get_status",json!({"execution_ref":e["execution_ref"]})).unwrap();
-        assert_eq!(r["resource_state"],"HELD");
+        assert!(
+            f.call(Role::Transport, "host_reconcile_rejected", p.clone())
+                .is_err()
+        );
+        assert!(f.call(Role::Api, "host_reconcile_rejected", p).is_err());
+        let r = f
+            .call(
+                Role::Transport,
+                "get_status",
+                json!({"execution_ref":e["execution_ref"]}),
+            )
+            .unwrap();
+        assert_eq!(r["resource_state"], "HELD");
     }
 }
 

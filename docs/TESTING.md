@@ -33,6 +33,12 @@ git diff --check
 
 ## 分层与覆盖
 
+长任务恢复回归必须覆盖超过 500 条历史 item、末页重复输入拒绝以及发送次数仍为一。
+Collector 回归覆盖“旧 RUNNING + 最新 COMPLETED”不再占据活跃采样优先级，同时历史行不删除。
+macOS `NetworkObservationTests` 验证未证明的历史运行态不能进入 Active，列表徽标与详情一致；
+最终仍需从实际 HTTP endpoint 核对 live proof 年龄和正在运行的精确 thread/turn。
+特权 `recover` 的参数、route 白名单与单 Execution 恢复路径需测试，不允许通过普通 tick 恢复。
+
 | 层级 | 覆盖与入口 |
 | --- | --- |
 | core / Authority / 业务事务 | 状态 guard、scoped identity、receipt/outbox 原子性、WAL、并发、取消、未知 ACK 和 restart；`authority_store`、`business`、`execution_core_qualification` |

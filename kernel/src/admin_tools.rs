@@ -65,6 +65,12 @@ pub fn validate(a: &[String]) -> Result<()> {
                 && digest(head, 40)
         }
         ["select", id, "--approved"] => release_id(id),
+        ["recover", id, execution, "--approved"] => {
+            release_id(id)
+                && execution
+                    .strip_prefix("exec_")
+                    .is_some_and(|s| digest(s, 32))
+        }
         ["policy", hash, op, "--approved"] => digest(hash, 64) && token(op),
         _ => false,
     };
@@ -416,6 +422,62 @@ fn stage(candidate: &str, head: &str) -> Result<Value> {
     )?;
     Ok(result)
 }
+pub fn recovery_routes(unit: &str) -> Result<Vec<String>> {
+    let line = unit
+        .lines()
+        .find_map(|l| l.strip_prefix("ExecStart="))
+        .ok_or("ADMIN_DISPATCHER_CONFIG_INVALID")?;
+    let parts = line.split_whitespace().skip(1).collect::<Vec<_>>();
+    let mut out = vec![];
+    let mut i = 0;
+    while i < parts.len() {
+        let (count, keep) = match parts[i] {
+            "--provider-route" => (3, true),
+            "--provider-gateway" | "--provider-gateway-uid" | "--remote-host" => (2, true),
+            "--socket" | "--authority-uid" | "--host-config" => (2, false),
+            _ => return Err("ADMIN_DISPATCHER_CONFIG_INVALID".into()),
+        };
+        if i + count > parts.len() || parts[i + 1..i + count].iter().any(|v| v.starts_with('-')) {
+            return Err("ADMIN_DISPATCHER_CONFIG_INVALID".into());
+        }
+        if keep {
+            out.extend(parts[i..i + count].iter().map(|s| s.to_string()));
+        }
+        i += count;
+    }
+    Ok(out)
+}
+fn recover(id: &str, execution: &str) -> Result<Value> {
+    let release = Path::new(ROOT).join("releases").join(id);
+    checked_release(&release)?;
+    let unit = unit_path(UNITS[2]);
+    trusted(&unit, 0)?;
+    let mut args = vec![
+        "--socket".into(),
+        "/run/clinx-rust/authority.sock".into(),
+        "--authority-uid".into(),
+        "993".into(),
+        "--recover-execution".into(),
+        execution.into(),
+    ];
+    args.extend(recovery_routes(&io(fs::read_to_string(unit))?)?);
+    // No idle precondition: this operation resolves a held execution using
+    // original Provider evidence. It cannot stop services or send new work.
+    let result = output(
+        as_user(
+            "clinx-transport",
+            &release.join("clinx-native-transport"),
+            &args,
+        ),
+        90,
+    )?;
+    let value: Value =
+        serde_json::from_str(&result).map_err(|_| "ADMIN_RECOVERY_OUTPUT_INVALID")?;
+    if value["execution_ref"] != execution {
+        return Err("ADMIN_RECOVERY_IDENTITY_CONFLICT".into());
+    }
+    Ok(value)
+}
 fn policy(hash: &str, op: &str) -> Result<Value> {
     let mut bytes = Vec::new();
     io(std::io::stdin()
@@ -516,6 +578,7 @@ pub fn run(args: &[String]) -> Result<Value> {
         "status" => Ok(
             json!({"release":release,"policy":policy_path()?,"services":system(&["show",UNITS[0],UNITS[1],UNITS[2],"clinx-rust-mcp.socket","-p","Id,MainPID,ActiveState,SubState,NRestarts"])?}),
         ),
+        "recover" => recover(&args[1], &args[2]),
         "nodes" => {
             let registry = clinx_decision_kernel::node_registry::Registry::read(
                 &json!({"path":Path::new(CENTRE).join("registry.sqlite3"),"method":"registry.list_nodes","arguments":{"authorized_only":false}}),
