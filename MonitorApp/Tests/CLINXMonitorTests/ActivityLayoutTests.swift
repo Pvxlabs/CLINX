@@ -5,6 +5,59 @@ import XCTest
 
 @MainActor
 final class ActivityLayoutTests: XCTestCase {
+    func testRecordedHistoryRealizesVisibleRowsInsteadOfAllTwentyReports() async throws {
+        let entries = (0..<20).map { index in
+            ObservationActivityEntry(eventId: "receipt-\(index)", turnId: "turn-\(index)",
+                executionRef: nil, sourceSeq: Int64(index), recordedAt: Double(index),
+                nativeState: "COMPLETED", businessResult: nil, kind: "result",
+                text: "## Report \(index)\n\n" + report, artifacts: [])
+        }
+        let renderer = ObservationHistoryRenderer()
+        let prepared = await renderer.render(scope: "layout-fixture", activity: entries, response: nil)
+        XCTAssertEqual(prepared.updates.count, 20)
+        func check(_ lazy: Bool) throws {
+            var appeared = Set<String>()
+            let rows = ForEach(prepared.updates) { entry in
+                RecordedObservationUpdateView(entry: entry)
+                    .onAppear { appeared.insert(entry.id) }
+            }
+            let content = ScrollView {
+                if lazy {
+                    LazyVStack(alignment: .leading, spacing: 24) { rows }
+                        .frame(maxWidth: ActivityMarkdownView.readingWidth)
+                } else {
+                    VStack(alignment: .leading, spacing: 24) { rows }
+                        .frame(maxWidth: ActivityMarkdownView.readingWidth)
+                }
+            }
+            let view = NSHostingView(rootView: content)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 850, height: 600),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = view
+            let start = ContinuousClock.now
+            window.layoutIfNeeded()
+            view.layoutSubtreeIfNeeded()
+            let elapsed = start.duration(to: .now)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            print("HISTORY_LAYOUT_METRIC lazy=\(lazy) initial=\(elapsed) realized=\(appeared.count)/20")
+            if lazy {
+                XCTAssertGreaterThan(appeared.count, 0)
+                XCTAssertLessThan(appeared.count, 20, "Off-screen reports must not all be realized on expansion")
+            } else {
+                XCTAssertEqual(appeared.count, 20, "Control reproduces the old eager history layout")
+            }
+            if let folder = ProcessInfo.processInfo.environment["CLINX_LAYOUT_EVIDENCE_DIR"] {
+                try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+                let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: URL(fileURLWithPath: folder).appendingPathComponent("history-lazy-\(lazy).png"))
+            }
+            window.contentView = nil
+        }
+        for lazy in [false, true] { try check(lazy) }
+    }
+
     private let paragraph = "历史 Checkpoint 还显示：20 Cell 的 cursor 推进包含合法 HOLD；BTC/ETH/SOL/ZEC 的 CONT 为 `R3_NO_COVERED_CANDIDATES`，SUI/CONT 有 1 个 deferred candidate。相关 Adapter fail-closed、scope 隔离及 R3 dependency 回归共 9 项通过。现在将结果写入已有 canonical 文档，明确本轮阻塞、历史可复用范围和最小后续读取需求。"
 
     private var report: String {

@@ -4,32 +4,11 @@ import SwiftUI
 struct ObservationActivityView: View {
     let observationID: String
     @StateObject private var feed: NetworkObservationStore
+    @State private var updatesExpanded = false
 
     init(observationID: String, service: (any NetworkObservationServing)?) {
         self.observationID = observationID
         _feed = StateObject(wrappedValue: NetworkObservationStore(client: service))
-    }
-
-    private var response: String? {
-        feed.context?.lastCodexResult ?? feed.turns.first?.summary
-    }
-
-    // Repeated collection snapshots are one visible update. Different turn/state/text
-    // evidence retains its original identity and chronological order.
-    private var updates: [ObservationActivityEntry] {
-        Self.distinctUpdates(feed.activity)
-    }
-
-    static func distinctUpdates(_ activity: [ObservationActivityEntry]) -> [ObservationActivityEntry] {
-        var result: [ObservationActivityEntry] = []
-        var seen = Set<[String?]>()
-        for entry in activity.reversed() where entry.text?.isEmpty == false {
-            if seen.insert([entry.turnId, entry.executionRef, entry.nativeState,
-                            entry.businessResult, entry.kind, entry.text]).inserted {
-                result.append(entry)
-            }
-        }
-        return result
     }
 
     var body: some View {
@@ -46,14 +25,14 @@ struct ObservationActivityView: View {
             .foregroundStyle(DS.Palette.textSecondary)
             .padding(.horizontal, 24).padding(.vertical, 12)
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                LazyVStack(alignment: .leading, spacing: 24) {
                     if let error = feed.error {
                         Text(error).foregroundStyle(DS.Palette.textSecondary)
                     }
-                    if let response, !response.isEmpty {
+                    if let response = feed.renderedHistory.response {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Codex · Session response").font(DS.Font.metaEmphasis)
-                            ActivityMarkdownView(text: response).equatable()
+                            ActivityMarkdownView(text: response.text, prepared: response.markdown).equatable()
                         }
                     } else {
                         Text(feed.selectedID == nil ? "Loading session feedback…" :
@@ -64,26 +43,27 @@ struct ObservationActivityView: View {
                         Button("Load earlier session response") { Task { await feed.loadContext(older: true) } }
                             .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
                     }
-                    if !updates.isEmpty || feed.activityCursor != nil {
+                    if !feed.renderedHistory.updates.isEmpty || feed.activityCursor != nil {
                         Rectangle().fill(DS.Palette.border).frame(height: 1)
-                        DisclosureGroup {
-                            VStack(alignment: .leading, spacing: 24) {
-                                ForEach(updates) { entry in
-                                    VStack(alignment: .leading, spacing: 14) {
-                                        Text("\(entry.nativeState) · \(RelativeTime.clock(Date(timeIntervalSince1970: entry.recordedAt)))")
-                                            .font(DS.Font.micro).foregroundStyle(DS.Palette.textSecondary)
-                                        ActivityMarkdownView(text: entry.text ?? "").equatable()
-                                        Rectangle().fill(DS.Palette.border).frame(height: 1)
-                                    }
-                                }
-                                if feed.activityCursor != nil {
-                                    Button("Load earlier updates") { Task { await feed.loadActivity() } }
-                                        .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
-                                }
-                            }
-                            .padding(.top, 16)
+                        Button {
+                            updatesExpanded.toggle()
                         } label: {
-                            Text("Recorded updates · \(updates.count)").font(DS.Font.metaEmphasis)
+                            Label("Recorded updates · \(feed.renderedHistory.updates.count)",
+                                  systemImage: updatesExpanded ? "chevron.down" : "chevron.right")
+                                .font(DS.Font.metaEmphasis)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityValue(updatesExpanded ? "Expanded" : "Collapsed")
+                        if updatesExpanded {
+                            // Direct lazy children: a nested eager stack would lay out
+                            // every Markdown table even when it is off screen.
+                            ForEach(feed.renderedHistory.updates) { entry in
+                                RecordedObservationUpdateView(entry: entry).equatable()
+                            }
+                            if feed.activityCursor != nil {
+                                Button("Load earlier updates") { Task { await feed.loadActivity() } }
+                                    .buttonStyle(.plain).foregroundStyle(DS.Palette.accent)
+                            }
                         }
                     }
                     if feed.context?.contextStatus == "UNCACHED_CONTENT_UNAVAILABLE" {
@@ -110,6 +90,18 @@ struct ObservationActivityView: View {
                     await feed.loadContext()
                 }
             }
+        }
+    }
+}
+
+struct RecordedObservationUpdateView: View, Equatable {
+    let entry: RenderedObservationUpdate
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("\(entry.state) · \(RelativeTime.clock(Date(timeIntervalSince1970: entry.recordedAt)))")
+                .font(DS.Font.micro).foregroundStyle(DS.Palette.textSecondary)
+            ActivityMarkdownView(text: entry.content.text, prepared: entry.content.markdown).equatable()
+            Rectangle().fill(DS.Palette.border).frame(height: 1)
         }
     }
 }

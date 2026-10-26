@@ -11,6 +11,10 @@ final class NetworkObservationStore: ObservableObject {
     @Published private(set) var activityCoverage = "UNKNOWN"
     private var loadingActivity = false
     @Published private(set) var context: ObservationContext?
+    @Published private(set) var renderedHistory = RenderedObservationHistory()
+    private let historyRenderer = ObservationHistoryRenderer()
+    private var renderedInput: [ObservationActivityEntry]?
+    private var renderedResponse: String?
     @Published private(set) var nextCursor: String?
     @Published private(set) var historyCursor: String?
     @Published private(set) var error: String?
@@ -37,6 +41,7 @@ final class NetworkObservationStore: ObservableObject {
         items = []; sources = []; detail = nil; turns = []; context = nil
         selectedID = nil; nextCursor = nil; historyCursor = nil
         activity = []; activityCursor = nil; activityCoverage = "UNKNOWN"
+        clearRenderedHistory()
         client = nil
         guard let url = URL(string: endpoint) else { error = "请配置中心 Observer"; return }
         do { client = try ObserverClient(baseURL: url, credentialAccount: account); error = nil }
@@ -83,6 +88,7 @@ final class NetworkObservationStore: ObservableObject {
             // Fail closed on auth errors; an offline server is shown as disconnected.
             items = []; sources = []; detail = nil; turns = []; context = nil
             activity = []; activityCursor = nil
+            clearRenderedHistory()
         }
     }
 
@@ -106,6 +112,7 @@ final class NetworkObservationStore: ObservableObject {
         selectedID = id; detail = nil; turns = []; context = nil; historyCursor = nil
         pausedHistoryRefresh = false
         activity = []; activityCursor = nil; activityCoverage = "UNKNOWN"
+        clearRenderedHistory()
         await refreshDetail(id, client: client)
     }
 
@@ -124,10 +131,12 @@ final class NetworkObservationStore: ObservableObject {
                 activityCursor = timeline.nextCursor
                 activityCoverage = timeline.coverage
             }
+            await prepareHistory()
         } catch {
             guard generation == detailGeneration, selectedID == id else { return }
             detail = nil; turns = []; context = nil; historyCursor = nil
             activity = []; activityCursor = nil
+            clearRenderedHistory()
             self.error = "详情不可用或授权已撤销"
         }
     }
@@ -166,6 +175,7 @@ final class NetworkObservationStore: ObservableObject {
             activity.append(contentsOf: page.items.filter { !seen.contains($0.id) }.prefix(512 - activity.count))
             activityCursor = page.nextCursor
             activityCoverage = page.coverage
+            await prepareHistory()
         } catch { self.error = "Activity 分页不可用，请重新选择任务" }
     }
 
@@ -179,8 +189,27 @@ final class NetworkObservationStore: ObservableObject {
             let page = try await client.observationContext(id, cursor: older ? context?.nextCursor : nil)
             guard generation == detailGeneration, selectedID == id else { return }
             context = page
+            await prepareHistory()
         } catch { self.error = "源端内容当前不可用；已缓存历史仍可查看" }
     }
 
     var pollNanoseconds: UInt64 { items.contains(where: \.isRunning) ? 2_000_000_000 : 12_000_000_000 }
+
+    private func clearRenderedHistory() {
+        renderedHistory = RenderedObservationHistory()
+        renderedInput = nil; renderedResponse = nil
+    }
+
+    private func prepareHistory() async {
+        guard let id = selectedID else { return }
+        let generation = detailGeneration
+        let entries = activity
+        let response = context?.lastCodexResult ?? turns.first?.summary
+        guard renderedInput != entries || renderedResponse != response else { return }
+        let prepared = await historyRenderer.render(scope: id, activity: entries, response: response)
+        guard generation == detailGeneration, selectedID == id, activity == entries,
+              (context?.lastCodexResult ?? turns.first?.summary) == response else { return }
+        renderedInput = entries; renderedResponse = response
+        if renderedHistory != prepared { renderedHistory = prepared }
+    }
 }

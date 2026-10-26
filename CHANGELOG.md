@@ -3,6 +3,13 @@
 用途：追踪源码与兼容边界变化。适用范围：Git 主线；不是已部署版本清单。
 状态：CURRENT。验证：Git diff/log、[测试指南](docs/TESTING.md)与候选 manifest。
 
+## 0.3.2 (295) — 发布候选 2026-10-26
+
+- macOS Recorded updates 改为逐条懒布局，不再展开时同时布局全部长文和表格。
+  Markdown 解析与重复快照去重在独立 UI actor 执行，复用当前页不变文本；
+  以原 observation/turn/内容身份稳定展示行，轮询 receipt 更新不再重建相同正文。
+  缓存随当前有界页收缩，不修改 Rust 历史、Codex 文本、状态或 ACK。
+
 ## 0.3.2 (294) — 发布候选 2026-10-26
 
 - 新增精确撤销待处理 adoption 的 Authority/MCP 操作，保留原记录和事务回执；

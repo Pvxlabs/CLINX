@@ -7,6 +7,8 @@
 目标和当前源码：**Rust 核心 + 适合客户端的前端技术**。Rust 承担 Task Authority、执行生命周期、
 持久化/幂等/恢复、MCP/Provider/Host/Transport、Node/Discovery，以及构建、维护和资格工具。
 macOS UI 使用 Swift。受版本控制的 Python 源码已全部退役；没有必须保留的 Python 兼容层。
+macOS 历史页在独立 UI actor 预解析当前有界页的 Markdown，并懒布局可见条目；
+它仅缓存展示数据，不持有第二份执行或历史状态权威，详见[契约](CONTRACTS.md#状态的来源与直接映射)。
 P620 的特权运维由开发工具 [clinx-admin](../kernel/src/bin/clinx-admin.rs) 承担，
 通过既有 Rust 发布/策略/配对契约执行固定操作，不建立第二套业务状态权威。
 它独立安装在 root 控制目录，不进入运行 release 或 macOS App；权限入口见

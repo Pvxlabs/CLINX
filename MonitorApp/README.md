@@ -107,6 +107,11 @@ Observer, and checking UI, Keychain, TLS and tailnet ACL behavior with real evid
 
 ### Activity
 
+原生会话的 Recorded updates 来自 Rust 接收的 observation 快照，保留 Codex 原文，
+不等于完整 Codex 聊天历史。当前页的 Markdown 在 UI actor 预解析并复用；展开历史
+只懒布局屏幕附近的记录，不一次布局全部表格。重复 receipt 不改变同一内容的展示身份，
+不同 observation/turn 不合并。源数据、回执和执行状态不受展示缓存影响。
+
 The task list and inspector header show the workspace name; hover reveals the full
 path and the list context menu can copy it. The header keeps status, workspace and
 host without duplicating the inspector's metadata. OVERVIEW uses uppercase field

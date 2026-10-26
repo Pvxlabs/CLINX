@@ -1,4 +1,6 @@
 import Foundation
+import CryptoKit
+@preconcurrency import MarkdownUI
 
 // v2 routes carry a versioned observation contract. Canonical v1 task models
 // remain compatible; taskRef comes only from canonical registry admission.
@@ -145,5 +147,75 @@ extension NetworkObservationServing {
     func observationActivity(_ id: String, cursor: String?) async throws -> ObservationActivityPage {
         ObservationActivityPage(schemaVersion: "clinx-observation-v1", observationId: id,
             items: [], coverage: "UNAVAILABLE", nextCursor: nil, hasMore: false)
+    }
+}
+
+/// Derived UI data only. Raw observation receipts and Codex text stay unchanged.
+struct RenderedObservationText: Sendable, Equatable {
+    let text: String
+    let markdown: MarkdownContent
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.text == rhs.text }
+}
+
+struct RenderedObservationUpdate: Identifiable, Sendable, Equatable {
+    let id: String
+    let state: String
+    let recordedAt: Double
+    let content: RenderedObservationText
+}
+
+struct RenderedObservationHistory: Sendable, Equatable {
+    var response: RenderedObservationText?
+    var updates: [RenderedObservationUpdate] = []
+}
+
+/// Parsing and snapshot deduplication never run in SwiftUI body or on MainActor.
+/// Keep only the current bounded page's text; this is not another history store.
+actor ObservationHistoryRenderer {
+    private var scope: String?
+    private var cache: [String: RenderedObservationText] = [:]
+    private(set) var parseCount = 0
+
+    static func distinctUpdates(_ activity: [ObservationActivityEntry]) -> [ObservationActivityEntry] {
+        var seen = Set<[String?]>()
+        return activity.reversed().filter { entry in
+            entry.text?.isEmpty == false && seen.insert(identityFields(entry)).inserted
+        }
+    }
+
+    private static func identityFields(_ entry: ObservationActivityEntry) -> [String?] {
+        [entry.turnId, entry.executionRef, entry.nativeState, entry.businessResult, entry.kind, entry.text]
+    }
+
+    private static func identity(scope: String, entry: ObservationActivityEntry) -> String {
+        var digest = SHA256()
+        for field in [scope] + identityFields(entry) {
+            if let field {
+                digest.update(data: Data("\(field.utf8.count):".utf8))
+                digest.update(data: Data(field.utf8))
+            } else {
+                digest.update(data: Data("-:".utf8))
+            }
+        }
+        return digest.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    func render(scope: String, activity: [ObservationActivityEntry], response: String?) -> RenderedObservationHistory {
+        if self.scope != scope { cache = [:]; self.scope = scope }
+        var retained: [String: RenderedObservationText] = [:]
+        func prepare(_ text: String) -> RenderedObservationText {
+            if let existing = retained[text] ?? cache[text] { retained[text] = existing; return existing }
+            let value = RenderedObservationText(text: text, markdown: MarkdownContent(text))
+            parseCount += 1
+            retained[text] = value
+            return value
+        }
+        let updates = Self.distinctUpdates(activity).map { entry in
+            RenderedObservationUpdate(id: Self.identity(scope: scope, entry: entry),
+                state: entry.nativeState, recordedAt: entry.recordedAt, content: prepare(entry.text!))
+        }
+        let renderedResponse = response.flatMap { $0.isEmpty ? nil : prepare($0) }
+        cache = retained
+        return RenderedObservationHistory(response: renderedResponse, updates: updates)
     }
 }

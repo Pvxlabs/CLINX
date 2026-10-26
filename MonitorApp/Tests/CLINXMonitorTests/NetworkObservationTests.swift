@@ -50,7 +50,7 @@ final class NetworkObservationModelTests: XCTestCase {
         let oldestFirst = [entry("a1", "turn-a", "first"), entry("b1", "turn-b", "second"),
                            entry("a2", "turn-a", "first"), entry("b2", "turn-b", "second"),
                            entry("a3", "turn-a", "changed"), entry("c1", "turn-c", "first")]
-        let displayed = ObservationActivityView.distinctUpdates(Array(oldestFirst.reversed()))
+        let displayed = ObservationHistoryRenderer.distinctUpdates(Array(oldestFirst.reversed()))
         XCTAssertEqual(displayed.map(\.id), ["a1", "b1", "a3", "c1"])
         XCTAssertEqual(displayed.map(\.text), ["first", "second", "changed", "first"])
     }
@@ -487,12 +487,15 @@ final class NetworkObservationStoreTests: XCTestCase {
         XCTAssertEqual(store.activity.map(\.text), ["Recorded response"])
         XCTAssertNil(store.activity.first?.executionRef)
         XCTAssertEqual(store.activityCoverage, "RECEIVED_EVENTS_ONLY")
+        XCTAssertEqual(store.renderedHistory.updates.map(\.content.text), ["Recorded response"])
+        XCTAssertEqual(store.renderedHistory.response?.text, "Full source response")
         XCTAssertEqual(store.context?.lastCodexResult, "Full source response")
         XCTAssertEqual(store.context?.nextCursor, "earlier-context")
 
         await store.loadActivity()
         XCTAssertEqual(store.activity.map(\.id), ["new", "old"])
         XCTAssertEqual(store.activity.last?.text, "Earlier response")
+        XCTAssertEqual(store.renderedHistory.updates.map(\.content.text), ["Earlier response", "Recorded response"])
         XCTAssertNil(store.activityCursor)
         XCTAssertTrue(store.pausedHistoryRefresh)
         let requested = await service.requestedIDs
@@ -538,6 +541,8 @@ final class NetworkObservationStoreTests: XCTestCase {
         await pending.value
         XCTAssertNil(store.detail)
         XCTAssertTrue(store.turns.isEmpty)
+        XCTAssertTrue(store.renderedHistory.updates.isEmpty)
+        XCTAssertNil(store.renderedHistory.response)
     }
 }
 
@@ -567,5 +572,39 @@ private actor RecordedNativeActivity: NetworkObservationServing {
         return ObservationContext(schemaVersion: "clinx-observation-v1", contextStatus: "AVAILABLE",
             lastUserIntent: "Original user request", lastCodexResult: cursor == nil ? "Full source response" : "Earlier source response",
             nextCursor: cursor == nil ? "earlier-context" : nil)
+    }
+}
+
+final class ObservationHistoryRendererTests: XCTestCase {
+    private func entry(_ receipt: String, turn: String = "turn-a", text: String = "**Native text**") -> ObservationActivityEntry {
+        ObservationActivityEntry(eventId: receipt, turnId: turn, executionRef: nil,
+            sourceSeq: 1, recordedAt: 100, nativeState: "COMPLETED", businessResult: nil,
+            kind: "result", text: text, artifacts: [])
+    }
+
+    func testRepeatedReceiptsReuseParsingAndKeepStableRowIdentity() async {
+        let renderer = ObservationHistoryRenderer()
+        let first = await renderer.render(scope: "obs-a", activity: [entry("receipt-1")], response: "**Native text**")
+        let second = await renderer.render(scope: "obs-a", activity: [entry("receipt-2")], response: "**Native text**")
+        let count = await renderer.parseCount
+        XCTAssertEqual(count, 1, "Polling and context must reuse the same immutable Markdown parse")
+        XCTAssertEqual(first, second, "A collection receipt is not a new visible message")
+        let differentTurn = await renderer.render(scope: "obs-a", activity: [entry("receipt-3", turn: "turn-b")], response: nil)
+        XCTAssertNotEqual(first.updates.first?.id, differentTurn.updates.first?.id)
+        let differentSource = await renderer.render(scope: "obs-b", activity: [entry("receipt-1")], response: nil)
+        XCTAssertNotEqual(first.updates.first?.id, differentSource.updates.first?.id)
+    }
+
+    func testBoundedHistoryKeepsEveryDistinctTextAndDropsEvictedParseCache() async {
+        let renderer = ObservationHistoryRenderer()
+        let entries = (0..<20).map { entry("receipt-\($0)", text: "## Update \($0)\n\n| Column | Value |\n| --- | --- |\n| original | `\($0)` |") }
+        let first = await renderer.render(scope: "obs", activity: entries + entries, response: nil)
+        XCTAssertEqual(first.updates.map(\.content.text), entries.reversed().map { $0.text! })
+        let firstCount = await renderer.parseCount
+        XCTAssertEqual(firstCount, 20)
+        _ = await renderer.render(scope: "obs", activity: [], response: nil)
+        _ = await renderer.render(scope: "obs", activity: entries, response: nil)
+        let secondCount = await renderer.parseCount
+        XCTAssertEqual(secondCount, 40, "Text outside the current bounded page must not be retained forever")
     }
 }

@@ -43,6 +43,12 @@ Collector 的实时采样优先级只取最新 turn，旧未完成记录继续�
 
 ## 状态的来源与直接映射
 
+历史展示直接保留 Codex 原文；Recorded updates 是已接收的 observation 快照，
+不是 Codex Desktop 的完整聊天视图。Swift 只做有界页的去重、Markdown 预解析与懒布局，
+不新增历史权威或改写 Rust 的事件/回执。实现见
+[历史展示模型](../MonitorApp/Sources/CLINXMonitor/NetworkObservationModels.swift)与
+[Activity 视图](../MonitorApp/Sources/CLINXMonitor/ObservationActivityView.swift)。
+
 Codex 原生任务以 exact thread/turn 的 Codex 状态为唯一展示来源；CLINX 不另定义任务状态机。
 当前 Codex TurnStatus 为 `inProgress / completed / interrupted / failed`，
 显示为 Running / Completed / Interrupted / Failed，仅作名称映射。原始原生状态保存在

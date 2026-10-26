@@ -47,7 +47,7 @@ git diff --check
 
 长任务恢复回归必须覆盖超过 500 条历史 item、末页重复输入拒绝以及发送次数仍为一。
 Collector 回归覆盖“旧 RUNNING + 最新 COMPLETED”不再占据活跃采样优先级，同时历史行不删除。
-macOS `NetworkObservationTests` 验证未证明的历史运行态不能进入 Active，列表徽标与详情一致；
+macOS `NetworkObservationTests` 验证采集证明过期不改变 Codex 运行态及 Active，列表徽标与详情一致；
 最终仍需从实际 HTTP endpoint 核对 live proof 年龄和正在运行的精确 thread/turn。
 特权 `recover` 的参数、route 白名单与单 Execution 恢复路径需测试，不允许通过普通 tick 恢复。
 
@@ -90,6 +90,13 @@ runner CPU，耗尽生产的 5 秒 frame deadline。测试内部的并发请求�
 的唯一原因。保留该次失败日志；远端 CI 仍须对最终提交重新通过。
 
 ## macOS 编译兼容回归
+
+历史渲染回归：`ObservationHistoryRendererTests` 验证重复 receipt 只解析一次、
+不同 turn/source 不共用展示身份、20 条不同原文全部保留以及离开当前页后释放缓存。
+`ActivityLayoutTests.testRecordedHistoryRealizesVisibleRowsInsteadOfAllTwentyReports`
+在同一 Mac、850×600 窗口比较 20 条中文长文/表格的 eager/lazy 布局，记录耗时和
+实际出现条目数；断言屏外条目不全部实例化，不以不稳定的毫秒阈值制造 PASS。
+这是可重复布局回归，不代表真实用户滚动帧率或所有历史尺寸已验收。
 
 在每台目标 Mac 的任务私有源码目录使用 Rust 1.98+ 和现有签名身份执行：
 
