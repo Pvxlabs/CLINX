@@ -13,6 +13,26 @@ pub(crate) fn blocking_tcp(stream: std::net::TcpStream) -> std::io::Result<std::
     Ok(stream)
 }
 
+/// Authenticate the connected Unix peer, including when its configured name is
+/// a stable symlink. Path metadata is not evidence about an established peer.
+pub(crate) fn unix_peer_uid(stream: &std::os::unix::net::UnixStream) -> std::io::Result<u32> {
+    #[cfg(target_os = "linux")]
+    {
+        Ok(rustix::net::sockopt::socket_peercred(stream)?.uid.as_raw())
+    }
+    #[cfg(target_vendor = "apple")]
+    {
+        nix::unistd::getpeereid(stream)
+            .map(|(uid, _)| uid.as_raw())
+            .map_err(|error| std::io::Error::from_raw_os_error(error as i32))
+    }
+    #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "UNIX_PEER_CREDENTIALS_UNAVAILABLE",
+    ))
+}
+
 /// Return a close-on-exec socket, with nonblocking mode selected before use.
 /// Linux keeps atomic socket flags. Darwin does not offer those socket flags;
 /// set FD/status flags before bind, connect, publication, or returning the fd.

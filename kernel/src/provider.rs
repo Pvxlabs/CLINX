@@ -396,17 +396,8 @@ impl Client {
     }
     /// Evidence from this exact local socket, never a UID supplied by a node.
     pub fn local_peer_uid(&self) -> Result<u32> {
-        #[cfg(target_os = "linux")]
-        {
-            Ok(rustix::net::sockopt::socket_peercred(&self.stream)
-                .map_err(|_| "PROVIDER_PEER_IDENTITY_CONFLICT")?
-                .uid
-                .as_raw())
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            Err("PROVIDER_PEER_CREDENTIALS_UNAVAILABLE".into())
-        }
+        crate::platform::unix_peer_uid(&self.stream)
+            .map_err(|_| "PROVIDER_PEER_IDENTITY_CONFLICT".into())
     }
     fn connect_inner(
         endpoint: &Path,
@@ -427,28 +418,16 @@ impl Client {
             }
         })?;
         if let Some(uid) = expected_uid {
-            #[cfg(target_os = "linux")]
-            if rustix::net::sockopt::socket_peercred(&stream)
+            if crate::platform::unix_peer_uid(&stream)
                 .map_err(|_| "PROVIDER_PEER_IDENTITY_CONFLICT")?
-                .uid
-                .as_raw()
                 != uid
             {
                 return Err("PROVIDER_PEER_IDENTITY_CONFLICT".into());
             }
-            #[cfg(not(target_os = "linux"))]
-            {
-                // macOS has no Linux SO_PEERCRED. Preserve the same-user
-                // configured socket boundary; mTLS authenticates remote calls.
-                use std::os::unix::fs::{FileTypeExt, MetadataExt};
-                let info = endpoint
-                    .symlink_metadata()
-                    .map_err(|_| "PROVIDER_UNAVAILABLE")?;
-                if !info.file_type().is_socket() || info.uid() != uid {
-                    return Err("PROVIDER_PEER_IDENTITY_CONFLICT".into());
-                }
-            }
         }
+        stream
+            .set_nonblocking(true)
+            .map_err(|_| "PROVIDER_UNAVAILABLE")?;
         let mut client = Self {
             stream,
             timeout,
@@ -517,20 +496,55 @@ impl Client {
             .ok_or_else(|| "PROVIDER_DELIVERY_UNKNOWN".into())
     }
     fn read(&mut self, bytes: &mut [u8], deadline: Instant) -> Result<()> {
-        self.stream
-            .set_read_timeout(Some(Self::remaining(deadline)?))
-            .map_err(|_| "PROVIDER_UNAVAILABLE")?;
-        self.stream
-            .read_exact(bytes)
-            .map_err(|_| "PROVIDER_DELIVERY_UNKNOWN".into())
+        let mut offset = 0;
+        while offset < bytes.len() {
+            Self::remaining(deadline)?;
+            match self.stream.read(&mut bytes[offset..]) {
+                Ok(0) => return Err("PROVIDER_DELIVERY_UNKNOWN".into()),
+                Ok(count) => offset += count,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    self.wait(rustix::event::PollFlags::IN, deadline)?
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => (),
+                Err(_) => return Err("PROVIDER_DELIVERY_UNKNOWN".into()),
+            }
+        }
+        Ok(())
     }
     fn write(&mut self, bytes: &[u8], deadline: Instant) -> Result<()> {
-        self.stream
-            .set_write_timeout(Some(Self::remaining(deadline)?))
-            .map_err(|_| "PROVIDER_UNAVAILABLE")?;
-        self.stream
-            .write_all(bytes)
-            .map_err(|_| "PROVIDER_DELIVERY_UNKNOWN".into())
+        let mut offset = 0;
+        while offset < bytes.len() {
+            Self::remaining(deadline)?;
+            match self.stream.write(&bytes[offset..]) {
+                Ok(0) => return Err("PROVIDER_DELIVERY_UNKNOWN".into()),
+                Ok(count) => offset += count,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    self.wait(rustix::event::PollFlags::OUT, deadline)?
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => (),
+                Err(_) => return Err("PROVIDER_DELIVERY_UNKNOWN".into()),
+            }
+        }
+        Ok(())
+    }
+    fn wait(&self, events: rustix::event::PollFlags, deadline: Instant) -> Result<()> {
+        // Darwin may reject SO_RCVTIMEO with EINVAL once the peer closes, even
+        // while a complete response remains buffered. Poll an absolute budget
+        // and drain the nonblocking socket; never discard bytes on HUP alone.
+        loop {
+            let remaining = Self::remaining(deadline)?;
+            let timeout = rustix::event::Timespec {
+                tv_sec: remaining.as_secs() as _,
+                tv_nsec: remaining.subsec_nanos() as _,
+            };
+            let mut fds = [rustix::event::PollFd::new(&self.stream, events)];
+            match rustix::event::poll(&mut fds, Some(&timeout)) {
+                Ok(0) => return Err("PROVIDER_DELIVERY_UNKNOWN".into()),
+                Ok(_) => return Ok(()),
+                Err(rustix::io::Errno::INTR) => (),
+                Err(_) => return Err("PROVIDER_DELIVERY_UNKNOWN".into()),
+            }
+        }
     }
     fn frame(&mut self, opcode: u8, payload: &[u8], deadline: Instant) -> Result<()> {
         if payload.len() > MAX_MESSAGE {
@@ -753,6 +767,75 @@ mod tests {
                 .as_bytes(),
         );
         assert_eq!(receive(stream)["method"], "initialized");
+    }
+    #[test]
+    fn checked_symlink_uses_kernel_peer_uid_and_rejects_wrong_uid_before_handshake() {
+        let tmp = tempfile::tempdir().unwrap();
+        let socket = tmp.path().join("s");
+        let alias = tmp.path().join("a");
+        let listener = UnixListener::bind(&socket).unwrap();
+        std::os::unix::fs::symlink(&socket, &alias).unwrap();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            handshake(&mut stream);
+            let (mut rejected, _) = listener.accept().unwrap();
+            rejected.set_nonblocking(true).unwrap();
+            let mut fds = [rustix::event::PollFd::new(
+                &rejected,
+                rustix::event::PollFlags::IN,
+            )];
+            assert_eq!(
+                rustix::event::poll(
+                    &mut fds,
+                    Some(&rustix::event::Timespec {
+                        tv_sec: 2,
+                        tv_nsec: 0
+                    })
+                )
+                .unwrap(),
+                1
+            );
+            assert_eq!(rejected.read(&mut [0; 1]).unwrap(), 0);
+        });
+        let uid = rustix::process::getuid().as_raw();
+        let client = Client::connect_checked(&alias, Duration::from_secs(2), uid).unwrap();
+        assert_eq!(client.local_peer_uid().unwrap(), uid);
+        assert_eq!(
+            Client::connect_checked(&alias, Duration::from_secs(2), uid + 1)
+                .err()
+                .unwrap(),
+            "PROVIDER_PEER_IDENTITY_CONFLICT"
+        );
+        handle.join().unwrap();
+    }
+    #[test]
+    fn partial_frame_preserves_absolute_deadline_without_retry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let socket = tmp.path().join("p");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let (done, wait) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            handshake(&mut stream);
+            assert_eq!(receive(&mut stream)["method"], "thread/read");
+            stream.write_all(&[0x81, 5, b'{', b'"']).unwrap();
+            // Keep the connection open until the client's deadline has fired.
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            stream.set_nonblocking(true).unwrap();
+            assert!(
+                matches!(stream.read(&mut [0; 1]), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock)
+            );
+        });
+        let mut client = Client::connect(&socket, Duration::from_secs(2)).unwrap();
+        client.timeout = Duration::from_millis(100);
+        let start = Instant::now();
+        assert_eq!(
+            client.request("thread/read", json!({})).unwrap_err(),
+            "PROVIDER_DELIVERY_UNKNOWN"
+        );
+        assert!(start.elapsed() < Duration::from_secs(2));
+        done.send(()).unwrap();
+        handle.join().unwrap();
     }
     #[test]
     fn websocket_fragment_ping_identity_and_unsolicited_requests() {

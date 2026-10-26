@@ -3,6 +3,15 @@
 用途：追踪源码与兼容边界变化。适用范围：Git 主线；不是已部署版本清单。
 状态：CURRENT。验证：Git diff/log、[测试指南](docs/TESTING.md)与候选 manifest。
 
+## 0.3.2 (292) — 发布候选 2026-10-26
+
+- macOS Provider 使用 `getpeereid` 校验已连接 Unix socket 的真实对端 UID，支持 Codex
+  的稳定 socket 符号链接；Linux 保留 `SO_PEERCRED`。错误 UID 在握手前拒绝，
+  不以符号链接自身的文件类型代替对端身份。复用 nix 的安全 socket API，保留
+  `forbid(unsafe_code)`，不放宽 mTLS/项目授权。
+- Provider IO 按原绝对 deadline 使用非阻塞读写与 poll；Darwin 对端关闭后仍排空缓冲帧，
+  不因重新设置 socket timeout 的 `EINVAL` 丢失已经收到的响应。未知发送仍不得重放。
+
 ## 0.3.2 (291) — 发布候选 2026-10-26
 
 - 修复 Darwin 非阻塞 listener 的 accepted socket 继承行为：Node 和配对 TLS worker

@@ -983,7 +983,8 @@
     "kernel/src/provider.rs": {
       "role": "runtime",
       "dependencies": [
-        "kernel/src/native_transport.rs"
+        "kernel/src/native_transport.rs",
+        "kernel/src/platform.rs"
       ]
     },
     "kernel/src/provider_client.rs": {

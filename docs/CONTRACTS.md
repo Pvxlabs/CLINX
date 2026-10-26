@@ -11,6 +11,11 @@
 它不接受业务 SQL，不成为 Task writer；策略变更仍使用既有 Rust CAS 与原 operation receipt。
 Node/配对 TLS worker 通过 [platform](../kernel/src/platform.rs) 将 accepted socket 显式转为
 blocking 后使用原超时；Darwin 的标志继承差异不改变 mTLS/OPAQUE、ACK 或恢复语义。
+本地 Provider 使用已连接 socket 的内核对端 UID：Linux `SO_PEERCRED`，macOS
+`getpeereid`。配置可使用 Codex 的稳定 socket alias；不从 alias 文件类型推断对端身份，
+不接受远程 Node 自报 UID。预期 UID 不匹配时在 WebSocket initialize 前拒绝。
+Provider IO 的绝对 deadline 保持不变；非阻塞读写配合 poll，对端 HUP 后仍读取缓冲数据，
+只有实际 EOF/IO 错误或耗尽期限才报告发送结果未知，不因此重发请求。
 
 | 边界 | 权威定义与实现 | 可重复回归 |
 | --- | --- | --- |

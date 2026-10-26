@@ -11,6 +11,8 @@ P620 的特权运维由开发工具 [clinx-admin](../kernel/src/bin/clinx-admin.
 通过既有 Rust 发布/策略/配对契约执行固定操作，不建立第二套业务状态权威。
 它独立安装在 root 控制目录，不进入运行 release 或 macOS App；权限入口见
 [固定免密运维入口](OPERATIONS.md#p620-固定免密运维入口)。
+Provider 本机身份以已连接 Unix socket 的内核凭据为准，平台适配使用 Linux
+`SO_PEERCRED` / macOS `getpeereid`；稳定路径 alias 与跨设备 mTLS 是不同边界，见[契约](CONTRACTS.md)。
 原先低于 5% 的固定源码字节目标继续由 `clinx-source-audit` 验证，不更改统计口径。
 
 源码完成迁移不等于部署完成。已安装服务仍可能使用旧不可变 release；当前迁移不部署、

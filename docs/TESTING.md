@@ -92,6 +92,13 @@ Developer ID 公证、客户端安装、配对或真实任务验收。缺少原�
 `platform::tests::accepted_worker_waits_for_delayed_peer_instead_of_would_block` 强制 accepted
 socket 为 nonblocking，并延迟发送，在 Linux 和 Darwin 均可验证 worker 正常等待。
 这是 Node TLS 修复的回归，不能代替两台 Mac 安装后的真实 gateway probe 与任务结果。
+`provider::tests::checked_symlink_uses_kernel_peer_uid_and_rejects_wrong_uid_before_handshake`
+通过真实 Unix socket alias 验证内核对端 UID；错误 UID 必须在任何握手字节发送前拒绝。
+同一用例需在 Linux 与 macOS 的 `--lib provider::tests` 运行，不能用 Linux 结果替代 Darwin。
+原有 fragmented-frame/错误响应身份用例继续覆盖对端发送后立即关闭；
+`provider::tests::partial_frame_preserves_absolute_deadline_without_retry` 保持对端连接打开、
+只发送半帧，要求期限内返回 UNKNOWN 且不发送第二次请求。Darwin 的 SO_RCVTIMEO 在对端
+已关闭时可返回 EINVAL，不能通过放宽原有响应身份断言掩盖缓冲数据丢失。
 
 运维入口回归：`cargo test --locked --manifest-path kernel/Cargo.toml --test admin_tools`，
 检查非法服务/路径/未批准切换、root 路径控制、候选 marker 降权、CLI 拒绝路径，以及
